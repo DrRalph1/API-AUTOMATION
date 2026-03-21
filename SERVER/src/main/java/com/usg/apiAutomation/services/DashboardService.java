@@ -1,14 +1,12 @@
 package com.usg.apiAutomation.services;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiAuthConfigDTO;
-import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiHeaderDTO;
 import com.usg.apiAutomation.dtos.dashboard.*;
 import com.usg.apiAutomation.dtos.userManagement.SearchUsersRequestDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiAuthConfigEntity;
-import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
-import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.ApiAuthConfigRepository;
-import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.ApiRequestRepository;
-import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.GeneratedAPIRepository;
+import com.usg.apiAutomation.repositories.apiGenerationEngine.ApiAuthConfigRepository;
+import com.usg.apiAutomation.repositories.apiGenerationEngine.ApiRequestRepository;
+import com.usg.apiAutomation.repositories.apiGenerationEngine.GeneratedAPIRepository;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;

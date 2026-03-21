@@ -1,7 +1,6 @@
-package com.usg.apiAutomation.repositories.schemaBrowser.postgres;
+package com.usg.apiAutomation.repositories.schemaBrowser.postgresql;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.stereotype.Repository;
 
 import java.util.*;

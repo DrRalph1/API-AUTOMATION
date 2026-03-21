@@ -4,7 +4,7 @@ import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.CollectionInfoDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.GenerateApiRequestDTO;
 import com.usg.apiAutomation.entities.postgres.codeBase.*;
-import com.usg.apiAutomation.repositories.postgres.codeBase.*;
+import com.usg.apiAutomation.repositories.codeBase.*;
 import com.usg.apiAutomation.utils.apiEngine.CodeLanguageGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.GenUrlBuilderUtil;
 import jakarta.persistence.EntityManager;

@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories.schemaBrowser.postgres;
+package com.usg.apiAutomation.repositories.schemaBrowser.postgresql;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -1170,7 +1170,7 @@ public class PostgreSQLOtherObjectsRepository extends PostgreSQLRepository {
             empty.put("owner", owner);
             empty.put("object_name", objectName);
             empty.put("object_type", objectType);
-            empty.put("status", "UNKNOWN");
+            empty.put("status", "VALID");
             return empty;
         }
         return new HashMap<>();

@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.utils.apiEngine.oracle;
+package com.usg.apiAutomation.utils.apiEngine;
 
 import jakarta.validation.ValidationException;
 import lombok.extern.slf4j.Slf4j;

@@ -8,8 +8,8 @@ import com.usg.apiAutomation.exceptions.GlobalExceptionHandler.ConflictException
 import com.usg.apiAutomation.exceptions.GlobalExceptionHandler.ResourceNotFoundException;
 import com.usg.apiAutomation.helpers.ErrorHandlingHelper;
 import com.usg.apiAutomation.helpers.SortValidationHelper;
-import com.usg.apiAutomation.repositories.postgres.AppRoleRepository;
-import com.usg.apiAutomation.repositories.postgres.AppUserRepository;
+import com.usg.apiAutomation.repositories.AppRoleRepository;
+import com.usg.apiAutomation.repositories.AppUserRepository;
 import com.usg.apiAutomation.utils.JwtUtil;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import org.apache.commons.lang3.RandomStringUtils;

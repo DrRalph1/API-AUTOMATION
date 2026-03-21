@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories.postgres.collections;
+package com.usg.apiAutomation.repositories.collections;
 
 import com.usg.apiAutomation.dtos.collections.RequestSummaryDTO;
 import com.usg.apiAutomation.entities.postgres.collections.RequestEntity;

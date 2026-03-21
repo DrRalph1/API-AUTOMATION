@@ -1,11 +1,10 @@
-package com.usg.apiAutomation.repositories.schemaBrowser.postgres;
+package com.usg.apiAutomation.repositories.schemaBrowser.postgresql;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.stereotype.Repository;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Repository

@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories.schemaBrowser.postgres;
+package com.usg.apiAutomation.repositories.schemaBrowser.postgresql;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -249,6 +249,89 @@ public class PostgreSQLViewRepository extends PostgreSQLRepository {
         }
         return result;
     }
+
+
+    public Map<String, Object> getAllMaterializedViewsForFrontend(int page, int pageSize) {
+        Map<String, Object> paginatedResult = new HashMap<>();
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        try {
+            // First get total count
+            String countSql = "SELECT COUNT(*) as total FROM pg_class c " +
+                    "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                    "WHERE n.nspname = current_schema() " +
+                    "AND c.relkind = 'm'";
+
+            int totalCount = getJdbcTemplate().queryForObject(countSql, Integer.class);
+
+            // Calculate offset
+            int offset = (page - 1) * pageSize;
+
+            // Get paginated materialized views
+            String mvSql = "SELECT " +
+                    "    c.relname as name, " +
+                    "    'MATERIALIZED VIEW' as type, " +
+                    "    length(pg_get_viewdef(c.oid)) as text_length, " +
+                    "    false as read_only, " +
+                    "    NULL as created, " +
+                    "    NULL as last_ddl_time, " +
+                    "    'VALID' as status, " +
+                    "    (SELECT COUNT(*) FROM information_schema.columns " +
+                    "     WHERE table_schema = current_schema() AND table_name = c.relname) as column_count " +
+                    "FROM pg_class c " +
+                    "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                    "WHERE n.nspname = current_schema() " +
+                    "AND c.relkind = 'm' " +
+                    "ORDER BY c.relname " +
+                    "LIMIT ? OFFSET ?";
+
+            List<Map<String, Object>> views = getJdbcTemplate().queryForList(mvSql, pageSize, offset);
+
+            for (Map<String, Object> view : views) {
+                Map<String, Object> transformed = new HashMap<>();
+                transformed.put("id", "materialized-view-" + System.currentTimeMillis() + "-" + view.get("name"));
+                transformed.put("name", view.get("name"));
+                transformed.put("owner", getCurrentSchema());
+                transformed.put("type", "MATERIALIZED VIEW");
+                transformed.put("status", view.get("status"));
+                transformed.put("columnCount", view.get("column_count"));
+                transformed.put("textLength", view.get("text_length"));
+                transformed.put("readOnly", view.get("read_only"));
+                transformed.put("created", view.get("created"));
+                transformed.put("lastModified", view.get("last_ddl_time"));
+                transformed.put("icon", "materialized-view");
+                transformed.put("isSynonym", false);
+                result.add(transformed);
+            }
+
+            // Calculate total pages
+            int totalPages = (int) Math.ceil((double) totalCount / pageSize);
+
+            paginatedResult.put("items", result);
+            paginatedResult.put("totalCount", totalCount);
+            paginatedResult.put("page", page);
+            paginatedResult.put("pageSize", pageSize);
+            paginatedResult.put("totalPages", totalPages);
+            paginatedResult.put("hasNext", page < totalPages);
+            paginatedResult.put("hasPrev", page > 1);
+
+            log.info("Returning {} of {} total materialized views (page: {}/{})",
+                    result.size(), totalCount, page, totalPages);
+
+        } catch (Exception e) {
+            log.error("Error in getAllMaterializedViewsForFrontend paginated: {}", e.getMessage(), e);
+            paginatedResult.put("items", new ArrayList<>());
+            paginatedResult.put("totalCount", 0);
+            paginatedResult.put("page", page);
+            paginatedResult.put("pageSize", pageSize);
+            paginatedResult.put("totalPages", 0);
+            paginatedResult.put("hasNext", false);
+            paginatedResult.put("hasPrev", false);
+        }
+
+        return paginatedResult;
+    }
+
 
     public Map<String, Object> getMaterializedViewDetails(String owner, String mvName) {
         Map<String, Object> details = new HashMap<>();

@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories.postgres.documentation;
+package com.usg.apiAutomation.repositories.documentation;
 
 import com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity;
 import org.springframework.data.jpa.repository.JpaRepository;

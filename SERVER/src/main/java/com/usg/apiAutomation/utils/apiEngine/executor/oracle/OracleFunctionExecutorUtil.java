@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.utils.apiEngine.executor;
+package com.usg.apiAutomation.utils.apiEngine.executor.oracle;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -6,8 +6,8 @@ import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ExecuteApiRequestDTO;
-import com.usg.apiAutomation.utils.apiEngine.oracle.OracleObjectResolverUtil;
-import com.usg.apiAutomation.utils.apiEngine.oracle.OracleParameterValidatorUtil;
+import com.usg.apiAutomation.utils.apiEngine.OracleObjectResolverUtil;
+import com.usg.apiAutomation.utils.apiEngine.OracleParameterValidatorUtil;
 import jakarta.validation.ValidationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
 
 @Slf4j
 @Component
-public class FunctionExecutorUtil {
+public class OracleFunctionExecutorUtil {
 
     @Autowired
     @Qualifier("oracleJdbcTemplate")
@@ -35,7 +35,7 @@ public class FunctionExecutorUtil {
     private final OracleObjectResolverUtil objectResolver;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public FunctionExecutorUtil(
+    public OracleFunctionExecutorUtil(
             OracleParameterValidatorUtil oracleParameterValidatorUtil,
             OracleObjectResolverUtil objectResolver) {
         this.oracleParameterValidatorUtil = oracleParameterValidatorUtil;

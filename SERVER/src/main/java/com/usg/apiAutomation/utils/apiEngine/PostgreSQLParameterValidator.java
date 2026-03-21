@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.utils.apiEngine.postgresql;
+package com.usg.apiAutomation.utils.apiEngine;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import jakarta.validation.ValidationException;

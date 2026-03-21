@@ -1,10 +1,9 @@
 package com.usg.apiAutomation.services;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
-import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.*;
+import com.usg.apiAutomation.repositories.apiGenerationEngine.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.persistence.EntityManager;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,7 +17,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 

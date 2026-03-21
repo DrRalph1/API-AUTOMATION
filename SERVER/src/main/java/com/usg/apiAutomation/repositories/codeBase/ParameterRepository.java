@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories.postgres.codeBase;
+package com.usg.apiAutomation.repositories.codeBase;
 
 import com.usg.apiAutomation.entities.postgres.codeBase.ParameterEntity;
 import org.springframework.data.jpa.repository.JpaRepository;

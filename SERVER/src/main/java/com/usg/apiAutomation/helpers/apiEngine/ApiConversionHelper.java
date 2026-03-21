@@ -1,16 +1,13 @@
 package com.usg.apiAutomation.helpers.apiEngine;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
-import com.usg.apiAutomation.entities.postgres.codeBase.RequestEntity;
-import com.usg.apiAutomation.services.OracleSchemaService;
+import com.usg.apiAutomation.services.schemaBrowser.OracleSchemaService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 

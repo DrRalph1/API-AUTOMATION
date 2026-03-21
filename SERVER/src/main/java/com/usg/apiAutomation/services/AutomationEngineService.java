@@ -4,21 +4,29 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.collections.*;
-import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.*;
-import com.usg.apiAutomation.repositories.postgres.codeBase.*;
-import com.usg.apiAutomation.repositories.postgres.codeBase.FolderRepository;
-import com.usg.apiAutomation.repositories.postgres.collections.AuthConfigRepository;
-import com.usg.apiAutomation.repositories.postgres.collections.HeaderRepository;
-import com.usg.apiAutomation.repositories.postgres.collections.ParameterRepository;
-import com.usg.apiAutomation.repositories.postgres.documentation.*;
+import com.usg.apiAutomation.helpers.apiEngine.oracle.OracleApiExecutionHelper;
+import com.usg.apiAutomation.helpers.apiEngine.oracle.OracleApiMetadataHelper;
+import com.usg.apiAutomation.helpers.apiEngine.oracle.OracleApiValidationHelper;
+import com.usg.apiAutomation.repositories.apiGenerationEngine.*;
+import com.usg.apiAutomation.repositories.codeBase.*;
+import com.usg.apiAutomation.repositories.codeBase.FolderRepository;
+import com.usg.apiAutomation.repositories.collections.AuthConfigRepository;
+import com.usg.apiAutomation.repositories.collections.HeaderRepository;
+import com.usg.apiAutomation.repositories.collections.ParameterRepository;
+import com.usg.apiAutomation.repositories.documentation.*;
 import com.usg.apiAutomation.helpers.ApiValidatorHelper;
 import com.usg.apiAutomation.helpers.apiEngine.*;
+import com.usg.apiAutomation.services.schemaBrowser.OracleSchemaService;
 import com.usg.apiAutomation.utils.apiEngine.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
-import com.usg.apiAutomation.utils.apiEngine.executor.*;
+import com.usg.apiAutomation.utils.apiEngine.executor.oracle.*;
 import com.usg.apiAutomation.utils.apiEngine.generator.CodeBaseGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.generator.CollectionsGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.generator.DocumentationGeneratorUtil;
+import com.usg.apiAutomation.utils.apiEngine.OracleObjectResolverUtil;
+import com.usg.apiAutomation.utils.apiEngine.OracleParameterGeneratorUtil;
+import com.usg.apiAutomation.utils.apiEngine.OracleParameterValidatorUtil;
+import com.usg.apiAutomation.utils.apiEngine.OracleTypeMapperUtil;
 import jakarta.persistence.EntityManager;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -49,49 +57,49 @@ public class AutomationEngineService {
     private final FolderRepository codeBaseFolderRepository;
     private final RequestRepository codeBaseRequestRepository;
     private final ImplementationRepository implementationRepository;
-    private final com.usg.apiAutomation.repositories.postgres.collections.CollectionRepository collectionsCollectionRepository;
-    private final com.usg.apiAutomation.repositories.postgres.collections.FolderRepository collectionsFolderRepository;
-    private final com.usg.apiAutomation.repositories.postgres.collections.RequestRepository collectionsRequestRepository;
+    private final com.usg.apiAutomation.repositories.collections.CollectionRepository collectionsCollectionRepository;
+    private final com.usg.apiAutomation.repositories.collections.FolderRepository collectionsFolderRepository;
+    private final com.usg.apiAutomation.repositories.collections.RequestRepository collectionsRequestRepository;
     private final HeaderRepository collectionsHeaderRepository;
     private final ParameterRepository collectionsParameterRepository;
     private final AuthConfigRepository collectionsAuthConfigRepository;
     private final APICollectionRepository docCollectionRepository;
-    private final com.usg.apiAutomation.repositories.postgres.documentation.FolderRepository docFolderRepository;
+    private final com.usg.apiAutomation.repositories.documentation.FolderRepository docFolderRepository;
     private final APIEndpointRepository endpointRepository;
-    private final com.usg.apiAutomation.repositories.postgres.documentation.HeaderRepository docHeaderRepository;
-    private final com.usg.apiAutomation.repositories.postgres.documentation.ParameterRepository docParameterRepository;
+    private final com.usg.apiAutomation.repositories.documentation.HeaderRepository docHeaderRepository;
+    private final com.usg.apiAutomation.repositories.documentation.ParameterRepository docParameterRepository;
     private final ResponseExampleRepository responseExampleRepository;
     private final CodeExampleRepository codeExampleRepository;
     private final ChangelogRepository changelogRepository;
 
     // ==================== HELPERS (Business Logic) ====================
-    private final ApiValidationHelper validationHelper;
+    private final OracleApiValidationHelper validationHelper;
     private final ApiConversionHelper conversionHelper;
     private final ApiResponseHelper responseHelper;
-    private final ApiExecutionHelper executionHelper;
+    private final OracleApiExecutionHelper executionHelper;
     private final ApiComponentHelper componentHelper;
-    private final ApiMetadataHelper metadataHelper;
+    private final OracleApiMetadataHelper metadataHelper;
 
     // ==================== UTILS (Technical Utilities) ====================
     private final GenUrlBuilderUtil genUrlBuilder;
     private final OracleTypeMapperUtil typeMapper;
     private final OracleObjectResolverUtil objectResolver;
-    private final ParameterValidatorUtil parameterValidator;
+    private final OracleParameterValidatorUtil parameterValidator;
     private final AuthenticationServiceUtil authenticationService;
 
     // ==================== EXECUTORS ====================
-    private final TableExecutorUtil tableExecutorUtil;
-    private final ViewExecutorUtil viewExecutorUtil;
-    private final ProcedureExecutorUtil procedureExecutorUtil;
-    private final FunctionExecutorUtil functionExecutorUtil;
-    private final PackageExecutorUtil packageExecutorUtil;
+    private final OracleTableExecutorUtil oracleTableExecutorUtil;
+    private final OracleViewExecutorUtil oracleViewExecutorUtil;
+    private final OracleProcedureExecutorUtil oracleProcedureExecutorUtil;
+    private final OracleFunctionExecutorUtil oracleFunctionExecutorUtil;
+    private final OraclePackageExecutorUtil oraclePackageExecutorUtil;
 
     // ==================== GENERATORS ====================
     private final CodeBaseGeneratorUtil codeBaseGeneratorUtil;
     private final CollectionsGeneratorUtil collectionsGeneratorUtil;
     private final DocumentationGeneratorUtil documentationGeneratorUtil;
     private final CodeLanguageGeneratorUtil codeLanguageGeneratorUtil;
-    private final ParameterGeneratorUtil parameterGeneratorUtil;
+    private final OracleParameterGeneratorUtil oracleParameterGeneratorUtil;
 
     // ==================== API REQUEST LOGGING ====================
     private final ApiRequestService apiRequestService;
@@ -132,7 +140,7 @@ public class AutomationEngineService {
             // Create and save main API entity (WITHOUT setting sourceRequestId yet)
             GeneratedApiEntity savedApi = executionHelper.createAndSaveApiEntity(
                     request, sourceObjectDTO, collectionInfo, endpointPath, performedBy, null,  // Pass null for requestId
-                    generatedAPIRepository, objectMapper, parameterGeneratorUtil, conversionHelper);
+                    generatedAPIRepository, objectMapper, oracleParameterGeneratorUtil, conversionHelper);
 
             // Generate related components
             GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(savedApi);
@@ -201,7 +209,7 @@ public class AutomationEngineService {
             // Clear and recreate relationships
             executionHelper.clearApiRelationships(api);
             executionHelper.recreateApiRelationships(api, request, sourceObjectDTO,
-                    parameterGeneratorUtil, conversionHelper);
+                    oracleParameterGeneratorUtil, conversionHelper);
 
             // IMPORTANT: Temporarily set the original sourceRequestId back
             api.setSourceRequestId(originalSourceRequestId);
@@ -1008,11 +1016,11 @@ public class AutomationEngineService {
                         configuredParamDTOs,
                         objectResolver,
                         parameterValidator,
-                        tableExecutorUtil,
-                        viewExecutorUtil,
-                        procedureExecutorUtil,
-                        functionExecutorUtil,
-                        packageExecutorUtil,
+                        oracleTableExecutorUtil,
+                        oracleViewExecutorUtil,
+                        oracleProcedureExecutorUtil,
+                        oracleFunctionExecutorUtil,
+                        oraclePackageExecutorUtil,
                         this::generateSampleResponse
                 );
 

@@ -1,8 +1,9 @@
-package com.usg.apiAutomation.helpers.apiEngine;
+package com.usg.apiAutomation.helpers.apiEngine.oracle;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
+import com.usg.apiAutomation.helpers.apiEngine.ApiConversionHelper;
 import com.usg.apiAutomation.repositories.apiGenerationEngine.*;
 import com.usg.apiAutomation.utils.apiEngine.executor.oracle.*;
 import com.usg.apiAutomation.utils.apiEngine.OracleObjectResolverUtil;
@@ -20,7 +21,7 @@ import java.util.regex.Pattern;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class ApiExecutionHelper {
+public class OracleApiExecutionHelper {
 
     public GeneratedApiEntity getApiEntity(GeneratedAPIRepository repository, String apiId) {
         return repository.findById(apiId)

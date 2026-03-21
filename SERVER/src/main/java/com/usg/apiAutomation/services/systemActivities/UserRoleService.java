@@ -8,7 +8,7 @@ import com.usg.apiAutomation.exceptions.GlobalExceptionHandler.BusinessRuleExcep
 import com.usg.apiAutomation.exceptions.GlobalExceptionHandler.ConflictException;
 import com.usg.apiAutomation.exceptions.GlobalExceptionHandler.ResourceNotFoundException;
 import com.usg.apiAutomation.helpers.SortValidationHelper;
-import com.usg.apiAutomation.repositories.postgres.AppRoleRepository;
+import com.usg.apiAutomation.repositories.AppRoleRepository;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;

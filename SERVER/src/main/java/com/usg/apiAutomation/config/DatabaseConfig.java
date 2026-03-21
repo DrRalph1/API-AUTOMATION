@@ -59,6 +59,14 @@ public class DatabaseConfig {
         return new JdbcTemplate(dataSource);
     }
 
+    // ADDED: PostgreSQL JdbcTemplate with explicit naming
+    @Bean(name = "postgresqlJdbcTemplate")
+    public JdbcTemplate postgresqlJdbcTemplate(@Qualifier("postgresDataSource") DataSource dataSource) {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        jdbcTemplate.setFetchSize(100);
+        return jdbcTemplate;
+    }
+
     @Primary
     @Bean(name = "postgresEntityManagerFactory")
     public LocalContainerEntityManagerFactoryBean postgresEntityManagerFactory(

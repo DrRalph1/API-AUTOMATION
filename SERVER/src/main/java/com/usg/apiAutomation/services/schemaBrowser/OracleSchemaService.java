@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.services;
+package com.usg.apiAutomation.services.schemaBrowser;
 
 import com.usg.apiAutomation.repositories.schemaBrowser.oracle.*;
 import com.usg.apiAutomation.utils.LoggerUtil;

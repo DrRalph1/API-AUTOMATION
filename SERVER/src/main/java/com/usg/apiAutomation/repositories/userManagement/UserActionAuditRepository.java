@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories.postgres.userManagement;
+package com.usg.apiAutomation.repositories.userManagement;
 
 import com.usg.apiAutomation.entities.postgres.userManagement.UserActionAuditEntity;
 import com.usg.apiAutomation.entities.postgres.UserEntity;

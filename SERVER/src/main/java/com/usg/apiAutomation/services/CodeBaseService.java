@@ -3,14 +3,12 @@ package com.usg.apiAutomation.services;
 import com.usg.apiAutomation.dtos.codeBase.*;
 import com.usg.apiAutomation.entities.postgres.codeBase.*;
 import com.usg.apiAutomation.entities.postgres.collections.AuthConfigEntity;
-import com.usg.apiAutomation.repositories.postgres.codeBase.*;
-import com.usg.apiAutomation.repositories.postgres.collections.AuthConfigRepository;
+import com.usg.apiAutomation.repositories.codeBase.*;
+import com.usg.apiAutomation.repositories.collections.AuthConfigRepository;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import com.usg.apiAutomation.utils.ModelMapperUtil;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

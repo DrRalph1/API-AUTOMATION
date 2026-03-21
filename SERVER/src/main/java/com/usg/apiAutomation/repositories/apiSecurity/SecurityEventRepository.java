@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories.postgres.apiSecurity;
+package com.usg.apiAutomation.repositories.apiSecurity;
 
 import com.usg.apiAutomation.entities.postgres.apiSecurity.SecurityEventEntity;  // Fix import
 import org.springframework.data.jpa.repository.JpaRepository;

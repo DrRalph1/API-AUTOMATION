@@ -4,7 +4,7 @@ import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.CollectionInfoDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.GenerateApiRequestDTO;
 import com.usg.apiAutomation.entities.postgres.collections.*;
-import com.usg.apiAutomation.repositories.postgres.collections.*;
+import com.usg.apiAutomation.repositories.collections.*;
 import com.usg.apiAutomation.utils.apiEngine.GenUrlBuilderUtil;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service

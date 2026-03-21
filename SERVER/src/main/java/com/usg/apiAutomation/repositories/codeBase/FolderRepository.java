@@ -1,6 +1,5 @@
-package com.usg.apiAutomation.repositories.postgres.codeBase;
+package com.usg.apiAutomation.repositories.codeBase;
 
-import com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity;
 import com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;

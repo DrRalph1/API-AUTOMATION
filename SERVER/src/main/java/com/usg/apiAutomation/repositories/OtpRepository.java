@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories.postgres;
+package com.usg.apiAutomation.repositories;
 
 import com.usg.apiAutomation.entities.postgres.UserOtpEntity;
 import org.springframework.data.jpa.repository.JpaRepository;

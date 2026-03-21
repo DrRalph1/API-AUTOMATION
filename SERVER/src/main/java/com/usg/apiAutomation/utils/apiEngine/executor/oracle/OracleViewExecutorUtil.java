@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.utils.apiEngine.executor;
+package com.usg.apiAutomation.utils.apiEngine.executor.oracle;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -6,8 +6,8 @@ import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ExecuteApiRequestDTO;
-import com.usg.apiAutomation.utils.apiEngine.oracle.OracleObjectResolverUtil;
-import com.usg.apiAutomation.utils.apiEngine.oracle.OracleParameterValidatorUtil;
+import com.usg.apiAutomation.utils.apiEngine.OracleObjectResolverUtil;
+import com.usg.apiAutomation.utils.apiEngine.OracleParameterValidatorUtil;
 import jakarta.validation.ValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class ViewExecutorUtil {
+public class OracleViewExecutorUtil {
 
     @Autowired
     @Qualifier("oracleJdbcTemplate")
@@ -31,7 +31,7 @@ public class ViewExecutorUtil {
 
     private final OracleParameterValidatorUtil parameterValidator;
     private final OracleObjectResolverUtil objectResolver;
-    private final TableExecutorUtil tableExecutorUtil;
+    private final OracleTableExecutorUtil oracleTableExecutorUtil;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
@@ -363,7 +363,7 @@ public class ViewExecutorUtil {
         log.info("============ VIEW EXECUTION COMPLETE ============");
 
         // Pass ALL combined parameters to TableExecutorUtil (including headers)
-        return tableExecutorUtil.executeSelect(targetName, targetOwner, dbParams, api, configuredParamDTOs);
+        return oracleTableExecutorUtil.executeSelect(targetName, targetOwner, dbParams, api, configuredParamDTOs);
     }
 
     /**

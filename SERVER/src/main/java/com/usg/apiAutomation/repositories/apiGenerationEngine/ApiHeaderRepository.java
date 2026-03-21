@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories.postgres.apiGenerationEngine;
+package com.usg.apiAutomation.repositories.apiGenerationEngine;
 
 public class ApiHeaderRepository {
 }

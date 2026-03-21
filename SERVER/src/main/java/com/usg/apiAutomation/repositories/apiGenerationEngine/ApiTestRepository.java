@@ -1,9 +1,7 @@
-package com.usg.apiAutomation.repositories.postgres.apiGenerationEngine;
+package com.usg.apiAutomation.repositories.apiGenerationEngine;
 
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiTestEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;

@@ -5,9 +5,9 @@ import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiAuthConfig
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
 import com.usg.apiAutomation.entities.postgres.collections.AuthConfigEntity;
 import com.usg.apiAutomation.entities.postgres.documentation.*;
-import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.GeneratedAPIRepository;
-import com.usg.apiAutomation.repositories.postgres.collections.AuthConfigRepository;
-import com.usg.apiAutomation.repositories.postgres.documentation.*;
+import com.usg.apiAutomation.repositories.apiGenerationEngine.GeneratedAPIRepository;
+import com.usg.apiAutomation.repositories.collections.AuthConfigRepository;
+import com.usg.apiAutomation.repositories.documentation.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;

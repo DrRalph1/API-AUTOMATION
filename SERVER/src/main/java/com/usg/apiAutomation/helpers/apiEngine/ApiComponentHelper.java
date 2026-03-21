@@ -4,11 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.CollectionInfoDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.GenerateApiRequestDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
-import com.usg.apiAutomation.repositories.postgres.codeBase.CollectionRepository;
-import com.usg.apiAutomation.repositories.postgres.codeBase.FolderRepository;
-import com.usg.apiAutomation.repositories.postgres.codeBase.RequestRepository;
-import com.usg.apiAutomation.repositories.postgres.documentation.APICollectionRepository;
-import com.usg.apiAutomation.repositories.postgres.documentation.APIEndpointRepository;
+import com.usg.apiAutomation.repositories.codeBase.CollectionRepository;
+import com.usg.apiAutomation.repositories.codeBase.FolderRepository;
+import com.usg.apiAutomation.repositories.codeBase.RequestRepository;
+import com.usg.apiAutomation.repositories.documentation.APICollectionRepository;
+import com.usg.apiAutomation.repositories.documentation.APIEndpointRepository;
 import com.usg.apiAutomation.utils.apiEngine.generator.CodeBaseGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.generator.CollectionsGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.generator.DocumentationGeneratorUtil;
@@ -125,9 +125,9 @@ public class ApiComponentHelper {
                                   GenerateApiRequestDTO request,
                                   CollectionInfoDTO collectionInfo,
                                   CollectionsGeneratorUtil collectionsGeneratorUtil,
-                                  com.usg.apiAutomation.repositories.postgres.collections.CollectionRepository collectionRepository,
-                                  com.usg.apiAutomation.repositories.postgres.collections.FolderRepository folderRepository,
-                                  com.usg.apiAutomation.repositories.postgres.collections.RequestRepository requestRepository,
+                                  com.usg.apiAutomation.repositories.collections.CollectionRepository collectionRepository,
+                                  com.usg.apiAutomation.repositories.collections.FolderRepository folderRepository,
+                                  com.usg.apiAutomation.repositories.collections.RequestRepository requestRepository,
                                   EntityManager entityManager) {
         try {
             log.info("Updating collections for API: {} using collection: {}",
@@ -163,7 +163,7 @@ public class ApiComponentHelper {
                                     String collectionsCollectionId,
                                     DocumentationGeneratorUtil documentationGeneratorUtil,
                                     APICollectionRepository collectionRepository,
-                                    com.usg.apiAutomation.repositories.postgres.documentation.FolderRepository folderRepository,
+                                    com.usg.apiAutomation.repositories.documentation.FolderRepository folderRepository,
                                     APIEndpointRepository endpointRepository,
                                     EntityManager entityManager) {
         try {
@@ -412,7 +412,7 @@ public class ApiComponentHelper {
                                         GeneratedApiEntity api,
                                         CollectionInfoDTO collectionInfo,
                                         String performedBy,
-                                        com.usg.apiAutomation.repositories.postgres.collections.FolderRepository folderRepository,
+                                        com.usg.apiAutomation.repositories.collections.FolderRepository folderRepository,
                                         EntityManager entityManager) {
         collection.setName(collectionInfo != null ? collectionInfo.getCollectionName() : api.getApiName());
         collection.setDescription(api.getDescription());
@@ -425,7 +425,7 @@ public class ApiComponentHelper {
 
     private void updateCollectionFolder(com.usg.apiAutomation.entities.postgres.collections.CollectionEntity collection,
                                         CollectionInfoDTO collectionInfo,
-                                        com.usg.apiAutomation.repositories.postgres.collections.FolderRepository folderRepository,
+                                        com.usg.apiAutomation.repositories.collections.FolderRepository folderRepository,
                                         EntityManager entityManager) {
         Optional<com.usg.apiAutomation.entities.postgres.collections.FolderEntity> existingFolder =
                 folderRepository.findById(collectionInfo.getFolderId());
@@ -449,7 +449,7 @@ public class ApiComponentHelper {
                                                GeneratedApiEntity api,
                                                CollectionInfoDTO collectionInfo,
                                                String performedBy,
-                                               com.usg.apiAutomation.repositories.postgres.documentation.FolderRepository folderRepository,
+                                               com.usg.apiAutomation.repositories.documentation.FolderRepository folderRepository,
                                                APIEndpointRepository endpointRepository,
                                                EntityManager entityManager) {
         collection.setName(collectionInfo != null ? collectionInfo.getCollectionName() : api.getApiName());
@@ -477,7 +477,7 @@ public class ApiComponentHelper {
     private void updateDocumentationFolder(com.usg.apiAutomation.entities.postgres.documentation.APICollectionEntity collection,
                                            CollectionInfoDTO collectionInfo,
                                            String performedBy,
-                                           com.usg.apiAutomation.repositories.postgres.documentation.FolderRepository folderRepository,
+                                           com.usg.apiAutomation.repositories.documentation.FolderRepository folderRepository,
                                            EntityManager entityManager) {
         Optional<com.usg.apiAutomation.entities.postgres.documentation.FolderEntity> existingFolder =
                 folderRepository.findById(collectionInfo.getFolderId());

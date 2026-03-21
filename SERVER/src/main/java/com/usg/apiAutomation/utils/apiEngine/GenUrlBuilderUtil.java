@@ -368,7 +368,7 @@ public class GenUrlBuilderUtil {
      */
     public String buildEndpointPathWithParameters(GenerateApiRequestDTO request,
                                                   ApiSourceObjectDTO sourceObjectDTO,
-                                                  ParameterGeneratorUtil parameterGeneratorUtil) {
+                                                  OracleParameterGeneratorUtil oracleParameterGeneratorUtil) {
         // Start with the base endpoint from request or generate from API code
         String baseEndpoint = request.getEndpointPath();
         if (baseEndpoint == null || baseEndpoint.isEmpty()) {
@@ -378,7 +378,7 @@ public class GenUrlBuilderUtil {
         log.info("Building endpoint path with parameters. Base: {}", baseEndpoint);
 
         // Generate parameters from source
-        List<ApiParameterDTO> parameters = parameterGeneratorUtil.generateParameterDTOsFromSource(sourceObjectDTO);
+        List<ApiParameterDTO> parameters = oracleParameterGeneratorUtil.generateParameterDTOsFromSource(sourceObjectDTO);
 
         log.info("All generated parameters (raw):");
         parameters.forEach(p -> log.info("  - {}: location hint={}, mode={}",

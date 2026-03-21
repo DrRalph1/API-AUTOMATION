@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories.postgres.apiGenerationEngine;
+package com.usg.apiAutomation.repositories.apiGenerationEngine;
 
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiRequestEntity;
 import org.springframework.data.domain.Page;

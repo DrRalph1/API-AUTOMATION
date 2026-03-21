@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories.postgres.apiSecurity;
+package com.usg.apiAutomation.repositories.apiSecurity;
 
 // CORRECT IMPORT - from entities.apiSecurity, NOT dtos.apiSecurity
 import com.usg.apiAutomation.entities.postgres.apiSecurity.RateLimitRuleEntity;

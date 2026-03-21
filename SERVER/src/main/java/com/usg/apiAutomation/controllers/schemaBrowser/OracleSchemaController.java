@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.controllers;
+package com.usg.apiAutomation.controllers.schemaBrowser;
 
 import com.usg.apiAutomation.helpers.JwtHelper;
 import com.usg.apiAutomation.services.schemaBrowser.OracleSchemaService;

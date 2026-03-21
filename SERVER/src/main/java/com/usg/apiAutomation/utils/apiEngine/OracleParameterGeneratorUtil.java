@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.utils.apiEngine.oracle;
+package com.usg.apiAutomation.utils.apiEngine;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;

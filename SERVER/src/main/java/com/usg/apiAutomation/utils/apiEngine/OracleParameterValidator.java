@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.utils.apiEngine.oracle;
+package com.usg.apiAutomation.utils.apiEngine;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import jakarta.validation.ValidationException;

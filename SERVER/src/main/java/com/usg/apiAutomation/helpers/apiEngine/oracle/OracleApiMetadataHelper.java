@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.helpers.apiEngine;
+package com.usg.apiAutomation.helpers.apiEngine.oracle;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiAnalyticsDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiDetailsResponseDTO;
@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Component
-public class ApiMetadataHelper {
+public class OracleApiMetadataHelper {
 
     private final OracleTableRepository oracleTableRepository;
     private final OracleViewRepository oracleViewRepository;
@@ -32,7 +32,7 @@ public class ApiMetadataHelper {
     private final OracleObjectRepository oracleObjectRepository;
     private final JdbcTemplate oracleJdbcTemplate;
 
-    public ApiMetadataHelper(
+    public OracleApiMetadataHelper(
             OracleTableRepository oracleTableRepository,
             OracleViewRepository oracleViewRepository,
             OracleProcedureRepository oracleProcedureRepository,

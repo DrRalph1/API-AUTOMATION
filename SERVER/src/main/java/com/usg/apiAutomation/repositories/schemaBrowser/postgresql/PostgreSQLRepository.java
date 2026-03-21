@@ -1,8 +1,9 @@
-package com.usg.apiAutomation.repositories.schemaBrowser.postgres;
+package com.usg.apiAutomation.repositories.schemaBrowser.postgresql;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Primary;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -11,7 +12,8 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 @Slf4j
-@Repository
+@Repository("PostgreSQLRepository")
+@Primary  // Add this annotation
 public class PostgreSQLRepository {
 
     @Autowired
@@ -109,6 +111,85 @@ public class PostgreSQLRepository {
             counts.put("total", 0);
         }
         return counts;
+    }
+
+    // ============================================================
+    // SCHEMA METHODS (NEW - for package equivalents)
+    // ============================================================
+
+    /**
+     * Get all schemas in the database (excluding system schemas)
+     * This serves as the PostgreSQL equivalent of Oracle packages
+     */
+    public List<Map<String, Object>> getAllSchemas() {
+        List<Map<String, Object>> schemas = new ArrayList<>();
+        try {
+            String sql = "SELECT " +
+                    "    nspname as name, " +
+                    "    'SCHEMA' as type, " +
+                    "    'VALID' as status, " +
+                    "    nspowner as owner, " +
+                    "    NULL as created, " +
+                    "    NULL as lastModified " +
+                    "FROM pg_namespace " +
+                    "WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast') " +
+                    "AND nspname NOT LIKE 'pg_temp_%' " +
+                    "AND nspname NOT LIKE 'pg_toast_temp_%' " +
+                    "ORDER BY nspname";
+
+            schemas = postgresqlJdbcTemplate.queryForList(sql);
+
+            // Add icons for frontend
+            for (Map<String, Object> schema : schemas) {
+                schema.put("icon", "schema");
+                schema.put("objectCount", getObjectCountInSchema((String) schema.get("name")));
+            }
+
+            log.debug("Retrieved {} schemas", schemas.size());
+        } catch (Exception e) {
+            log.error("Error getting all schemas: {}", e.getMessage(), e);
+        }
+        return schemas;
+    }
+
+    /**
+     * Get object count in a specific schema
+     */
+    public int getObjectCountInSchema(String schemaName) {
+        try {
+            String sql = "SELECT COUNT(*) FROM pg_class c " +
+                    "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                    "WHERE n.nspname = ? " +
+                    "AND c.relkind IN ('r', 'v', 'm', 'f', 'p', 'S', 'i')";
+            return postgresqlJdbcTemplate.queryForObject(sql, Integer.class, schemaName);
+        } catch (Exception e) {
+            log.debug("Error getting object count for schema {}: {}", schemaName, e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Get schema details
+     */
+    public Map<String, Object> getSchemaDetails(String schemaName) {
+        Map<String, Object> details = new HashMap<>();
+        try {
+            String sql = "SELECT " +
+                    "    nspname as name, " +
+                    "    nspowner as owner, " +
+                    "    (SELECT usename FROM pg_user WHERE usesysid = nspowner) as owner_name, " +
+                    "    (SELECT COUNT(*) FROM pg_class c WHERE c.relnamespace = n.oid) as object_count " +
+                    "FROM pg_namespace n " +
+                    "WHERE nspname = ?";
+            details = postgresqlJdbcTemplate.queryForMap(sql, schemaName);
+            details.put("icon", "schema");
+            details.put("type", "SCHEMA");
+            details.put("status", "VALID");
+        } catch (Exception e) {
+            log.error("Error getting schema details for {}: {}", schemaName, e.getMessage());
+            details.put("error", e.getMessage());
+        }
+        return details;
     }
 
     // ============================================================
@@ -619,4 +700,238 @@ public class PostgreSQLRepository {
             default: return null;
         }
     }
+
+
+
+    /**
+     * Get all schemas with pagination
+     */
+    public Map<String, Object> getAllSchemasPaginated(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            // Count total schemas
+            String countSql = "SELECT COUNT(*) FROM pg_namespace " +
+                    "WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast') " +
+                    "AND nspname NOT LIKE 'pg_temp_%' " +
+                    "AND nspname NOT LIKE 'pg_toast_temp_%'";
+            int totalCount = postgresqlJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            // Get paginated schemas
+            String dataSql = "SELECT " +
+                    "    nspname as name, " +
+                    "    'SCHEMA' as type, " +
+                    "    'VALID' as status, " +
+                    "    nspowner as owner, " +
+                    "    NULL as created, " +
+                    "    NULL as lastModified " +
+                    "FROM pg_namespace " +
+                    "WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast') " +
+                    "AND nspname NOT LIKE 'pg_temp_%' " +
+                    "AND nspname NOT LIKE 'pg_toast_temp_%' " +
+                    "ORDER BY nspname " +
+                    "OFFSET ? LIMIT ?";
+
+            List<Map<String, Object>> items = postgresqlJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            // Add icons and object counts
+            for (Map<String, Object> schema : items) {
+                schema.put("icon", "schema");
+                schema.put("objectCount", getObjectCountInSchema((String) schema.get("name")));
+            }
+
+            result.put("items", items);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error getting paginated schemas: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", 0);
+        }
+        return result;
+    }
+
+    /**
+     * Get schema items (functions, procedures, tables, views) paginated
+     * This is the PostgreSQL equivalent of Oracle package items
+     */
+    public Map<String, Object> getSchemaItemsPaginated(String schemaName, String itemType, int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+            String upperItemType = itemType.toUpperCase();
+            List<Map<String, Object>> items = new ArrayList<>();
+            int totalCount = 0;
+
+            if ("FUNCTION".equals(upperItemType) || "ALL".equals(upperItemType)) {
+                // Get functions
+                String funcCountSql = "SELECT COUNT(*) FROM pg_proc p " +
+                        "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                        "WHERE n.nspname = ? AND p.prokind = 'f'";
+                totalCount = postgresqlJdbcTemplate.queryForObject(funcCountSql, Integer.class, schemaName);
+
+                String funcSql = "SELECT " +
+                        "    p.proname as name, " +
+                        "    'FUNCTION' as type, " +
+                        "    pg_get_function_result(p.oid) as return_type, " +
+                        "    (SELECT COUNT(*) FROM pg_proc_info WHERE proname = p.proname) as parameter_count, " +
+                        "    'VALID' as status " +
+                        "FROM pg_proc p " +
+                        "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                        "WHERE n.nspname = ? AND p.prokind = 'f' " +
+                        "ORDER BY p.proname " +
+                        "OFFSET ? LIMIT ?";
+
+                List<Map<String, Object>> functions = postgresqlJdbcTemplate.queryForList(funcSql, schemaName, offset, pageSize);
+                items.addAll(functions);
+            }
+
+            if ("PROCEDURE".equals(upperItemType) || "ALL".equals(upperItemType)) {
+                // Get procedures
+                String procCountSql = "SELECT COUNT(*) FROM pg_proc p " +
+                        "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                        "WHERE n.nspname = ? AND p.prokind = 'p'";
+                int procCount = postgresqlJdbcTemplate.queryForObject(procCountSql, Integer.class, schemaName);
+
+                if ("PROCEDURE".equals(upperItemType)) {
+                    totalCount = procCount;
+                } else {
+                    totalCount += procCount;
+                }
+
+                String procSql = "SELECT " +
+                        "    p.proname as name, " +
+                        "    'PROCEDURE' as type, " +
+                        "    NULL as return_type, " +
+                        "    (SELECT COUNT(*) FROM pg_proc_info WHERE proname = p.proname) as parameter_count, " +
+                        "    'VALID' as status " +
+                        "FROM pg_proc p " +
+                        "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                        "WHERE n.nspname = ? AND p.prokind = 'p' " +
+                        "ORDER BY p.proname " +
+                        "OFFSET ? LIMIT ?";
+
+                List<Map<String, Object>> procedures = postgresqlJdbcTemplate.queryForList(procSql, schemaName, offset, pageSize);
+                items.addAll(procedures);
+            }
+
+            if ("TABLE".equals(upperItemType) || "ALL".equals(upperItemType)) {
+                // Get tables
+                String tableCountSql = "SELECT COUNT(*) FROM pg_class c " +
+                        "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                        "WHERE n.nspname = ? AND c.relkind = 'r'";
+                int tableCount = postgresqlJdbcTemplate.queryForObject(tableCountSql, Integer.class, schemaName);
+
+                if ("TABLE".equals(upperItemType)) {
+                    totalCount = tableCount;
+                } else {
+                    totalCount += tableCount;
+                }
+
+                String tableSql = "SELECT " +
+                        "    c.relname as name, " +
+                        "    'TABLE' as type, " +
+                        "    NULL as return_type, " +
+                        "    (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = c.relname) as parameter_count, " +
+                        "    'VALID' as status " +
+                        "FROM pg_class c " +
+                        "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                        "WHERE n.nspname = ? AND c.relkind = 'r' " +
+                        "ORDER BY c.relname " +
+                        "OFFSET ? LIMIT ?";
+
+                List<Map<String, Object>> tables = postgresqlJdbcTemplate.queryForList(tableSql, schemaName, schemaName, offset, pageSize);
+                items.addAll(tables);
+            }
+
+            if ("VIEW".equals(upperItemType) || "ALL".equals(upperItemType)) {
+                // Get views
+                String viewCountSql = "SELECT COUNT(*) FROM pg_class c " +
+                        "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                        "WHERE n.nspname = ? AND c.relkind = 'v'";
+                int viewCount = postgresqlJdbcTemplate.queryForObject(viewCountSql, Integer.class, schemaName);
+
+                if ("VIEW".equals(upperItemType)) {
+                    totalCount = viewCount;
+                } else {
+                    totalCount += viewCount;
+                }
+
+                String viewSql = "SELECT " +
+                        "    c.relname as name, " +
+                        "    'VIEW' as type, " +
+                        "    NULL as return_type, " +
+                        "    (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = c.relname) as parameter_count, " +
+                        "    'VALID' as status " +
+                        "FROM pg_class c " +
+                        "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                        "WHERE n.nspname = ? AND c.relkind = 'v' " +
+                        "ORDER BY c.relname " +
+                        "OFFSET ? LIMIT ?";
+
+                List<Map<String, Object>> views = postgresqlJdbcTemplate.queryForList(viewSql, schemaName, schemaName, offset, pageSize);
+                items.addAll(views);
+            }
+
+            if ("MATERIALIZED VIEW".equals(upperItemType) || "ALL".equals(upperItemType)) {
+                // Get materialized views
+                String mvCountSql = "SELECT COUNT(*) FROM pg_class c " +
+                        "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                        "WHERE n.nspname = ? AND c.relkind = 'm'";
+                int mvCount = postgresqlJdbcTemplate.queryForObject(mvCountSql, Integer.class, schemaName);
+
+                if ("MATERIALIZED VIEW".equals(upperItemType)) {
+                    totalCount = mvCount;
+                } else {
+                    totalCount += mvCount;
+                }
+
+                String mvSql = "SELECT " +
+                        "    c.relname as name, " +
+                        "    'MATERIALIZED VIEW' as type, " +
+                        "    NULL as return_type, " +
+                        "    (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = c.relname) as parameter_count, " +
+                        "    'VALID' as status " +
+                        "FROM pg_class c " +
+                        "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                        "WHERE n.nspname = ? AND c.relkind = 'm' " +
+                        "ORDER BY c.relname " +
+                        "OFFSET ? LIMIT ?";
+
+                List<Map<String, Object>> mvs = postgresqlJdbcTemplate.queryForList(mvSql, schemaName, schemaName, offset, pageSize);
+                items.addAll(mvs);
+            }
+
+            // Sort items by name
+            items.sort((a, b) -> {
+                String nameA = (String) a.get("name");
+                String nameB = (String) b.get("name");
+                return nameA.compareTo(nameB);
+            });
+
+            result.put("items", items);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error getting schema items paginated for schema {}: {}", schemaName, e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", 0);
+        }
+        return result;
+    }
+
+
 }

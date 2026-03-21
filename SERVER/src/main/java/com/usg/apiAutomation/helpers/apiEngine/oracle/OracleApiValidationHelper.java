@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.helpers.apiEngine;
+package com.usg.apiAutomation.helpers.apiEngine.oracle;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.CollectionInfoDTO;
@@ -17,7 +17,7 @@ import java.util.*;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class ApiValidationHelper {
+public class OracleApiValidationHelper {
 
     public void validateApiCodeUniqueness(GeneratedAPIRepository repository, String apiCode) {
         if (repository.existsByApiCode(apiCode)) {

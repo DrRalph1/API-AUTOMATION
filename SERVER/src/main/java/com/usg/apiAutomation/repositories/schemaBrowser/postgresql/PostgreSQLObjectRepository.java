@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories.schemaBrowser.postgres;
+package com.usg.apiAutomation.repositories.schemaBrowser.postgresql;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -565,11 +565,23 @@ public class PostgreSQLObjectRepository extends PostgreSQLRepository {
                     "         WHEN c.relkind = 'i' THEN 'INDEX' " +
                     "         ELSE c.relkind::text END as object_type, " +
                     "    'VALID' as status, " +
-                    "    NULL as created, " +
-                    "    NULL as last_ddl_time, " +
-                    "    false as temporary, " +
-                    "    false as generated, " +
-                    "    false as secondary " +
+                    "    pg_catalog.pg_get_userbyid(c.relowner) as owner_name, " +
+                    "    c.reltuples as row_count, " +
+                    "    c.relpages as page_count, " +
+                    "    c.relfilenode as file_node, " +
+                    "    c.reloptions as storage_options, " +
+                    "    c.relacl as privileges, " +
+                    "    c.relhastriggers as has_triggers, " +
+                    "    c.relhasindex as has_indexes, " +
+                    "    c.relhasrules as has_rules, " +
+                    "    c.relrowsecurity as has_row_security, " +
+                    "    c.relispopulated as is_populated, " +
+                    "    c.relreplident as replica_identity, " +
+                    "    (SELECT COUNT(*) FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped) as column_count, " +
+                    "    (SELECT COUNT(*) FROM pg_constraint con WHERE con.conrelid = c.oid) as constraint_count, " +
+                    "    c.relkind as relation_kind, " +
+                    "    current_setting('server_version') as postgres_version, " +
+                    "    now() as current_time " +
                     "FROM pg_class c " +
                     "JOIN pg_namespace n ON c.relnamespace = n.oid " +
                     "WHERE n.nspname = ? AND c.relname = ? AND c.relkind = ?";
@@ -579,15 +591,152 @@ public class PostgreSQLObjectRepository extends PostgreSQLRepository {
                 "    c.relname as object_name, " +
                 "    'OTHER' as object_type, " +
                 "    'VALID' as status, " +
-                "    NULL as created, " +
-                "    NULL as last_ddl_time, " +
-                "    false as temporary, " +
-                "    false as generated, " +
-                "    false as secondary " +
+                "    pg_catalog.pg_get_userbyid(c.relowner) as owner_name, " +
+                "    c.reltuples as row_count, " +
+                "    c.relpages as page_count, " +
+                "    c.reloptions as storage_options, " +
+                "    c.relacl as privileges, " +
+                "    'OTHER' as relation_kind, " +
+                "    current_setting('server_version') as postgres_version, " +
+                "    now() as current_time " +
                 "FROM pg_class c " +
                 "JOIN pg_namespace n ON c.relnamespace = n.oid " +
                 "WHERE n.nspname = ? AND c.relname = ?";
     }
+
+
+    public Map<String, Object> getDetailedObjectInfo(String owner, String objectName, String objectType) {
+        Map<String, Object> details = new HashMap<>();
+
+        try {
+            // Get basic info
+            Map<String, Object> basicInfo = getBasicObjectInfo(owner, objectName, objectType);
+            details.putAll(basicInfo);
+
+            // Get column information
+            List<Map<String, Object>> columns = getColumnInfo(owner, objectName);
+            details.put("columns", columns);
+
+            // Get constraints
+            List<Map<String, Object>> constraints = getConstraints(owner, objectName);
+            details.put("constraints", constraints);
+
+            // Get indexes
+            List<Map<String, Object>> indexes = getIndexes(owner, objectName);
+            details.put("indexes", indexes);
+
+            // Get statistics
+            Map<String, Object> statistics = getTableStatistics(owner, objectName);
+            details.put("statistics", statistics);
+
+            // Get dependencies
+            List<Map<String, Object>> dependencies = getDependencies(owner, objectName);
+            details.put("dependencies", dependencies);
+
+            return details;
+
+        } catch (Exception e) {
+            log.error("Error getting detailed object info", e);
+            throw new RuntimeException("Failed to get detailed object info", e);
+        }
+    }
+
+    private List<Map<String, Object>> getColumnInfo(String owner, String objectName) {
+        String sql = "SELECT " +
+                "    a.attname as column_name, " +
+                "    pg_catalog.format_type(a.atttypid, a.atttypmod) as data_type, " +
+                "    a.attnotnull as is_nullable, " +
+                "    a.attnum as ordinal_position, " +
+                "    pg_catalog.col_description(a.attrelid, a.attnum) as column_comment, " +
+                "    a.atttypmod as character_maximum_length, " +
+                "    a.atttypid as data_type_id " +
+                "FROM pg_attribute a " +
+                "WHERE a.attrelid = (SELECT c.oid FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                "                    WHERE n.nspname = ? AND c.relname = ?) " +
+                "AND a.attnum > 0 " +
+                "AND NOT a.attisdropped " +
+                "ORDER BY a.attnum";
+
+        return getJdbcTemplate().queryForList(sql, owner, objectName);
+    }
+
+    private List<Map<String, Object>> getConstraints(String owner, String objectName) {
+        String sql = "SELECT " +
+                "    con.conname as constraint_name, " +
+                "    con.contype as constraint_type, " +
+                "    pg_catalog.pg_get_constraintdef(con.oid, true) as constraint_definition, " +
+                "    con.condeferrable as is_deferrable, " +
+                "    con.condeferred as is_deferred " +
+                "FROM pg_constraint con " +
+                "WHERE con.conrelid = (SELECT c.oid FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                "                      WHERE n.nspname = ? AND c.relname = ?)";
+
+        return getJdbcTemplate().queryForList(sql, owner, objectName);
+    }
+
+    private List<Map<String, Object>> getIndexes(String owner, String objectName) {
+        String sql = "SELECT " +
+                "    i.relname as index_name, " +
+                "    pg_catalog.pg_get_indexdef(idx.indexrelid) as index_definition, " +
+                "    idx.indisunique as is_unique, " +
+                "    idx.indisprimary as is_primary, " +
+                "    idx.indisclustered as is_clustered, " +
+                "    array_to_string(array_agg(a.attname), ', ') as columns " +
+                "FROM pg_index idx " +
+                "JOIN pg_class i ON idx.indexrelid = i.oid " +
+                "JOIN pg_class t ON idx.indrelid = t.oid " +
+                "JOIN pg_namespace n ON t.relnamespace = n.oid " +
+                "LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(idx.indkey) " +
+                "WHERE n.nspname = ? AND t.relname = ? " +
+                "GROUP BY i.relname, idx.indexrelid, idx.indisunique, idx.indisprimary, idx.indisclustered";
+
+        return getJdbcTemplate().queryForList(sql, owner, objectName);
+    }
+
+    private Map<String, Object> getTableStatistics(String owner, String objectName) {
+        String sql = "SELECT " +
+                "    c.reltuples as estimated_row_count, " +
+                "    c.relpages as page_count, " +
+                "    c.relallvisible as all_visible_pages, " +
+                "    pg_stat_get_last_vacuum_time(c.oid) as last_vacuum, " +
+                "    pg_stat_get_last_autovacuum_time(c.oid) as last_autovacuum, " +
+                "    pg_stat_get_last_analyze_time(c.oid) as last_analyze, " +
+                "    pg_stat_get_last_autoanalyze_time(c.oid) as last_autoanalyze, " +
+                "    pg_stat_get_live_tuples(c.oid) as live_tuples, " +
+                "    pg_stat_get_dead_tuples(c.oid) as dead_tuples, " +
+                "    pg_stat_get_mod_since_analyze(c.oid) as modifications_since_analyze " +
+                "FROM pg_class c " +
+                "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                "WHERE n.nspname = ? AND c.relname = ?";
+
+        return getJdbcTemplate().queryForMap(sql, owner, objectName);
+    }
+
+    private List<Map<String, Object>> getDependencies(String owner, String objectName) {
+        String sql = "SELECT " +
+                "    dep.refobjname as dependent_object, " +
+                "    dep.refobjnamespace as dependent_schema, " +
+                "    dep.refobjtype as dependent_type, " +
+                "    dep.deptype as dependency_type " +
+                "FROM pg_depend d " +
+                "JOIN pg_class c ON d.objid = c.oid " +
+                "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                "JOIN LATERAL (SELECT " +
+                "    pc.relname as refobjname, " +
+                "    pn.nspname as refobjnamespace, " +
+                "    CASE WHEN pc.relkind = 'r' THEN 'TABLE' " +
+                "         WHEN pc.relkind = 'v' THEN 'VIEW' " +
+                "         ELSE 'OTHER' END as refobjtype, " +
+                "    d.deptype " +
+                "    FROM pg_class pc " +
+                "    JOIN pg_namespace pn ON pc.relnamespace = pn.oid " +
+                "    WHERE pc.oid = d.refobjid) dep ON true " +
+                "WHERE n.nspname = ? AND c.relname = ? " +
+                "AND d.deptype IN ('n', 'a')";
+
+        return getJdbcTemplate().queryForList(sql, owner, objectName);
+    }
+
 
     private String getValidationSql(String objectType) {
         String relKind = getRelationKind(objectType);
@@ -692,7 +841,7 @@ public class PostgreSQLObjectRepository extends PostgreSQLRepository {
             empty.put("owner", owner);
             empty.put("object_name", objectName);
             empty.put("object_type", objectType);
-            empty.put("status", "UNKNOWN");
+            empty.put("status", "VALID");
             return empty;
         }
     }

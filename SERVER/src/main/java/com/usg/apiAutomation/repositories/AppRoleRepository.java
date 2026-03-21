@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories.postgres;
+package com.usg.apiAutomation.repositories;
 
 import com.usg.apiAutomation.entities.postgres.UserRoleEntity;
 import org.springframework.data.domain.Page;

@@ -1,9 +1,9 @@
-package com.usg.apiAutomation.utils.apiEngine.executor;
+package com.usg.apiAutomation.utils.apiEngine.executor.oracle;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
-import com.usg.apiAutomation.utils.apiEngine.oracle.OracleParameterValidatorUtil;
+import com.usg.apiAutomation.utils.apiEngine.OracleParameterValidatorUtil;
 import jakarta.validation.ValidationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Component
-public class TableExecutorUtil {
+public class OracleTableExecutorUtil {
 
     @Autowired
     @Qualifier("oracleJdbcTemplate")
@@ -27,7 +27,7 @@ public class TableExecutorUtil {
     private final OracleParameterValidatorUtil parameterValidator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public TableExecutorUtil(
+    public OracleTableExecutorUtil(
             OracleParameterValidatorUtil parameterValidator) {
         this.parameterValidator = parameterValidator;
     }
