@@ -272,15 +272,6 @@ const WelcomeHeader = ({ colors }) => {
           className="absolute inset-0 rounded-2xl blur-xl animate-pulse"
           style={{ background: `radial-gradient(circle, ${colors.primary}40, transparent 70%)` }}
         />
-        <div 
-          className="relative p-4 rounded-2xl"
-          style={{ 
-            background: `linear-gradient(135deg, ${colors.primary}20, ${colors.primary}05)`,
-            backdropFilter: 'blur(10px)'
-          }}
-        >
-          <Database size={56} style={{ color: colors.primary }} />
-        </div>
       </div>
       <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
         Schema Browser
@@ -587,33 +578,7 @@ const SchemaBrowserIndex = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10">
         {/* Welcome Header */}
         <WelcomeHeader colors={colors} />
-        
-        {/* Stats Overview */}
-        <div className="mb-12 max-w-2xl mx-auto">
-          <div className="grid grid-cols-3 gap-4">
-            <StatsCard 
-              icon={Database} 
-              label="Available Databases" 
-              value={availableCount}
-              color={colors.success}
-              colors={colors}
-            />
-            <StatsCard 
-              icon={TrendingUp} 
-              label="Total Schemas" 
-              value="8"
-              color={colors.primary}
-              colors={colors}
-            />
-            <StatsCard 
-              icon={Zap} 
-              label="Active Connections" 
-              value="3"
-              color={colors.warning}
-              colors={colors}
-            />
-          </div>
-        </div>
+      
         
         {/* Enhanced Search Bar */}
         <div className="mb-12 max-w-2xl mx-auto">
@@ -712,34 +677,6 @@ const SchemaBrowserIndex = ({
           </div>
         )}
         
-        {/* Enhanced Coming Soon Section */}
-        {filteredDatabases.some(db => !db.available) && searchQuery === '' && (
-          <div className="mt-16 pt-8">
-            <div className="text-center mb-6">
-              <h3 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>
-                More databases coming soon!
-              </h3>
-              <p className="text-sm" style={{ color: colors.textSecondary }}>
-                We're constantly adding support for new databases
-              </p>
-            </div>
-            <div className="flex flex-wrap justify-center gap-3">
-              {databases.filter(db => !db.available).map(db => (
-                <div
-                  key={db.id}
-                  className="group px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 hover:scale-105 cursor-default backdrop-blur-sm"
-                  style={{
-                    background: `${db.color}15`,
-                    color: db.color,
-                    border: `1px solid ${db.color}30`
-                  }}
-                >
-                  {db.title}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
       
       {/* Enhanced animation styles */}
