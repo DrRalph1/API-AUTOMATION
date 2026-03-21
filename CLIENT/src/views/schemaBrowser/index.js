@@ -36,7 +36,7 @@ const ComingSoonModal = ({ isOpen, onClose, database, colors, isDark }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+    <div className="fixed inset-0 z-1 flex items-center justify-center p-4 animate-fade-in">
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -409,7 +409,7 @@ const WelcomeHeader = ({ colors }) => {
           style={{ background: `radial-gradient(circle, ${colors.primary}40, transparent 70%)` }}
         />
       </div>
-      <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+      <h1 className="text-4xl font-bold mb-4 text-transparent" style={{ color: colors.textSecondary }}>
         Schema Browser
       </h1>
       <p className="text-lg max-w-2xl mx-auto" style={{ color: colors.textSecondary }}>
@@ -705,7 +705,7 @@ const SchemaBrowserIndex = ({
 
         {/* Enhanced Error Toast */}
         {error && (
-          <div className="fixed top-20 right-4 z-50 animate-slide-in">
+          <div className="fixed top-20 right-4 z- animate-slide-in">
             <div 
               className="flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl backdrop-blur-lg"
               style={{

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Database, Table, FileText, Code, Package, Hash, Link, Type,
-  Search, Filter, ChevronDown, ChevronRight, ChevronLeft,
+  Search, Filter, ChevronDown, ChevronRight, ChevronLeft, PlusCircle,
   MoreVertical, Settings, User, Moon, Sun, RefreshCw, Plus, X, Check,
   Eye, EyeOff, Copy, Download, Upload, Share2, Edit2, Trash2, Play,
   Save, Folder, FolderOpen, Server, Activity, BarChart, Terminal,
@@ -5630,16 +5630,24 @@ if (isProcedure) {
         backgroundColor: colors.header,
         borderColor: colors.border
       }}>
-        <span className="text-sm font-medium uppercase" style={{ color: colors.text }}>PostgreSQL Schema Browser</span>
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setShowApiModal(true)}
-            className="px-3 py-1.5 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 hover:opacity-90 font-medium"
-            style={{ color: 'white' }}
-          >
-            Generate New API
-          </button>
-        </div>
+        <span className="text-sm font-medium uppercase" style={{ color: colors.text }}>Oracle Schema Browser</span>
+       <div className="flex items-center gap-3">
+        <button 
+          onClick={() => setShowApiModal(true)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-gradient-to-r from-green-500 via-green-600 to-green-700 hover:opacity-90 font-medium text-white"
+        >
+          <Database size={16} />
+          Query Editor
+        </button>
+
+        <button 
+          onClick={() => setShowApiModal(true)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 hover:opacity-90 font-medium text-white"
+        >
+          <PlusCircle size={16} />
+          Generate New API
+        </button>
+      </div>
       </div>
 
       {/* Main Content */}
