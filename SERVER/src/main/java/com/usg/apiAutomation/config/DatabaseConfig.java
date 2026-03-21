@@ -8,8 +8,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.orm.jpa.EntityManagerFactoryBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
-import org.springframework.context.annotation.PropertySource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
@@ -59,7 +59,6 @@ public class DatabaseConfig {
         return new JdbcTemplate(dataSource);
     }
 
-    // ADDED: PostgreSQL JdbcTemplate with explicit naming
     @Bean(name = "postgresqlJdbcTemplate")
     public JdbcTemplate postgresqlJdbcTemplate(@Qualifier("postgresDataSource") DataSource dataSource) {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
@@ -115,8 +114,10 @@ public class DatabaseConfig {
     }
 
     // ==================== ORACLE DATASOURCE (SECONDARY) ====================
+    // ADDED @Lazy and initializationFailTimeout to prevent startup failures
 
     @Bean(name = "oracleDataSource")
+    @Lazy  // ADDED: This prevents initialization at startup
     @ConfigurationProperties(prefix = "spring.datasource.oracle.hikari")
     public DataSource oracleDataSource(
             @Value("${spring.datasource.oracle.driver-class-name}") String driverClassName,
@@ -138,12 +139,17 @@ public class DatabaseConfig {
         config.setConnectionTimeout(connectionTimeout);
         config.setPoolName("Oracle-Hikari-Pool");
         config.setConnectionTestQuery("SELECT 1 FROM DUAL");
-        config.setAutoCommit(true);  // ← CHANGE THIS TO true
+        config.setAutoCommit(true);
+
+        // ADDED: Prevents Hikari from failing fast during initialization
+        config.setInitializationFailTimeout(-1);  // Don't fail on initialization
+        config.setConnectionInitSql("SELECT 1 FROM DUAL");  // Test connection when first used
 
         return new HikariDataSource(config);
     }
 
     @Bean(name = "oracleJdbcTemplate")
+    @Lazy  // ADDED: Lazy initialization for JDBC template
     public JdbcTemplate oracleJdbcTemplate(@Qualifier("oracleDataSource") DataSource dataSource) {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.setFetchSize(100);
@@ -151,6 +157,7 @@ public class DatabaseConfig {
     }
 
     @Bean(name = "oracleEntityManagerFactory")
+    @Lazy  // ADDED: Lazy initialization for EntityManagerFactory
     public LocalContainerEntityManagerFactoryBean oracleEntityManagerFactory(
             EntityManagerFactoryBuilder builder,
             @Qualifier("oracleDataSource") DataSource dataSource,
@@ -174,6 +181,7 @@ public class DatabaseConfig {
     }
 
     @Bean(name = "oracleTransactionManager")
+    @Lazy  // ADDED: Lazy initialization for transaction manager
     public PlatformTransactionManager oracleTransactionManager(
             @Qualifier("oracleEntityManagerFactory") LocalContainerEntityManagerFactoryBean oracleEntityManagerFactory) {
         return new JpaTransactionManager(oracleEntityManagerFactory.getObject());

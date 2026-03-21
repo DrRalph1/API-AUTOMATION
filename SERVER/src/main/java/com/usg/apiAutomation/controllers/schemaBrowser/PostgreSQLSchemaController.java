@@ -4187,4 +4187,113 @@ public class PostgreSQLSchemaController {
     }
 
 
+
+
+    @GetMapping("/objects/{objectType}/{objectName}/used-by/summary")
+    @Operation(summary = "Get used by summary",
+            description = "Retrieves summary of objects that depend on this object",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "objectType", description = "Object type (TABLE, VIEW, PROCEDURE, FUNCTION, etc.)",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "objectName", description = "Object name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Object owner (optional)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getUsedBySummary(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting used by summary");
+        if (authValidation != null) {
+            loggerUtil.log("postgresqlSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting used by summary");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("postgresqlSchema", "RequestEntity ID: " + requestId +
+                    ", Getting used by summary for " + objectType + ": " + objectName);
+
+            Map<String, Object> result = postgresqlSchemaService.getUsedBySummary(
+                    requestId, req, performedBy, objectName, objectType, owner);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("postgresqlSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting used by summary: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting used by summary: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/objects/{objectType}/{objectName}/used-by/paginated")
+    @Operation(summary = "Get used by paginated",
+            description = "Retrieves paginated list of objects that depend on this object",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "objectType", description = "Object type (TABLE, VIEW, PROCEDURE, FUNCTION, etc.)",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "objectName", description = "Object name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Object owner (optional)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of items per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getUsedByPaginated(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting used by paginated");
+        if (authValidation != null) {
+            loggerUtil.log("postgresqlSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting used by paginated");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("postgresqlSchema", "RequestEntity ID: " + requestId +
+                    ", Getting used by paginated for " + objectType + ": " + objectName +
+                    ", page: " + page + ", pageSize: " + pageSize);
+
+            Map<String, Object> result = postgresqlSchemaService.getUsedByPaginated(
+                    requestId, req, performedBy, objectName, objectType, owner, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("postgresqlSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting used by paginated: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting used by paginated: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+
+
 }

@@ -728,16 +728,16 @@ const filterObjects = useCallback((objects, type) => {
           ))}
         </div>
 
-        {(loadingStates.procedures || loadingStates.views || loadingStates.functions || 
+        {/* {(loadingStates.procedures || loadingStates.views || loadingStates.functions || 
           loadingStates.tables || loadingStates.packages || loadingStates.sequences || 
           loadingStates.types || loadingStates.triggers) && !hasActiveFilter && (
           <div className="flex items-center justify-center gap-2 py-4 mt-2 border-t" style={{ borderColor: colors.border }}>
             <Loader size={14} className="animate-spin" style={{ color: colors.primary }} />
             <span className="text-xs" style={{ color: colors.textSecondary }}>Loading more objects...</span>
           </div>
-        )}
+        )} */}
 
-        {hasActiveFilter && !isFiltering && 
+        {/* {hasActiveFilter && !isFiltering && 
          Object.values(filteredResults || {}).reduce((acc, curr) => acc + (curr?.length || 0), 0) === 0 && (
           <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
             <Search size={32} style={{ color: colors.textTertiary, opacity: 0.5 }} />
@@ -753,9 +753,9 @@ const filterObjects = useCallback((objects, type) => {
               Clear Filters
             </button>
           </div>
-        )}
+        )} */}
 
-        {!hasActiveFilter && !isFiltering && 
+        {/* {!hasActiveFilter && !isFiltering && 
          !schemaObjects.procedures?.length && !schemaObjects.views?.length && 
          !schemaObjects.functions?.length && !schemaObjects.tables?.length && 
          !schemaObjects.packages?.length && !schemaObjects.sequences?.length && 
@@ -775,7 +775,7 @@ const filterObjects = useCallback((objects, type) => {
               Refresh
             </button>
           </div>
-        )}
+        )} */}
       </div>
 
       <div className="p-3 border-t shrink-0 text-[10px]" style={{ borderColor: colors.border, color: colors.textTertiary }}>

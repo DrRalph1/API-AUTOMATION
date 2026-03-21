@@ -1672,29 +1672,63 @@ useEffect(() => {
 
 // Fix 2: Update the determineActiveTab function to be more robust
 const determineActiveTab = useCallback(() => {
-  // Check each tab in order of preference
-  if (requestPathParams && requestPathParams.length > 0) {
+  // Priority 1: Check if there are path parameters with values
+  if (requestPathParams && requestPathParams.length > 0 && 
+      requestPathParams.some(p => p.enabled && p.key && p.key.trim() !== '')) {
+    console.log('📌 Active tab: path-params (has path params)');
     return 'path-params';
   }
-  if (requestParams && requestParams.length > 0) {
+  
+  // Priority 2: Check if there are query parameters
+  if (requestParams && requestParams.length > 0 && 
+      requestParams.some(p => p.enabled && p.key && p.key.trim() !== '')) {
+    console.log('📌 Active tab: query-params (has query params)');
     return 'query-params';
   }
-  // Check if body has actual content (not just empty object or whitespace)
+  
+  // Priority 3: Check if body has actual content (not just empty)
   if (requestBody && requestBody.trim() !== '' && 
       requestBody !== '{}' && 
       requestBody !== '{\n  \n}' && 
-      requestBody !== '{\n  \n}') {
+      requestBody !== '{\n  \n}' && 
+      requestBodyType !== 'none') {
+    console.log('📌 Active tab: body (has body content)');
     return 'body';
   }
-  if (requestHeaders && requestHeaders.length > 0) {
+  
+  // Priority 4: Check if there are headers
+  if (requestHeaders && requestHeaders.length > 0 && 
+      requestHeaders.some(h => h.enabled && h.key && h.key.trim() !== '')) {
+    console.log('📌 Active tab: headers (has headers)');
     return 'headers';
   }
-  if (authType && authType !== 'noauth') {
+  
+  // Priority 5: Check if auth is configured (not noauth)
+  if (authType && authType !== 'noauth' && 
+      ((authType === 'bearer' && authConfig.token) ||
+       (authType === 'basic' && authConfig.username && authConfig.password) ||
+       (authType === 'apikey' && (authConfig.key || authConfig.apiKeyHeader)) ||
+       (authType === 'oauth2' && authConfig.token))) {
+    console.log('📌 Active tab: authorization (has auth config)');
     return 'authorization';
   }
-  // Default to path params if nothing has content
+  
+  // Priority 6: Check if there are path params without values (just placeholders)
+  if (requestPathParams && requestPathParams.length > 0) {
+    console.log('📌 Active tab: path-params (has path param placeholders)');
+    return 'path-params';
+  }
+  
+  // Priority 7: Check if there are query params without values (just keys)
+  if (requestParams && requestParams.length > 0) {
+    console.log('📌 Active tab: query-params (has query param placeholders)');
+    return 'query-params';
+  }
+  
+  // Default to path-params if nothing else has content
+  console.log('📌 Active tab: path-params (default)');
   return 'path-params';
-}, [requestPathParams, requestParams, requestBody, requestHeaders, authType]);
+}, [requestPathParams, requestParams, requestBody, requestBodyType, requestHeaders, authType, authConfig]);
 
 // Fix 3: Update the URL update function to handle the URL correctly
 const updateUrlWithPathParam = (key, value) => {
@@ -1724,6 +1758,20 @@ const updateUrlWithPathParam = (key, value) => {
   });
 };
 
+
+useEffect(() => {
+  if (selectedRequest) {
+    // When a request is selected, determine which tab has content first
+    // But only if not currently loading
+    if (!loading.request) {
+      const activeTabToSet = determineActiveTab();
+      console.log('🎯 Setting active tab to:', activeTabToSet);
+      setActiveTab(activeTabToSet);
+    } else {
+      console.log('🎯 Request is loading, will set tab after loading completes');
+    }
+  }
+}, [selectedRequest, determineActiveTab, loading.request]);
 
 
 // Fix 4: Add effect to update URL when path params change (as a backup)
@@ -2484,7 +2532,6 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
             
             setAuthType('basic');
             setAuthConfig(apiProcessedConfig);
-            setActiveTab('authorization');
             
             if (apiProcessedConfig.username && apiProcessedConfig.password) {
               const credentials = btoa(`${apiProcessedConfig.username}:${apiProcessedConfig.password}`);
@@ -2834,19 +2881,28 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           }
         }
         
-        // Determine which tab should be active
-        const newActiveTab = determineActiveTab();
-        if (newActiveTab !== activeTab) {
+        // ============== CRITICAL FIX: Set active tab AFTER all data is loaded ==============
+        // Use setTimeout to ensure all React state updates have been processed
+        setTimeout(() => {
+          const newActiveTab = determineActiveTab();
+          console.log('🎯 [After API Load] Setting active tab to:', newActiveTab);
           setActiveTab(newActiveTab);
-        }
+        }, 100);
+        // ============== END FIX ==============
       }
     } catch (apiError) {
       console.error('Error fetching request details from API:', apiError);
     } finally {
-      if (isMounted.current) {
-        setLoading(prev => ({ ...prev, request: false }));
-      }
+      // Use setTimeout to ensure loading state is set after all other state updates
+      setTimeout(() => {
+        if (isMounted.current) {
+          setLoading(prev => ({ ...prev, request: false }));
+        }
+      }, 100);
     }
+    } else {
+    // If no API call was made (no authToken or no request id), set the active tab immediately
+    // Active tab will be set by useEffect after loading completes
   }
 }, [authToken, determineActiveTab, requestUrl, authType, authConfig, activeTab, requestBodyType, formData.length, urlEncodedData.length, requestHeaders]);
 
@@ -2958,134 +3014,141 @@ const cleanHeaders = (headers) => {
 };
 
   const fetchCollections = useCallback(async () => {
-    console.log('🔥 [Collections] fetchCollections called');
-    
-    if (!authToken) {
-      console.log('❌ No auth token available');
-      setError('Authentication required. Please login.');
-      setLoading(prev => ({ ...prev, initialLoad: false, collections: false }));
-      return;
-    }
+  console.log('🔥 [Collections] fetchCollections called');
+  
+  if (!authToken) {
+    console.log('❌ No auth token available');
+    setError('Authentication required. Please login.');
+    setLoading(prev => ({ ...prev, initialLoad: false, collections: false }));
+    return;
+  }
 
-    // Prevent concurrent fetches
-    if (fetchInProgressRef.current) {
-      console.log('⏭️ Fetch already in progress, skipping');
-      return;
+  // Prevent concurrent fetches
+  if (fetchInProgressRef.current) {
+    console.log('⏭️ Fetch already in progress, skipping');
+    return;
+  }
+
+  // Check if component is still mounted
+  if (!isMounted.current) {
+    console.log('Component unmounted, aborting fetch');
+    return;
+  }
+
+  fetchInProgressRef.current = true;
+  setLoading(prev => ({ ...prev, initialLoad: true, collections: true }));
+  setError(null);
+  console.log('📡 [Collections] Fetching from API...');
+
+  try {
+    const response = await getCollectionsList(authToken);
+    
+    // Check if component is still mounted
+    if (!isMounted.current) return;
+    
+    console.log('📦 [Collections] API response:', response);
+    
+    if (!response) {
+      throw new Error('No response from server');
     }
+    
+    const processedResponse = handleCollectionsResponse(response);
+    const collectionsData = extractCollectionsList(processedResponse);
+    
+    const basicCollections = transformCollectionsData(collectionsData);
+    
+    console.log('🔄 [Collections] Fetching details for each collection...');
+    const collectionsWithDetails = await Promise.all(
+      basicCollections.map(async (collection) => {
+        try {
+          const detailsResponse = await getCollectionDetails(authToken, collection.id);
+          
+          // Check if component is still mounted
+          if (!isMounted.current) return collection;
+          
+          const processedDetails = handleCollectionsResponse(detailsResponse);
+          const collectionDetails = extractCollectionDetails(processedDetails);
+          
+          console.log(`📁 [Collections] Got details for ${collection.name}:`, 
+            collectionDetails?.folders?.length || 0, 'folders');
+          
+          return {
+            ...collection,
+            folders: collectionDetails?.folders || collection.folders,
+            requestsCount: collectionDetails?.totalRequests || collection.requestsCount || 0,
+            folderCount: collectionDetails?.totalFolders || collection.folderCount || 0
+          };
+          
+        } catch (error) {
+          console.error(`❌ [Collections] Error fetching details for collection ${collection.id}:`, error);
+          return collection;
+        }
+      })
+    );
 
     // Check if component is still mounted
-    if (!isMounted.current) {
-      console.log('Component unmounted, aborting fetch');
-      return;
-    }
+    if (!isMounted.current) return;
 
-    fetchInProgressRef.current = true;
-    setLoading(prev => ({ ...prev, initialLoad: true, collections: true }));
-    setError(null);
-    console.log('📡 [Collections] Fetching from API...');
-
-    try {
-      const response = await getCollectionsList(authToken);
+    console.log('📊 [Collections] Final collections with details:', collectionsWithDetails);
+    
+    if (!collectionsWithDetails || collectionsWithDetails.length === 0) {
+      console.warn('⚠️ [Collections] No collections after fetching details');
+      setCollections([]);
+      setError('No collections found');
+    } else {
+      setCollections(collectionsWithDetails);
       
-      // Check if component is still mounted
-      if (!isMounted.current) return;
-      
-      console.log('📦 [Collections] API response:', response);
-      
-      if (!response) {
-        throw new Error('No response from server');
-      }
-      
-      const processedResponse = handleCollectionsResponse(response);
-      const collectionsData = extractCollectionsList(processedResponse);
-      
-      const basicCollections = transformCollectionsData(collectionsData);
-      
-      console.log('🔄 [Collections] Fetching details for each collection...');
-      const collectionsWithDetails = await Promise.all(
-        basicCollections.map(async (collection) => {
-          try {
-            const detailsResponse = await getCollectionDetails(authToken, collection.id);
-            
-            // Check if component is still mounted
-            if (!isMounted.current) return collection;
-            
-            const processedDetails = handleCollectionsResponse(detailsResponse);
-            const collectionDetails = extractCollectionDetails(processedDetails);
-            
-            console.log(`📁 [Collections] Got details for ${collection.name}:`, 
-              collectionDetails?.folders?.length || 0, 'folders');
-            
-            return {
-              ...collection,
-              folders: collectionDetails?.folders || collection.folders,
-              requestsCount: collectionDetails?.totalRequests || collection.requestsCount || 0,
-              folderCount: collectionDetails?.totalFolders || collection.folderCount || 0
-            };
-            
-          } catch (error) {
-            console.error(`❌ [Collections] Error fetching details for collection ${collection.id}:`, error);
-            return collection;
-          }
-        })
-      );
-
-      // Check if component is still mounted
-      if (!isMounted.current) return;
-
-      console.log('📊 [Collections] Final collections with details:', collectionsWithDetails);
-      
-      if (!collectionsWithDetails || collectionsWithDetails.length === 0) {
-        console.warn('⚠️ [Collections] No collections after fetching details');
-        setCollections([]);
-        setError('No collections found');
-      } else {
-        setCollections(collectionsWithDetails);
+      // ============== FIX: Auto-select first request with proper tab selection ==============
+      if (collectionsWithDetails.length > 0 && !selectedRequest) {
+        const firstCollection = collectionsWithDetails[0];
+        setCollections(prev => prev.map((col, idx) => 
+          idx === 0 ? { ...col, isExpanded: true } : col
+        ));
         
-        // Auto-select first request if available
-        if (collectionsWithDetails.length > 0 && !selectedRequest) {
-          const firstCollection = collectionsWithDetails[0];
-          setCollections(prev => prev.map((col, idx) => 
-            idx === 0 ? { ...col, isExpanded: true } : col
+        if (firstCollection.folders && firstCollection.folders.length > 0) {
+          const firstFolder = firstCollection.folders[0];
+          setCollections(prev => prev.map(col => 
+            col.id === firstCollection.id ? {
+              ...col,
+              folders: col.folders.map((folder, idx) => 
+                idx === 0 ? { ...folder, isExpanded: true } : folder
+              )
+            } : col
           ));
           
-          if (firstCollection.folders && firstCollection.folders.length > 0) {
-            const firstFolder = firstCollection.folders[0];
-            setCollections(prev => prev.map(col => 
-              col.id === firstCollection.id ? {
-                ...col,
-                folders: col.folders.map((folder, idx) => 
-                  idx === 0 ? { ...folder, isExpanded: true } : folder
-                )
-              } : col
-            ));
+          if (firstFolder.requests && firstFolder.requests.length > 0) {
+            const firstRequest = firstFolder.requests[0];
+            console.log('🎯 [Collections] Auto-selecting first request:', firstRequest.name);
             
-            if (firstFolder.requests && firstFolder.requests.length > 0) {
-              const firstRequest = firstFolder.requests[0];
-              console.log('🎯 [Collections] Auto-selecting first request:', firstRequest.name);
-              handleSelectRequest(firstRequest, firstCollection.id, firstFolder.id);
-            }
+            // IMPORTANT: We need to wait for the request to be fully loaded
+            // before we can determine which tab should be active
+            await handleSelectRequest(firstRequest, firstCollection.id, firstFolder.id);
+            
+            // The active tab will be set inside handleSelectRequest after all data is loaded
+            console.log('✅ [Collections] First request selected, tab will be set after data loads');
           }
         }
-        
-        console.log('✅ [Collections] Successfully loaded', collectionsWithDetails.length, 'collections');
       }
-
-    } catch (error) {
-      console.error('❌ [Collections] Error fetching collections:', error);
-      if (isMounted.current) {
-        setError(`Failed to load collections: ${error.message}`);
-        setCollections([]);
-        showToast(`Error loading collections: ${error.message}`, 'error');
-      }
-    } finally {
-      if (isMounted.current) {
-        setLoading(prev => ({ ...prev, initialLoad: false, collections: false }));
-      }
-      fetchInProgressRef.current = false;
-      console.log('🏁 [Collections] fetchCollections completed');
+      // ============== END FIX ==============
+      
+      console.log('✅ [Collections] Successfully loaded', collectionsWithDetails.length, 'collections');
     }
-  }, [authToken, selectedRequest, handleSelectRequest]);
+
+  } catch (error) {
+    console.error('❌ [Collections] Error fetching collections:', error);
+    if (isMounted.current) {
+      setError(`Failed to load collections: ${error.message}`);
+      setCollections([]);
+      showToast(`Error loading collections: ${error.message}`, 'error');
+    }
+  } finally {
+    if (isMounted.current) {
+      setLoading(prev => ({ ...prev, initialLoad: false, collections: false }));
+    }
+    fetchInProgressRef.current = false;
+    console.log('🏁 [Collections] fetchCollections completed');
+  }
+}, [authToken, selectedRequest, handleSelectRequest]);
 
   const fetchEnvironments = useCallback(async () => {
   console.log('🔥 [Environments] fetchEnvironments called');
@@ -3507,6 +3570,21 @@ const separateParamsAndHeaders = (items) => {
       setLoading(prev => ({ ...prev, import: false }));
     }
   }, [authToken, fetchCollections]);
+
+
+  useEffect(() => {
+  // This runs when the request is selected and loading is complete
+  if (selectedRequest && !loading.request && !loading.initialLoad) {
+    console.log('🎯 [After Load Complete] Setting active tab...');
+    
+    // Use setTimeout to ensure all state updates have been processed
+    setTimeout(() => {
+      const activeTabToSet = determineActiveTab();
+      console.log('🎯 [After Load Complete] Active tab set to:', activeTabToSet);
+      setActiveTab(activeTabToSet);
+    }, 100);
+  }
+}, [selectedRequest, loading.request, loading.initialLoad, determineActiveTab]);
 
 
   // Initialize data - with check for authToken changes
