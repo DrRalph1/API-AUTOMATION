@@ -27,10 +27,10 @@ public class PostgreSQLFunctionRepository extends PostgreSQLRepository {
                     "    'VALID' as status, " +
                     "    p.proowner as created, " +
                     "    p.proowner as last_ddl_time, " +
-                    "    (SELECT COUNT(*) FROM pg_proc_info WHERE proname = p.proname) as parameter_count, " +
+                    "    p.pronargs as parameter_count, " +
                     "    pg_get_function_result(p.oid) as return_type " +
-                    "FROM pg_proc p " +
-                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                    "FROM pg_catalog.pg_proc p " +
+                    "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                     "WHERE n.nspname = current_schema() " +
                     "AND p.prokind = 'f' " +
                     "ORDER BY p.proname";
@@ -53,7 +53,6 @@ public class PostgreSQLFunctionRepository extends PostgreSQLRepository {
                 result.add(transformed);
             }
 
-            // PostgreSQL doesn't have synonyms, so no synonym handling needed
             result.sort((a, b) -> ((String) a.get("name")).compareTo((String) b.get("name")));
             log.info("Returning {} total items (functions)", result.size());
 
@@ -76,9 +75,9 @@ public class PostgreSQLFunctionRepository extends PostgreSQLRepository {
                     "    NULL as target_name, " +
                     "    NULL as target_type, " +
                     "    NULL as db_link, " +
-                    "    (SELECT COUNT(*) FROM pg_proc_info WHERE proname = p.proname) as parameter_count " +
-                    "FROM pg_proc p " +
-                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                    "    p.pronargs as parameter_count " +
+                    "FROM pg_catalog.pg_proc p " +
+                    "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                     "WHERE n.nspname = current_schema() " +
                     "AND p.prokind = 'f' " +
                     "ORDER BY p.proname";
@@ -103,8 +102,6 @@ public class PostgreSQLFunctionRepository extends PostgreSQLRepository {
                 transformed.put("isSynonym", false);
                 result.add(transformed);
             }
-
-            // PostgreSQL doesn't have synonyms, so no synonym handling
 
             result.sort((a, b) -> {
                 String nameA = (String) a.get("name");
@@ -436,8 +433,8 @@ public class PostgreSQLFunctionRepository extends PostgreSQLRepository {
         try {
             int offset = (page - 1) * pageSize;
 
-            String countSql = "SELECT COUNT(*) FROM pg_proc p " +
-                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+            String countSql = "SELECT COUNT(*) FROM pg_catalog.pg_proc p " +
+                    "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                     "WHERE n.nspname = current_schema() AND p.prokind = 'f'";
             int totalCount = getJdbcTemplate().queryForObject(countSql, Integer.class);
 
@@ -446,8 +443,8 @@ public class PostgreSQLFunctionRepository extends PostgreSQLRepository {
                     "    'VALID' as status, " +
                     "    NULL as created, " +
                     "    NULL as last_ddl_time " +
-                    "FROM pg_proc p " +
-                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                    "FROM pg_catalog.pg_proc p " +
+                    "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                     "WHERE n.nspname = current_schema() AND p.prokind = 'f' " +
                     "ORDER BY p.proname " +
                     "OFFSET ? LIMIT ?";
@@ -480,10 +477,10 @@ public class PostgreSQLFunctionRepository extends PostgreSQLRepository {
                     "    false as temporary, " +
                     "    false as generated, " +
                     "    false as secondary, " +
-                    "    (SELECT COUNT(*) FROM pg_proc_info WHERE proname = p.proname) as parameter_count, " +
+                    "    p.pronargs as parameter_count, " +
                     "    pg_get_function_result(p.oid) as return_type " +
-                    "FROM pg_proc p " +
-                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                    "FROM pg_catalog.pg_proc p " +
+                    "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                     "WHERE n.nspname = ? AND p.prokind = 'f' " +
                     "ORDER BY p.proname";
 
@@ -500,8 +497,8 @@ public class PostgreSQLFunctionRepository extends PostgreSQLRepository {
         try {
             int offset = (page - 1) * pageSize;
 
-            String countSql = "SELECT COUNT(*) FROM pg_proc p " +
-                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+            String countSql = "SELECT COUNT(*) FROM pg_catalog.pg_proc p " +
+                    "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                     "WHERE n.nspname = current_schema() AND p.prokind = 'f'";
             int totalCount = getJdbcTemplate().queryForObject(countSql, Integer.class);
 
@@ -520,14 +517,14 @@ public class PostgreSQLFunctionRepository extends PostgreSQLRepository {
                             "    'VALID' as status, " +
                             "    NULL as created, " +
                             "    NULL as last_ddl_time, " +
-                            "    (SELECT COUNT(*) FROM pg_proc_info WHERE proname = p.proname) as parameter_count, " +
+                            "    p.pronargs as parameter_count, " +
                             "    pg_get_function_result(p.oid) as return_type, " +
                             "    NULL as target_owner, " +
                             "    NULL as target_name, " +
                             "    NULL as target_type, " +
                             "    NULL as db_link " +
-                            "FROM pg_proc p " +
-                            "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                            "FROM pg_catalog.pg_proc p " +
+                            "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                             "WHERE n.nspname = current_schema() AND p.prokind = 'f' " +
                             "ORDER BY p.proname " +
                             "OFFSET ? LIMIT ?";

@@ -2645,8 +2645,7 @@ useEffect(() => {
     }, 1000);
   }, [authToken, tabs, activeObject]);
 
-  // Render Properties Tab - Updated to handle tables, indexes, sequences, views, triggers, and types
-const renderPropertiesTab = () => {
+  const renderPropertiesTab = () => {
   const data = tabData.properties.data;
   const loading = tabData.properties.loading;
   
@@ -2707,6 +2706,12 @@ const renderPropertiesTab = () => {
                  data.objectType === 'TYPE' || 
                  data.object_type === 'TYPE' ||
                  (data.statistics?.message === 'Statistics not applicable for TYPE');
+  const isFunction = objectType === 'FUNCTION' || 
+                     data.objectType === 'FUNCTION' || 
+                     data.object_type === 'FUNCTION';
+  const isProcedure = objectType === 'PROCEDURE' || 
+                      data.objectType === 'PROCEDURE' || 
+                      data.object_type === 'PROCEDURE';
   
   // Basic properties common to all objects
   const properties = [
@@ -2717,6 +2722,301 @@ const renderPropertiesTab = () => {
     { label: 'Created', value: data.CREATED ? formatDateForDisplay(data.CREATED) : (data.created ? formatDateForDisplay(data.created) : null) },
     { label: 'Last Modified', value: data.LAST_DDL_TIME ? formatDateForDisplay(data.LAST_DDL_TIME) : (data.lastModified ? formatDateForDisplay(data.lastModified) : null) },
   ].filter(p => p.value !== null && p.value !== undefined && p.value !== '');
+  
+  // For FUNCTION objects
+  if (isFunction) {
+    // Add function-specific properties
+    if (data.parameter_count !== undefined && data.parameter_count !== null) {
+      properties.push({ label: 'Parameters', value: data.parameter_count });
+    }
+    if (data.return_type !== undefined && data.return_type !== null) {
+      properties.push({ label: 'Return Type', value: data.return_type });
+    }
+    if (data.language !== undefined && data.language !== null) {
+      properties.push({ label: 'Language', value: data.language });
+    }
+    if (data.security_definer !== undefined) {
+      properties.push({ label: 'Security Definer', value: data.security_definer ? 'Yes' : 'No' });
+    }
+    if (data.volatility !== undefined && data.volatility !== null) {
+      properties.push({ label: 'Volatility', value: data.volatility });
+    }
+    if (data.parallel_safety !== undefined && data.parallel_safety !== null) {
+      properties.push({ label: 'Parallel Safety', value: data.parallel_safety });
+    }
+    
+    return (
+      <div className="flex-1 overflow-auto p-4">
+        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+          <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Function Properties</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {properties.map((prop, i) => (
+              <div key={i} className="space-y-1">
+                <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
+                <div className="text-sm truncate" style={{ color: colors.text }}>
+                  {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {/* Function Signature */}
+          {data.signature && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Function Signature</h4>
+              <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+                <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                  {data.signature}
+                </pre>
+              </div>
+            </div>
+          )}
+          
+          {/* Function Definition */}
+          {data.definition && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Function Definition</h4>
+              <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+                <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                  {data.definition}
+                </pre>
+              </div>
+              <div className="mt-2 flex justify-end">
+                <button 
+                  className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                  style={{ backgroundColor: colors.hover, color: colors.text }}
+                  onClick={() => handleCopyToClipboard(data.definition, 'Function Definition')}
+                >
+                  <Copy size={12} className="inline mr-1" />
+                  Copy Definition
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Parameters Information */}
+          {data.parameters && data.parameters.length > 0 && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Parameters ({data.parameters.length})</h4>
+              <div className="overflow-auto max-h-96">
+                <table className="w-full">
+                  <thead style={{ backgroundColor: colors.tableHeader }}>
+                    <tr>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Name</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Mode</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Data Type</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Default</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.parameters.map((param, i) => (
+                      <tr key={param.parameter_name || i} style={{ 
+                        backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                        borderBottom: `1px solid ${colors.gridBorder}`
+                      }}>
+                        <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{param.ordinal_position || i + 1}</td>
+                        <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>
+                          {param.parameter_name || param.name || '-'}
+                        </td>
+                        <td className="p-2 text-xs">
+                          <span className={`px-2 py-0.5 rounded text-xs ${
+                            param.parameter_mode === 'IN' ? 'bg-blue-500/10 text-blue-400' :
+                            param.parameter_mode === 'OUT' ? 'bg-green-500/10 text-green-400' :
+                            param.parameter_mode === 'INOUT' ? 'bg-purple-500/10 text-purple-400' :
+                            'bg-gray-500/10 text-gray-400'
+                          }`}>
+                            {param.parameter_mode || 'IN'}
+                          </span>
+                        </td>
+                        <td className="p-2 text-xs" style={{ color: colors.text }}>{param.data_type || param.type}</td>
+                        <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{param.default_value || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          
+          {/* Dependencies */}
+          {data.dependencies && data.dependencies.length > 0 && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Dependencies ({data.dependencies.length})</h4>
+              <div className="space-y-1">
+                {data.dependencies.map((dep, i) => (
+                  <div key={i} className="text-xs" style={{ color: colors.textSecondary }}>
+                    • {dep}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Statistics note for functions */}
+          {data.statistics && data.statistics.message && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
+                <Info size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
+                {data.statistics.message}
+              </div>
+            </div>
+          )}
+          
+          {/* Function usage note */}
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
+              <Zap size={12} className="inline mr-1" style={{ color: colors.info }} />
+              This function returns a value and can be used in SQL expressions
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  // For PROCEDURE objects
+  if (isProcedure) {
+    // Add procedure-specific properties
+    if (data.parameter_count !== undefined && data.parameter_count !== null) {
+      properties.push({ label: 'Parameters', value: data.parameter_count });
+    }
+    if (data.language !== undefined && data.language !== null) {
+      properties.push({ label: 'Language', value: data.language });
+    }
+    if (data.security_definer !== undefined) {
+      properties.push({ label: 'Security Definer', value: data.security_definer ? 'Yes' : 'No' });
+    }
+    
+    return (
+      <div className="flex-1 overflow-auto p-4">
+        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+          <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Procedure Properties</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {properties.map((prop, i) => (
+              <div key={i} className="space-y-1">
+                <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
+                <div className="text-sm truncate" style={{ color: colors.text }}>
+                  {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {/* Procedure Signature */}
+          {data.signature && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Procedure Signature</h4>
+              <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+                <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                  {data.signature}
+                </pre>
+              </div>
+            </div>
+          )}
+          
+          {/* Procedure Definition */}
+          {data.definition && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Procedure Definition</h4>
+              <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+                <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                  {data.definition}
+                </pre>
+              </div>
+              <div className="mt-2 flex justify-end">
+                <button 
+                  className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                  style={{ backgroundColor: colors.hover, color: colors.text }}
+                  onClick={() => handleCopyToClipboard(data.definition, 'Procedure Definition')}
+                >
+                  <Copy size={12} className="inline mr-1" />
+                  Copy Definition
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Parameters Information */}
+          {data.parameters && data.parameters.length > 0 && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Parameters ({data.parameters.length})</h4>
+              <div className="overflow-auto max-h-96">
+                <table className="w-full">
+                  <thead style={{ backgroundColor: colors.tableHeader }}>
+                    <tr>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Name</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Mode</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Data Type</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Default</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.parameters.map((param, i) => (
+                      <tr key={param.parameter_name || i} style={{ 
+                        backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                        borderBottom: `1px solid ${colors.gridBorder}`
+                      }}>
+                        <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{param.ordinal_position || i + 1}</td>
+                        <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>
+                          {param.parameter_name || param.name || '-'}
+                        </td>
+                        <td className="p-2 text-xs">
+                          <span className={`px-2 py-0.5 rounded text-xs ${
+                            param.parameter_mode === 'IN' ? 'bg-blue-500/10 text-blue-400' :
+                            param.parameter_mode === 'OUT' ? 'bg-green-500/10 text-green-400' :
+                            param.parameter_mode === 'INOUT' ? 'bg-purple-500/10 text-purple-400' :
+                            'bg-gray-500/10 text-gray-400'
+                          }`}>
+                            {param.parameter_mode || 'IN'}
+                          </span>
+                        </td>
+                        <td className="p-2 text-xs" style={{ color: colors.text }}>{param.data_type || param.type}</td>
+                        <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{param.default_value || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          
+          {/* Dependencies */}
+          {data.dependencies && data.dependencies.length > 0 && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Dependencies ({data.dependencies.length})</h4>
+              <div className="space-y-1">
+                {data.dependencies.map((dep, i) => (
+                  <div key={i} className="text-xs" style={{ color: colors.textSecondary }}>
+                    • {dep}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Statistics note for procedures */}
+          {data.statistics && data.statistics.message && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
+                <Info size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
+                {data.statistics.message}
+              </div>
+            </div>
+          )}
+          
+          {/* Procedure usage note */}
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
+              <Zap size={12} className="inline mr-1" style={{ color: colors.warning }} />
+              This procedure performs operations but does not return a value
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
   
   // For TYPE objects
   if (isType) {
@@ -2818,7 +3118,7 @@ const renderPropertiesTab = () => {
                       <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Attribute Name</th>
                       <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Data Type</th>
                       <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Nullable</th>
-                     </tr>
+                    </tr>
                   </thead>
                   <tbody>
                     {data.columns.map((col, i) => (
@@ -3175,7 +3475,7 @@ const renderPropertiesTab = () => {
                       <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Column Name</th>
                       <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Data Type</th>
                       <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Nullable</th>
-                     </tr>
+                    </tr>
                   </thead>
                   <tbody>
                     {data.columns.map((col, i) => {
@@ -3598,7 +3898,7 @@ const renderPropertiesTab = () => {
     );
   }
   
-  // For TABLE objects and other regular objects (non-indexes, non-sequences, non-views, non-triggers, non-types)
+  // For TABLE objects and other regular objects (non-indexes, non-sequences, non-views, non-triggers, non-types, non-functions, non-procedures)
   const effectiveType = objectType || data.objectType || activeObject?.type;
   
   // Add additional properties based on object type for tables

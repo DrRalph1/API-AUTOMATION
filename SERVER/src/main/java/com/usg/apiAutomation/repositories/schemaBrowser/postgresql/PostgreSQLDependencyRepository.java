@@ -222,26 +222,57 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
                     "WHERE dep.refobjid = (SELECT oid FROM pg_class c " +
                     "                      JOIN pg_namespace n ON c.relnamespace = n.oid " +
                     "                      WHERE n.nspname = ? AND c.relname = ? " +
-                    "                      AND CASE WHEN ? = 'TABLE' THEN c.relkind = 'r' " +
-                    "                               WHEN ? = 'VIEW' THEN c.relkind = 'v' " +
-                    "                               WHEN ? = 'MATERIALIZED VIEW' THEN c.relkind = 'm' " +
-                    "                               WHEN ? = 'FUNCTION' THEN c.relkind = 'f' " +
-                    "                               WHEN ? = 'PROCEDURE' THEN c.relkind = 'p' END) " +
+                    "                      AND c.relkind = ?) " +
                     "AND dep.deptype IN ('n', 'a') " +
                     "AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
                     "GROUP BY c.relkind " +
                     "ORDER BY dependent_type";
 
-            List<Map<String, Object>> typeSummary = getJdbcTemplate().queryForList(
-                    sql, owner, objectName, objectType, objectType, objectType, objectType, objectType);
+            // Convert objectType to PostgreSQL relkind
+            String relKind = getRelationKind(objectType);
+
+            // If we can't determine the relation kind, try without type restriction
+            List<Map<String, Object>> typeSummary;
+            if (relKind != null) {
+                typeSummary = getJdbcTemplate().queryForList(
+                        sql, owner, objectName, relKind);
+            } else {
+                // Try without the type restriction
+                String fallbackSql = "SELECT " +
+                        "    CASE WHEN c.relkind = 'r' THEN 'TABLE' " +
+                        "         WHEN c.relkind = 'v' THEN 'VIEW' " +
+                        "         WHEN c.relkind = 'm' THEN 'MATERIALIZED VIEW' " +
+                        "         WHEN c.relkind = 'f' THEN 'FUNCTION' " +
+                        "         WHEN c.relkind = 'p' THEN 'PROCEDURE' " +
+                        "         WHEN c.relkind = 'S' THEN 'SEQUENCE' " +
+                        "         WHEN c.relkind = 'i' THEN 'INDEX' " +
+                        "         WHEN c.relkind = 't' THEN 'TOAST TABLE' " +
+                        "         ELSE 'OTHER' END as dependent_type, " +
+                        "    COUNT(DISTINCT dep.objid) as count, " +
+                        "    COUNT(DISTINCT CASE WHEN c.relkind IS NOT NULL THEN dep.objid END) as valid_count " +
+                        "FROM pg_depend dep " +
+                        "JOIN pg_class obj ON dep.objid = obj.oid " +
+                        "JOIN pg_namespace n ON obj.relnamespace = n.oid " +
+                        "WHERE dep.refobjid = (SELECT oid FROM pg_class c " +
+                        "                      JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                        "                      WHERE n.nspname = ? AND c.relname = ?) " +
+                        "AND dep.deptype IN ('n', 'a') " +
+                        "AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
+                        "GROUP BY c.relkind " +
+                        "ORDER BY dependent_type";
+
+                typeSummary = getJdbcTemplate().queryForList(fallbackSql, owner, objectName);
+            }
 
             summary.put("byType", typeSummary);
             summary.put("totalCount", typeSummary.stream()
                     .mapToInt(m -> ((Number) m.get("count")).intValue()).sum());
 
         } catch (Exception e) {
-            log.error("Error in getUsedBySummary for {}.{}: {}", owner, objectName, e.getMessage());
+            log.error("Error in getUsedBySummary for {}.{}: {}", owner, objectName, e.getMessage(), e);
             summary.put("error", e.getMessage());
+            summary.put("byType", new ArrayList<>());
+            summary.put("totalCount", 0);
         }
 
         return summary;

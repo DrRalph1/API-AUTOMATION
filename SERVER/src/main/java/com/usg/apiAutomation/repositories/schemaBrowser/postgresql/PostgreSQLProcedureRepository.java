@@ -26,13 +26,13 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
                     "    'VALID' as status, " +
                     "    NULL as created, " +
                     "    NULL as last_ddl_time, " +
-                    "    (SELECT COUNT(*) FROM pg_proc_info WHERE proname = p.proname) as parameter_count, " +
+                    "    p.pronargs as parameter_count, " +
                     "    NULL as target_owner, " +
                     "    NULL as target_name, " +
                     "    NULL as target_type, " +
                     "    NULL as db_link " +
-                    "FROM pg_proc p " +
-                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                    "FROM pg_catalog.pg_proc p " +
+                    "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                     "WHERE n.nspname = current_schema() " +
                     "AND p.prokind = 'p' " +
                     "ORDER BY p.proname";
@@ -57,7 +57,6 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
                 result.add(transformed);
             }
 
-            // PostgreSQL doesn't have synonyms
             result.sort((a, b) -> ((String) a.get("name")).compareTo((String) b.get("name")));
             log.info("Returning {} total items (procedures)", result.size());
 
@@ -73,18 +72,16 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
         try {
             int offset = (page - 1) * pageSize;
 
-            String procedureCountSql = "SELECT COUNT(*) FROM pg_proc p " +
-                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+            String procedureCountSql = "SELECT COUNT(*) FROM pg_catalog.pg_proc p " +
+                    "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                     "WHERE n.nspname = current_schema() AND p.prokind = 'p'";
-            int procedureCount = getJdbcTemplate().queryForObject(procedureCountSql, Integer.class);
-
-            int totalCount = procedureCount;
+            int totalCount = getJdbcTemplate().queryForObject(procedureCountSql, Integer.class);
 
             List<Map<String, Object>> allItems = new ArrayList<>();
 
-            if (procedureCount > 0 && offset < procedureCount) {
+            if (totalCount > 0 && offset < totalCount) {
                 int procOffset = offset;
-                int procLimit = Math.min(pageSize, procedureCount - procOffset);
+                int procLimit = Math.min(pageSize, totalCount - procOffset);
 
                 if (procLimit > 0) {
                     String procedureSql = "SELECT " +
@@ -93,13 +90,13 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
                             "    'VALID' as status, " +
                             "    NULL as created, " +
                             "    NULL as last_ddl_time, " +
-                            "    (SELECT COUNT(*) FROM pg_proc_info WHERE proname = p.proname) as parameter_count, " +
+                            "    p.pronargs as parameter_count, " +
                             "    NULL as target_owner, " +
                             "    NULL as target_name, " +
                             "    NULL as target_type, " +
                             "    NULL as db_link " +
-                            "FROM pg_proc p " +
-                            "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                            "FROM pg_catalog.pg_proc p " +
+                            "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                             "WHERE n.nspname = current_schema() AND p.prokind = 'p' " +
                             "ORDER BY p.proname " +
                             "OFFSET ? LIMIT ?";
@@ -290,8 +287,8 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
         try {
             int offset = (page - 1) * pageSize;
 
-            String procedureCountSql = "SELECT COUNT(*) FROM pg_proc p " +
-                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+            String procedureCountSql = "SELECT COUNT(*) FROM pg_catalog.pg_proc p " +
+                    "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                     "WHERE n.nspname = current_schema() AND p.prokind = 'p'";
             int totalCount = getJdbcTemplate().queryForObject(procedureCountSql, Integer.class);
 
@@ -312,8 +309,8 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
                             "    NULL as target_name, " +
                             "    NULL as target_type, " +
                             "    NULL as db_link " +
-                            "FROM pg_proc p " +
-                            "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                            "FROM pg_catalog.pg_proc p " +
+                            "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                             "WHERE n.nspname = current_schema() AND p.prokind = 'p' " +
                             "ORDER BY p.proname " +
                             "OFFSET ? LIMIT ?";
@@ -353,9 +350,9 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
                     "    false as temporary, " +
                     "    false as generated, " +
                     "    false as secondary, " +
-                    "    (SELECT COUNT(*) FROM pg_proc_info WHERE proname = p.proname) as parameter_count " +
-                    "FROM pg_proc p " +
-                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                    "    p.pronargs as parameter_count " +
+                    "FROM pg_catalog.pg_proc p " +
+                    "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                     "WHERE n.nspname = ? AND p.prokind = 'p' " +
                     "ORDER BY p.proname";
             return getJdbcTemplate().queryForList(sql, schemaName);
@@ -577,13 +574,13 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
                     "    false as temporary, " +
                     "    false as generated, " +
                     "    false as secondary, " +
-                    "    (SELECT COUNT(*) FROM pg_proc_info WHERE proname = p.proname) as parameter_count, " +
+                    "    p.pronargs as parameter_count, " +
                     "    NULL as target_owner, " +
                     "    NULL as target_name, " +
                     "    NULL as target_type, " +
                     "    NULL as db_link " +
-                    "FROM pg_proc p " +
-                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                    "FROM pg_catalog.pg_proc p " +
+                    "JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid " +
                     "WHERE n.nspname = current_schema() " +
                     "AND p.prokind = 'p' " +
                     "ORDER BY p.proname";
@@ -613,7 +610,6 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
                 result.add(transformed);
             }
 
-            // PostgreSQL doesn't have synonyms
             result.sort((a, b) -> {
                 String nameA = (String) a.get("name");
                 String nameB = (String) b.get("name");
