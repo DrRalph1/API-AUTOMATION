@@ -770,7 +770,10 @@ const SchemaBrowserIndex = ({
         <div className={`absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-gradient-to-br ${colors.gradient} blur-3xl animate-pulse delay-1000`}></div>
       </div>
       
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10" style={{ zoom: "0.9" }}>
+      <div 
+        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10" 
+        style={{ zoom: 0.9 }}
+      >
         {/* Welcome Header */}
         <WelcomeHeader colors={colors} />
       

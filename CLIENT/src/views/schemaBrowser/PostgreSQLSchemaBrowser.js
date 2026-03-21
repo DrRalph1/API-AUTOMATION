@@ -874,17 +874,40 @@ MobileBottomNav.displayName = 'MobileBottomNav';
 // ============================================================
 
 const UsedBySummary = ({ data, colors, onRefresh }) => {
-  if (!data || !data.byType || !Array.isArray(data.byType) || data.byType.length === 0) {
+  // Check if data exists and has byType array
+  const hasData = data && data.byType && Array.isArray(data.byType);
+  
+  // Show message when there are no dependencies
+  if (!hasData || data.byType.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-8 px-4">
-        <DependencyIcon size={48} style={{ color: colors.textTertiary, opacity: 0.5 }} />
-        <p className="text-sm mt-4" style={{ color: colors.textSecondary }}>
-          No dependency information available
-        </p>
+      <div className="p-4 border-b" style={{ borderColor: colors.border }}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium" style={{ color: colors.text }}>
+            Summary by Type
+          </h3>
+          <button
+            onClick={onRefresh}
+            className="p-1 rounded hover:bg-opacity-50 transition-colors"
+            style={{ color: colors.textSecondary }}
+            title="Refresh summary"
+          >
+            <RefreshCw size={14} />
+          </button>
+        </div>
+        <div className="flex flex-col items-center justify-center py-8 px-4">
+          <DependencyIcon size={48} style={{ color: colors.textTertiary, opacity: 0.5 }} />
+          <p className="text-sm mt-4" style={{ color: colors.textSecondary }}>
+            No dependencies found for this object
+          </p>
+          <p className="text-xs mt-2 text-center" style={{ color: colors.textTertiary }}>
+            This object is not referenced by any other database objects
+          </p>
+        </div>
       </div>
     );
   }
 
+  // Render the summary when there are dependencies
   return (
     <div className="p-4 border-b" style={{ borderColor: colors.border }}>
       <div className="flex items-center justify-between mb-3">
@@ -2320,65 +2343,76 @@ const loadData = useCallback(async (object, type, owner, params = {}) => {
 
   // Load Used By Data
   const loadUsedByData = useCallback(async (object, type, owner, page = 1, pageSize = 10) => {
-    if (!authToken || !object || !type) return;
+  if (!authToken || !object || !type) return;
+  
+  setTabData(prev => ({
+    ...prev,
+    'used by': { ...prev['used by'], loading: true }
+  }));
+  
+  try {
+    let effectiveType = type;
+    let effectiveName = object.name;
+    let effectiveOwner = owner;
+    
+    // Load paginated used by items
+    const response = await getUsedByPaginated(authToken, {
+      objectType: effectiveType,
+      objectName: effectiveName,
+      owner: effectiveOwner,
+      page,
+      pageSize
+    });
+    
+    const responseData = response?.data || {};
+    const items = responseData.items || [];
+    const totalCount = responseData.totalCount || items.length || 0;
+    const totalPages = Math.ceil(totalCount / pageSize) || 1;
+    
+    // Load summary - the response is already at the top level
+    let summary = null;
+    try {
+      const summaryResponse = await getUsedBySummary(authToken, {
+        objectType: effectiveType,
+        objectName: effectiveName,
+        owner: effectiveOwner
+      });
+      
+      // The summary data is directly in summaryResponse.data
+      // or summaryResponse itself depending on your API wrapper
+      if (summaryResponse && summaryResponse.data) {
+        summary = summaryResponse.data;
+      } else if (summaryResponse) {
+        summary = summaryResponse;
+      }
+      
+      console.log('Summary data loaded:', summary); // Debug log
+      
+    } catch (err) {
+      console.error('Error loading used by summary:', err);
+    }
     
     setTabData(prev => ({
       ...prev,
-      'used by': { ...prev['used by'], loading: true }
+      'used by': {
+        loading: false,
+        items,
+        totalCount,
+        totalPages,
+        page,
+        pageSize,
+        summary // This will be the summary data from your API
+      }
     }));
     
-    try {
-      let effectiveType = type;
-      let effectiveName = object.name;
-      let effectiveOwner = owner;
-      
-      const response = await getUsedByPaginated(authToken, {
-        objectType: effectiveType,
-        objectName: effectiveName,
-        owner: effectiveOwner,
-        page,
-        pageSize
-      });
-      
-      const responseData = response?.data || {};
-      const items = responseData.items || [];
-      const totalCount = responseData.totalCount || items.length || 0;
-      const totalPages = Math.ceil(totalCount / pageSize) || 1;
-      
-      let summary = null;
-      try {
-        const summaryResponse = await getUsedBySummary(authToken, {
-          objectType: effectiveType,
-          objectName: effectiveName,
-          owner: effectiveOwner
-        });
-        
-        summary = extractUsedBySummary(summaryResponse);
-      } catch (err) {
-        console.error('Error loading used by summary:', err);
-      }
-      
-      setTabData(prev => ({
-        ...prev,
-        'used by': {
-          loading: false,
-          items,
-          totalCount,
-          totalPages,
-          page,
-          pageSize,
-          summary
-        }
-      }));
-      
-    } catch (err) {
-      Logger.error('PostgreSQLSchemaBrowser', 'loadUsedByData', 'Error loading used by data', err);
-      setTabData(prev => ({
-        ...prev,
-        'used by': { ...prev['used by'], loading: false, items: [], summary: null }
-      }));
-    }
-  }, [authToken]);
+  } catch (err) {
+    Logger.error('PostgreSQLSchemaBrowser', 'loadUsedByData', 'Error loading used by data', err);
+    setTabData(prev => ({
+      ...prev,
+      'used by': { ...prev['used by'], loading: false, items: [], summary: null }
+    }));
+  }
+}, [authToken]);
 
 
 
@@ -2724,90 +2758,107 @@ useEffect(() => {
   ].filter(p => p.value !== null && p.value !== undefined && p.value !== '');
   
   // For FUNCTION objects
-  if (isFunction) {
-    // Add function-specific properties
-    if (data.parameter_count !== undefined && data.parameter_count !== null) {
-      properties.push({ label: 'Parameters', value: data.parameter_count });
-    }
-    if (data.return_type !== undefined && data.return_type !== null) {
-      properties.push({ label: 'Return Type', value: data.return_type });
-    }
-    if (data.language !== undefined && data.language !== null) {
-      properties.push({ label: 'Language', value: data.language });
-    }
-    if (data.security_definer !== undefined) {
-      properties.push({ label: 'Security Definer', value: data.security_definer ? 'Yes' : 'No' });
-    }
-    if (data.volatility !== undefined && data.volatility !== null) {
-      properties.push({ label: 'Volatility', value: data.volatility });
-    }
-    if (data.parallel_safety !== undefined && data.parallel_safety !== null) {
-      properties.push({ label: 'Parallel Safety', value: data.parallel_safety });
-    }
-    
-    return (
-      <div className="flex-1 overflow-auto p-4">
-        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
-          <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Function Properties</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {properties.map((prop, i) => (
-              <div key={i} className="space-y-1">
-                <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
-                <div className="text-sm truncate" style={{ color: colors.text }}>
-                  {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
-                </div>
+if (isFunction) {
+  // Add function-specific properties if they exist
+  if (data.parameter_count !== undefined && data.parameter_count !== null) {
+    properties.push({ label: 'Parameters', value: data.parameter_count });
+  }
+  if (data.return_type !== undefined && data.return_type !== null) {
+    properties.push({ label: 'Return Type', value: data.return_type });
+  }
+  if (data.language !== undefined && data.language !== null) {
+    properties.push({ label: 'Language', value: data.language });
+  }
+  if (data.security_definer !== undefined) {
+    properties.push({ label: 'Security Definer', value: data.security_definer ? 'Yes' : 'No' });
+  }
+  if (data.volatility !== undefined && data.volatility !== null) {
+    properties.push({ label: 'Volatility', value: data.volatility });
+  }
+  if (data.parallel_safety !== undefined && data.parallel_safety !== null) {
+    properties.push({ label: 'Parallel Safety', value: data.parallel_safety });
+  }
+  
+  // Check if we have any detailed information
+  const hasDetailedInfo = data.signature || data.definition || (data.parameters && data.parameters.length > 0);
+  
+  return (
+    <div className="flex-1 overflow-auto p-4">
+      <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+        <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Function Properties</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {properties.map((prop, i) => (
+            <div key={i} className="space-y-1">
+              <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
+              <div className="text-sm truncate" style={{ color: colors.text }}>
+                {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
               </div>
-            ))}
+            </div>
+          ))}
+        </div>
+        
+        {/* Show message when no detailed information is available */}
+        {!hasDetailedInfo && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="text-sm text-center p-4 rounded" style={{ 
+              backgroundColor: colors.hover, 
+              color: colors.textSecondary 
+            }}>
+              <Info size={16} className="inline mr-2" style={{ color: colors.info }} />
+              No detailed function information available. The function exists but additional metadata 
+              (definition, parameters, return type details, etc.) could not be retrieved.
+            </div>
           </div>
-          
-          {/* Function Signature */}
-          {data.signature && (
-            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
-              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Function Signature</h4>
-              <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
-                <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
-                  {data.signature}
-                </pre>
-              </div>
+        )}
+        
+        {/* Function Signature */}
+        {data.signature && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Function Signature</h4>
+            <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+              <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                {data.signature}
+              </pre>
             </div>
-          )}
-          
-          {/* Function Definition */}
-          {data.definition && (
-            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
-              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Function Definition</h4>
-              <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
-                <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
-                  {data.definition}
-                </pre>
-              </div>
-              <div className="mt-2 flex justify-end">
-                <button 
-                  className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
-                  style={{ backgroundColor: colors.hover, color: colors.text }}
-                  onClick={() => handleCopyToClipboard(data.definition, 'Function Definition')}
-                >
-                  <Copy size={12} className="inline mr-1" />
-                  Copy Definition
-                </button>
-              </div>
+          </div>
+        )}
+        
+        {/* Function Definition */}
+        {data.definition && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Function Definition</h4>
+            <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+              <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                {data.definition}
+              </pre>
             </div>
-          )}
-          
-          {/* Parameters Information */}
-          {data.parameters && data.parameters.length > 0 && (
-            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
-              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Parameters ({data.parameters.length})</h4>
-              <div className="overflow-auto max-h-96">
-                <table className="w-full">
-                  <thead style={{ backgroundColor: colors.tableHeader }}>
-                    <tr>
-                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
-                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Name</th>
-                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Mode</th>
-                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Data Type</th>
-                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Default</th>
-                    </tr>
+            <div className="mt-2 flex justify-end">
+              <button 
+                className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+                onClick={() => handleCopyToClipboard(data.definition, 'Function Definition')}
+              >
+                <Copy size={12} className="inline mr-1" />
+                Copy Definition
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {/* Parameters Information */}
+        {data.parameters && data.parameters.length > 0 && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Parameters ({data.parameters.length})</h4>
+            <div className="overflow-auto max-h-96">
+              <table className="w-full">
+                <thead style={{ backgroundColor: colors.tableHeader }}>
+                  <tr>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Name</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Mode</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Data Type</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Default</th>
+                  </tr>
                   </thead>
                   <tbody>
                     {data.parameters.map((param, i) => (
@@ -2854,20 +2905,38 @@ useEffect(() => {
           )}
           
           {/* Statistics note for functions */}
-          {data.statistics && data.statistics.message && (
+          {/* {data.statistics && data.statistics.message && (
             <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
               <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
                 <Info size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
                 {data.statistics.message}
               </div>
             </div>
-          )}
+          )} */}
           
           {/* Function usage note */}
-          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+          {/* <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
             <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
               <Zap size={12} className="inline mr-1" style={{ color: colors.info }} />
               This function returns a value and can be used in SQL expressions
+            </div>
+          </div> */}
+          
+          {/* Additional helpful information for the user */}
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="text-xs space-y-2" style={{ color: colors.textSecondary }}>
+              <div className="flex items-start gap-2">
+                <Info size={12} className="mt-0.5 flex-shrink-0" style={{ color: colors.info }} />
+                <span>To view the full function definition, you may need to check the DDL directly or ensure you have proper permissions to read function source code.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <Info size={12} className="mt-0.5 flex-shrink-0" style={{ color: colors.info }} />
+                <span>Function can be called in SELECT statements: <code className="px-1 py-0.5 rounded text-xs font-mono" style={{ backgroundColor: colors.codeBg }}>SELECT get_user_activity();</code></span>
+              </div>
+              <div className="flex items-start gap-2">
+                <Info size={12} className="mt-0.5 flex-shrink-0" style={{ color: colors.info }} />
+                <span>Return type: {data.return_type || 'unknown'} {data.return_type === 'TABLE' && '(set-returning function)'}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -2876,147 +2945,178 @@ useEffect(() => {
   }
   
   // For PROCEDURE objects
-  if (isProcedure) {
-    // Add procedure-specific properties
-    if (data.parameter_count !== undefined && data.parameter_count !== null) {
-      properties.push({ label: 'Parameters', value: data.parameter_count });
-    }
-    if (data.language !== undefined && data.language !== null) {
-      properties.push({ label: 'Language', value: data.language });
-    }
-    if (data.security_definer !== undefined) {
-      properties.push({ label: 'Security Definer', value: data.security_definer ? 'Yes' : 'No' });
-    }
-    
-    return (
-      <div className="flex-1 overflow-auto p-4">
-        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
-          <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Procedure Properties</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {properties.map((prop, i) => (
-              <div key={i} className="space-y-1">
-                <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
-                <div className="text-sm truncate" style={{ color: colors.text }}>
-                  {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
-                </div>
+if (isProcedure) {
+  // Add procedure-specific properties if they exist
+  if (data.parameter_count !== undefined && data.parameter_count !== null) {
+    properties.push({ label: 'Parameters', value: data.parameter_count });
+  }
+  if (data.language !== undefined && data.language !== null) {
+    properties.push({ label: 'Language', value: data.language });
+  }
+  if (data.security_definer !== undefined) {
+    properties.push({ label: 'Security Definer', value: data.security_definer ? 'Yes' : 'No' });
+  }
+  
+  // Check if we have any detailed information
+  const hasDetailedInfo = data.signature || data.definition || (data.parameters && data.parameters.length > 0);
+  
+  return (
+    <div className="flex-1 overflow-auto p-4">
+      <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+        <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Procedure Properties</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {properties.map((prop, i) => (
+            <div key={i} className="space-y-1">
+              <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
+              <div className="text-sm truncate" style={{ color: colors.text }}>
+                {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
               </div>
-            ))}
+            </div>
+          ))}
+        </div>
+        
+        {/* Show message when no detailed information is available */}
+        {!hasDetailedInfo && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="text-sm text-center p-4 rounded" style={{ 
+              backgroundColor: colors.hover, 
+              color: colors.textSecondary 
+            }}>
+              <Info size={16} className="inline mr-2" style={{ color: colors.info }} />
+              No detailed procedure information available. The procedure exists but additional metadata 
+              (definition, parameters, etc.) could not be retrieved.
+            </div>
           </div>
-          
-          {/* Procedure Signature */}
-          {data.signature && (
-            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
-              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Procedure Signature</h4>
-              <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
-                <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
-                  {data.signature}
-                </pre>
-              </div>
+        )}
+        
+        {/* Procedure Signature */}
+        {data.signature && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Procedure Signature</h4>
+            <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+              <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                {data.signature}
+              </pre>
             </div>
-          )}
-          
-          {/* Procedure Definition */}
-          {data.definition && (
-            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
-              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Procedure Definition</h4>
-              <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
-                <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
-                  {data.definition}
-                </pre>
-              </div>
-              <div className="mt-2 flex justify-end">
-                <button 
-                  className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
-                  style={{ backgroundColor: colors.hover, color: colors.text }}
-                  onClick={() => handleCopyToClipboard(data.definition, 'Procedure Definition')}
-                >
-                  <Copy size={12} className="inline mr-1" />
-                  Copy Definition
-                </button>
-              </div>
+          </div>
+        )}
+        
+        {/* Procedure Definition */}
+        {data.definition && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Procedure Definition</h4>
+            <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+              <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                {data.definition}
+              </pre>
             </div>
-          )}
-          
-          {/* Parameters Information */}
-          {data.parameters && data.parameters.length > 0 && (
-            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
-              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Parameters ({data.parameters.length})</h4>
-              <div className="overflow-auto max-h-96">
-                <table className="w-full">
-                  <thead style={{ backgroundColor: colors.tableHeader }}>
-                    <tr>
-                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
-                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Name</th>
-                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Mode</th>
-                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Data Type</th>
-                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Default</th>
+            <div className="mt-2 flex justify-end">
+              <button 
+                className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+                onClick={() => handleCopyToClipboard(data.definition, 'Procedure Definition')}
+              >
+                <Copy size={12} className="inline mr-1" />
+                Copy Definition
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {/* Parameters Information */}
+        {data.parameters && data.parameters.length > 0 && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Parameters ({data.parameters.length})</h4>
+            <div className="overflow-auto max-h-96">
+              <table className="w-full">
+                <thead style={{ backgroundColor: colors.tableHeader }}>
+                  <tr>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Name</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Mode</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Data Type</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Default</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.parameters.map((param, i) => (
+                    <tr key={param.parameter_name || i} style={{ 
+                      backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                      borderBottom: `1px solid ${colors.gridBorder}`
+                    }}>
+                      <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{param.ordinal_position || i + 1}</td>
+                      <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>
+                        {param.parameter_name || param.name || '-'}
+                      </td>
+                      <td className="p-2 text-xs">
+                        <span className={`px-2 py-0.5 rounded text-xs ${
+                          param.parameter_mode === 'IN' ? 'bg-blue-500/10 text-blue-400' :
+                          param.parameter_mode === 'OUT' ? 'bg-green-500/10 text-green-400' :
+                          param.parameter_mode === 'INOUT' ? 'bg-purple-500/10 text-purple-400' :
+                          'bg-gray-500/10 text-gray-400'
+                        }`}>
+                          {param.parameter_mode || 'IN'}
+                        </span>
+                      </td>
+                      <td className="p-2 text-xs" style={{ color: colors.text }}>{param.data_type || param.type}</td>
+                      <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{param.default_value || '-'}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {data.parameters.map((param, i) => (
-                      <tr key={param.parameter_name || i} style={{ 
-                        backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                        borderBottom: `1px solid ${colors.gridBorder}`
-                      }}>
-                        <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{param.ordinal_position || i + 1}</td>
-                        <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>
-                          {param.parameter_name || param.name || '-'}
-                        </td>
-                        <td className="p-2 text-xs">
-                          <span className={`px-2 py-0.5 rounded text-xs ${
-                            param.parameter_mode === 'IN' ? 'bg-blue-500/10 text-blue-400' :
-                            param.parameter_mode === 'OUT' ? 'bg-green-500/10 text-green-400' :
-                            param.parameter_mode === 'INOUT' ? 'bg-purple-500/10 text-purple-400' :
-                            'bg-gray-500/10 text-gray-400'
-                          }`}>
-                            {param.parameter_mode || 'IN'}
-                          </span>
-                        </td>
-                        <td className="p-2 text-xs" style={{ color: colors.text }}>{param.data_type || param.type}</td>
-                        <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{param.default_value || '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
-          
-          {/* Dependencies */}
-          {data.dependencies && data.dependencies.length > 0 && (
-            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
-              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Dependencies ({data.dependencies.length})</h4>
-              <div className="space-y-1">
-                {data.dependencies.map((dep, i) => (
-                  <div key={i} className="text-xs" style={{ color: colors.textSecondary }}>
-                    • {dep}
-                  </div>
-                ))}
-              </div>
+          </div>
+        )}
+        
+        {/* Dependencies */}
+        {data.dependencies && data.dependencies.length > 0 && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Dependencies ({data.dependencies.length})</h4>
+            <div className="space-y-1">
+              {data.dependencies.map((dep, i) => (
+                <div key={i} className="text-xs" style={{ color: colors.textSecondary }}>
+                  • {dep}
+                </div>
+              ))}
             </div>
-          )}
-          
-          {/* Statistics note for procedures */}
-          {data.statistics && data.statistics.message && (
-            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
-              <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
-                <Info size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
-                {data.statistics.message}
-              </div>
-            </div>
-          )}
-          
-          {/* Procedure usage note */}
+          </div>
+        )}
+        
+        {/* Statistics note for procedures */}
+        {/* {data.statistics && data.statistics.message && (
           <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
             <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
-              <Zap size={12} className="inline mr-1" style={{ color: colors.warning }} />
-              This procedure performs operations but does not return a value
+              <Info size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
+              {data.statistics.message}
+            </div>
+          </div>
+        )} */}
+        
+        {/* Procedure usage note */}
+        {/* <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+          <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
+            <Zap size={12} className="inline mr-1" style={{ color: colors.warning }} />
+            This procedure performs operations but does not return a value
+          </div>
+        </div> */}
+        
+        {/* Additional helpful information for the user */}
+        <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+          <div className="text-xs space-y-2" style={{ color: colors.textSecondary }}>
+            <div className="flex items-start gap-2">
+              <Info size={12} className="mt-0.5 flex-shrink-0" style={{ color: colors.info }} />
+              <span>To view the full procedure definition, you may need to check the DDL directly or ensure you have proper permissions to read procedure source code.</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <Info size={12} className="mt-0.5 flex-shrink-0" style={{ color: colors.info }} />
+              <span>Procedure execution requires CALL statement: <code className="px-1 py-0.5 rounded text-xs font-mono" style={{ backgroundColor: colors.codeBg }}>CALL sp_lock_user_account();</code></span>
             </div>
           </div>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
   
   // For TYPE objects
   if (isType) {

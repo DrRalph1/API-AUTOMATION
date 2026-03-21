@@ -171,31 +171,6 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
         return result;
     }
 
-    public int getUsedByCount(String objectName, String objectType, String owner) {
-        try {
-            if (owner == null || owner.isEmpty()) {
-                owner = getCurrentSchema();
-            }
-
-            String objectOid = getObjectOid(owner, objectName, objectType);
-            if (objectOid == null) {
-                return 0;
-            }
-
-            // Count objects that depend on this object
-            String sql = "SELECT COUNT(DISTINCT dep.objid) FROM pg_depend dep " +
-                    "WHERE dep.refobjid = ?::regclass::oid " +
-                    "AND dep.deptype IN ('n', 'a') " + // normal and auto dependencies
-                    "AND dep.objid != dep.refobjid"; // exclude self-references
-
-            return getJdbcTemplate().queryForObject(sql, Integer.class, objectOid);
-
-        } catch (Exception e) {
-            log.error("Error in getUsedByCount for {}.{}: {}", owner, objectName, e.getMessage());
-            return 0;
-        }
-    }
-
     public Map<String, Object> getUsedBySummary(String objectName, String objectType, String owner) {
         Map<String, Object> summary = new HashMap<>();
 
@@ -204,65 +179,42 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
                 owner = getCurrentSchema();
             }
 
+            // Get the OID and also verify the object exists
+            String objectOid = getObjectOid(owner, objectName, objectType);
+            if (objectOid == null) {
+                log.debug("Object {}.{} of type {} not found", owner, objectName, objectType);
+                summary.put("byType", new ArrayList<>());
+                summary.put("totalCount", 0);
+                return summary;
+            }
+
+            // Convert OID string to long for numeric comparison
+            long oidValue = Long.parseLong(objectOid);
+
+            // Corrected query - we need to join to pg_class c to get the dependent object's relkind
             String sql = "SELECT " +
-                    "    CASE WHEN c.relkind = 'r' THEN 'TABLE' " +
-                    "         WHEN c.relkind = 'v' THEN 'VIEW' " +
-                    "         WHEN c.relkind = 'm' THEN 'MATERIALIZED VIEW' " +
-                    "         WHEN c.relkind = 'f' THEN 'FUNCTION' " +
-                    "         WHEN c.relkind = 'p' THEN 'PROCEDURE' " +
-                    "         WHEN c.relkind = 'S' THEN 'SEQUENCE' " +
-                    "         WHEN c.relkind = 'i' THEN 'INDEX' " +
-                    "         WHEN c.relkind = 't' THEN 'TOAST TABLE' " +
+                    "    CASE WHEN dep_obj.relkind = 'r' THEN 'TABLE' " +
+                    "         WHEN dep_obj.relkind = 'v' THEN 'VIEW' " +
+                    "         WHEN dep_obj.relkind = 'm' THEN 'MATERIALIZED VIEW' " +
+                    "         WHEN dep_obj.relkind = 'f' THEN 'FUNCTION' " +
+                    "         WHEN dep_obj.relkind = 'p' THEN 'PROCEDURE' " +
+                    "         WHEN dep_obj.relkind = 'S' THEN 'SEQUENCE' " +
+                    "         WHEN dep_obj.relkind = 'i' THEN 'INDEX' " +
+                    "         WHEN dep_obj.relkind = 't' THEN 'TOAST TABLE' " +
                     "         ELSE 'OTHER' END as dependent_type, " +
                     "    COUNT(DISTINCT dep.objid) as count, " +
-                    "    COUNT(DISTINCT CASE WHEN c.relkind IS NOT NULL THEN dep.objid END) as valid_count " +
+                    "    COUNT(DISTINCT CASE WHEN dep_obj.relkind IS NOT NULL THEN dep.objid END) as valid_count " +
                     "FROM pg_depend dep " +
-                    "JOIN pg_class obj ON dep.objid = obj.oid " +
-                    "JOIN pg_namespace n ON obj.relnamespace = n.oid " +
-                    "WHERE dep.refobjid = (SELECT oid FROM pg_class c " +
-                    "                      JOIN pg_namespace n ON c.relnamespace = n.oid " +
-                    "                      WHERE n.nspname = ? AND c.relname = ? " +
-                    "                      AND c.relkind = ?) " +
+                    "JOIN pg_class dep_obj ON dep.objid = dep_obj.oid " +
+                    "JOIN pg_namespace n ON dep_obj.relnamespace = n.oid " +
+                    "WHERE dep.refobjid = ? " +
                     "AND dep.deptype IN ('n', 'a') " +
                     "AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
-                    "GROUP BY c.relkind " +
+                    "AND dep.objid != dep.refobjid " +
+                    "GROUP BY dep_obj.relkind " +
                     "ORDER BY dependent_type";
 
-            // Convert objectType to PostgreSQL relkind
-            String relKind = getRelationKind(objectType);
-
-            // If we can't determine the relation kind, try without type restriction
-            List<Map<String, Object>> typeSummary;
-            if (relKind != null) {
-                typeSummary = getJdbcTemplate().queryForList(
-                        sql, owner, objectName, relKind);
-            } else {
-                // Try without the type restriction
-                String fallbackSql = "SELECT " +
-                        "    CASE WHEN c.relkind = 'r' THEN 'TABLE' " +
-                        "         WHEN c.relkind = 'v' THEN 'VIEW' " +
-                        "         WHEN c.relkind = 'm' THEN 'MATERIALIZED VIEW' " +
-                        "         WHEN c.relkind = 'f' THEN 'FUNCTION' " +
-                        "         WHEN c.relkind = 'p' THEN 'PROCEDURE' " +
-                        "         WHEN c.relkind = 'S' THEN 'SEQUENCE' " +
-                        "         WHEN c.relkind = 'i' THEN 'INDEX' " +
-                        "         WHEN c.relkind = 't' THEN 'TOAST TABLE' " +
-                        "         ELSE 'OTHER' END as dependent_type, " +
-                        "    COUNT(DISTINCT dep.objid) as count, " +
-                        "    COUNT(DISTINCT CASE WHEN c.relkind IS NOT NULL THEN dep.objid END) as valid_count " +
-                        "FROM pg_depend dep " +
-                        "JOIN pg_class obj ON dep.objid = obj.oid " +
-                        "JOIN pg_namespace n ON obj.relnamespace = n.oid " +
-                        "WHERE dep.refobjid = (SELECT oid FROM pg_class c " +
-                        "                      JOIN pg_namespace n ON c.relnamespace = n.oid " +
-                        "                      WHERE n.nspname = ? AND c.relname = ?) " +
-                        "AND dep.deptype IN ('n', 'a') " +
-                        "AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
-                        "GROUP BY c.relkind " +
-                        "ORDER BY dependent_type";
-
-                typeSummary = getJdbcTemplate().queryForList(fallbackSql, owner, objectName);
-            }
+            List<Map<String, Object>> typeSummary = getJdbcTemplate().queryForList(sql, oidValue);
 
             summary.put("byType", typeSummary);
             summary.put("totalCount", typeSummary.stream()
@@ -278,9 +230,33 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
         return summary;
     }
 
-    // ============================================================
-    // PRIVATE HELPER METHODS
-    // ============================================================
+    public int getUsedByCount(String objectName, String objectType, String owner) {
+        try {
+            if (owner == null || owner.isEmpty()) {
+                owner = getCurrentSchema();
+            }
+
+            String objectOid = getObjectOid(owner, objectName, objectType);
+            if (objectOid == null) {
+                return 0;
+            }
+
+            long oidValue = Long.parseLong(objectOid);
+
+            // Count objects that depend on this object
+            String sql = "SELECT COUNT(DISTINCT dep.objid) FROM pg_depend dep " +
+                    "WHERE dep.refobjid = ? " +
+                    "AND dep.deptype IN ('n', 'a') " + // normal and auto dependencies
+                    "AND dep.objid != dep.refobjid"; // exclude self-references
+
+            Integer count = getJdbcTemplate().queryForObject(sql, Integer.class, oidValue);
+            return count != null ? count : 0;
+
+        } catch (Exception e) {
+            log.error("Error in getUsedByCount for {}.{}: {}", owner, objectName, e.getMessage());
+            return 0;
+        }
+    }
 
     private List<Map<String, Object>> getPostgreSQLDependencies(String objectName, String objectType, String owner) {
         try {
@@ -288,6 +264,8 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
             if (objectOid == null) {
                 return new ArrayList<>();
             }
+
+            long oidValue = Long.parseLong(objectOid);
 
             String sql = "SELECT DISTINCT " +
                     "    n.nspname as dependent_owner, " +
@@ -311,13 +289,13 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
                     "FROM pg_depend dep " +
                     "JOIN pg_class c ON dep.objid = c.oid " +
                     "JOIN pg_namespace n ON c.relnamespace = n.oid " +
-                    "WHERE dep.refobjid = ?::regclass::oid " +
+                    "WHERE dep.refobjid = ? " +
                     "AND dep.deptype IN ('n', 'a') " +
                     "AND dep.objid != dep.refobjid " +
                     "AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
                     "ORDER BY dependent_type, dependent_name";
 
-            return getJdbcTemplate().queryForList(sql, owner, objectName, objectType, objectOid);
+            return getJdbcTemplate().queryForList(sql, owner, objectName, objectType, oidValue);
 
         } catch (Exception e) {
             log.debug("Error getting PostgreSQL dependencies: {}", e.getMessage());
@@ -332,6 +310,8 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
             if (objectOid == null) {
                 return new ArrayList<>();
             }
+
+            long oidValue = Long.parseLong(objectOid);
 
             String sql = "SELECT * FROM ( " +
                     "  SELECT " +
@@ -357,13 +337,13 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
                     "  FROM pg_depend dep " +
                     "  JOIN pg_class c ON dep.objid = c.oid " +
                     "  JOIN pg_namespace n ON c.relnamespace = n.oid " +
-                    "  WHERE dep.refobjid = ?::regclass::oid " +
+                    "  WHERE dep.refobjid = ? " +
                     "  AND dep.deptype IN ('n', 'a') " +
                     "  AND dep.objid != dep.refobjid " +
                     "  AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
                     ") t WHERE rnum > ? AND rnum <= ?";
 
-            return getJdbcTemplate().queryForList(sql, owner, objectName, objectType, objectOid, offset, offset + pageSize);
+            return getJdbcTemplate().queryForList(sql, owner, objectName, objectType, oidValue, offset, offset + pageSize);
 
         } catch (Exception e) {
             log.debug("Error getting paginated PostgreSQL dependencies: {}", e.getMessage());
@@ -375,6 +355,14 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
         try {
             String objectOid = getObjectOid(owner, objectName, objectType);
             if (objectOid == null) {
+                return new ArrayList<>();
+            }
+
+            long oidValue;
+            try {
+                oidValue = Long.parseLong(objectOid);
+            } catch (NumberFormatException e) {
+                log.error("Invalid OID format for {}.{}: {}", owner, objectName, objectOid);
                 return new ArrayList<>();
             }
 
@@ -391,13 +379,13 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
                     "FROM pg_depend dep " +
                     "JOIN pg_class c ON dep.refobjid = c.oid " +
                     "JOIN pg_namespace n ON c.relnamespace = n.oid " +
-                    "WHERE dep.objid = ?::regclass::oid " +
+                    "WHERE dep.objid = ? " +
                     "AND dep.deptype IN ('n', 'a') " +
                     "AND dep.objid != dep.refobjid " +
                     "AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
                     "ORDER BY referenced_type, referenced_name";
 
-            return getJdbcTemplate().queryForList(sql, objectOid);
+            return getJdbcTemplate().queryForList(sql, oidValue);
 
         } catch (Exception e) {
             log.debug("Error getting objects this depends on: {}", e.getMessage());
@@ -409,6 +397,14 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
         try {
             String objectOid = getObjectOid(owner, objectName, objectType);
             if (objectOid == null) {
+                return new ArrayList<>();
+            }
+
+            long oidValue;
+            try {
+                oidValue = Long.parseLong(objectOid);
+            } catch (NumberFormatException e) {
+                log.error("Invalid OID format for {}.{}: {}", owner, objectName, objectOid);
                 return new ArrayList<>();
             }
 
@@ -426,19 +422,24 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
                     "FROM pg_depend dep " +
                     "JOIN pg_class c ON dep.objid = c.oid " +
                     "JOIN pg_namespace n ON c.relnamespace = n.oid " +
-                    "WHERE dep.refobjid = ?::regclass::oid " +
+                    "WHERE dep.refobjid = ? " +
                     "AND dep.deptype IN ('n', 'a') " +
                     "AND dep.objid != dep.refobjid " +
                     "AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
                     "ORDER BY dependent_type, dependent_name";
 
-            return getJdbcTemplate().queryForList(sql, objectOid);
+            return getJdbcTemplate().queryForList(sql, oidValue);
 
         } catch (Exception e) {
             log.debug("Error getting objects that depend on this: {}", e.getMessage());
             return new ArrayList<>();
         }
     }
+
+    // ============================================================
+    // PRIVATE HELPER METHODS
+    // ============================================================
+
 
     private String getObjectOid(String owner, String objectName, String objectType) {
         try {
