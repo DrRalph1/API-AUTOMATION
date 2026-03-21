@@ -6,8 +6,8 @@ import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ExecuteApiRequestDTO;
-import com.usg.apiAutomation.utils.apiEngine.OracleObjectResolverUtil;
-import com.usg.apiAutomation.utils.apiEngine.ParameterValidatorUtil;
+import com.usg.apiAutomation.utils.apiEngine.oracle.OracleObjectResolverUtil;
+import com.usg.apiAutomation.utils.apiEngine.oracle.OracleParameterValidatorUtil;
 import jakarta.validation.ValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +29,7 @@ public class ViewExecutorUtil {
     @Qualifier("oracleJdbcTemplate")
     private JdbcTemplate oracleJdbcTemplate;
 
-    private final ParameterValidatorUtil parameterValidator;
+    private final OracleParameterValidatorUtil parameterValidator;
     private final OracleObjectResolverUtil objectResolver;
     private final TableExecutorUtil tableExecutorUtil;
     private final ObjectMapper objectMapper = new ObjectMapper();

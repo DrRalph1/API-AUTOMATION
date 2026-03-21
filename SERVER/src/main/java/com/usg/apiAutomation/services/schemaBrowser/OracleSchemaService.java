@@ -1,6 +1,6 @@
 package com.usg.apiAutomation.services;
 
-import com.usg.apiAutomation.repositories.oracle.*;
+import com.usg.apiAutomation.repositories.schemaBrowser.oracle.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;

@@ -11,7 +11,7 @@ import {
   Minimize2, MoreHorizontal, Send, CheckCircle, XCircle, Info, Layers,
   Box, FolderPlus, FilePlus, GitBranch, Bold, Italic, Image, Table as TableIcon,
   ExternalLink, UploadCloud, DownloadCloud, ShieldCheck, LayoutDashboard,
-  BookOpen, Zap, History, Terminal as TerminalIcon,
+  BookOpen, Zap, History, Terminal as TerminalIcon, PlusCircle,
   ChevronsLeft, ChevronsRight, GripVertical, Circle, Dot, Type as TypeIcon,
   FileCode, ChevronsUp, ChevronsDown, AlertTriangle, Menu, Loader, Tag,
   GitBranch as DependencyIcon
@@ -43,7 +43,7 @@ import {
   getTriggerDetails,
   searchObjectsPaginated,
   extractPaginatedData,
-  handleSchemaBrowserResponse,
+  handleOracleSchemaBrowserResponse,
   extractTableData,
   extractDDL,
   formatBytes,
@@ -57,7 +57,7 @@ import {
   extractUsedBySummary,
   getSynonymTargetDetails,
   resolveSynonym
-} from "../controllers/OracleSchemaController.js";
+} from "../../controllers/OracleSchemaController.js";
 
 // Enhanced Logger - Disabled in production
 const Logger = {
@@ -1127,10 +1127,10 @@ const UsedByTab = ({
 };
 
 // ============================================================
-// Main SchemaBrowser Component - OPTIMIZED FOR SPEED
+// Main OracleSchemaBrowser Component - OPTIMIZED FOR SPEED
 // ============================================================
 
-const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
+const OracleSchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   // Colors
   const colors = useMemo(() => isDark ? {
     bg: 'rgb(1 14 35)',
@@ -1492,7 +1492,7 @@ useEffect(() => {
   };
 }, []);
 
-  // In SchemaBrowser component, update this useEffect
+  // In OracleSchemaBrowser component, update this useEffect
   useEffect(() => {
     setHasActiveFilter(searchPerformed);
     console.log('hasActiveFilter set to:', searchPerformed); // Add this for debugging
@@ -1575,14 +1575,14 @@ useEffect(() => {
         return null;
     }
 
-    Logger.info('SchemaBrowser', 'loadSchemaInfo', 'Loading schema info');
+    Logger.info('OracleSchemaBrowser', 'loadSchemaInfo', 'Loading schema info');
     setError(null);
 
     try {
         const response = await getCurrentSchemaInfo(authToken);
-        const data = handleSchemaBrowserResponse(response);
+        const data = handleOracleSchemaBrowserResponse(response);
         
-        Logger.info('SchemaBrowser', 'loadSchemaInfo', `Connected as: ${data.currentUser || data.currentSchema}`);
+        Logger.info('OracleSchemaBrowser', 'loadSchemaInfo', `Connected as: ${data.currentUser || data.currentSchema}`);
         
         setSchemaInfo(data);
         
@@ -1593,7 +1593,7 @@ useEffect(() => {
         return data;
 
     } catch (err) {
-        Logger.error('SchemaBrowser', 'loadSchemaInfo', 'Error', err);
+        Logger.error('OracleSchemaBrowser', 'loadSchemaInfo', 'Error', err);
         setError(`Failed to connect: ${err.message}`);
         return null;
     }
@@ -1605,7 +1605,7 @@ useEffect(() => {
 const loadInitialData = useCallback(async () => {
   if (!authToken) return;
   
-  Logger.info('SchemaBrowser', 'loadInitialData', 'Loading procedures first');
+  Logger.info('OracleSchemaBrowser', 'loadInitialData', 'Loading procedures first');
   
   try {
     // Load procedures first
@@ -1653,10 +1653,10 @@ const loadInitialData = useCallback(async () => {
       // DO NOT load properties here - let the useEffect handle it
     }
     
-    Logger.info('SchemaBrowser', 'loadInitialData', 'Initial data loaded with procedures');
+    Logger.info('OracleSchemaBrowser', 'loadInitialData', 'Initial data loaded with procedures');
     
   } catch (err) {
-    Logger.error('SchemaBrowser', 'loadInitialData', 'Error loading initial data', err);
+    Logger.error('OracleSchemaBrowser', 'loadInitialData', 'Error loading initial data', err);
     setError(`Failed to load initial data: ${err.message}`);
     setIsInitialLoad(false);
     setLoading(false);
@@ -1667,13 +1667,13 @@ const loadInitialData = useCallback(async () => {
   const loadProcedures = useCallback(async () => {
     if (!authToken) return null;
     
-    Logger.info('SchemaBrowser', 'loadProcedures', 'Loading procedures first');
+    Logger.info('OracleSchemaBrowser', 'loadProcedures', 'Loading procedures first');
     
     const cacheKey = `procedures_${authToken.substring(0, 10)}_page1`;
     const cached = objectCache.get(cacheKey);
     
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      Logger.debug('SchemaBrowser', 'loadProcedures', 'Loaded procedures from cache');
+      Logger.debug('OracleSchemaBrowser', 'loadProcedures', 'Loaded procedures from cache');
       setSchemaObjects(prev => ({ 
         ...prev, 
         procedures: cached.data.items,
@@ -1726,7 +1726,7 @@ const loadInitialData = useCallback(async () => {
       return { items, totalCount, totalPages };
       
     } catch (err) {
-      Logger.error('SchemaBrowser', 'loadProcedures', 'Error loading procedures', err);
+      Logger.error('OracleSchemaBrowser', 'loadProcedures', 'Error loading procedures', err);
       return null;
     } finally {
       setLoadingStates(prev => ({ ...prev, procedures: false }));
@@ -1738,7 +1738,7 @@ const loadInitialData = useCallback(async () => {
 const loadRemainingData = useCallback(async () => {
   if (!authToken) return;
   
-  Logger.info('SchemaBrowser', 'loadRemainingData', 'Loading remaining data in background');
+  Logger.info('OracleSchemaBrowser', 'loadRemainingData', 'Loading remaining data in background');
   
   // Wait a bit longer before loading remaining data
   await new Promise(resolve => setTimeout(resolve, 1000));
@@ -1757,7 +1757,7 @@ const loadRemainingData = useCallback(async () => {
   for (const { type, fetcher } of remainingTypes) {
     // Skip if there's an active filter
     if (hasActiveFilter) {
-      Logger.info('SchemaBrowser', 'loadRemainingData', `Skipping ${type} load due to active filter`);
+      Logger.info('OracleSchemaBrowser', 'loadRemainingData', `Skipping ${type} load due to active filter`);
       continue;
     }
     
@@ -1815,14 +1815,14 @@ const loadRemainingData = useCallback(async () => {
       });
       
     } catch (err) {
-      Logger.error('SchemaBrowser', 'loadRemainingData', `Error loading ${type}`, err);
+      Logger.error('OracleSchemaBrowser', 'loadRemainingData', `Error loading ${type}`, err);
     } finally {
       setLoadingStates(prev => ({ ...prev, [type]: false }));
     }
   }
   
   setIsLoadingSchemaObjects(false);
-  Logger.info('SchemaBrowser', 'loadRemainingData', 'All remaining data loaded');
+  Logger.info('OracleSchemaBrowser', 'loadRemainingData', 'All remaining data loaded');
   
 }, [authToken, hasActiveFilter]); // Added hasActiveFilter dependency
 
@@ -1835,7 +1835,7 @@ useEffect(() => {
     if (!authToken || initialized || initAttempted.current) return;
     
     initAttempted.current = true;
-    Logger.info('SchemaBrowser', 'initialize', 'Starting initialization');
+    Logger.info('OracleSchemaBrowser', 'initialize', 'Starting initialization');
     
     // Load initial data (procedures only)
     await loadInitialData();
@@ -1846,7 +1846,7 @@ useEffect(() => {
       // Load remaining data AFTER page is fully loaded
       setTimeout(() => {
         loadRemainingData().catch(err => {
-          Logger.error('SchemaBrowser', 'initialize', 'Error loading remaining data', err);
+          Logger.error('OracleSchemaBrowser', 'initialize', 'Error loading remaining data', err);
         });
       }, 1500);
     }
@@ -1866,11 +1866,11 @@ useEffect(() => {
     
     const requestKey = `${type}_page_${page}`;
     if (loadingStates[type] || ongoingRequests.has(requestKey)) {
-      Logger.debug('SchemaBrowser', 'loadObjectType', `Already loading ${type} page ${page}, skipping`);
+      Logger.debug('OracleSchemaBrowser', 'loadObjectType', `Already loading ${type} page ${page}, skipping`);
       return;
     }
     
-    Logger.info('SchemaBrowser', 'loadObjectType', `Loading ${type} page ${page} from API`);
+    Logger.info('OracleSchemaBrowser', 'loadObjectType', `Loading ${type} page ${page} from API`);
     
     setLoadingStates(prev => ({ ...prev, [type]: true }));
     ongoingRequests.set(requestKey, true);
@@ -1908,7 +1908,7 @@ useEffect(() => {
       
       const { items, totalCount, page: currentPage, totalPages } = extractItemsFromResponse(response);
       
-      Logger.info('SchemaBrowser', 'loadObjectType', `Loaded ${items.length} ${type} (page ${page})`);
+      Logger.info('OracleSchemaBrowser', 'loadObjectType', `Loaded ${items.length} ${type} (page ${page})`);
       
       setSchemaObjects(prev => {
         if (page === 1) {
@@ -1961,7 +1961,7 @@ useEffect(() => {
       });
       
     } catch (err) {
-      Logger.error('SchemaBrowser', 'loadObjectType', `Error loading ${type}`, err);
+      Logger.error('OracleSchemaBrowser', 'loadObjectType', `Error loading ${type}`, err);
     } finally {
       setLoadingStates(prev => ({ ...prev, [type]: false }));
       ongoingRequests.delete(requestKey);
@@ -2017,7 +2017,7 @@ const loadProperties = useCallback(async (object, type, owner) => {
     if (isSynonymFromObject || type === 'SYNONYM' || object.objectType === 'SYNONYM') {
       try {
         const synonymResponse = await resolveSynonym(authToken, { objectName: object.name, owner });
-        const synonymData = handleSchemaBrowserResponse(synonymResponse);
+        const synonymData = handleOracleSchemaBrowserResponse(synonymResponse);
         
         if (synonymData.valid && synonymData.targetName) {
           effectiveType = synonymData.targetType;
@@ -2050,7 +2050,7 @@ const loadProperties = useCallback(async (object, type, owner) => {
         objectName: effectiveName,
         owner: effectiveOwner
       });
-      data = handleSchemaBrowserResponse(response);
+      data = handleOracleSchemaBrowserResponse(response);
     } catch (err) {
       fetchError = err;
       console.warn(`Failed to fetch object info for ${effectiveType} ${effectiveName} from owner ${effectiveOwner}:`, err);
@@ -2106,7 +2106,7 @@ const loadProperties = useCallback(async (object, type, owner) => {
             owner: tryOwner
           });
           
-          const fallbackData = handleSchemaBrowserResponse(fallbackResponse);
+          const fallbackData = handleOracleSchemaBrowserResponse(fallbackResponse);
           
           if (fallbackData && (fallbackData.OBJECT_NAME || fallbackData.objectName)) {
             console.log(`Successfully found object with owner: ${tryOwner}`);
@@ -2151,7 +2151,7 @@ const loadProperties = useCallback(async (object, type, owner) => {
             owner: tryOwner
           });
           
-          const originalData = handleSchemaBrowserResponse(originalResponse);
+          const originalData = handleOracleSchemaBrowserResponse(originalResponse);
           
           if (originalData && (originalData.OBJECT_NAME || originalData.objectName)) {
             console.log(`Successfully found original object with owner: ${tryOwner}`);
@@ -2225,7 +2225,7 @@ const loadProperties = useCallback(async (object, type, owner) => {
     return enrichedData;
     
   } catch (err) {
-    Logger.error('SchemaBrowser', 'loadProperties', 'Error loading properties', err);
+    Logger.error('OracleSchemaBrowser', 'loadProperties', 'Error loading properties', err);
     
     if (isMounted) {
       setTabData(prev => ({
@@ -2410,7 +2410,7 @@ const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize =
       console.log(`Fetching type details for ${effectiveName}...`);
       
       const typeDetails = await getTypeDetails(authToken, effectiveName);
-      const typeData = handleSchemaBrowserResponse(typeDetails);
+      const typeData = handleOracleSchemaBrowserResponse(typeDetails);
       items = typeData.attributes || [];
       totalPages = 1;
       currentPage = 1;
@@ -2444,7 +2444,7 @@ const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize =
     
   } catch (err) {
     console.error('Error loading columns/parameters:', err);
-    Logger.error('SchemaBrowser', 'loadColumns', `Error loading ${effectiveType} columns/parameters`, err);
+    Logger.error('OracleSchemaBrowser', 'loadColumns', `Error loading ${effectiveType} columns/parameters`, err);
     setTabData(prev => ({
       ...prev,
       columns: { loading: false, data: [] }
@@ -2616,7 +2616,7 @@ const loadData = useCallback(async (object, type, owner, params = {}) => {
         owner: effectiveOwner
       });
       
-      const data = handleSchemaBrowserResponse(response);
+      const data = handleOracleSchemaBrowserResponse(response);
       
       objectCache.set(cacheKey, { data, timestamp: Date.now() });
       
@@ -2626,7 +2626,7 @@ const loadData = useCallback(async (object, type, owner, params = {}) => {
       }));
       
     } catch (err) {
-      Logger.error('SchemaBrowser', 'loadConstraints', 'Error loading constraints', err);
+      Logger.error('OracleSchemaBrowser', 'loadConstraints', 'Error loading constraints', err);
       setTabData(prev => ({
         ...prev,
         constraints: { loading: false, data: [] }
@@ -2687,7 +2687,7 @@ const loadData = useCallback(async (object, type, owner, params = {}) => {
       }));
       
     } catch (err) {
-      Logger.error('SchemaBrowser', 'loadDDL', 'Error loading DDL', err);
+      Logger.error('OracleSchemaBrowser', 'loadDDL', 'Error loading DDL', err);
       setTabData(prev => ({
         ...prev,
         ddl: { loading: false, data: '' },
@@ -2759,7 +2759,7 @@ const loadData = useCallback(async (object, type, owner, params = {}) => {
       }));
       
     } catch (err) {
-      Logger.error('SchemaBrowser', 'loadUsedByData', 'Error loading used by data', err);
+      Logger.error('OracleSchemaBrowser', 'loadUsedByData', 'Error loading used by data', err);
       setTabData(prev => ({
         ...prev,
         'used by': { ...prev['used by'], loading: false, items: [], summary: null }
@@ -2962,9 +2962,9 @@ useEffect(() => {
   const handleCopyToClipboard = useCallback(async (text, label = 'content') => {
     try {
       await navigator.clipboard.writeText(text);
-      Logger.info('SchemaBrowser', 'handleCopyToClipboard', `Copied ${label} to clipboard`);
+      Logger.info('OracleSchemaBrowser', 'handleCopyToClipboard', `Copied ${label} to clipboard`);
     } catch (error) {
-      Logger.error('SchemaBrowser', 'handleCopyToClipboard', `Failed to copy ${label}`, error);
+      Logger.error('OracleSchemaBrowser', 'handleCopyToClipboard', `Failed to copy ${label}`, error);
     }
   }, []);
 
@@ -2995,7 +2995,7 @@ const handleObjectSelect = useCallback(async (object, type) => {
   
   selectingRef.current = selectionKey;
   
-  Logger.info('SchemaBrowser', 'handleObjectSelect', `Selecting ${object.name} (${type})`);
+  Logger.info('OracleSchemaBrowser', 'handleObjectSelect', `Selecting ${object.name} (${type})`);
   
   const objectId = newObjectId;
   
@@ -3069,7 +3069,6 @@ const handleObjectSelect = useCallback(async (object, type) => {
 }, [authToken, tabs, activeObject]);
 
 // Updated renderPropertiesTab with better null checks
-// Replace your renderPropertiesTab function with this enhanced version
 const renderPropertiesTab = () => {
   const data = tabData.properties.data;
   const loading = tabData.properties.loading;
@@ -3108,20 +3107,33 @@ const renderPropertiesTab = () => {
     </div>
   );
 
-  // Check if this is a synonym (based on data or active object)
+  // Check if this is a synonym - IMPROVED CHECK
   const isSynonym = data.isSynonym === true || 
                     data.objectType === 'SYNONYM' || 
                     data.type === 'SYNONYM' ||
-                    activeObject?.isSynonym === true;
+                    activeObject?.isSynonym === true ||
+                    // Also check if we have target information
+                    (data.targetName && data.targetOwner && data.targetType);
   
   // Get the actual object type (resolve synonym if needed)
-  const effectiveType = isSynonym && data.synonymInfo?.targetType 
-    ? data.synonymInfo.targetType 
+  const effectiveType = isSynonym && data.targetType 
+    ? data.targetType 
     : (data.objectType || data.type || activeObject?.type);
   
+  // Build synonym info from available data (works for both payload structures)
+  const synonymInfo = {
+    synonymName: data.synonymName || data.synonym_name || data.originalName || data.objectName || activeObject?.name,
+    synonymOwner: data.synonymOwner || data.synonym_owner || data.owner || activeObject?.owner,
+    targetName: data.targetName || data.target_name || data.TARGET_NAME,
+    targetOwner: data.targetOwner || data.target_owner || data.TARGET_OWNER,
+    targetType: data.targetType || data.target_type || data.TARGET_TYPE,
+    targetStatus: data.targetStatus || data.target_status || data.TARGET_STATUS,
+    dbLink: data.dbLink || data.db_link,
+    valid: data.targetStatus === 'VALID' || data.targetStatus === 'ENABLED'
+  };
+  
   // For synonyms, show both synonym info AND target object info
-  if (isSynonym && data.synonymInfo) {
-    const synonymInfo = data.synonymInfo;
+  if (isSynonym && (synonymInfo.targetName || data.targetName)) {
     const targetType = synonymInfo.targetType || data.targetType || data.objectType;
     const targetName = synonymInfo.targetName || data.targetName || data.OBJECT_NAME;
     const targetOwner = synonymInfo.targetOwner || data.targetOwner || data.OWNER;
@@ -3135,9 +3147,9 @@ const renderPropertiesTab = () => {
             <div className="p-4 border-b" style={{ borderColor: colors.border }}>
               <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Synonym Information</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {renderPropertyItem("Synonym Name", data.synonymName || synonymInfo.synonymName || data.originalName || data.objectName || activeObject?.name)}
-                {renderPropertyItem("Synonym Owner", synonymInfo.synonymOwner || data.synonymOwner || data.owner || activeObject?.owner)}
-                {renderPropertyItem("DB Link", data.dbLink || synonymInfo.dbLink || '-')}
+                {renderPropertyItem("Synonym Name", synonymInfo.synonymName)}
+                {renderPropertyItem("Synonym Owner", synonymInfo.synonymOwner)}
+                {renderPropertyItem("DB Link", synonymInfo.dbLink || '-')}
                 {renderPropertyItem("Created", data.CREATED ? formatDateForDisplay(data.CREATED) : (data.created ? formatDateForDisplay(data.created) : '-'))}
                 {renderPropertyItem("Last Modified", data.LAST_DDL_TIME ? formatDateForDisplay(data.LAST_DDL_TIME) : (data.lastModified ? formatDateForDisplay(data.lastModified) : '-'))}
               </div>
@@ -3158,6 +3170,7 @@ const renderPropertiesTab = () => {
                 {data.dependentCount !== undefined && renderPropertyItem("Used By Count", data.dependentCount)}
                 {data.indexCount !== undefined && renderPropertyItem("Index Count", data.indexCount)}
                 {data.triggerCount !== undefined && renderPropertyItem("Trigger Count", data.triggerCount)}
+                {data.parameterCount !== undefined && renderPropertyItem("Parameters", data.parameterCount)}
               </div>
             </div>
             
@@ -3195,6 +3208,18 @@ const renderPropertiesTab = () => {
                 </div>
               </div>
             )}
+            
+            {/* Procedure/Function specific info */}
+            {(targetType === 'PROCEDURE' || targetType === 'FUNCTION') && data.parameterCount !== undefined && (
+              <div className="p-4 border-t" style={{ borderColor: colors.border }}>
+                <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Code Information</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {renderPropertyItem("Parameters", data.parameterCount)}
+                  {data.sourceLineCount !== undefined && renderPropertyItem("Source Lines", data.sourceLineCount)}
+                  {data.returnType !== undefined && renderPropertyItem("Return Type", data.returnType)}
+                </div>
+              </div>
+            )}
           </div>
           
           {/* View Definition - Only show if target is a view */}
@@ -3220,7 +3245,7 @@ const renderPropertiesTab = () => {
     );
   }
   
-  // For regular objects (non-synonyms)
+  // For regular objects (non-synonyms) - rest of the function remains the same
   const properties = [
     { label: 'Name', value: data.objectName || data.OBJECT_NAME || data.name || activeObject?.name },
     { label: 'Owner', value: data.owner || data.OWNER || activeObject?.owner },
@@ -3246,6 +3271,16 @@ const renderPropertiesTab = () => {
     }
     if (data.dependentCount !== undefined) {
       properties.push({ label: 'Used By Count', value: data.dependentCount });
+    }
+  } else if (effectiveType === 'PROCEDURE' || effectiveType === 'FUNCTION') {
+    if (data.parameterCount !== undefined) {
+      properties.push({ label: 'Parameters', value: data.parameterCount });
+    }
+    if (data.sourceLineCount !== undefined) {
+      properties.push({ label: 'Source Lines', value: data.sourceLineCount });
+    }
+    if (data.returnType !== undefined) {
+      properties.push({ label: 'Return Type', value: data.returnType });
     }
   }
   
@@ -3299,6 +3334,18 @@ const renderPropertiesTab = () => {
           </div>
         )}
         
+        {/* Procedure/Function specific info */}
+        {(effectiveType === 'PROCEDURE' || effectiveType === 'FUNCTION') && data.parameterCount !== undefined && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Code Information</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {renderPropertyItem("Parameters", data.parameterCount)}
+              {data.sourceLineCount !== undefined && renderPropertyItem("Source Lines", data.sourceLineCount)}
+              {data.returnType !== undefined && renderPropertyItem("Return Type", data.returnType)}
+            </div>
+          </div>
+        )}
+        
         {/* View Definition for Regular Views */}
         {(effectiveType === 'VIEW' || data.objectType === 'VIEW') && data.viewInfo && (
           <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
@@ -3342,11 +3389,11 @@ const searchObjects = useCallback(async (searchTerm, owner) => {
   searchAbortController.current = new AbortController();
   
   if (ongoingRequests.has(requestKey)) {
-    Logger.debug('SchemaBrowser', 'searchObjects', `Already searching for "${searchTerm}", skipping`);
+    Logger.debug('OracleSchemaBrowser', 'searchObjects', `Already searching for "${searchTerm}", skipping`);
     return;
   }
 
-  Logger.info('SchemaBrowser', 'searchObjects', `Searching for "${searchTerm}" in ${owner === 'ALL' ? 'all schemas' : owner}`);
+  Logger.info('OracleSchemaBrowser', 'searchObjects', `Searching for "${searchTerm}" in ${owner === 'ALL' ? 'all schemas' : owner}`);
 
   setIsFiltering(true);
   ongoingRequests.set(requestKey, true);
@@ -3565,15 +3612,15 @@ const searchObjects = useCallback(async (searchTerm, owner) => {
     }));
 
     const totalResults = Object.values(groupedResults).reduce((acc, curr) => acc + curr.length, 0);
-    Logger.info('SchemaBrowser', 'searchObjects', `Found ${totalResults} unique results`);
+    Logger.info('OracleSchemaBrowser', 'searchObjects', `Found ${totalResults} unique results`);
 
   } catch (err) {
     if (err.name === 'AbortError' || err.message === 'Aborted') {
-      Logger.info('SchemaBrowser', 'searchObjects', 'Search was cancelled');
+      Logger.info('OracleSchemaBrowser', 'searchObjects', 'Search was cancelled');
       setSearchPerformed(false);
       return;
     }
-    Logger.error('SchemaBrowser', 'searchObjects', 'Error searching objects', err);
+    Logger.error('OracleSchemaBrowser', 'searchObjects', 'Error searching objects', err);
     setFilteredResults({});
     setSearchPerformed(false);
   } finally {
@@ -3632,7 +3679,7 @@ const resetToDefaultState = useCallback(() => {
     triggers: false
   });
   
-  Logger.info('SchemaBrowser', 'resetToDefaultState', 'Reset to default state');
+  Logger.info('OracleSchemaBrowser', 'resetToDefaultState', 'Reset to default state');
 }, []);
 
 // Then use the same function for both:
@@ -3694,7 +3741,7 @@ const handleClearFilters = resetToDefaultState;
     
     setTimeout(() => {
       loadRemainingData().catch(err => {
-        Logger.error('SchemaBrowser', 'handleRefresh', 'Error loading remaining data', err);
+        Logger.error('OracleSchemaBrowser', 'handleRefresh', 'Error loading remaining data', err);
       });
     }, 300);
     
@@ -4768,16 +4815,24 @@ const renderTabContent = () => {
         backgroundColor: colors.header,
         borderColor: colors.border
       }}>
-        <span className="text-sm font-medium" style={{ color: colors.text }}>Schema Browser</span>
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setShowApiModal(true)}
-            className="px-3 py-1.5 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 hover:opacity-90 font-medium"
-            style={{ color: 'white' }}
-          >
-            Generate New API
-          </button>
-        </div>
+        <span className="text-sm font-medium uppercase" style={{ color: colors.text }}>Oracle Schema Browser</span>
+       <div className="flex items-center gap-3">
+        <button 
+          onClick={() => setShowApiModal(true)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-gradient-to-r from-green-500 via-green-600 to-green-700 hover:opacity-90 font-medium text-white"
+        >
+          <Database size={16} />
+          Query Editor
+        </button>
+
+        <button 
+          onClick={() => setShowApiModal(true)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 hover:opacity-90 font-medium text-white"
+        >
+          <PlusCircle size={16} />
+          Generate New API
+        </button>
+      </div>
       </div>
 
       {/* Main Content */}
@@ -4980,4 +5035,4 @@ const renderTabContent = () => {
   );
 };
 
-export default SchemaBrowser;
+export default OracleSchemaBrowser;

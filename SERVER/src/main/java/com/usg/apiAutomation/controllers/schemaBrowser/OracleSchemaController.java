@@ -1,13 +1,11 @@
 package com.usg.apiAutomation.controllers;
 
 import com.usg.apiAutomation.helpers.JwtHelper;
-import com.usg.apiAutomation.services.OracleSchemaService;
+import com.usg.apiAutomation.services.schemaBrowser.OracleSchemaService;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.enums.ParameterIn;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;

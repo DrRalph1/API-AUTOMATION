@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.utils.apiEngine;
+package com.usg.apiAutomation.utils.apiEngine.oracle;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
@@ -14,7 +14,7 @@ import java.util.*;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class ParameterGeneratorUtil {
+public class OracleParameterGeneratorUtil {
 
     @Autowired
     @Qualifier("oracleJdbcTemplate")

@@ -3,10 +3,11 @@ package com.usg.apiAutomation.helpers.apiEngine;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
-import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.*;
-import com.usg.apiAutomation.utils.LoggerUtil;
-import com.usg.apiAutomation.utils.apiEngine.*;
-import com.usg.apiAutomation.utils.apiEngine.executor.*;
+import com.usg.apiAutomation.repositories.apiGenerationEngine.*;
+import com.usg.apiAutomation.utils.apiEngine.executor.oracle.*;
+import com.usg.apiAutomation.utils.apiEngine.OracleObjectResolverUtil;
+import com.usg.apiAutomation.utils.apiEngine.OracleParameterGeneratorUtil;
+import com.usg.apiAutomation.utils.apiEngine.OracleParameterValidatorUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -35,7 +36,7 @@ public class ApiExecutionHelper {
             String requestId,  // This parameter might be renamed to generationRequestId for clarity
             GeneratedAPIRepository generatedAPIRepository,
             ObjectMapper objectMapper,
-            ParameterGeneratorUtil parameterGenerator,
+            OracleParameterGeneratorUtil parameterGenerator,
             ApiConversionHelper conversionHelper) {
 
         // Create main API entity
@@ -175,7 +176,7 @@ public class ApiExecutionHelper {
     public void recreateApiRelationships(GeneratedApiEntity api,
                                          GenerateApiRequestDTO request,
                                          ApiSourceObjectDTO sourceObjectDTO,
-                                         ParameterGeneratorUtil parameterGenerator,
+                                         OracleParameterGeneratorUtil parameterGenerator,
                                          ApiConversionHelper conversionHelper) {
 
         log.debug("Recreating relationships for API: {}", api.getId());
@@ -457,12 +458,12 @@ public class ApiExecutionHelper {
             ExecuteApiRequestDTO request,
             List<ApiParameterDTO> configuredParamDTOs,
             OracleObjectResolverUtil objectResolver,
-            ParameterValidatorUtil parameterValidator,
-            TableExecutorUtil tableExecutorUtil,
-            ViewExecutorUtil viewExecutorUtil,
-            ProcedureExecutorUtil procedureExecutorUtil,
-            FunctionExecutorUtil functionExecutorUtil,
-            PackageExecutorUtil packageExecutorUtil,
+            OracleParameterValidatorUtil parameterValidator,
+            OracleTableExecutorUtil oracleTableExecutorUtil,
+            OracleViewExecutorUtil oracleViewExecutorUtil,
+            OracleProcedureExecutorUtil oracleProcedureExecutorUtil,
+            OracleFunctionExecutorUtil oracleFunctionExecutorUtil,
+            OraclePackageExecutorUtil oraclePackageExecutorUtil,
             SampleResponseGenerator sampleGenerator) {
 
         if (sourceObject == null || api.getSchemaConfig() == null) {
@@ -511,7 +512,7 @@ public class ApiExecutionHelper {
 
         switch (targetType) {
             case "TABLE":
-                return executeTableOperation(tableExecutorUtil, targetName, targetOwner, operation,
+                return executeTableOperation(oracleTableExecutorUtil, targetName, targetOwner, operation,
                         consolidatedParams, api, configuredParamDTOs);
             case "VIEW":
                 // FIX: Ensure owner is properly resolved before passing to ViewExecutorUtil
@@ -523,23 +524,23 @@ public class ApiExecutionHelper {
                         viewOwner = sourceObject.getSchemaName();
                     }
                 }
-                return viewExecutorUtil.execute(api, sourceObject, targetName, viewOwner, request,
+                return oracleViewExecutorUtil.execute(api, sourceObject, targetName, viewOwner, request,
                         configuredParamDTOs);
             case "PROCEDURE":
-                return procedureExecutorUtil.execute(api, sourceObject, targetName, targetOwner, request,
+                return oracleProcedureExecutorUtil.execute(api, sourceObject, targetName, targetOwner, request,
                         configuredParamDTOs);
             case "FUNCTION":
-                return functionExecutorUtil.execute(api, sourceObject, targetName, targetOwner, request,
+                return oracleFunctionExecutorUtil.execute(api, sourceObject, targetName, targetOwner, request,
                         configuredParamDTOs);
             case "PACKAGE":
-                return packageExecutorUtil.execute(api, sourceObject, targetName, targetOwner, request, configuredParamDTOs);
+                return oraclePackageExecutorUtil.execute(api, sourceObject, targetName, targetOwner, request, configuredParamDTOs);
             default:
                 log.warn("Unknown target type: {}, generating sample response", targetType);
                 return sampleGenerator.generateSampleResponse(api);
         }
     }
 
-    private Object executeTableOperation(TableExecutorUtil tableExecutorUtil,
+    private Object executeTableOperation(OracleTableExecutorUtil oracleTableExecutorUtil,
                                          String tableName,
                                          String owner,
                                          String operation,
@@ -556,13 +557,13 @@ public class ApiExecutionHelper {
 
         switch (operation.toUpperCase()) {
             case "SELECT":
-                return tableExecutorUtil.executeSelect(tableName, owner, params, api, configuredParamDTOs);
+                return oracleTableExecutorUtil.executeSelect(tableName, owner, params, api, configuredParamDTOs);
             case "INSERT":
-                return tableExecutorUtil.executeInsert(tableName, owner, params, api, configuredParamDTOs);
+                return oracleTableExecutorUtil.executeInsert(tableName, owner, params, api, configuredParamDTOs);
             case "UPDATE":
-                return tableExecutorUtil.executeUpdate(tableName, owner, params, api, configuredParamDTOs);
+                return oracleTableExecutorUtil.executeUpdate(tableName, owner, params, api, configuredParamDTOs);
             case "DELETE":
-                return tableExecutorUtil.executeDelete(tableName, owner, params, api, configuredParamDTOs);
+                return oracleTableExecutorUtil.executeDelete(tableName, owner, params, api, configuredParamDTOs);
             default:
                 throw new RuntimeException("Unsupported table operation: " + operation);
         }

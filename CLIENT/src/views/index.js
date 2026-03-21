@@ -560,7 +560,9 @@ import APISecurity from "./APISecurity.js";
 import UserMangement from "./UserMangement.js";
 import Dashboard from "./Dashboard.js";
 import Documentation from "./Documentation.js";
-import SchemaBrowser from "./SchemaBrowser.js";
+import SchemaBrowser from "./schemaBrowser/index.js";
+import OracleSchemaBrowser from "./schemaBrowser/OracleSchemaBrowser.js";
+import PostgreSQLSchemaBrowser from "./schemaBrowser/PostgreSQLSchemaBrowser.js";
 import APIRequests from "./APIRequests.js";
 
 import ConnectionDetailsModal from "@/components/modals/ConnectionDetailsModal";
@@ -855,6 +857,8 @@ export default function EntryPage() {
   const navItems = [
     { id: "overview", label: "Dashboard", icon: LayoutDashboard, component: <Dashboard setActiveTab={setActiveTab} authToken={`Bearer ${token}`} /> },
     { id: "schema-browser", label: "Schema Browser", icon: DatabaseBackup, component: <SchemaBrowser authToken={`Bearer ${token}`} /> },
+    { id: "oracle-schema-browser", label: "Oracle Schema Browser", icon: DatabaseIcon, component: <OracleSchemaBrowser authToken={`Bearer ${token}`} /> },
+    { id: "postgresql-schema-browser", label: "PostgreSQL Schema Browser", icon: DatabaseIcon2, component: <PostgreSQLSchemaBrowser authToken={`Bearer ${token}`} /> },
     { id: "api-collections", label: "Collections", icon: FileCode, component: <Collections authToken={`Bearer ${token}`} /> },
     { id: "api-docs", label: "Documentation", icon: Activity, component: <Documentation authToken={`Bearer ${token}`} /> },
     { id: "code-base", label: "Code Base", icon: Code, component: <CodeBase authToken={`Bearer ${token}`} /> },
@@ -864,7 +868,7 @@ export default function EntryPage() {
   ];
 
   // Filter navigation items for UI display (hide user-mgt)
-  const visibleNavItems = navItems.filter(item => item.id !== "user-mgt" && item.id !== "security");
+  const visibleNavItems = navItems.filter(item => item.id !== "user-mgt" && item.id !== "security" && item.id !== "oracle-schema-browser" && item.id !== "postgresql-schema-browser");
 
   // Quick actions
   const quickActions = [

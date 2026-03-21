@@ -6,10 +6,9 @@ import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ExecuteApiRequestDTO;
-import com.usg.apiAutomation.utils.apiEngine.OracleObjectResolverUtil;
-import com.usg.apiAutomation.utils.apiEngine.ParameterValidatorUtil;
+import com.usg.apiAutomation.utils.apiEngine.oracle.OracleObjectResolverUtil;
+import com.usg.apiAutomation.utils.apiEngine.oracle.OracleParameterValidatorUtil;
 import jakarta.validation.ValidationException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -26,31 +25,32 @@ import java.util.regex.Pattern;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
-public class PackageExecutorUtil {
+public class FunctionExecutorUtil {
 
     @Autowired
     @Qualifier("oracleJdbcTemplate")
     private JdbcTemplate oracleJdbcTemplate;
 
-    private final ParameterValidatorUtil parameterValidatorUtil;
+    private final OracleParameterValidatorUtil oracleParameterValidatorUtil;
     private final OracleObjectResolverUtil objectResolver;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    public FunctionExecutorUtil(
+            OracleParameterValidatorUtil oracleParameterValidatorUtil,
+            OracleObjectResolverUtil objectResolver) {
+        this.oracleParameterValidatorUtil = oracleParameterValidatorUtil;
+        this.objectResolver = objectResolver;
+    }
+
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
-                          String packageName, String owner, ExecuteApiRequestDTO request,
+                          String functionName, String owner, ExecuteApiRequestDTO request,
                           List<ApiParameterDTO> configuredParamDTOs) {
 
-        if (sourceObject.getPackageProcedure() == null) {
-            throw new RuntimeException("Package procedure not specified");
-        }
-
         // ============ DEBUGGING: Log all input parameters ============
-        log.info("============ PACKAGE EXECUTOR DEBUG ============");
+        log.info("============ FUNCTION EXECUTOR DEBUG ============");
         log.info("API ID: {}", api != null ? api.getId() : "null");
         log.info("API Name: {}", api != null ? api.getApiName() : "null");
-        log.info("Package Name parameter: {}", packageName);
-        log.info("Package Procedure: {}", sourceObject.getPackageProcedure());
+        log.info("Function Name parameter: {}", functionName);
         log.info("Owner parameter: {}", owner);
         log.info("Request Body Type: {}", request.getBody() != null ? request.getBody().getClass().getName() : "null");
         log.info("Request Body: {}", request.getBody());
@@ -133,7 +133,7 @@ public class PackageExecutorUtil {
 
         // ============ PROCESS XML BODY ============
         if (isXmlBody && xmlBody != null) {
-            log.info("Processing XML body for package procedure execution");
+            log.info("Processing XML body for function execution");
 
             // FIRST: Try to extract individual parameters from XML
             Map<String, Object> extractedXmlParams = parseXmlParameters(xmlBody, configuredParamDTOs, apiToDbParamMap);
@@ -144,35 +144,33 @@ public class PackageExecutorUtil {
             }
 
             // Strategy 1: Look for explicit XML/CLOB parameter in API configuration
-            if (api.getParameters() != null) {
-                for (ApiParameterEntity param : api.getParameters()) {
-                    String paramKey = param.getKey().toLowerCase();
-                    String dbParamName = getDbParamName(param);
+            for (ApiParameterEntity param : api.getParameters()) {
+                String paramKey = param.getKey().toLowerCase();
+                String dbParamName = getDbParamName(param);
 
-                    // Check if this parameter is designed to accept XML
-                    boolean isXmlParameter = paramKey.contains("xml") ||
-                            paramKey.contains("clob") ||
-                            paramKey.contains("request") ||
-                            paramKey.contains("payload") ||
-                            paramKey.contains("body") ||
-                            paramKey.equals("_xml") ||
-                            paramKey.equals("xmldata");
+                // Check if this parameter is designed to accept XML
+                boolean isXmlParameter = paramKey.contains("xml") ||
+                        paramKey.contains("clob") ||
+                        paramKey.contains("request") ||
+                        paramKey.contains("payload") ||
+                        paramKey.contains("body") ||
+                        paramKey.equals("_xml") ||
+                        paramKey.equals("xmldata");
 
-                    if (isXmlParameter && dbParamName != null) {
-                        // Only add the full XML if we haven't already extracted individual params
-                        // and this parameter hasn't been set yet
-                        if (!dbParams.containsKey(dbParamName)) {
-                            dbParams.put(dbParamName, xmlBody);
-                            hasXmlParameter = true;
-                            log.info("✅ Mapped full XML body to database parameter: {}", dbParamName);
-                        }
-                        break;
+                if (isXmlParameter && dbParamName != null) {
+                    // Only add the full XML if we haven't already extracted individual params
+                    // and this parameter hasn't been set yet
+                    if (!dbParams.containsKey(dbParamName)) {
+                        dbParams.put(dbParamName, xmlBody);
+                        hasXmlParameter = true;
+                        log.info("✅ Mapped full XML body to database parameter: {}", dbParamName);
                     }
+                    break;
                 }
             }
 
             // Strategy 2: If no explicit XML parameter found, look for any CLOB/VARCHAR2 parameter
-            if (!hasXmlParameter && extractedXmlParams.isEmpty() && api.getParameters() != null) {
+            if (!hasXmlParameter && extractedXmlParams.isEmpty()) {
                 for (ApiParameterEntity param : api.getParameters()) {
                     String dbParamName = getDbParamName(param);
                     if (dbParamName != null) {
@@ -228,7 +226,7 @@ public class PackageExecutorUtil {
             for (Map.Entry<String, String> entry : request.getHeaders().entrySet()) {
                 String headerKey = entry.getKey().toLowerCase();
                 // Check if the API expects this header as a parameter
-                boolean headerIsParameter = api.getParameters() != null && api.getParameters().stream()
+                boolean headerIsParameter = api.getParameters().stream()
                         .anyMatch(p -> p.getKey().equalsIgnoreCase(headerKey));
 
                 if (headerIsParameter) {
@@ -259,107 +257,81 @@ public class PackageExecutorUtil {
         log.info("Final DB params prepared: {}", dbParams.keySet());
 
         // ============ OWNER RESOLUTION STRATEGY ============
-        String oracleOwner = resolveOwner(owner, sourceObject, api, packageName);
+        String oracleOwner = resolveOwner(owner, sourceObject, api, functionName);
 
         if (oracleOwner == null || oracleOwner.trim().isEmpty()) {
             log.error("❌ COULD NOT DETERMINE OWNER/SCHEMA NAME");
             throw new ValidationException(
-                    "Could not determine the database schema/owner for package: " + packageName
+                    "Could not determine the database schema/owner for function: " + functionName
             );
         }
 
         oracleOwner = oracleOwner.toUpperCase();
-        String oraclePackageName = packageName != null ? packageName.trim().toUpperCase() : null;
-        String oracleProcedureName = sourceObject.getPackageProcedure() != null ?
-                sourceObject.getPackageProcedure().trim().toUpperCase() : null;
+        String oracleFunctionName = functionName != null ? functionName.trim().toUpperCase() : null;
 
         log.info("Final resolved owner: {}", oracleOwner);
-        log.info("Final package name: {}", oraclePackageName);
-        log.info("Final procedure name: {}", oracleProcedureName);
+        log.info("Final function name: {}", oracleFunctionName);
 
         // ============ SYNONYM RESOLUTION ============
         // Resolve the actual target (handle synonyms)
-        String fullObjectName = oraclePackageName + "." + oracleProcedureName;
-        Map<String, Object> resolution = objectResolver.resolvePackageProcedureTarget(oracleOwner, oraclePackageName, oracleProcedureName);
+        Map<String, Object> resolution = objectResolver.resolveProcedureTarget(oracleOwner, oracleFunctionName);
         log.info("🔍 Synonym resolution result: {}", resolution);
 
         String actualOwner;
-        String actualPackageName;
-        String actualProcedureName;
+        String actualFunctionName;
 
         if (resolution != null && resolution.containsKey("isSynonym") && (boolean) resolution.get("isSynonym")) {
             actualOwner = (String) resolution.get("targetOwner");
-            actualPackageName = (String) resolution.get("targetPackageName");
-            actualProcedureName = (String) resolution.get("targetProcedureName");
-            log.info("✅ Resolved synonym to: {}.{}.{}", actualOwner, actualPackageName, actualProcedureName);
+            actualFunctionName = (String) resolution.get("targetName");
+            log.info("✅ Resolved synonym to: {}.{}", actualOwner, actualFunctionName);
         } else {
             actualOwner = oracleOwner;
-            actualPackageName = oraclePackageName;
-            actualProcedureName = oracleProcedureName;
-            log.info("ℹ️ Not a synonym, using original: {}.{}.{}", actualOwner, actualPackageName, actualProcedureName);
+            actualFunctionName = oracleFunctionName;
+            log.info("ℹ️ Not a synonym, using original: {}.{}", actualOwner, actualFunctionName);
         }
 
-        // ==================== VALIDATION STEP 1: Validate package procedure exists and is valid ====================
+        // ==================== VALIDATION STEP 1: Validate function exists and is valid ====================
         try {
-            objectResolver.validatePackageProcedure(actualOwner, actualPackageName, actualProcedureName);
-            log.info("✅ Package procedure {}.{}.{} exists and is valid", actualOwner, actualPackageName, actualProcedureName);
+            objectResolver.validateDatabaseObject(actualOwner, actualFunctionName, "FUNCTION");
+            log.info("✅ Function {}.{} exists and is valid", actualOwner, actualFunctionName);
         } catch (EmptyResultDataAccessException e) {
-            log.error("❌ Package procedure {}.{}.{} does not exist", actualOwner, actualPackageName, actualProcedureName);
+            log.error("❌ Function {}.{} does not exist", actualOwner, actualFunctionName);
             throw new ValidationException(
-                    String.format("The package procedure '%s.%s.%s' does not exist or you don't have access to it.",
-                            actualOwner, actualPackageName, actualProcedureName)
+                    String.format("The function '%s.%s' does not exist or you don't have access to it.",
+                            actualOwner, actualFunctionName)
             );
         }
 
         // ==================== VALIDATION STEP 2: Validate all parameters ====================
         try {
-            parameterValidatorUtil.validateParameters(configuredParamDTOs, dbParams, actualOwner,
-                    actualPackageName + "." + actualProcedureName);
-            log.info("✅ All parameter validations passed for package procedure {}.{}.{}",
-                    actualOwner, actualPackageName, actualProcedureName);
+            oracleParameterValidatorUtil.validateParameters(configuredParamDTOs, dbParams, actualOwner, actualFunctionName);
+            log.info("✅ All parameter validations passed for function {}.{}", actualOwner, actualFunctionName);
         } catch (ValidationException e) {
             log.error("❌ Parameter validation failed: {}", e.getMessage());
             throw e;
         }
 
-        // ==================== EXECUTE PACKAGE PROCEDURE ====================
         try {
             SimpleJdbcCall jdbcCall = new SimpleJdbcCall(oracleJdbcTemplate);
 
-            // Set schema and package/procedure names - use resolved actual owner
+            // Set schema and function name - use resolved actual owner
             if (actualOwner != null && !actualOwner.isEmpty()) {
                 jdbcCall = jdbcCall.withSchemaName(actualOwner);
                 log.info("Setting schema name to: {}", actualOwner);
             }
 
-            if (actualPackageName != null && !actualPackageName.isEmpty()) {
-                jdbcCall = jdbcCall.withCatalogName(actualPackageName);
-                log.info("Setting package name to: {}", actualPackageName);
-            }
+            jdbcCall = jdbcCall.withFunctionName(actualFunctionName);
+            log.info("Setting function name to: {}", actualFunctionName);
 
-            jdbcCall = jdbcCall.withProcedureName(actualProcedureName);
-            log.info("Setting procedure name to: {}", actualProcedureName);
+            log.info("Oracle will execute: {}.{}", actualOwner != null ? actualOwner : "<default schema>", actualFunctionName);
 
-            log.info("Oracle will execute: {}.{}.{}",
-                    actualOwner != null ? actualOwner : "<default schema>",
-                    actualPackageName, actualProcedureName);
-
-            // Declare output parameters from response mappings
+            // Declare return parameter from response mappings
             if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-                log.debug("Declaring {} OUT parameters from response mappings", api.getResponseMappings().size());
-
-                for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
-                    if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
-                        String outParamName = mapping.getDbColumn() != null && !mapping.getDbColumn().isEmpty() ?
-                                mapping.getDbColumn().toUpperCase() : "out_param_" + mapping.getPosition();
-
-                        int sqlType = mapToSqlType(mapping.getOracleType());
-                        jdbcCall.declareParameters(new SqlOutParameter(outParamName, sqlType));
-
-                        log.debug("Declared OUT parameter: {} of type: {} (SQL type: {})",
-                                outParamName, mapping.getOracleType(), sqlType);
-                    }
-                }
+                String returnType = api.getResponseMappings().get(0).getOracleType();
+                jdbcCall.declareParameters(
+                        new SqlOutParameter("return", mapToSqlType(returnType))
+                );
+                log.debug("Declared return parameter of type: {}", returnType);
             }
 
             // Declare input parameters from API parameters - use database parameter names
@@ -398,14 +370,13 @@ public class PackageExecutorUtil {
                 log.debug("Declared {} IN parameters", inParamCount);
             }
 
-            log.info("Executing SimpleJdbcCall for {}.{}.{} with {} input parameters",
-                    actualOwner != null ? actualOwner : "<default>",
-                    actualPackageName, actualProcedureName, dbParams.size());
+            log.info("Executing SimpleJdbcCall for {}.{} with {} input parameters",
+                    actualOwner != null ? actualOwner : "<default>", actualFunctionName, dbParams.size());
 
-            // Execute the package procedure with the mapped database parameters
+            // Execute the function with the mapped database parameters
             Map<String, Object> result = jdbcCall.execute(dbParams);
 
-            log.info("Package procedure executed successfully, result contains {} keys: {}", result.size(), result.keySet());
+            log.info("Function executed successfully, result contains {} keys: {}", result.size(), result.keySet());
 
             // Map the results to response data
             Map<String, Object> responseData = new HashMap<>();
@@ -448,36 +419,40 @@ public class PackageExecutorUtil {
                 responseData.putAll(result);
             }
 
-            log.info("============ PACKAGE PROCEDURE EXECUTION COMPLETE ============");
+            // Handle function return value specially
+            if (result.containsKey("return") && !responseData.containsKey("result")) {
+                responseData.put("result", result.get("return"));
+                log.info("Function returned value: {}", result.get("return"));
+            }
+
+            log.info("============ FUNCTION EXECUTION COMPLETE ============");
             return responseData.isEmpty() ? result : responseData;
 
         } catch (ValidationException e) {
-            // Re-throw validation exceptions
             throw e;
         } catch (Exception e) {
-            log.error("Error executing package procedure {}.{}.{}: {}",
-                    actualOwner != null ? actualOwner : "<default>",
-                    actualPackageName, actualProcedureName, e.getMessage(), e);
+            log.error("Error executing function {}.{}: {}",
+                    actualOwner != null ? actualOwner : "<default>", actualFunctionName, e.getMessage(), e);
 
             // Provide user-friendly error messages for common Oracle errors
             String errorMessage = e.getMessage();
             if (errorMessage != null) {
-                if (errorMessage.contains("ORA-06550") || errorMessage.contains("no procedure/function/signature")) {
+                if (errorMessage.contains("ORA-06550")) {
                     throw new ValidationException(
-                            String.format("Invalid parameters provided for package procedure '%s.%s.%s'. Please check parameter names and data types. Details: %s",
-                                    actualOwner, actualPackageName, actualProcedureName, extractOracleError(errorMessage))
+                            String.format("Invalid parameters provided for function '%s.%s'. Please check parameter names and data types. Details: %s",
+                                    actualOwner, actualFunctionName, extractOracleError(errorMessage))
                     );
                 }
                 if (errorMessage.contains("ORA-00942")) {
                     throw new ValidationException(
-                            String.format("Table or view referenced in package procedure '%s.%s.%s' could not be found. Details: %s",
-                                    actualOwner, actualPackageName, actualProcedureName, extractOracleError(errorMessage))
+                            String.format("Table or view referenced in function '%s.%s' could not be found. Details: %s",
+                                    actualOwner, actualFunctionName, extractOracleError(errorMessage))
                     );
                 }
                 if (errorMessage.contains("ORA-01031")) {
                     throw new ValidationException(
-                            String.format("Insufficient privileges to execute package procedure '%s.%s.%s'. Details: %s",
-                                    actualOwner, actualPackageName, actualProcedureName, extractOracleError(errorMessage))
+                            String.format("Insufficient privileges to execute function '%s.%s'. Details: %s",
+                                    actualOwner, actualFunctionName, extractOracleError(errorMessage))
                     );
                 }
                 if (errorMessage.contains("ORA-01400")) {
@@ -524,7 +499,7 @@ public class PackageExecutorUtil {
     /**
      * Helper method to resolve owner from multiple sources
      */
-    private String resolveOwner(String owner, ApiSourceObjectDTO sourceObject, GeneratedApiEntity api, String packageName) {
+    private String resolveOwner(String owner, ApiSourceObjectDTO sourceObject, GeneratedApiEntity api, String functionName) {
         // Strategy 1: Use the owner parameter passed to the method
         if (owner != null && !owner.trim().isEmpty()) {
             log.info("Strategy 1 - Using owner parameter: {}", owner);
@@ -592,47 +567,47 @@ public class PackageExecutorUtil {
             log.warn("Could not get current schema: {}", e.getMessage());
         }
 
-        // Strategy 6: Try to resolve the package from all accessible schemas
+        // Strategy 6: Try to resolve the function from all accessible schemas
         try {
-            log.info("Strategy 6 - Attempting to locate package '{}' in accessible schemas", packageName);
+            log.info("Strategy 6 - Attempting to locate function '{}' in accessible schemas", functionName);
 
-            // Query to find the package in any schema the current user has access to
-            String findPackageSql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND OBJECT_TYPE = 'PACKAGE' AND ROWNUM = 1";
-            List<String> owners = oracleJdbcTemplate.queryForList(findPackageSql, String.class, packageName);
+            // Query to find the function in any schema the current user has access to
+            String findFunctionSql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND OBJECT_TYPE = 'FUNCTION' AND ROWNUM = 1";
+            List<String> owners = oracleJdbcTemplate.queryForList(findFunctionSql, String.class, functionName);
 
             if (!owners.isEmpty()) {
                 String foundOwner = owners.get(0);
-                log.info("Strategy 6 - Found package '{}' in schema: {}", packageName, foundOwner);
+                log.info("Strategy 6 - Found function '{}' in schema: {}", functionName, foundOwner);
                 return foundOwner;
             }
 
-            // If package not found, check if there's a package body (which indicates the package exists)
-            String findPackageBodySql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND OBJECT_TYPE = 'PACKAGE BODY' AND ROWNUM = 1";
-            List<String> bodyOwners = oracleJdbcTemplate.queryForList(findPackageBodySql, String.class, packageName);
+            // If not found as function, check if it's a procedure (in case of mixed usage)
+            String findProcedureSql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND OBJECT_TYPE = 'PROCEDURE' AND ROWNUM = 1";
+            List<String> procOwners = oracleJdbcTemplate.queryForList(findProcedureSql, String.class, functionName);
 
-            if (!bodyOwners.isEmpty()) {
-                String foundOwner = bodyOwners.get(0);
-                log.info("Strategy 6 - Found package body '{}' in schema: {}", packageName, foundOwner);
+            if (!procOwners.isEmpty()) {
+                String foundOwner = procOwners.get(0);
+                log.warn("Strategy 6 - Found procedure '{}' in schema: {} (treating as function)", functionName, foundOwner);
                 return foundOwner;
             }
 
             // If still not found, try to find as any object type
             String findAnyObjectSql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND ROWNUM = 1";
-            List<String> anyOwners = oracleJdbcTemplate.queryForList(findAnyObjectSql, String.class, packageName);
+            List<String> anyOwners = oracleJdbcTemplate.queryForList(findAnyObjectSql, String.class, functionName);
 
             if (!anyOwners.isEmpty()) {
                 String foundOwner = anyOwners.get(0);
-                log.warn("Strategy 6 - Found object '{}' in schema: {} (treating as package)", packageName, foundOwner);
+                log.warn("Strategy 6 - Found object '{}' in schema: {} (type unknown, treating as function)", functionName, foundOwner);
                 return foundOwner;
             }
 
-            log.warn("Strategy 6 - Could not locate package '{}' in any accessible schema", packageName);
+            log.warn("Strategy 6 - Could not locate function '{}' in any accessible schema", functionName);
 
         } catch (Exception e) {
-            log.warn("Error while searching for package in accessible schemas: {}", e.getMessage());
+            log.warn("Error while searching for function in accessible schemas: {}", e.getMessage());
         }
 
-        log.error("❌ All owner resolution strategies failed for package: {}", packageName);
+        log.error("❌ All owner resolution strategies failed for function: {}", functionName);
         return null;
     }
 

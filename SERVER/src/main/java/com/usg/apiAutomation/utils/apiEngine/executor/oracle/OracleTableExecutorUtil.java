@@ -1,14 +1,10 @@
 package com.usg.apiAutomation.utils.apiEngine.executor;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
-import com.usg.apiAutomation.utils.apiEngine.OracleObjectResolverUtil;
-import com.usg.apiAutomation.utils.apiEngine.ParameterValidator;
-import com.usg.apiAutomation.utils.apiEngine.ParameterValidatorUtil;
+import com.usg.apiAutomation.utils.apiEngine.oracle.OracleParameterValidatorUtil;
 import jakarta.validation.ValidationException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -28,11 +24,11 @@ public class TableExecutorUtil {
     @Qualifier("oracleJdbcTemplate")
     private JdbcTemplate oracleJdbcTemplate;
 
-    private final ParameterValidatorUtil parameterValidator;
+    private final OracleParameterValidatorUtil parameterValidator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public TableExecutorUtil(
-            ParameterValidatorUtil parameterValidator) {
+            OracleParameterValidatorUtil parameterValidator) {
         this.parameterValidator = parameterValidator;
     }
 

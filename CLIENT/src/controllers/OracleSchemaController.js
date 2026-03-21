@@ -3936,7 +3936,7 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
  * @param {Object} response - API response
  * @returns {Object} Processed response data
  */
-export const handleSchemaBrowserResponse = (response) => {
+export const handleOracleSchemaBrowserResponse = (response) => {
     if (!response) {
         throw new Error('No response received from schema browser service');
     }

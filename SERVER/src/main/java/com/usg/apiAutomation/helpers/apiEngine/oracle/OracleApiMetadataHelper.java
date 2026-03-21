@@ -1,17 +1,15 @@
 package com.usg.apiAutomation.helpers.apiEngine;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiAnalyticsDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiDetailsResponseDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.GeneratedApiResponseDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiExecutionLogEntity;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
-import com.usg.apiAutomation.repositories.oracle.*;
-import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.ApiExecutionLogRepository;
-import com.usg.apiAutomation.services.OracleSchemaService;
+import com.usg.apiAutomation.repositories.apiGenerationEngine.ApiExecutionLogRepository;
+import com.usg.apiAutomation.repositories.schemaBrowser.oracle.*;
+import com.usg.apiAutomation.services.schemaBrowser.OracleSchemaService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 

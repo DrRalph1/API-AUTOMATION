@@ -6,10 +6,9 @@ import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ExecuteApiRequestDTO;
-import com.usg.apiAutomation.utils.apiEngine.OracleObjectResolverUtil;
-import com.usg.apiAutomation.utils.apiEngine.ParameterValidatorUtil;
+import com.usg.apiAutomation.utils.apiEngine.oracle.OracleObjectResolverUtil;
+import com.usg.apiAutomation.utils.apiEngine.oracle.OracleParameterValidatorUtil;
 import jakarta.validation.ValidationException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -26,32 +25,32 @@ import java.util.regex.Pattern;
 
 @Slf4j
 @Component
-public class FunctionExecutorUtil {
+public class ProcedureExecutorUtil {
 
     @Autowired
     @Qualifier("oracleJdbcTemplate")
     private JdbcTemplate oracleJdbcTemplate;
 
-    private final ParameterValidatorUtil parameterValidatorUtil;
+    private final OracleParameterValidatorUtil oracleParameterValidatorUtil;
     private final OracleObjectResolverUtil objectResolver;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public FunctionExecutorUtil(
-            ParameterValidatorUtil parameterValidatorUtil,
+    public ProcedureExecutorUtil(
+            OracleParameterValidatorUtil oracleParameterValidatorUtil,
             OracleObjectResolverUtil objectResolver) {
-        this.parameterValidatorUtil = parameterValidatorUtil;
+        this.oracleParameterValidatorUtil = oracleParameterValidatorUtil;
         this.objectResolver = objectResolver;
     }
 
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
-                          String functionName, String owner, ExecuteApiRequestDTO request,
+                          String procedureName, String owner, ExecuteApiRequestDTO request,
                           List<ApiParameterDTO> configuredParamDTOs) {
 
         // ============ DEBUGGING: Log all input parameters ============
-        log.info("============ FUNCTION EXECUTOR DEBUG ============");
+        log.info("============ PROCEDURE EXECUTOR DEBUG ============");
         log.info("API ID: {}", api != null ? api.getId() : "null");
         log.info("API Name: {}", api != null ? api.getApiName() : "null");
-        log.info("Function Name parameter: {}", functionName);
+        log.info("Procedure Name parameter: {}", procedureName);
         log.info("Owner parameter: {}", owner);
         log.info("Request Body Type: {}", request.getBody() != null ? request.getBody().getClass().getName() : "null");
         log.info("Request Body: {}", request.getBody());
@@ -134,7 +133,7 @@ public class FunctionExecutorUtil {
 
         // ============ PROCESS XML BODY ============
         if (isXmlBody && xmlBody != null) {
-            log.info("Processing XML body for function execution");
+            log.info("Processing XML body for procedure execution");
 
             // FIRST: Try to extract individual parameters from XML
             Map<String, Object> extractedXmlParams = parseXmlParameters(xmlBody, configuredParamDTOs, apiToDbParamMap);
@@ -258,81 +257,91 @@ public class FunctionExecutorUtil {
         log.info("Final DB params prepared: {}", dbParams.keySet());
 
         // ============ OWNER RESOLUTION STRATEGY ============
-        String oracleOwner = resolveOwner(owner, sourceObject, api, functionName);
+        String oracleOwner = resolveOwner(owner, sourceObject, api, procedureName);
 
         if (oracleOwner == null || oracleOwner.trim().isEmpty()) {
             log.error("❌ COULD NOT DETERMINE OWNER/SCHEMA NAME");
             throw new ValidationException(
-                    "Could not determine the database schema/owner for function: " + functionName
+                    "Could not determine the database schema/owner for procedure: " + procedureName
             );
         }
 
         oracleOwner = oracleOwner.toUpperCase();
-        String oracleFunctionName = functionName != null ? functionName.trim().toUpperCase() : null;
+        String oracleProcedureName = procedureName != null ? procedureName.trim().toUpperCase() : null;
 
         log.info("Final resolved owner: {}", oracleOwner);
-        log.info("Final function name: {}", oracleFunctionName);
+        log.info("Final procedure name: {}", oracleProcedureName);
 
         // ============ SYNONYM RESOLUTION ============
         // Resolve the actual target (handle synonyms)
-        Map<String, Object> resolution = objectResolver.resolveProcedureTarget(oracleOwner, oracleFunctionName);
+        Map<String, Object> resolution = objectResolver.resolveProcedureTarget(oracleOwner, oracleProcedureName);
         log.info("🔍 Synonym resolution result: {}", resolution);
 
         String actualOwner;
-        String actualFunctionName;
+        String actualProcedureName;
 
         if (resolution != null && resolution.containsKey("isSynonym") && (boolean) resolution.get("isSynonym")) {
             actualOwner = (String) resolution.get("targetOwner");
-            actualFunctionName = (String) resolution.get("targetName");
-            log.info("✅ Resolved synonym to: {}.{}", actualOwner, actualFunctionName);
+            actualProcedureName = (String) resolution.get("targetName");
+            log.info("✅ Resolved synonym to: {}.{}", actualOwner, actualProcedureName);
         } else {
             actualOwner = oracleOwner;
-            actualFunctionName = oracleFunctionName;
-            log.info("ℹ️ Not a synonym, using original: {}.{}", actualOwner, actualFunctionName);
+            actualProcedureName = oracleProcedureName;
+            log.info("ℹ️ Not a synonym, using original: {}.{}", actualOwner, actualProcedureName);
         }
 
-        // ==================== VALIDATION STEP 1: Validate function exists and is valid ====================
+        // ==================== VALIDATION STEP 1: Validate procedure exists and is valid ====================
         try {
-            objectResolver.validateDatabaseObject(actualOwner, actualFunctionName, "FUNCTION");
-            log.info("✅ Function {}.{} exists and is valid", actualOwner, actualFunctionName);
+            objectResolver.validateDatabaseObject(actualOwner, actualProcedureName, "PROCEDURE");
+            log.info("✅ Procedure {}.{} exists and is valid", actualOwner, actualProcedureName);
         } catch (EmptyResultDataAccessException e) {
-            log.error("❌ Function {}.{} does not exist", actualOwner, actualFunctionName);
+            log.error("❌ Procedure {}.{} does not exist", actualOwner, actualProcedureName);
             throw new ValidationException(
-                    String.format("The function '%s.%s' does not exist or you don't have access to it.",
-                            actualOwner, actualFunctionName)
+                    String.format("The procedure '%s.%s' does not exist or you don't have access to it.",
+                            actualOwner, actualProcedureName)
             );
         }
 
         // ==================== VALIDATION STEP 2: Validate all parameters ====================
         try {
-            parameterValidatorUtil.validateParameters(configuredParamDTOs, dbParams, actualOwner, actualFunctionName);
-            log.info("✅ All parameter validations passed for function {}.{}", actualOwner, actualFunctionName);
+            oracleParameterValidatorUtil.validateParameters(configuredParamDTOs, dbParams, actualOwner, actualProcedureName);
+            log.info("✅ All parameter validations passed for procedure {}.{}", actualOwner, actualProcedureName);
         } catch (ValidationException e) {
             log.error("❌ Parameter validation failed: {}", e.getMessage());
             throw e;
         }
 
+        // ==================== EXECUTE PROCEDURE ====================
         try {
             SimpleJdbcCall jdbcCall = new SimpleJdbcCall(oracleJdbcTemplate);
 
-            // Set schema and function name - use resolved actual owner
+            // Set schema and procedure name - use resolved actual owner
             if (actualOwner != null && !actualOwner.isEmpty()) {
                 jdbcCall = jdbcCall.withSchemaName(actualOwner);
                 log.info("Setting schema name to: {}", actualOwner);
             }
 
-            jdbcCall = jdbcCall.withFunctionName(actualFunctionName);
-            log.info("Setting function name to: {}", actualFunctionName);
+            jdbcCall = jdbcCall.withProcedureName(actualProcedureName);
+            log.info("Setting procedure name to: {}", actualProcedureName);
 
-            log.info("Oracle will execute: {}.{}", actualOwner != null ? actualOwner : "<default schema>", actualFunctionName);
+            log.info("Oracle will execute: {}.{}", actualOwner != null ? actualOwner : "<default schema>", actualProcedureName);
 
-            // Declare return parameter from response mappings
+            // Declare output parameters from response mappings
             if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-                String returnType = api.getResponseMappings().get(0).getOracleType();
-                jdbcCall.declareParameters(
-                        new SqlOutParameter("return", mapToSqlType(returnType))
-                );
-                log.debug("Declared return parameter of type: {}", returnType);
+                log.debug("Declaring {} OUT parameters from response mappings", api.getResponseMappings().size());
+
+                for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                    if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                        String outParamName = mapping.getDbColumn() != null && !mapping.getDbColumn().isEmpty() ?
+                                mapping.getDbColumn().toUpperCase() : "out_param_" + mapping.getPosition();
+
+                        int sqlType = mapToSqlType(mapping.getOracleType());
+                        jdbcCall.declareParameters(new SqlOutParameter(outParamName, sqlType));
+
+                        log.debug("Declared OUT parameter: {} of type: {} (SQL type: {})",
+                                outParamName, mapping.getOracleType(), sqlType);
+                    }
+                }
             }
 
             // Declare input parameters from API parameters - use database parameter names
@@ -372,12 +381,12 @@ public class FunctionExecutorUtil {
             }
 
             log.info("Executing SimpleJdbcCall for {}.{} with {} input parameters",
-                    actualOwner != null ? actualOwner : "<default>", actualFunctionName, dbParams.size());
+                    actualOwner != null ? actualOwner : "<default>", actualProcedureName, dbParams.size());
 
-            // Execute the function with the mapped database parameters
+            // Execute the procedure with the mapped database parameters
             Map<String, Object> result = jdbcCall.execute(dbParams);
 
-            log.info("Function executed successfully, result contains {} keys: {}", result.size(), result.keySet());
+            log.info("Procedure executed successfully, result contains {} keys: {}", result.size(), result.keySet());
 
             // Map the results to response data
             Map<String, Object> responseData = new HashMap<>();
@@ -420,40 +429,35 @@ public class FunctionExecutorUtil {
                 responseData.putAll(result);
             }
 
-            // Handle function return value specially
-            if (result.containsKey("return") && !responseData.containsKey("result")) {
-                responseData.put("result", result.get("return"));
-                log.info("Function returned value: {}", result.get("return"));
-            }
-
-            log.info("============ FUNCTION EXECUTION COMPLETE ============");
+            log.info("============ PROCEDURE EXECUTION COMPLETE ============");
             return responseData.isEmpty() ? result : responseData;
 
         } catch (ValidationException e) {
+            // Re-throw validation exceptions
             throw e;
         } catch (Exception e) {
-            log.error("Error executing function {}.{}: {}",
-                    actualOwner != null ? actualOwner : "<default>", actualFunctionName, e.getMessage(), e);
+            log.error("Error executing procedure {}.{}: {}",
+                    actualOwner != null ? actualOwner : "<default>", actualProcedureName, e.getMessage(), e);
 
             // Provide user-friendly error messages for common Oracle errors
             String errorMessage = e.getMessage();
             if (errorMessage != null) {
                 if (errorMessage.contains("ORA-06550")) {
                     throw new ValidationException(
-                            String.format("Invalid parameters provided for function '%s.%s'. Please check parameter names and data types. Details: %s",
-                                    actualOwner, actualFunctionName, extractOracleError(errorMessage))
+                            String.format("Invalid parameters provided for procedure '%s.%s'. Please check parameter names and data types. Details: %s",
+                                    actualOwner, actualProcedureName, extractOracleError(errorMessage))
                     );
                 }
                 if (errorMessage.contains("ORA-00942")) {
                     throw new ValidationException(
-                            String.format("Table or view referenced in function '%s.%s' could not be found. Details: %s",
-                                    actualOwner, actualFunctionName, extractOracleError(errorMessage))
+                            String.format("Table or view referenced in procedure '%s.%s' could not be found. Details: %s",
+                                    actualOwner, actualProcedureName, extractOracleError(errorMessage))
                     );
                 }
                 if (errorMessage.contains("ORA-01031")) {
                     throw new ValidationException(
-                            String.format("Insufficient privileges to execute function '%s.%s'. Details: %s",
-                                    actualOwner, actualFunctionName, extractOracleError(errorMessage))
+                            String.format("Insufficient privileges to execute procedure '%s.%s'. Details: %s",
+                                    actualOwner, actualProcedureName, extractOracleError(errorMessage))
                     );
                 }
                 if (errorMessage.contains("ORA-01400")) {
@@ -500,7 +504,7 @@ public class FunctionExecutorUtil {
     /**
      * Helper method to resolve owner from multiple sources
      */
-    private String resolveOwner(String owner, ApiSourceObjectDTO sourceObject, GeneratedApiEntity api, String functionName) {
+    private String resolveOwner(String owner, ApiSourceObjectDTO sourceObject, GeneratedApiEntity api, String procedureName) {
         // Strategy 1: Use the owner parameter passed to the method
         if (owner != null && !owner.trim().isEmpty()) {
             log.info("Strategy 1 - Using owner parameter: {}", owner);
@@ -568,47 +572,47 @@ public class FunctionExecutorUtil {
             log.warn("Could not get current schema: {}", e.getMessage());
         }
 
-        // Strategy 6: Try to resolve the function from all accessible schemas
+        // Strategy 6: Try to resolve the procedure from all accessible schemas
         try {
-            log.info("Strategy 6 - Attempting to locate function '{}' in accessible schemas", functionName);
+            log.info("Strategy 6 - Attempting to locate procedure '{}' in accessible schemas", procedureName);
 
-            // Query to find the function in any schema the current user has access to
-            String findFunctionSql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND OBJECT_TYPE = 'FUNCTION' AND ROWNUM = 1";
-            List<String> owners = oracleJdbcTemplate.queryForList(findFunctionSql, String.class, functionName);
+            // Query to find the procedure in any schema the current user has access to
+            String findProcedureSql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND OBJECT_TYPE = 'PROCEDURE' AND ROWNUM = 1";
+            List<String> owners = oracleJdbcTemplate.queryForList(findProcedureSql, String.class, procedureName);
 
             if (!owners.isEmpty()) {
                 String foundOwner = owners.get(0);
-                log.info("Strategy 6 - Found function '{}' in schema: {}", functionName, foundOwner);
+                log.info("Strategy 6 - Found procedure '{}' in schema: {}", procedureName, foundOwner);
                 return foundOwner;
             }
 
-            // If not found as function, check if it's a procedure (in case of mixed usage)
-            String findProcedureSql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND OBJECT_TYPE = 'PROCEDURE' AND ROWNUM = 1";
-            List<String> procOwners = oracleJdbcTemplate.queryForList(findProcedureSql, String.class, functionName);
+            // If not found as procedure, check if it's a function (in case of mixed usage)
+            String findFunctionSql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND OBJECT_TYPE = 'FUNCTION' AND ROWNUM = 1";
+            List<String> functionOwners = oracleJdbcTemplate.queryForList(findFunctionSql, String.class, procedureName);
 
-            if (!procOwners.isEmpty()) {
-                String foundOwner = procOwners.get(0);
-                log.warn("Strategy 6 - Found procedure '{}' in schema: {} (treating as function)", functionName, foundOwner);
+            if (!functionOwners.isEmpty()) {
+                String foundOwner = functionOwners.get(0);
+                log.warn("Strategy 6 - Found function '{}' in schema: {} (treating as procedure)", procedureName, foundOwner);
                 return foundOwner;
             }
 
             // If still not found, try to find as any object type
             String findAnyObjectSql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND ROWNUM = 1";
-            List<String> anyOwners = oracleJdbcTemplate.queryForList(findAnyObjectSql, String.class, functionName);
+            List<String> anyOwners = oracleJdbcTemplate.queryForList(findAnyObjectSql, String.class, procedureName);
 
             if (!anyOwners.isEmpty()) {
                 String foundOwner = anyOwners.get(0);
-                log.warn("Strategy 6 - Found object '{}' in schema: {} (type unknown, treating as function)", functionName, foundOwner);
+                log.warn("Strategy 6 - Found object '{}' in schema: {} (type unknown, treating as procedure)", procedureName, foundOwner);
                 return foundOwner;
             }
 
-            log.warn("Strategy 6 - Could not locate function '{}' in any accessible schema", functionName);
+            log.warn("Strategy 6 - Could not locate procedure '{}' in any accessible schema", procedureName);
 
         } catch (Exception e) {
-            log.warn("Error while searching for function in accessible schemas: {}", e.getMessage());
+            log.warn("Error while searching for procedure in accessible schemas: {}", e.getMessage());
         }
 
-        log.error("❌ All owner resolution strategies failed for function: {}", functionName);
+        log.error("❌ All owner resolution strategies failed for procedure: {}", procedureName);
         return null;
     }
 
@@ -631,6 +635,8 @@ public class FunctionExecutorUtil {
         return java.sql.Types.VARCHAR;
     }
 
+
+    // Add these helper methods to ProcedureExecutorUtil
     private String getDbParamName(ApiParameterEntity param) {
         if (param.getDbParameter() != null && !param.getDbParameter().isEmpty()) {
             return param.getDbParameter().toUpperCase();
@@ -640,6 +646,44 @@ public class FunctionExecutorUtil {
         }
         return param.getKey().toUpperCase();
     }
+
+    private String getDbParamNameForApiKey(String apiKey, List<ApiParameterDTO> configuredParamDTOs) {
+        for (ApiParameterDTO param : configuredParamDTOs) {
+            if (param.getKey().equalsIgnoreCase(apiKey)) {
+                if (param.getDbParameter() != null && !param.getDbParameter().isEmpty()) {
+                    return param.getDbParameter().toUpperCase();
+                }
+                if (param.getDbColumn() != null && !param.getDbColumn().isEmpty()) {
+                    return param.getDbColumn().toUpperCase();
+                }
+                return apiKey.toUpperCase();
+            }
+        }
+        return apiKey.toUpperCase();
+    }
+
+    private void addPathAndQueryParams(ExecuteApiRequestDTO request,
+                                       List<ApiParameterDTO> configuredParamDTOs,
+                                       Map<String, Object> dbParams) {
+        // Add path parameters
+        if (request.getPathParams() != null) {
+            for (Map.Entry<String, Object> entry : request.getPathParams().entrySet()) {
+                String dbParamName = getDbParamNameForApiKey(entry.getKey(), configuredParamDTOs);
+                dbParams.put(dbParamName, entry.getValue());
+                log.debug("Added path param: {} -> {} = {}", entry.getKey(), dbParamName, entry.getValue());
+            }
+        }
+
+        // Add query parameters
+        if (request.getQueryParams() != null) {
+            for (Map.Entry<String, Object> entry : request.getQueryParams().entrySet()) {
+                String dbParamName = getDbParamNameForApiKey(entry.getKey(), configuredParamDTOs);
+                dbParams.put(dbParamName, entry.getValue());
+                log.debug("Added query param: {} -> {} = {}", entry.getKey(), dbParamName, entry.getValue());
+            }
+        }
+    }
+
 
     /**
      * Parse XML body and extract parameter values

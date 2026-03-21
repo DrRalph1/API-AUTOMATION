@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.utils.apiEngine;
+package com.usg.apiAutomation.utils.apiEngine.oracle;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import jakarta.validation.ValidationException;
@@ -19,7 +19,7 @@ import java.util.*;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class ParameterValidator {
+public class OracleParameterValidator {
 
     private final JdbcTemplate oracleJdbcTemplate;
 

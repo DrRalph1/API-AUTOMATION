@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.utils.apiEngine;
+package com.usg.apiAutomation.utils.apiEngine.oracle;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import jakarta.validation.ValidationException;
@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Component
-public class ParameterValidatorUtil {
+public class OracleParameterValidatorUtil {
 
     @Autowired
     @Qualifier("oracleJdbcTemplate")
