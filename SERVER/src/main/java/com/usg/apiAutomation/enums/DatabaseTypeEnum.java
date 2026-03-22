@@ -4,7 +4,7 @@ package com.usg.apiAutomation.enums;
 import lombok.Getter;
 
 @Getter
-public enum DatabaseType {
+public enum DatabaseTypeEnum {
     ORACLE("oracle"),
     POSTGRESQL("postgresql"),
     MYSQL("mysql"),
@@ -13,12 +13,12 @@ public enum DatabaseType {
 
     private final String value;
 
-    DatabaseType(String value) {
+    DatabaseTypeEnum(String value) {
         this.value = value;
     }
 
-    public static DatabaseType fromString(String text) {
-        for (DatabaseType type : DatabaseType.values()) {
+    public static DatabaseTypeEnum fromString(String text) {
+        for (DatabaseTypeEnum type : DatabaseTypeEnum.values()) {
             if (type.value.equalsIgnoreCase(text) || type.name().equalsIgnoreCase(text)) {
                 return type;
             }

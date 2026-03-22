@@ -1,7 +1,7 @@
 // helpers/apiEngine/MetadataHelperFactory.java
 package com.usg.apiAutomation.factories;
 
-import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.enums.DatabaseTypeEnum;
 import com.usg.apiAutomation.helpers.DatabaseMetadataHelper;
 import com.usg.apiAutomation.helpers.apiEngine.oracle.OracleApiMetadataHelper;
 import com.usg.apiAutomation.helpers.apiEngine.postgresql.PostgreSQLApiMetadataHelper;
@@ -16,7 +16,7 @@ import java.util.Map;
 @Component
 public class MetadataHelperFactory {
 
-    private final Map<DatabaseType, DatabaseMetadataHelper> helpers = new EnumMap<>(DatabaseType.class);
+    private final Map<DatabaseTypeEnum, DatabaseMetadataHelper> helpers = new EnumMap<>(DatabaseTypeEnum.class);
 
     @Autowired
     public MetadataHelperFactory(
@@ -24,15 +24,15 @@ public class MetadataHelperFactory {
             PostgreSQLApiMetadataHelper postgreSQLMetadataHelper
             // Add more as needed
     ) {
-        helpers.put(DatabaseType.ORACLE, oracleMetadataHelper);
-        helpers.put(DatabaseType.POSTGRESQL, postgreSQLMetadataHelper);
+        helpers.put(DatabaseTypeEnum.ORACLE, oracleMetadataHelper);
+        helpers.put(DatabaseTypeEnum.POSTGRESQL, postgreSQLMetadataHelper);
         // helpers.put(DatabaseType.MYSQL, mySQLMetadataHelper);
         // helpers.put(DatabaseType.SQL_SERVER, sqlServerMetadataHelper);
 
         log.info("MetadataHelperFactory initialized with {} helpers", helpers.size());
     }
 
-    public DatabaseMetadataHelper getHelper(DatabaseType type) {
+    public DatabaseMetadataHelper getHelper(DatabaseTypeEnum type) {
         DatabaseMetadataHelper helper = helpers.get(type);
         if (helper == null) {
             log.error("No metadata helper found for database type: {}", type);
@@ -42,10 +42,10 @@ public class MetadataHelperFactory {
     }
 
     public DatabaseMetadataHelper getHelper(String type) {
-        return getHelper(DatabaseType.fromString(type));
+        return getHelper(DatabaseTypeEnum.fromString(type));
     }
 
-    public DatabaseMetadataHelper getHelperOrDefault(DatabaseType type, DatabaseType defaultType) {
+    public DatabaseMetadataHelper getHelperOrDefault(DatabaseTypeEnum type, DatabaseTypeEnum defaultType) {
         DatabaseMetadataHelper helper = helpers.get(type);
         if (helper == null) {
             log.warn("No metadata helper found for database type: {}, falling back to: {}", type, defaultType);
@@ -57,7 +57,7 @@ public class MetadataHelperFactory {
         return helper;
     }
 
-    public boolean isSupported(DatabaseType type) {
+    public boolean isSupported(DatabaseTypeEnum type) {
         return helpers.containsKey(type);
     }
 }

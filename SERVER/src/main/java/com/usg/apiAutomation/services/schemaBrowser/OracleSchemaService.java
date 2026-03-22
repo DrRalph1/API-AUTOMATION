@@ -1,7 +1,8 @@
 package com.usg.apiAutomation.services.schemaBrowser;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
-import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.enums.DatabaseTypeEnum;
+import com.usg.apiAutomation.enums.OracleSqlStatementTypeEnum;
 import com.usg.apiAutomation.repositories.schemaBrowser.oracle.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -13,6 +14,9 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+
+// Add these imports instead:
+import java.sql.*;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -2526,37 +2530,595 @@ public class OracleSchemaService implements DatabaseSchemaService {
         log.info("RequestEntity ID: {}, Executing query, timeout: {}, readOnly: {}, user: {}",
                 requestId, timeoutSeconds, readOnly, performedBy);
 
+        Map<String, Object> result = new HashMap<>();
+        String trimmedQuery = query.trim().toUpperCase();
+        OracleSqlStatementTypeEnum statementType = OracleSqlStatementTypeEnum.UNKNOWN;
+
         try {
-            Map<String, Object> queryResults = oracleExecuteRepository.executeQuery(query, timeoutSeconds, readOnly);
+            // Detect statement type
+            statementType = detectSqlStatementType(query, trimmedQuery);
+            log.info("RequestEntity ID: {}, Detected statement type: {}", requestId, statementType);
 
-            Map<String, Object> result = new HashMap<>();
-            result.put("data", queryResults);
-            result.put("responseCode", 200);
-            result.put("message", "Query executed successfully");
-            result.put("requestId", requestId);
-            result.put("timestamp", java.time.Instant.now().toString());
+            // Check if operation is allowed in read-only mode
+            if (readOnly && !isReadOnlyAllowed(statementType)) {
+                String errorMsg = String.format(
+                        "Operation not allowed in read-only mode. Statement type '%s' requires write access. " +
+                                "Please use readOnly=false or switch to SELECT/query operations.",
+                        statementType
+                );
+                log.warn("RequestEntity ID: {}, {}", requestId, errorMsg);
 
-            log.info("RequestEntity ID: {}, Query executed, returned {} rows",
-                    requestId, queryResults.get("rowCount"));
+                result.put("success", false);
+                result.put("message", errorMsg);
+                result.put("error", errorMsg);
+                result.put("data", Map.of(
+                        "columns", new ArrayList<>(),
+                        "rows", new ArrayList<>(),
+                        "rowCount", 0
+                ));
+                return result;
+            }
 
+            // Execute based on statement type
+            switch (statementType) {
+                case SELECT:
+                case WITH:
+                case VIEW_QUERY:
+                    Map<String, Object> queryResult = executeSelectQuery(query, timeoutSeconds);
+                    result.put("success", true);
+                    result.put("message", getSuccessMessage(statementType, queryResult));
+                    result.put("data", queryResult);
+                    break;
+
+                case INSERT:
+                case UPDATE:
+                case DELETE:
+                case MERGE:
+                    int affectedRows = executeUpdateQuery(query, timeoutSeconds);
+                    result.put("success", true);
+                    result.put("message", String.format("%s executed successfully, %d rows affected",
+                            statementType, affectedRows));
+                    result.put("data", Map.of(
+                            "rowsAffected", affectedRows,
+                            "rowCount", affectedRows
+                    ));
+                    break;
+
+                case PROCEDURE:
+                case FUNCTION:
+                case PACKAGE:
+                case CREATE_PROCEDURE:
+                case CREATE_FUNCTION:
+                case CREATE_PACKAGE:
+                case CREATE_TABLE:
+                case CREATE_VIEW:
+                case CREATE_TRIGGER:
+                case CREATE_SEQUENCE:
+                case CREATE_SYNONYM:
+                case CREATE_TYPE:
+                case ALTER:
+                case DROP:
+                case TRUNCATE:
+                case GRANT:
+                case REVOKE:
+                case COMMENT:
+                case RENAME:
+                case DDL:
+                    executeDDL(query, timeoutSeconds);
+                    result.put("success", true);
+                    result.put("message", String.format("%s compiled successfully", statementType));
+                    result.put("data", Map.of(
+                            "message", "Object compiled successfully",
+                            "rowCount", 0
+                    ));
+                    break;
+
+                case PLSQL_BLOCK:
+                case ANONYMOUS_BLOCK:
+                    Map<String, Object> plsqlResult = executePLSQLBlock(query, timeoutSeconds);
+                    result.put("success", true);
+                    result.put("message", "PL/SQL block executed successfully");
+                    result.put("data", plsqlResult);
+                    break;
+
+                case CALL:
+                case EXECUTE:
+                    Map<String, Object> callResult = executeCall(query, timeoutSeconds);
+                    result.put("success", true);
+                    result.put("message", "Procedure/function executed successfully");
+                    result.put("data", callResult);
+                    break;
+
+                default:
+                    if (trimmedQuery.startsWith("SELECT")) {
+                        Map<String, Object> defaultResult = executeSelectQuery(query, timeoutSeconds);
+                        result.put("success", true);
+                        result.put("message", "Query executed successfully");
+                        result.put("data", defaultResult);
+                    } else {
+                        int defaultAffected = executeUpdateQuery(query, timeoutSeconds);
+                        result.put("success", true);
+                        result.put("message", "Statement executed successfully");
+                        result.put("data", Map.of("rowsAffected", defaultAffected));
+                    }
+            }
+
+            log.info("RequestEntity ID: {}, Query executed successfully", requestId);
             return result;
 
+        } catch (RuntimeException e) {
+            // Extract the user-friendly message from the exception
+            String errorMessage = e.getMessage();
+
+            log.error("RequestEntity ID: {}, Error executing {}: {}",
+                    requestId, statementType, errorMessage, e);
+
+            // Check for privilege errors
+            if (errorMessage.contains("Insufficient privileges") || errorMessage.contains("ORA-01031")) {
+                result.put("success", false);
+                result.put("message", errorMessage);
+                result.put("error", "Insufficient database privileges");
+            }
+            // Check for syntax errors
+            else if (errorMessage.contains("Invalid syntax") || errorMessage.contains("ORA-00922") ||
+                    errorMessage.contains("Invalid SQL") || errorMessage.contains("ORA-00900")) {
+                result.put("success", false);
+                result.put("message", errorMessage);
+                result.put("error", "SQL syntax error");
+            }
+            // Check for object does not exist
+            else if (errorMessage.contains("does not exist") || errorMessage.contains("ORA-00942")) {
+                result.put("success", false);
+                result.put("message", errorMessage);
+                result.put("error", "Object not found");
+            }
+            // Check for object already exists
+            else if (errorMessage.contains("already exists") || errorMessage.contains("ORA-00955")) {
+                result.put("success", false);
+                result.put("message", errorMessage);
+                result.put("error", "Object already exists");
+            }
+            // Check for quota issues
+            else if (errorMessage.contains("quota") || errorMessage.contains("ORA-01536")) {
+                result.put("success", false);
+                result.put("message", errorMessage);
+                result.put("error", "Insufficient tablespace quota");
+            }
+            // Check for Oracle error
+            else if (errorMessage.contains("ORA-")) {
+                result.put("success", false);
+                result.put("message", errorMessage);
+                result.put("error", "Database error");
+            }
+            // Generic error
+            else {
+                result.put("success", false);
+                result.put("message", errorMessage);
+                result.put("error", errorMessage);
+            }
+
+            result.put("data", Map.of(
+                    "columns", new ArrayList<>(),
+                    "rows", new ArrayList<>(),
+                    "rowCount", 0
+            ));
+            return result;
+        }
+    }
+
+
+
+    /**
+     * Execute SELECT query
+     */
+    private Map<String, Object> executeSelectQuery(String query, int timeoutSeconds) {
+        try {
+            long startTime = System.currentTimeMillis();
+            List<Map<String, Object>> rows = oracleJdbcTemplate.queryForList(query);
+            long executionTime = System.currentTimeMillis() - startTime;
+
+            List<String> columns = rows.isEmpty() ? new ArrayList<>() : new ArrayList<>(rows.get(0).keySet());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("columns", columns);
+            result.put("rows", rows);
+            result.put("rowCount", rows.size());
+            result.put("executionTimeMs", executionTime);
+
+            return result;
         } catch (Exception e) {
-            log.error("RequestEntity ID: {}, Error executing query: {}", requestId, e.getMessage());
+            log.error("Error executing SELECT query", e);
+            throw new RuntimeException("Failed to execute SELECT query: " + e.getMessage(), e);
+        }
+    }
 
-            Map<String, Object> errorData = new HashMap<>();
-            errorData.put("rows", new ArrayList<>());
-            errorData.put("columns", new ArrayList<>());
-            errorData.put("rowCount", 0);
+    /**
+     * Execute UPDATE/INSERT/DELETE query
+     */
+    private int executeUpdateQuery(String query, int timeoutSeconds) {
+        try {
+            return oracleJdbcTemplate.update(query);
+        } catch (Exception e) {
+            log.error("Error executing UPDATE query", e);
+            throw new RuntimeException("Failed to execute UPDATE query: " + e.getMessage(), e);
+        }
+    }
 
-            Map<String, Object> errorResult = new HashMap<>();
-            errorResult.put("data", errorData);
-            errorResult.put("responseCode", 500);
-            errorResult.put("message", e.getMessage());
-            errorResult.put("requestId", requestId);
-            errorResult.put("timestamp", java.time.Instant.now().toString());
+    /**
+     * Execute DDL statement (CREATE, ALTER, DROP, etc.)
+     */
+    private void executeDDL(String query, int timeoutSeconds) {
+        try {
+            oracleJdbcTemplate.execute(query);
+        } catch (Exception e) {
+            log.error("Error executing DDL", e);
 
-            return errorResult;
+            // Extract the root cause to get the actual Oracle error
+            Throwable rootCause = e;
+            while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+                rootCause = rootCause.getCause();
+            }
+
+            String errorMessage = rootCause.getMessage();
+            String cleanErrorMessage = errorMessage;
+
+            // Extract just the Oracle error without the SQL
+            if (errorMessage != null) {
+                // Find the first line of the error (before the SQL)
+                int newlineIndex = errorMessage.indexOf('\n');
+                if (newlineIndex > 0) {
+                    cleanErrorMessage = errorMessage.substring(0, newlineIndex);
+                }
+
+                // Remove any SQL from the message
+                cleanErrorMessage = cleanErrorMessage.replaceAll("\\[CREATE.*", "").trim();
+            }
+
+            // Check for insufficient privileges (ORA-01031)
+            if (errorMessage != null && errorMessage.contains("ORA-01031")) {
+                String userFriendlyError = "Insufficient privileges (ORA-01031): You don't have permission to execute this DDL statement.\n\n" +
+                        "Please contact your database administrator to grant the required privileges.\n" +
+                        "Required privileges may include: CREATE TABLE, CREATE PROCEDURE, CREATE VIEW, etc.";
+                throw new RuntimeException(userFriendlyError);
+            }
+            // Check for missing or invalid option (ORA-00922)
+            else if (errorMessage != null && errorMessage.contains("ORA-00922")) {
+                String userFriendlyError = "Invalid syntax or missing option (ORA-00922): " + cleanErrorMessage + "\n\n" +
+                        "Please check your SQL syntax. Common issues:\n" +
+                        "- Missing column definitions\n" +
+                        "- Invalid data type\n" +
+                        "- Schema name doesn't exist or you don't have permission to create objects in that schema\n" +
+                        "- Missing required keywords like 'TABLE'";
+                throw new RuntimeException(userFriendlyError);
+            }
+            // Check for invalid SQL (ORA-00900)
+            else if (errorMessage != null && errorMessage.contains("ORA-00900")) {
+                String userFriendlyError = "Invalid SQL statement (ORA-00900): " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError);
+            }
+            // Check for table or view does not exist (ORA-00942)
+            else if (errorMessage != null && errorMessage.contains("ORA-00942")) {
+                String userFriendlyError = "Table or view does not exist (ORA-00942): " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError);
+            }
+            // Check for object already exists (ORA-00955)
+            else if (errorMessage != null && errorMessage.contains("ORA-00955")) {
+                String userFriendlyError = "Object already exists (ORA-00955): " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError);
+            }
+            // Check for insufficient privileges on tablespace (ORA-01536)
+            else if (errorMessage != null && errorMessage.contains("ORA-01536")) {
+                String userFriendlyError = "Insufficient quota on tablespace (ORA-01536): " + cleanErrorMessage + "\n\n" +
+                        "Please contact your DBA to increase your tablespace quota.";
+                throw new RuntimeException(userFriendlyError);
+            }
+            // Generic Oracle error
+            else if (errorMessage != null && errorMessage.contains("ORA-")) {
+                // Extract the ORA error code and message only
+                String[] lines = errorMessage.split("\n");
+                String firstLine = lines[0];
+                // Remove the SQL that follows
+                if (firstLine.contains(":")) {
+                    // Keep only up to the first colon after ORA
+                    String oraPart = firstLine.substring(0, Math.min(firstLine.length(), firstLine.indexOf(":") + 50));
+                    cleanErrorMessage = oraPart;
+                }
+                String userFriendlyError = "Oracle error: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError);
+            }
+            // Unknown error
+            else {
+                // Get just the first line of the error
+                String firstLine = errorMessage != null ? errorMessage.split("\n")[0] : e.getMessage();
+                throw new RuntimeException("Failed to execute DDL: " + firstLine);
+            }
+        }
+    }
+
+    /**
+     * Execute PL/SQL block with DBMS_OUTPUT capture
+     */
+    private Map<String, Object> executePLSQLBlock(String query, int timeoutSeconds) {
+        Map<String, Object> result = new HashMap<>();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        StringBuilder output = new StringBuilder();
+
+        try {
+            // Use the oracleJdbcTemplate to get a connection
+            Connection conn = oracleJdbcTemplate.getDataSource().getConnection();
+            conn.setAutoCommit(false);
+
+            try {
+                // First, enable DBMS_OUTPUT
+                try (CallableStatement enableOutput = conn.prepareCall("BEGIN DBMS_OUTPUT.ENABLE(1000000); END;")) {
+                    enableOutput.execute();
+                }
+
+                // Execute the PL/SQL block
+                try (CallableStatement cs = conn.prepareCall(query)) {
+                    boolean hadResults = cs.execute();
+
+                    // Get any result sets
+                    if (hadResults) {
+                        ResultSet rs = cs.getResultSet();
+                        if (rs != null) {
+                            ResultSetMetaData meta = rs.getMetaData();
+                            int columnCount = meta.getColumnCount();
+
+                            while (rs.next()) {
+                                Map<String, Object> row = new HashMap<>();
+                                for (int i = 1; i <= columnCount; i++) {
+                                    row.put(meta.getColumnName(i), rs.getObject(i));
+                                }
+                                rows.add(row);
+                            }
+                            rs.close();
+                        }
+                    }
+
+                    // Get DBMS_OUTPUT content
+                    try (CallableStatement getOutput = conn.prepareCall(
+                            "BEGIN DBMS_OUTPUT.GET_LINE(:line, :status); END;")) {
+                        getOutput.registerOutParameter("line", Types.VARCHAR);
+                        getOutput.registerOutParameter("status", Types.INTEGER);
+
+                        int status = 0;
+                        while (status == 0) {
+                            getOutput.execute();
+                            String line = getOutput.getString("line");
+                            status = getOutput.getInt("status");
+                            if (line != null && status == 0) {
+                                output.append(line).append("\n");
+                            }
+                        }
+                    }
+                }
+
+                conn.commit();
+
+                // Build result
+                result.put("rows", rows);
+                result.put("rowCount", rows.size());
+                result.put("output", output.toString());
+                if (!rows.isEmpty()) {
+                    result.put("columns", new ArrayList<>(rows.get(0).keySet()));
+                }
+                result.put("success", true);
+
+                return result;
+
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.close();
+            }
+
+        } catch (Exception e) {
+            log.error("Error executing PL/SQL block", e);
+            throw new RuntimeException("Failed to execute PL/SQL block: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Execute CALL statement (procedure/function call)
+     */
+    private Map<String, Object> executeCall(String query, int timeoutSeconds) {
+        return executePLSQLBlock(query, timeoutSeconds);
+    }
+
+
+    private Map<String, Object> executeSQLStatement(String sql, boolean readOnly, Integer timeoutSeconds) {
+        Map<String, Object> result = new HashMap<>();
+
+        try {
+            String trimmedSql = sql.trim().toUpperCase();
+
+            if (trimmedSql.startsWith("SELECT")) {
+                // Execute query
+                List<Map<String, Object>> rows = oracleJdbcTemplate.queryForList(sql);
+
+                result.put("success", true);
+                result.put("message", "Query executed successfully");
+                result.put("rows", rows);
+                result.put("rowCount", rows.size());
+                result.put("columns", rows.isEmpty() ? new ArrayList<>() : new ArrayList<>(rows.get(0).keySet()));
+            } else {
+                // Execute update (INSERT, UPDATE, DELETE)
+                int affectedRows = oracleJdbcTemplate.update(sql);
+
+                result.put("success", true);
+                result.put("message", "Update executed successfully");
+                result.put("rowsAffected", affectedRows);
+                result.put("output", affectedRows + " row(s) affected");
+            }
+
+            return result;
+        } catch (Exception e) {
+            log.error("Error executing SQL statement", e);
+            result.put("success", false);
+            result.put("message", "SQL execution failed: " + e.getMessage());
+            result.put("error", e.getMessage());
+            return result;
+        }
+    }
+
+    /**
+     * Enhanced SQL statement type detection
+     */
+    private OracleSqlStatementTypeEnum detectSqlStatementType(String originalQuery, String upperQuery) {
+        // Remove leading/trailing whitespace and comments
+        String cleanedQuery = upperQuery.replaceAll("/\\*.*?\\*/", "").trim();
+
+        // Check for PL/SQL blocks first
+        if (cleanedQuery.startsWith("BEGIN") || cleanedQuery.startsWith("DECLARE")) {
+            return OracleSqlStatementTypeEnum.ANONYMOUS_BLOCK;
+        }
+
+        // Check for CREATE statements
+        if (cleanedQuery.startsWith("CREATE")) {
+            if (cleanedQuery.startsWith("CREATE OR REPLACE")) {
+                cleanedQuery = cleanedQuery.substring("CREATE OR REPLACE".length()).trim();
+            } else {
+                cleanedQuery = cleanedQuery.substring("CREATE".length()).trim();
+            }
+
+            if (cleanedQuery.startsWith("PROCEDURE")) return OracleSqlStatementTypeEnum.PROCEDURE;
+            if (cleanedQuery.startsWith("FUNCTION")) return OracleSqlStatementTypeEnum.FUNCTION;
+            if (cleanedQuery.startsWith("PACKAGE")) return OracleSqlStatementTypeEnum.PACKAGE;
+            if (cleanedQuery.startsWith("VIEW")) return OracleSqlStatementTypeEnum.CREATE_VIEW;
+            if (cleanedQuery.startsWith("TABLE")) return OracleSqlStatementTypeEnum.CREATE_TABLE;
+            if (cleanedQuery.startsWith("INDEX")) return OracleSqlStatementTypeEnum.CREATE_INDEX;
+            if (cleanedQuery.startsWith("TRIGGER")) return OracleSqlStatementTypeEnum.CREATE_TRIGGER;
+            if (cleanedQuery.startsWith("SEQUENCE")) return OracleSqlStatementTypeEnum.CREATE_SEQUENCE;
+            if (cleanedQuery.startsWith("SYNONYM")) return OracleSqlStatementTypeEnum.CREATE_SYNONYM;
+            if (cleanedQuery.startsWith("TYPE")) return OracleSqlStatementTypeEnum.CREATE_TYPE;
+            return OracleSqlStatementTypeEnum.DDL;
+        }
+
+        // Check for ALTER, DROP, TRUNCATE
+        if (cleanedQuery.startsWith("ALTER") ||
+                cleanedQuery.startsWith("DROP") ||
+                cleanedQuery.startsWith("TRUNCATE") ||
+                cleanedQuery.startsWith("RENAME")) {
+            return OracleSqlStatementTypeEnum.DDL;
+        }
+
+        // Check for DML statements
+        if (cleanedQuery.startsWith("INSERT")) return OracleSqlStatementTypeEnum.INSERT;
+        if (cleanedQuery.startsWith("UPDATE")) return OracleSqlStatementTypeEnum.UPDATE;
+        if (cleanedQuery.startsWith("DELETE")) return OracleSqlStatementTypeEnum.DELETE;
+        if (cleanedQuery.startsWith("MERGE")) return OracleSqlStatementTypeEnum.MERGE;
+
+        // Check for SELECT statements and variations
+        if (cleanedQuery.startsWith("SELECT")) {
+            // Check if it's a view definition
+            if (cleanedQuery.contains("CREATE VIEW")) {
+                return OracleSqlStatementTypeEnum.CREATE_VIEW;
+            }
+            return OracleSqlStatementTypeEnum.SELECT;
+        }
+
+        // Check for WITH clause (Common Table Expression)
+        if (cleanedQuery.startsWith("WITH")) {
+            return OracleSqlStatementTypeEnum.WITH;
+        }
+
+        // Check for EXPLAIN PLAN
+        if (cleanedQuery.startsWith("EXPLAIN")) {
+            return OracleSqlStatementTypeEnum.EXPLAIN_PLAN;
+        }
+
+        // Check for CALL statement (Java stored procedures)
+        if (cleanedQuery.startsWith("CALL")) {
+            return OracleSqlStatementTypeEnum.CALL;
+        }
+
+        // Check for EXECUTE/EXEC statement
+        if (cleanedQuery.startsWith("EXEC") || cleanedQuery.startsWith("EXECUTE")) {
+            return OracleSqlStatementTypeEnum.EXECUTE;
+        }
+
+        // Check for procedure/function definitions (without CREATE keyword)
+        if (cleanedQuery.contains("PROCEDURE") && cleanedQuery.contains("IS") && cleanedQuery.contains("BEGIN")) {
+            return OracleSqlStatementTypeEnum.PROCEDURE;
+        }
+        if (cleanedQuery.contains("FUNCTION") && cleanedQuery.contains("RETURN") && cleanedQuery.contains("IS")) {
+            return OracleSqlStatementTypeEnum.FUNCTION;
+        }
+        if (cleanedQuery.contains("PACKAGE") && (cleanedQuery.contains("IS") || cleanedQuery.contains("AS"))) {
+            return OracleSqlStatementTypeEnum.PACKAGE;
+        }
+
+        // Check for view queries (SELECT statements that reference views)
+        if (cleanedQuery.contains("FROM") && cleanedQuery.matches(".*\\bVIEW\\b.*")) {
+            return OracleSqlStatementTypeEnum.VIEW_QUERY;
+        }
+
+        // Check for PL/SQL blocks without BEGIN/DECLARE (implicit blocks)
+        if (cleanedQuery.contains("IS") && cleanedQuery.contains("BEGIN") && cleanedQuery.contains("END")) {
+            return OracleSqlStatementTypeEnum.PLSQL_BLOCK;
+        }
+
+        // Default - treat as regular SQL
+        return OracleSqlStatementTypeEnum.UNKNOWN;
+    }
+
+    /**
+     * Check if statement type is allowed in read-only mode
+     */
+    private boolean isReadOnlyAllowed(OracleSqlStatementTypeEnum statementType) {
+        switch (statementType) {
+            case SELECT:
+            case WITH:
+            case EXPLAIN_PLAN:
+            case VIEW_QUERY:
+            case CALL: // Some CALL statements might be read-only
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Get appropriate success message based on statement type
+     */
+    private String getSuccessMessage(OracleSqlStatementTypeEnum statementType, Map<String, Object> results) {
+        switch (statementType) {
+            case SELECT:
+            case WITH:
+            case VIEW_QUERY:
+                int rowCount = (int) results.getOrDefault("rowCount", 0);
+                return String.format("%s executed successfully, %d rows returned", statementType, rowCount);
+
+            case INSERT:
+            case UPDATE:
+            case DELETE:
+            case MERGE:
+                int affected = (int) results.getOrDefault("rowsAffected", 0);
+                return String.format("%s executed successfully, %d rows affected", statementType, affected);
+
+            case PROCEDURE:
+            case FUNCTION:
+            case PACKAGE:
+                return String.format("%s compiled/executed successfully", statementType);
+
+            case PLSQL_BLOCK:
+            case ANONYMOUS_BLOCK:
+                return "PL/SQL block executed successfully";
+
+            case CREATE_VIEW:
+            case CREATE_TABLE:
+            case CREATE_INDEX:
+            case CREATE_TRIGGER:
+            case CREATE_SEQUENCE:
+            case CREATE_SYNONYM:
+            case CREATE_TYPE:
+            case DDL:
+                return "DDL statement executed successfully";
+
+            default:
+                return "Statement executed successfully";
         }
     }
 
@@ -4539,8 +5101,8 @@ public class OracleSchemaService implements DatabaseSchemaService {
     }
 
     @Override
-    public DatabaseType getDatabaseType() {
-        return DatabaseType.ORACLE;
+    public DatabaseTypeEnum getDatabaseType() {
+        return DatabaseTypeEnum.ORACLE;
     }
 
     @Override

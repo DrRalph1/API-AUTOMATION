@@ -1,7 +1,7 @@
 // services/schemaBrowser/DatabaseSchemaServiceFactory.java
 package com.usg.apiAutomation.factories;
 
-import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.enums.DatabaseTypeEnum;
 import com.usg.apiAutomation.services.schemaBrowser.DatabaseSchemaService;
 import com.usg.apiAutomation.services.schemaBrowser.OracleSchemaService;
 import com.usg.apiAutomation.services.schemaBrowser.PostgreSQLSchemaService;
@@ -16,7 +16,7 @@ import java.util.Map;
 @Component
 public class DatabaseSchemaServiceFactory {
 
-    private final Map<DatabaseType, DatabaseSchemaService> services = new EnumMap<>(DatabaseType.class);
+    private final Map<DatabaseTypeEnum, DatabaseSchemaService> services = new EnumMap<>(DatabaseTypeEnum.class);
 
     @Autowired
     public DatabaseSchemaServiceFactory(
@@ -27,8 +27,8 @@ public class DatabaseSchemaServiceFactory {
             // SQLServerSchemaService sqlServerSchemaService,
             // MongoDBService mongoDBService
     ) {
-        services.put(DatabaseType.ORACLE, oracleSchemaService);
-        services.put(DatabaseType.POSTGRESQL, postgreSQLSchemaService);
+        services.put(DatabaseTypeEnum.ORACLE, oracleSchemaService);
+        services.put(DatabaseTypeEnum.POSTGRESQL, postgreSQLSchemaService);
         // services.put(DatabaseType.MYSQL, mySQLSchemaService);
         // services.put(DatabaseType.SQL_SERVER, sqlServerSchemaService);
         // services.put(DatabaseType.MONGODB, mongoDBService);
@@ -36,7 +36,7 @@ public class DatabaseSchemaServiceFactory {
         log.info("DatabaseSchemaServiceFactory initialized with {} services", services.size());
     }
 
-    public DatabaseSchemaService getService(DatabaseType type) {
+    public DatabaseSchemaService getService(DatabaseTypeEnum type) {
         DatabaseSchemaService service = services.get(type);
         if (service == null) {
             log.error("No schema service found for database type: {}", type);
@@ -46,10 +46,10 @@ public class DatabaseSchemaServiceFactory {
     }
 
     public DatabaseSchemaService getService(String type) {
-        return getService(DatabaseType.fromString(type));
+        return getService(DatabaseTypeEnum.fromString(type));
     }
 
-    public DatabaseSchemaService getServiceOrDefault(DatabaseType type, DatabaseType defaultType) {
+    public DatabaseSchemaService getServiceOrDefault(DatabaseTypeEnum type, DatabaseTypeEnum defaultType) {
         DatabaseSchemaService service = services.get(type);
         if (service == null) {
             log.warn("No schema service found for database type: {}, falling back to: {}", type, defaultType);
@@ -61,15 +61,15 @@ public class DatabaseSchemaServiceFactory {
         return service;
     }
 
-    public boolean isSupported(DatabaseType type) {
+    public boolean isSupported(DatabaseTypeEnum type) {
         return services.containsKey(type);
     }
 
     public boolean isSupported(String type) {
-        return isSupported(DatabaseType.fromString(type));
+        return isSupported(DatabaseTypeEnum.fromString(type));
     }
 
-    public Map<DatabaseType, DatabaseSchemaService> getAllServices() {
+    public Map<DatabaseTypeEnum, DatabaseSchemaService> getAllServices() {
         return new EnumMap<>(services);
     }
 }

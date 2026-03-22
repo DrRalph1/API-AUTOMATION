@@ -3025,15 +3025,14 @@ export const executeQuery = async (authorizationHeader, queryRequest = {}) => {
  */
 export const executeSQL = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
-    const { sql, timeoutSeconds = 30, readOnly = true } = params;
-    
+    const { sql, timeoutSeconds = 30, readOnly = true } = params;  // Defaults to true
+
     console.log('📊 executeSQL called with:', { sql: sql?.substring(0, 100), ...params });
     
-    // Use the existing executeQuery function
     return executeQuery(authorizationHeader, {
         query: sql,
         timeoutSeconds,
-        readOnly
+        readOnly  // Passes through to the API call
     });
 };
 

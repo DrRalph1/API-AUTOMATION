@@ -6,7 +6,7 @@ import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.GeneratedApiResponseDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiExecutionLogEntity;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
-import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.enums.DatabaseTypeEnum;
 import com.usg.apiAutomation.helpers.ApiAnalyticsHelper;
 import com.usg.apiAutomation.helpers.DatabaseMetadataHelper;
 import com.usg.apiAutomation.repositories.apiGenerationEngine.ApiExecutionLogRepository;
@@ -1134,8 +1134,8 @@ public class PostgreSQLApiMetadataHelper implements DatabaseMetadataHelper, ApiA
 
 
     @Override
-    public DatabaseType getSupportedDatabaseType() {
-        return DatabaseType.ORACLE;
+    public DatabaseTypeEnum getSupportedDatabaseType() {
+        return DatabaseTypeEnum.ORACLE;
     }
 
     @Override

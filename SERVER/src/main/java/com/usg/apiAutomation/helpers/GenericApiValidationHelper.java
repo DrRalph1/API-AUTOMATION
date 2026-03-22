@@ -3,8 +3,7 @@ package com.usg.apiAutomation.helpers;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.CollectionInfoDTO;
-import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
-import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.enums.DatabaseTypeEnum;
 import com.usg.apiAutomation.repositories.apiGenerationEngine.GeneratedAPIRepository;
 import com.usg.apiAutomation.services.schemaBrowser.DatabaseSchemaService;
 import lombok.extern.slf4j.Slf4j;
@@ -65,12 +64,12 @@ public class GenericApiValidationHelper {
             Function<ApiSourceObjectDTO, Map<String, Object>> detailsProvider) {
 
         Map<String, Object> result = new HashMap<>();
-        DatabaseType databaseType = schemaService.getDatabaseType();
+        DatabaseTypeEnum databaseTypeEnum = schemaService.getDatabaseType();
 
         try {
             log.info("Validating source object: {}.{} ({}) on database: {}",
                     sourceObject.getOwner(), sourceObject.getObjectName(),
-                    sourceObject.getObjectType(), databaseType);
+                    sourceObject.getObjectType(), databaseTypeEnum);
 
             // Check if object exists
             boolean exists = schemaService.objectExists(
@@ -81,15 +80,15 @@ public class GenericApiValidationHelper {
 
             if (!exists) {
                 log.warn("Object not found: {}.{} on {}",
-                        sourceObject.getOwner(), sourceObject.getObjectName(), databaseType);
+                        sourceObject.getOwner(), sourceObject.getObjectName(), databaseTypeEnum);
 
                 result.put("valid", false);
                 result.put("exists", false);
-                result.put("message", "Source object not found in " + databaseType + " database");
+                result.put("message", "Source object not found in " + databaseTypeEnum + " database");
                 result.put("objectName", sourceObject.getObjectName());
                 result.put("objectType", sourceObject.getObjectType());
                 result.put("owner", sourceObject.getOwner());
-                result.put("databaseType", databaseType.getValue());
+                result.put("databaseType", databaseTypeEnum.getValue());
                 result.put("details", new HashMap<>());
 
                 return result;
@@ -122,12 +121,12 @@ public class GenericApiValidationHelper {
                 isValid = false;
                 validationMessage = "Object has no parameters defined. Please check the object definition.";
                 log.warn("Procedure/Function {} on {} has no parameters",
-                        sourceObject.getObjectName(), databaseType);
+                        sourceObject.getObjectName(), databaseTypeEnum);
             } else if (("TABLE".equals(objectType) || "VIEW".equals(objectType)) && !hasColumns) {
                 isValid = false;
                 validationMessage = "Object has no columns defined. Please check the object definition.";
                 log.warn("Table/View {} on {} has no columns",
-                        sourceObject.getObjectName(), databaseType);
+                        sourceObject.getObjectName(), databaseTypeEnum);
             }
 
             result.put("valid", isValid);
@@ -136,7 +135,7 @@ public class GenericApiValidationHelper {
             result.put("objectName", details.getOrDefault("objectName", sourceObject.getObjectName()));
             result.put("objectType", details.getOrDefault("objectType", sourceObject.getObjectType()));
             result.put("owner", details.getOrDefault("owner", sourceObject.getOwner()));
-            result.put("databaseType", databaseType.getValue());
+            result.put("databaseType", databaseTypeEnum.getValue());
             result.put("details", details);
 
             // Add parameters/columns for frontend
@@ -151,16 +150,16 @@ public class GenericApiValidationHelper {
 
             log.info("Validation completed for {}.{} on {}: valid={}",
                     sourceObject.getOwner(), sourceObject.getObjectName(),
-                    databaseType, isValid);
+                    databaseTypeEnum, isValid);
 
         } catch (Exception e) {
             log.error("Error validating source object on {}: {}",
-                    databaseType, e.getMessage(), e);
+                    databaseTypeEnum, e.getMessage(), e);
             result.put("valid", false);
             result.put("exists", false);
             result.put("message", "Validation error: " + e.getMessage());
             result.put("error", e.getMessage());
-            result.put("databaseType", databaseType.getValue());
+            result.put("databaseType", databaseTypeEnum.getValue());
             result.put("details", new HashMap<>());
         }
 

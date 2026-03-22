@@ -2,7 +2,7 @@ package com.usg.apiAutomation.utils.apiEngine;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
-import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.enums.DatabaseTypeEnum;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -141,8 +141,8 @@ public class OracleParameterGeneratorUtil implements DatabaseParameterGeneratorU
     }
 
     @Override
-    public DatabaseType getSupportedDatabaseType() {
-        return DatabaseType.ORACLE;
+    public DatabaseTypeEnum getSupportedDatabaseType() {
+        return DatabaseTypeEnum.ORACLE;
     }
 
     // ==================== HELPER METHODS FOR CONVERSION ====================

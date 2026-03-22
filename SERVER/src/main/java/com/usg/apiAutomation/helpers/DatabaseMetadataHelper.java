@@ -2,7 +2,7 @@
 package com.usg.apiAutomation.helpers;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
-import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.enums.DatabaseTypeEnum;
 import com.usg.apiAutomation.services.schemaBrowser.DatabaseSchemaService;
 
 import java.util.List;
@@ -26,7 +26,7 @@ public interface DatabaseMetadataHelper {
      * Get the database type this helper supports
      * @return DatabaseType enum
      */
-    DatabaseType getSupportedDatabaseType();
+    DatabaseTypeEnum getSupportedDatabaseType();
 
     /**
      * Parse and extract parameters from source code

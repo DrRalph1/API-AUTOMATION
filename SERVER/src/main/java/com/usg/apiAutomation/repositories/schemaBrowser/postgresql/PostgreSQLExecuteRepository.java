@@ -1,5 +1,6 @@
 package com.usg.apiAutomation.repositories.schemaBrowser.postgresql;
 
+import com.usg.apiAutomation.enums.PostgreSQLSqlStatementTypeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
@@ -831,5 +832,246 @@ public class PostgreSQLExecuteRepository extends PostgreSQLRepository {
             }
         }
         return sql.length();
+    }
+
+
+
+    /**
+     * Execute DDL statements
+     */
+    public Map<String, Object> executeDdl(String ddl) {
+        try {
+            log.info("Executing DDL: {}", ddl);
+            long startTime = System.currentTimeMillis();
+
+            getJdbcTemplate().execute(ddl);
+
+            long executionTime = System.currentTimeMillis() - startTime;
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("executionTime", executionTime);
+            result.put("success", true);
+            result.put("message", "DDL executed successfully");
+            result.put("rowCount", 0);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error executing DDL: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to execute DDL: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Execute stored program (procedure/function)
+     */
+    public Map<String, Object> executeStoredProgram(String program, PostgreSQLSqlStatementTypeEnum programType, int timeoutSeconds) {
+        try {
+            log.info("Executing stored program: {}, type: {}", program, programType);
+            long startTime = System.currentTimeMillis();
+
+            Connection conn = getJdbcTemplate().getDataSource().getConnection();
+
+            if (timeoutSeconds > 0) {
+                conn.setNetworkTimeout(null, timeoutSeconds * 1000);
+            }
+
+            // For CREATE PROCEDURE/FUNCTION, execute as DDL
+            if (programType == PostgreSQLSqlStatementTypeEnum.PROCEDURE ||
+                    programType == PostgreSQLSqlStatementTypeEnum.FUNCTION) {
+                getJdbcTemplate().execute(program);
+            } else {
+                // For existing procedures/functions, call them
+                String executableCall = program;
+
+                // If it's a procedure call without CALL keyword
+                if (!program.toUpperCase().startsWith("CALL") &&
+                        programType == PostgreSQLSqlStatementTypeEnum.PROCEDURE) {
+                    executableCall = "CALL " + program;
+                }
+
+                // If it's a function call without SELECT
+                if (!program.toUpperCase().startsWith("SELECT") &&
+                        programType == PostgreSQLSqlStatementTypeEnum.FUNCTION) {
+                    executableCall = "SELECT " + program;
+                }
+
+                getJdbcTemplate().execute(executableCall);
+            }
+
+            long executionTime = System.currentTimeMillis() - startTime;
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("executionTime", executionTime);
+            result.put("success", true);
+            result.put("message", programType + " executed successfully");
+            result.put("rowCount", 0);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error executing stored program: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to execute stored program: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Execute direct CALL or EXEC statement
+     */
+    public Map<String, Object> executeDirectCall(String callStatement, int timeoutSeconds) {
+        try {
+            log.info("Executing direct call: {}", callStatement);
+            long startTime = System.currentTimeMillis();
+
+            Connection conn = getJdbcTemplate().getDataSource().getConnection();
+            if (timeoutSeconds > 0) {
+                conn.setNetworkTimeout(null, timeoutSeconds * 1000);
+            }
+
+            // Format the call properly for PostgreSQL
+            String executableCall = callStatement;
+            if (callStatement.toUpperCase().startsWith("EXEC") ||
+                    callStatement.toUpperCase().startsWith("EXECUTE")) {
+                String procedureCall = callStatement.substring(4).trim();
+                executableCall = "CALL " + procedureCall;
+            }
+
+            getJdbcTemplate().execute(executableCall);
+
+            long executionTime = System.currentTimeMillis() - startTime;
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("executionTime", executionTime);
+            result.put("success", true);
+            result.put("message", "Call executed successfully");
+            result.put("rowCount", 0);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error executing direct call: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to execute call: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Execute PL/pgSQL block
+     */
+    public Map<String, Object> executePlPgSqlBlock(String plSqlBlock, int timeoutSeconds, boolean readOnly) {
+        try {
+            log.info("Executing PL/pgSQL block, timeout: {}, readOnly: {}", timeoutSeconds, readOnly);
+
+            long startTime = System.currentTimeMillis();
+
+            Connection conn = getJdbcTemplate().getDataSource().getConnection();
+            if (readOnly) {
+                conn.setReadOnly(true);
+            }
+            if (timeoutSeconds > 0) {
+                conn.setNetworkTimeout(null, timeoutSeconds * 1000);
+            }
+
+            // Format the PL/pgSQL block for PostgreSQL
+            String executableBlock = plSqlBlock.trim();
+
+            // If it's a DO block, use as-is
+            if (!executableBlock.toUpperCase().startsWith("DO") &&
+                    !executableBlock.toUpperCase().startsWith("BEGIN")) {
+                executableBlock = "DO $$\n" + executableBlock + "\n$$ LANGUAGE plpgsql;";
+            }
+
+            // Execute the PL/pgSQL block
+            getJdbcTemplate().execute(executableBlock);
+
+            long executionTime = System.currentTimeMillis() - startTime;
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("rows", new ArrayList<>());
+            result.put("columns", new ArrayList<>());
+            result.put("rowCount", 0);
+            result.put("executionTime", executionTime);
+            result.put("message", "PL/pgSQL block executed successfully");
+            result.put("isPlSql", true);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error executing PL/pgSQL block: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to execute PL/pgSQL block: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Execute stored procedure with OUT parameters (PostgreSQL 14+)
+     */
+    public Map<String, Object> executeStoredProcedureWithParams(String procedureName,
+                                                                Map<String, Object> inParams,
+                                                                List<String> outParamNames) {
+        Connection conn = null;
+        CallableStatement cstmt = null;
+
+        try {
+            log.info("Executing stored procedure with OUT parameters: {}", procedureName);
+
+            long startTime = System.currentTimeMillis();
+
+            conn = getJdbcTemplate().getDataSource().getConnection();
+
+            // Build the call string with placeholders for OUT parameters
+            StringBuilder callBuilder = new StringBuilder("{call ");
+            callBuilder.append(procedureName).append("(");
+
+            int totalParams = (inParams != null ? inParams.size() : 0) + (outParamNames != null ? outParamNames.size() : 0);
+            for (int i = 0; i < totalParams; i++) {
+                if (i > 0) callBuilder.append(",");
+                callBuilder.append("?");
+            }
+            callBuilder.append(")}");
+
+            String callSql = callBuilder.toString();
+            cstmt = conn.prepareCall(callSql);
+
+            // Set IN parameters
+            if (inParams != null && !inParams.isEmpty()) {
+                int paramIndex = 1;
+                for (Object value : inParams.values()) {
+                    setParameter(cstmt, paramIndex++, value);
+                }
+            }
+
+            // Register OUT parameters
+            int outParamStartIndex = (inParams != null ? inParams.size() : 0) + 1;
+            for (int i = 0; i < (outParamNames != null ? outParamNames.size() : 0); i++) {
+                cstmt.registerOutParameter(outParamStartIndex + i, Types.VARCHAR);
+            }
+
+            // Execute the stored procedure
+            cstmt.execute();
+
+            // Collect OUT parameter values
+            Map<String, Object> outParams = new HashMap<>();
+            if (outParamNames != null) {
+                for (int i = 0; i < outParamNames.size(); i++) {
+                    outParams.put(outParamNames.get(i), cstmt.getObject(outParamStartIndex + i));
+                }
+            }
+
+            long executionTime = System.currentTimeMillis() - startTime;
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("outParams", outParams);
+            result.put("executionTime", executionTime);
+            result.put("success", true);
+            result.put("message", "Stored procedure executed successfully");
+            result.put("rowCount", 0);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error executing stored procedure {}: {}", procedureName, e.getMessage(), e);
+            throw new RuntimeException("Failed to execute stored procedure: " + e.getMessage(), e);
+        } finally {
+            closeResources(null, cstmt, conn);
+        }
     }
 }

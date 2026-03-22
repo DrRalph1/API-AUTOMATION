@@ -1,5 +1,6 @@
 package com.usg.apiAutomation.repositories.schemaBrowser.oracle;
 
+import com.usg.apiAutomation.enums.OracleSqlStatementTypeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
@@ -433,5 +434,265 @@ public class OracleExecuteRepository extends OracleRepository {
             dbInfo.put("success", false);
         }
         return dbInfo;
+    }
+
+
+    public Map<String, Object> executePlSqlBlock(String plSqlBlock, int timeoutSeconds, boolean readOnly) {
+        try {
+            log.info("Executing PL/SQL block, timeout: {}, readOnly: {}", timeoutSeconds, readOnly);
+
+            long startTime = System.currentTimeMillis();
+
+            if (timeoutSeconds > 0) {
+                getJdbcTemplate().setQueryTimeout(timeoutSeconds);
+            }
+
+            // For PL/SQL blocks, we need to use execute() instead of queryForList()
+            // Wrap in BEGIN-END if not already wrapped
+            String executableBlock = plSqlBlock.trim();
+            if (!executableBlock.toUpperCase().startsWith("BEGIN") &&
+                    !executableBlock.toUpperCase().startsWith("DECLARE")) {
+                executableBlock = "BEGIN\n" + executableBlock + "\nEND;";
+            }
+
+            // Execute the PL/SQL block
+            getJdbcTemplate().execute(executableBlock);
+
+            long executionTime = System.currentTimeMillis() - startTime;
+
+            getJdbcTemplate().setQueryTimeout(-1);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("rows", new ArrayList<>()); // No rows returned for PL/SQL blocks
+            result.put("columns", new ArrayList<>());
+            result.put("rowCount", 0);
+            result.put("executionTime", executionTime);
+            result.put("message", "PL/SQL block executed successfully");
+            result.put("isPlSql", true);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error executing PL/SQL block: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to execute PL/SQL block: " + e.getMessage(), e);
+        }
+    }
+
+
+    public Map<String, Object> executeProcedureWithOutParams(String procedureName,
+                                                             Map<String, Object> inParams,
+                                                             List<String> outParamNames) {
+        try {
+            log.info("Executing stored procedure with OUT parameters: {}", procedureName);
+
+            long startTime = System.currentTimeMillis();
+
+            // Build the call string with placeholders for OUT parameters
+            StringBuilder callBuilder = new StringBuilder("{call ");
+            callBuilder.append(procedureName).append("(");
+
+            int totalParams = inParams.size() + outParamNames.size();
+            for (int i = 0; i < totalParams; i++) {
+                if (i > 0) callBuilder.append(",");
+                callBuilder.append("?");
+            }
+            callBuilder.append(")}");
+
+            String callSql = callBuilder.toString();
+
+            // Use CallableStatement for OUT parameters
+            Map<String, Object> result = getJdbcTemplate().execute((java.sql.Connection conn) -> {
+                java.sql.CallableStatement cs = conn.prepareCall(callSql);
+
+                // Set IN parameters
+                int paramIndex = 1;
+                for (Object value : inParams.values()) {
+                    cs.setObject(paramIndex++, value);
+                }
+
+                // Register OUT parameters
+                for (int i = 0; i < outParamNames.size(); i++) {
+                    cs.registerOutParameter(paramIndex + i, java.sql.Types.VARCHAR);
+                }
+
+                cs.execute();
+
+                // Collect OUT parameter values
+                Map<String, Object> outParams = new HashMap<>();
+                for (int i = 0; i < outParamNames.size(); i++) {
+                    outParams.put(outParamNames.get(i), cs.getObject(paramIndex + i));
+                }
+
+                return outParams;
+            });
+
+            long executionTime = System.currentTimeMillis() - startTime;
+
+            Map<String, Object> finalResult = new HashMap<>();
+            finalResult.put("outParams", result);
+            finalResult.put("executionTime", executionTime);
+            finalResult.put("success", true);
+            finalResult.put("message", "Stored procedure executed successfully");
+            finalResult.put("rowCount", 0);
+
+            return finalResult;
+
+        } catch (Exception e) {
+            log.error("Error executing stored procedure {}: {}", procedureName, e.getMessage(), e);
+            throw new RuntimeException("Failed to execute stored procedure: " + e.getMessage(), e);
+        }
+    }
+
+
+    /**
+     * Execute DDL statements
+     */
+    public Map<String, Object> executeDdl(String ddl) {
+        try {
+            log.info("Executing DDL: {}", ddl);
+            long startTime = System.currentTimeMillis();
+
+            getJdbcTemplate().execute(ddl);
+
+            long executionTime = System.currentTimeMillis() - startTime;
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("executionTime", executionTime);
+            result.put("success", true);
+            result.put("message", "DDL executed successfully");
+            result.put("rowCount", 0);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error executing DDL: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to execute DDL: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Execute stored program (procedure/function/package)
+     */
+    public Map<String, Object> executeStoredProgram(String program, OracleSqlStatementTypeEnum programType, int timeoutSeconds) {
+        try {
+            log.info("Executing stored program: {}, type: {}", program, programType);
+            long startTime = System.currentTimeMillis();
+
+            if (timeoutSeconds > 0) {
+                getJdbcTemplate().setQueryTimeout(timeoutSeconds);
+            }
+
+            // Check if this is a DDL statement that should NOT be wrapped
+            boolean isDDL = programType == OracleSqlStatementTypeEnum.CREATE_TABLE ||
+                    programType == OracleSqlStatementTypeEnum.CREATE_VIEW ||
+                    programType == OracleSqlStatementTypeEnum.CREATE_INDEX ||
+                    programType == OracleSqlStatementTypeEnum.CREATE_TRIGGER ||
+                    programType == OracleSqlStatementTypeEnum.CREATE_SEQUENCE ||
+                    programType == OracleSqlStatementTypeEnum.CREATE_SYNONYM ||
+                    programType == OracleSqlStatementTypeEnum.CREATE_TYPE ||
+                    programType == OracleSqlStatementTypeEnum.ALTER ||
+                    programType == OracleSqlStatementTypeEnum.DROP ||
+                    programType == OracleSqlStatementTypeEnum.TRUNCATE ||
+                    programType == OracleSqlStatementTypeEnum.GRANT ||
+                    programType == OracleSqlStatementTypeEnum.REVOKE ||
+                    programType == OracleSqlStatementTypeEnum.COMMENT ||
+                    programType == OracleSqlStatementTypeEnum.RENAME ||
+                    programType == OracleSqlStatementTypeEnum.DDL;
+
+            // For CREATE PROCEDURE/FUNCTION/PACKAGE or DDL, execute directly
+            if (programType == OracleSqlStatementTypeEnum.PROCEDURE ||
+                    programType == OracleSqlStatementTypeEnum.FUNCTION ||
+                    programType == OracleSqlStatementTypeEnum.PACKAGE ||
+                    isDDL) {
+                getJdbcTemplate().execute(program);
+            } else {
+                // For existing procedures/calls, wrap in anonymous block
+                String executableBlock = "BEGIN\n" + program + "\nEND;";
+                getJdbcTemplate().execute(executableBlock);
+            }
+
+            long executionTime = System.currentTimeMillis() - startTime;
+            getJdbcTemplate().setQueryTimeout(-1);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("executionTime", executionTime);
+            result.put("success", true);
+            result.put("message", programType + " executed successfully");
+            result.put("rowCount", 0);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error executing stored program: {}", e.getMessage(), e);
+
+            // Extract Oracle error message
+            Throwable rootCause = e;
+            while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+                rootCause = rootCause.getCause();
+            }
+            String errorMessage = rootCause.getMessage();
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("success", false);
+            errorResult.put("executionTime", 0);
+
+            if (errorMessage != null && errorMessage.contains("ORA-01031")) {
+                errorResult.put("message", "Insufficient privileges: The database user does not have permission to execute this operation.");
+                errorResult.put("error", "ORA-01031: insufficient privileges");
+            } else if (errorMessage != null && errorMessage.contains("ORA-00900")) {
+                errorResult.put("message", "Invalid SQL statement.");
+                errorResult.put("error", errorMessage.substring(0, Math.min(errorMessage.indexOf('\n'), errorMessage.length())));
+            } else if (errorMessage != null && errorMessage.contains("ORA-00942")) {
+                errorResult.put("message", "Table or view does not exist.");
+                errorResult.put("error", errorMessage.substring(0, Math.min(errorMessage.indexOf('\n'), errorMessage.length())));
+            } else if (errorMessage != null && errorMessage.contains("ORA-00955")) {
+                errorResult.put("message", "Object already exists.");
+                errorResult.put("error", errorMessage.substring(0, Math.min(errorMessage.indexOf('\n'), errorMessage.length())));
+            } else {
+                errorResult.put("message", "Execution failed: " + e.getMessage());
+                errorResult.put("error", e.getMessage());
+            }
+
+            return errorResult;
+        }
+    }
+
+    /**
+     * Execute direct CALL or EXEC statement
+     */
+    public Map<String, Object> executeDirectCall(String callStatement, int timeoutSeconds) {
+        try {
+            log.info("Executing direct call: {}", callStatement);
+            long startTime = System.currentTimeMillis();
+
+            if (timeoutSeconds > 0) {
+                getJdbcTemplate().setQueryTimeout(timeoutSeconds);
+            }
+
+            // Convert EXEC to BEGIN-END block if needed
+            String executableCall = callStatement;
+            if (callStatement.toUpperCase().startsWith("EXEC") ||
+                    callStatement.toUpperCase().startsWith("EXECUTE")) {
+                String procedureCall = callStatement.substring(4).trim();
+                executableCall = "BEGIN\n" + procedureCall + ";\nEND;";
+            }
+
+            getJdbcTemplate().execute(executableCall);
+
+            long executionTime = System.currentTimeMillis() - startTime;
+            getJdbcTemplate().setQueryTimeout(-1);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("executionTime", executionTime);
+            result.put("success", true);
+            result.put("message", "Call executed successfully");
+            result.put("rowCount", 0);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error executing direct call: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to execute call: " + e.getMessage(), e);
+        }
     }
 }

@@ -2,7 +2,7 @@
 package com.usg.apiAutomation.services.schemaBrowser;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
-import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.enums.DatabaseTypeEnum;
 import java.util.Map;
 
 /**
@@ -31,7 +31,7 @@ public interface DatabaseSchemaService {
      * Get the database type
      * @return DatabaseType enum
      */
-    DatabaseType getDatabaseType();
+    DatabaseTypeEnum getDatabaseType();
 
     /**
      * Get database version

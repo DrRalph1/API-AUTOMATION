@@ -2,7 +2,7 @@ package com.usg.apiAutomation.utils.apiEngine;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
-import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.enums.DatabaseTypeEnum;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -128,8 +128,8 @@ public class PostgreSQLParameterGeneratorUtil implements DatabaseParameterGenera
     }
 
     @Override
-    public DatabaseType getSupportedDatabaseType() {
-        return DatabaseType.POSTGRESQL;
+    public DatabaseTypeEnum getSupportedDatabaseType() {
+        return DatabaseTypeEnum.POSTGRESQL;
     }
 
     // ==================== HELPER METHODS FOR CONVERSION ====================

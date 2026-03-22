@@ -7,7 +7,7 @@ import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiHeaderEnti
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiParameterEntity;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiResponseMappingEntity;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
-import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.enums.DatabaseTypeEnum;
 
 import java.util.List;
 
@@ -29,7 +29,7 @@ public interface DatabaseParameterGeneratorUtil {
     /**
      * Get the database type this generator supports
      */
-    DatabaseType getSupportedDatabaseType();
+    DatabaseTypeEnum getSupportedDatabaseType();
 
 
     /**

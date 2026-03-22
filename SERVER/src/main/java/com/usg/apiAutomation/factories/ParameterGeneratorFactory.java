@@ -1,7 +1,7 @@
 // factories/ParameterGeneratorFactory.java
 package com.usg.apiAutomation.factories;
 
-import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.enums.DatabaseTypeEnum;
 import com.usg.apiAutomation.utils.apiEngine.DatabaseParameterGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.OracleParameterGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.PostgreSQLParameterGeneratorUtil;
@@ -15,17 +15,17 @@ import java.util.Map;
 @Component
 public class ParameterGeneratorFactory {
 
-    private final Map<DatabaseType, DatabaseParameterGeneratorUtil> generators = new EnumMap<>(DatabaseType.class);
+    private final Map<DatabaseTypeEnum, DatabaseParameterGeneratorUtil> generators = new EnumMap<>(DatabaseTypeEnum.class);
 
     public ParameterGeneratorFactory(
             OracleParameterGeneratorUtil oracleParameterGenerator,
             PostgreSQLParameterGeneratorUtil postgreSQLParameterGenerator) {
-        generators.put(DatabaseType.ORACLE, oracleParameterGenerator);
-        generators.put(DatabaseType.POSTGRESQL, postgreSQLParameterGenerator);
+        generators.put(DatabaseTypeEnum.ORACLE, oracleParameterGenerator);
+        generators.put(DatabaseTypeEnum.POSTGRESQL, postgreSQLParameterGenerator);
         log.info("ParameterGeneratorFactory initialized with {} generators", generators.size());
     }
 
-    public DatabaseParameterGeneratorUtil getGenerator(DatabaseType type) {
+    public DatabaseParameterGeneratorUtil getGenerator(DatabaseTypeEnum type) {
         DatabaseParameterGeneratorUtil generator = generators.get(type);
         if (generator == null) {
             log.error("No parameter generator found for database type: {}", type);
@@ -35,6 +35,6 @@ public class ParameterGeneratorFactory {
     }
 
     public DatabaseParameterGeneratorUtil getGenerator(String typeStr) {
-        return getGenerator(DatabaseType.fromString(typeStr));
+        return getGenerator(DatabaseTypeEnum.fromString(typeStr));
     }
 }

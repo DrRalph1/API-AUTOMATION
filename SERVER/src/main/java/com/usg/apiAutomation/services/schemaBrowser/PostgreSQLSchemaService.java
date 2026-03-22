@@ -1,7 +1,8 @@
 package com.usg.apiAutomation.services.schemaBrowser;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
-import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.enums.DatabaseTypeEnum;
+import com.usg.apiAutomation.enums.PostgreSQLSqlStatementTypeEnum;
 import com.usg.apiAutomation.repositories.schemaBrowser.postgresql.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -9,13 +10,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.*;
 
 @Slf4j
@@ -32,7 +31,7 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
     private final PostgreSQLSearchRepository searchRepository;
     private final PostgreSQLDependencyRepository dependencyRepository;
     private final PostgreSQLDDLRepository ddlRepository;
-    private final PostgreSQLExecuteRepository executeRepository;
+    private final PostgreSQLExecuteRepository postgreSQLExecuteRepository;
 
     @Autowired
     @Qualifier("PostgreSQLRepository")
@@ -1860,22 +1859,114 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
                 requestId, timeoutSeconds, readOnly, performedBy);
 
         try {
-            Map<String, Object> queryResults = executeRepository.executeQuery(query, timeoutSeconds, readOnly);
+            // Enhanced detection of SQL/PLPGSQL type
+            String trimmedQuery = query.trim();
+            String upperQuery = trimmedQuery.toUpperCase();
 
+            PostgreSQLSqlStatementTypeEnum statementType = detectSqlStatementType(trimmedQuery, upperQuery);
+
+            log.info("RequestEntity ID: {}, Detected statement type: {}", requestId, statementType);
+
+            // Validate readOnly restrictions
+            if (readOnly && !isReadOnlyAllowed(statementType)) {
+                String errorMsg = String.format(
+                        "Operation not allowed in read-only mode. Statement type '%s' requires write access. " +
+                                "Please use readOnly=false or switch to SELECT/query operations.",
+                        statementType
+                );
+                log.warn("RequestEntity ID: {}, {}", requestId, errorMsg);
+                throw new IllegalArgumentException(errorMsg);
+            }
+
+            Map<String, Object> queryResults;
+
+            switch (statementType) {
+                case SELECT:
+                case WITH:
+                case EXPLAIN_PLAN:
+                    // Regular SQL queries
+                    queryResults = postgreSQLExecuteRepository.executeQuery(query, timeoutSeconds, readOnly);
+                    break;
+
+                case PROCEDURE:
+                case FUNCTION:
+                case PACKAGE:
+                    // Stored procedures/functions/packages (PostgreSQL uses functions)
+                    queryResults = postgreSQLExecuteRepository.executeStoredProgram(trimmedQuery, statementType, timeoutSeconds);
+                    break;
+
+                case PLSQL_BLOCK:
+                case ANONYMOUS_BLOCK:
+                    // Anonymous PL/pgSQL blocks
+                    queryResults = postgreSQLExecuteRepository.executePlPgSqlBlock(query, timeoutSeconds, readOnly);
+                    break;
+
+                case CREATE_VIEW:
+                case CREATE_TABLE:
+                case CREATE_INDEX:
+                case CREATE_TRIGGER:
+                case CREATE_SEQUENCE:
+                case CREATE_SYNONYM:
+                case CREATE_TYPE:
+                case DDL:
+                    // DDL statements
+                    if (readOnly) {
+                        throw new IllegalArgumentException("DDL operations are not allowed in read-only mode");
+                    }
+                    queryResults = postgreSQLExecuteRepository.executeDdl(query);
+                    break;
+
+                case INSERT:
+                case UPDATE:
+                case DELETE:
+                case MERGE:
+                    // DML statements
+                    if (readOnly) {
+                        throw new IllegalArgumentException("DML operations are not allowed in read-only mode");
+                    }
+                    queryResults = postgreSQLExecuteRepository.executeUpdate(query, null);
+                    break;
+
+                case CALL:
+                case EXECUTE:
+                    // Direct procedure/function calls
+                    queryResults = postgreSQLExecuteRepository.executeDirectCall(trimmedQuery, timeoutSeconds);
+                    break;
+
+                case VIEW_QUERY:
+                    // Query against a view
+                    queryResults = postgreSQLExecuteRepository.executeQuery(query, timeoutSeconds, readOnly);
+                    break;
+
+                default:
+                    // Try to execute as regular query first, fallback to PL/pgSQL
+                    try {
+                        queryResults = postgreSQLExecuteRepository.executeQuery(query, timeoutSeconds, readOnly);
+                    } catch (Exception e) {
+                        log.warn("RequestEntity ID: {}, Failed as regular query, trying as PL/pgSQL: {}", requestId, e.getMessage());
+                        queryResults = postgreSQLExecuteRepository.executePlPgSqlBlock(query, timeoutSeconds, readOnly);
+                    }
+                    break;
+            }
+
+            // Add metadata about the execution
             Map<String, Object> result = new HashMap<>();
             result.put("data", queryResults);
             result.put("responseCode", 200);
-            result.put("message", "Query executed successfully");
+            result.put("message", getSuccessMessage(statementType, queryResults));
             result.put("requestId", requestId);
             result.put("timestamp", java.time.Instant.now().toString());
+            result.put("statementType", statementType.toString());
 
-            log.info("RequestEntity ID: {}, Query executed, returned {} rows",
-                    requestId, queryResults.get("rowCount"));
+            log.info("RequestEntity ID: {}, {} executed successfully, returned {} rows/affected",
+                    requestId, statementType,
+                    queryResults.getOrDefault("rowCount", queryResults.getOrDefault("rowsAffected", 0)));
 
             return result;
 
         } catch (Exception e) {
-            log.error("RequestEntity ID: {}, Error executing query: {}", requestId, e.getMessage());
+            log.error("RequestEntity ID: {}, Error executing {}: {}",
+                    requestId, detectSqlStatementType(query.trim(), query.trim().toUpperCase()), e.getMessage());
 
             Map<String, Object> errorData = new HashMap<>();
             errorData.put("rows", new ArrayList<>());
@@ -1888,8 +1979,171 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
             errorResult.put("message", e.getMessage());
             errorResult.put("requestId", requestId);
             errorResult.put("timestamp", java.time.Instant.now().toString());
+            errorResult.put("statementType", detectSqlStatementType(query.trim(), query.trim().toUpperCase()).toString());
 
             return errorResult;
+        }
+    }
+
+    /**
+     * Enhanced SQL statement type detection for PostgreSQL
+     */
+    private PostgreSQLSqlStatementTypeEnum detectSqlStatementType(String originalQuery, String upperQuery) {
+        // Remove leading/trailing whitespace and comments
+        String cleanedQuery = upperQuery.replaceAll("/\\*.*?\\*/", "").trim();
+
+        // Check for PL/pgSQL blocks first
+        if (cleanedQuery.startsWith("DO") ||
+                cleanedQuery.startsWith("BEGIN") ||
+                cleanedQuery.startsWith("DECLARE")) {
+            return PostgreSQLSqlStatementTypeEnum.ANONYMOUS_BLOCK;
+        }
+
+        // Check for CREATE statements
+        if (cleanedQuery.startsWith("CREATE")) {
+            if (cleanedQuery.startsWith("CREATE OR REPLACE")) {
+                cleanedQuery = cleanedQuery.substring("CREATE OR REPLACE".length()).trim();
+            } else {
+                cleanedQuery = cleanedQuery.substring("CREATE".length()).trim();
+            }
+
+            if (cleanedQuery.startsWith("PROCEDURE")) return PostgreSQLSqlStatementTypeEnum.PROCEDURE;
+            if (cleanedQuery.startsWith("FUNCTION")) return PostgreSQLSqlStatementTypeEnum.FUNCTION;
+            if (cleanedQuery.startsWith("TRIGGER")) return PostgreSQLSqlStatementTypeEnum.CREATE_TRIGGER;
+            if (cleanedQuery.startsWith("VIEW")) return PostgreSQLSqlStatementTypeEnum.CREATE_VIEW;
+            if (cleanedQuery.startsWith("MATERIALIZED VIEW")) return PostgreSQLSqlStatementTypeEnum.CREATE_VIEW;
+            if (cleanedQuery.startsWith("TABLE")) return PostgreSQLSqlStatementTypeEnum.CREATE_TABLE;
+            if (cleanedQuery.startsWith("INDEX")) return PostgreSQLSqlStatementTypeEnum.CREATE_INDEX;
+            if (cleanedQuery.startsWith("SEQUENCE")) return PostgreSQLSqlStatementTypeEnum.CREATE_SEQUENCE;
+            if (cleanedQuery.startsWith("TYPE")) return PostgreSQLSqlStatementTypeEnum.CREATE_TYPE;
+            if (cleanedQuery.startsWith("SCHEMA")) return PostgreSQLSqlStatementTypeEnum.DDL;
+            return PostgreSQLSqlStatementTypeEnum.DDL;
+        }
+
+        // Check for ALTER, DROP, TRUNCATE
+        if (cleanedQuery.startsWith("ALTER") ||
+                cleanedQuery.startsWith("DROP") ||
+                cleanedQuery.startsWith("TRUNCATE") ||
+                cleanedQuery.startsWith("RENAME")) {
+            return PostgreSQLSqlStatementTypeEnum.DDL;
+        }
+
+        // Check for DML statements
+        if (cleanedQuery.startsWith("INSERT")) return PostgreSQLSqlStatementTypeEnum.INSERT;
+        if (cleanedQuery.startsWith("UPDATE")) return PostgreSQLSqlStatementTypeEnum.UPDATE;
+        if (cleanedQuery.startsWith("DELETE")) return PostgreSQLSqlStatementTypeEnum.DELETE;
+        if (cleanedQuery.startsWith("MERGE")) return PostgreSQLSqlStatementTypeEnum.MERGE;
+
+        // Check for SELECT statements and variations
+        if (cleanedQuery.startsWith("SELECT")) {
+            // Check if it's a view definition
+            if (cleanedQuery.contains("CREATE VIEW")) {
+                return PostgreSQLSqlStatementTypeEnum.CREATE_VIEW;
+            }
+            return PostgreSQLSqlStatementTypeEnum.SELECT;
+        }
+
+        // Check for WITH clause (Common Table Expression)
+        if (cleanedQuery.startsWith("WITH")) {
+            return PostgreSQLSqlStatementTypeEnum.WITH;
+        }
+
+        // Check for EXPLAIN
+        if (cleanedQuery.startsWith("EXPLAIN")) {
+            return PostgreSQLSqlStatementTypeEnum.EXPLAIN_PLAN;
+        }
+
+        // Check for CALL statement
+        if (cleanedQuery.startsWith("CALL")) {
+            return PostgreSQLSqlStatementTypeEnum.CALL;
+        }
+
+        // Check for PERFORM (PostgreSQL-specific)
+        if (cleanedQuery.startsWith("PERFORM")) {
+            return PostgreSQLSqlStatementTypeEnum.PLSQL_BLOCK;
+        }
+
+        // Check for DO statement (PostgreSQL anonymous blocks)
+        if (cleanedQuery.startsWith("DO")) {
+            return PostgreSQLSqlStatementTypeEnum.ANONYMOUS_BLOCK;
+        }
+
+        // Check for function/procedure definitions (without CREATE keyword)
+        if (cleanedQuery.contains("FUNCTION") && cleanedQuery.contains("RETURNS") && cleanedQuery.contains("LANGUAGE")) {
+            return PostgreSQLSqlStatementTypeEnum.FUNCTION;
+        }
+        if (cleanedQuery.contains("PROCEDURE") && cleanedQuery.contains("LANGUAGE")) {
+            return PostgreSQLSqlStatementTypeEnum.PROCEDURE;
+        }
+
+        // Check for view queries
+        if (cleanedQuery.contains("FROM") && cleanedQuery.matches(".*\\bVIEW\\b.*")) {
+            return PostgreSQLSqlStatementTypeEnum.VIEW_QUERY;
+        }
+
+        // Check for PL/pgSQL blocks
+        if (cleanedQuery.contains("LANGUAGE PLPGSQL") ||
+                cleanedQuery.contains("LANGUAGE 'PLPGSQL'") ||
+                (cleanedQuery.contains("$$") && cleanedQuery.contains("BEGIN") && cleanedQuery.contains("END"))) {
+            return PostgreSQLSqlStatementTypeEnum.PLSQL_BLOCK;
+        }
+
+        // Default - treat as regular SQL
+        return PostgreSQLSqlStatementTypeEnum.UNKNOWN;
+    }
+
+    /**
+     * Check if statement type is allowed in read-only mode
+     */
+    private boolean isReadOnlyAllowed(PostgreSQLSqlStatementTypeEnum statementType) {
+        switch (statementType) {
+            case SELECT:
+            case WITH:
+            case EXPLAIN_PLAN:
+            case VIEW_QUERY:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Get appropriate success message based on statement type
+     */
+    private String getSuccessMessage(PostgreSQLSqlStatementTypeEnum statementType, Map<String, Object> results) {
+        switch (statementType) {
+            case SELECT:
+            case WITH:
+            case VIEW_QUERY:
+                int rowCount = (int) results.getOrDefault("rowCount", 0);
+                return String.format("%s executed successfully, %d rows returned", statementType, rowCount);
+
+            case INSERT:
+            case UPDATE:
+            case DELETE:
+            case MERGE:
+                int affected = (int) results.getOrDefault("rowsAffected", 0);
+                return String.format("%s executed successfully, %d rows affected", statementType, affected);
+
+            case PROCEDURE:
+            case FUNCTION:
+                return String.format("%s executed successfully", statementType);
+
+            case PLSQL_BLOCK:
+            case ANONYMOUS_BLOCK:
+                return "PL/pgSQL block executed successfully";
+
+            case CREATE_VIEW:
+            case CREATE_TABLE:
+            case CREATE_INDEX:
+            case CREATE_TRIGGER:
+            case CREATE_SEQUENCE:
+            case CREATE_TYPE:
+            case DDL:
+                return "DDL statement executed successfully";
+
+            default:
+                return "Statement executed successfully";
         }
     }
 
@@ -3851,8 +4105,8 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
     }
 
     @Override
-    public DatabaseType getDatabaseType() {
-        return DatabaseType.POSTGRESQL;
+    public DatabaseTypeEnum getDatabaseType() {
+        return DatabaseTypeEnum.POSTGRESQL;
     }
 
     @Override

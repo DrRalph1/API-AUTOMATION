@@ -1,7 +1,7 @@
 // factories/DatabaseTypeServiceFactory.java
 package com.usg.apiAutomation.factories;
 
-import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.enums.DatabaseTypeEnum;
 import com.usg.apiAutomation.helpers.ApiAnalyticsHelper;
 import com.usg.apiAutomation.helpers.DatabaseMetadataHelper;
 import com.usg.apiAutomation.helpers.DatabaseValidationHelper;
@@ -22,16 +22,16 @@ import java.util.Map;
 public class DatabaseTypeServiceFactory {
 
     // Validation Helpers
-    private final Map<DatabaseType, DatabaseValidationHelper> validationHelpers = new EnumMap<>(DatabaseType.class);
+    private final Map<DatabaseTypeEnum, DatabaseValidationHelper> validationHelpers = new EnumMap<>(DatabaseTypeEnum.class);
 
     // Metadata Helpers
-    private final Map<DatabaseType, DatabaseMetadataHelper> metadataHelpers = new EnumMap<>(DatabaseType.class);
+    private final Map<DatabaseTypeEnum, DatabaseMetadataHelper> metadataHelpers = new EnumMap<>(DatabaseTypeEnum.class);
 
     // Analytics Helpers
-    private final Map<DatabaseType, ApiAnalyticsHelper> analyticsHelpers = new EnumMap<>(DatabaseType.class);
+    private final Map<DatabaseTypeEnum, ApiAnalyticsHelper> analyticsHelpers = new EnumMap<>(DatabaseTypeEnum.class);
 
     // Schema Services
-    private final Map<DatabaseType, Object> schemaServices = new EnumMap<>(DatabaseType.class);
+    private final Map<DatabaseTypeEnum, Object> schemaServices = new EnumMap<>(DatabaseTypeEnum.class);
 
     public DatabaseTypeServiceFactory(
             // Oracle
@@ -44,21 +44,21 @@ public class DatabaseTypeServiceFactory {
             PostgreSQLSchemaService postgreSQLSchemaService
     ) {
         // Register Oracle services
-        validationHelpers.put(DatabaseType.ORACLE, oracleValidationHelper);
-        metadataHelpers.put(DatabaseType.ORACLE, oracleMetadataHelper);
-        analyticsHelpers.put(DatabaseType.ORACLE, oracleMetadataHelper);
-        schemaServices.put(DatabaseType.ORACLE, oracleSchemaService);
+        validationHelpers.put(DatabaseTypeEnum.ORACLE, oracleValidationHelper);
+        metadataHelpers.put(DatabaseTypeEnum.ORACLE, oracleMetadataHelper);
+        analyticsHelpers.put(DatabaseTypeEnum.ORACLE, oracleMetadataHelper);
+        schemaServices.put(DatabaseTypeEnum.ORACLE, oracleSchemaService);
 
         // Register PostgreSQL services
-        validationHelpers.put(DatabaseType.POSTGRESQL, postgresValidationHelper);
-        metadataHelpers.put(DatabaseType.POSTGRESQL, postgresMetadataHelper);
-        analyticsHelpers.put(DatabaseType.POSTGRESQL, postgresMetadataHelper);
-        schemaServices.put(DatabaseType.POSTGRESQL, postgreSQLSchemaService);
+        validationHelpers.put(DatabaseTypeEnum.POSTGRESQL, postgresValidationHelper);
+        metadataHelpers.put(DatabaseTypeEnum.POSTGRESQL, postgresMetadataHelper);
+        analyticsHelpers.put(DatabaseTypeEnum.POSTGRESQL, postgresMetadataHelper);
+        schemaServices.put(DatabaseTypeEnum.POSTGRESQL, postgreSQLSchemaService);
 
         log.info("DatabaseTypeServiceFactory initialized with {} database types", validationHelpers.size());
     }
 
-    public DatabaseValidationHelper getValidationHelper(DatabaseType type) {
+    public DatabaseValidationHelper getValidationHelper(DatabaseTypeEnum type) {
         DatabaseValidationHelper helper = validationHelpers.get(type);
         if (helper == null) {
             log.error("No validation helper found for database type: {}", type);
@@ -68,10 +68,10 @@ public class DatabaseTypeServiceFactory {
     }
 
     public DatabaseValidationHelper getValidationHelper(String typeStr) {
-        return getValidationHelper(DatabaseType.fromString(typeStr));
+        return getValidationHelper(DatabaseTypeEnum.fromString(typeStr));
     }
 
-    public DatabaseMetadataHelper getMetadataHelper(DatabaseType type) {
+    public DatabaseMetadataHelper getMetadataHelper(DatabaseTypeEnum type) {
         DatabaseMetadataHelper helper = metadataHelpers.get(type);
         if (helper == null) {
             log.error("No metadata helper found for database type: {}", type);
@@ -81,10 +81,10 @@ public class DatabaseTypeServiceFactory {
     }
 
     public DatabaseMetadataHelper getMetadataHelper(String typeStr) {
-        return getMetadataHelper(DatabaseType.fromString(typeStr));
+        return getMetadataHelper(DatabaseTypeEnum.fromString(typeStr));
     }
 
-    public ApiAnalyticsHelper getAnalyticsHelper(DatabaseType type) {
+    public ApiAnalyticsHelper getAnalyticsHelper(DatabaseTypeEnum type) {
         ApiAnalyticsHelper helper = analyticsHelpers.get(type);
         if (helper == null) {
             log.error("No analytics helper found for database type: {}", type);
@@ -94,10 +94,10 @@ public class DatabaseTypeServiceFactory {
     }
 
     public ApiAnalyticsHelper getAnalyticsHelper(String typeStr) {
-        return getAnalyticsHelper(DatabaseType.fromString(typeStr));
+        return getAnalyticsHelper(DatabaseTypeEnum.fromString(typeStr));
     }
 
-    public Object getSchemaService(DatabaseType type) {
+    public Object getSchemaService(DatabaseTypeEnum type) {
         Object service = schemaServices.get(type);
         if (service == null) {
             log.error("No schema service found for database type: {}", type);
@@ -107,10 +107,10 @@ public class DatabaseTypeServiceFactory {
     }
 
     public Object getSchemaService(String typeStr) {
-        return getSchemaService(DatabaseType.fromString(typeStr));
+        return getSchemaService(DatabaseTypeEnum.fromString(typeStr));
     }
 
-    public DatabaseType getDatabaseType(String typeStr) {
-        return DatabaseType.fromString(typeStr);
+    public DatabaseTypeEnum getDatabaseType(String typeStr) {
+        return DatabaseTypeEnum.fromString(typeStr);
     }
 }

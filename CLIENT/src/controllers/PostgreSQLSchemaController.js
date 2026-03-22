@@ -2404,10 +2404,9 @@ const transformQueryResponse = (response) => {
 export const executeSQL = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
     const { sql, timeoutSeconds = 30, readOnly = true } = params;
-    
+
     console.log('📊 executeSQL called with:', { sql: sql?.substring(0, 100), ...params });
     
-    // Use the existing executeQuery function
     return executeQuery(authorizationHeader, {
         query: sql,
         timeoutSeconds,
