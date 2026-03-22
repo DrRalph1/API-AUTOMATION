@@ -17,6 +17,8 @@ import {
   GitBranch as DependencyIcon
 } from 'lucide-react';
 import ApiGenerationModal from '@/components/modals/ApiGenerationModal.js';
+// Add this import at the top with your other imports
+import QueryEditorModal from '@/components/modals/QueryEditorModal.js';
 
 // Import OracleSchemaController
 import {
@@ -1230,6 +1232,7 @@ const OracleSchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
 
   // State
   const [showApiModal, setShowApiModal] = useState(false);
+  const [showQueryEditor, setShowQueryEditor] = useState(false);
   const [selectedForApiGeneration, setSelectedForApiGeneration] = useState(null);
   const [isLeftSidebarVisible, setIsLeftSidebarVisible] = useState(false);
   const [filterQuery, setFilterQuery] = useState('');
@@ -4818,7 +4821,7 @@ const renderTabContent = () => {
         <span className="text-sm font-medium uppercase" style={{ color: colors.text }}>Oracle Schema Browser</span>
        <div className="flex items-center gap-3">
         <button 
-          onClick={() => setShowApiModal(true)}
+          onClick={() => setShowQueryEditor(true)}
           className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-gradient-to-r from-green-500 via-green-600 to-green-700 hover:opacity-90 font-medium text-white"
         >
           <Database size={16} />
@@ -5032,6 +5035,20 @@ const renderTabContent = () => {
           isEditing={false}
         />
       )}
+
+
+      {showQueryEditor && (
+        <QueryEditorModal
+          isOpen={showQueryEditor}
+          onClose={() => setShowQueryEditor(false)}
+          selectedObject={selectedForApiGeneration || activeObject}
+          colors={colors}
+          theme={theme}
+          authToken={authToken}
+          databaseType="oracle"
+        />
+      )}
+
     </div>
   );
 };

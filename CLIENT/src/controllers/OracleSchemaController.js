@@ -3010,6 +3010,33 @@ export const executeQuery = async (authorizationHeader, queryRequest = {}) => {
     });
 };
 
+
+/**
+ * Execute SQL query (alias for executeQuery)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.sql - SQL query to execute
+ * @param {string} params.objectType - Object type (optional)
+ * @param {string} params.objectName - Object name (optional)
+ * @param {string} params.owner - Object owner (optional)
+ * @param {string} params.schema - Schema name (optional)
+ * @param {string} params.databaseType - Database type (optional)
+ * @returns {Promise} API response
+ */
+export const executeSQL = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { sql, timeoutSeconds = 30, readOnly = true } = params;
+    
+    console.log('📊 executeSQL called with:', { sql: sql?.substring(0, 100), ...params });
+    
+    // Use the existing executeQuery function
+    return executeQuery(authorizationHeader, {
+        query: sql,
+        timeoutSeconds,
+        readOnly
+    });
+};
+
 // ============================================================
 // 27. DIAGNOSTICS ENDPOINT
 // ============================================================

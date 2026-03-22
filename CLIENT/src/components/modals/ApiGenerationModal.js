@@ -247,7 +247,9 @@ const REQUIRED_FIELDS = {
 };
 
 // ==================== OBJECT SELECTOR MODAL ====================
-const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) => {
+// In ApiGenerationModal.jsx, update the ObjectSelectorModal component
+
+const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken, databaseType }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -267,37 +269,95 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
       setError(null);
 
       try {
-        // Dynamically import the search function
-        const { searchObjectsPaginated } = await import('../../controllers/OracleSchemaController.js');
+        // Search across ALL database types simultaneously
+        const searchPromises = [];
         
-        const response = await searchObjectsPaginated(authToken, {
-          query: searchTerm,
-          page: 1,
-          pageSize: 20
-        });
-
+        // Always search Oracle
+        const oracleSearch = import('../../controllers/OracleSchemaController.js')
+          .then(module => module.searchObjectsPaginated(authToken, {
+            query: searchTerm,
+            page: 1,
+            pageSize: 50
+          }))
+          .catch(err => {
+            console.warn('Oracle search failed:', err);
+            return { data: { items: [] } };
+          });
+        searchPromises.push(oracleSearch);
+        
+        // Always search PostgreSQL
+        const postgresSearch = import('../../controllers/PostgreSQLSchemaController.js')
+          .then(module => module.searchObjectsPaginated(authToken, {
+            query: searchTerm,
+            page: 1,
+            pageSize: 50
+          }))
+          .catch(err => {
+            console.warn('PostgreSQL search failed:', err);
+            return { data: { items: [] } };
+          });
+        searchPromises.push(postgresSearch);
+        
+        // Wait for both searches to complete
+        const [oracleResponse, postgresResponse] = await Promise.all(searchPromises);
+        
         const results = [];
-        const responseData = response?.data || {};
-        const items = responseData.items || responseData.results || [];
-
-        items.forEach(item => {
+        
+        // Process Oracle results
+        const oracleData = oracleResponse?.data || {};
+        const oracleItems = oracleData.items || oracleData.results || [];
+        oracleItems.forEach(item => {
           const objectType = (item.object_type || item.type || item.OBJECT_TYPE || '').toUpperCase();
           const objectName = item.name || item.OBJECT_NAME || item.TABLE_NAME || item.PROCEDURE_NAME || '';
+          const owner = item.owner || item.OWNER;
           
-          if (!objectName || !objectType) return;
-
-          results.push({
-            id: item.id || `${item.owner}_${objectName}`,
-            name: objectName,
-            owner: item.owner || item.OWNER,
-            type: objectType,
-            isSynonym: objectType === 'SYNONYM',
-            targetType: item.targetType || item.TARGET_TYPE,
-            targetName: item.targetName || item.TARGET_NAME,
-            status: item.status || item.STATUS || 'VALID'
-          });
+          if (objectName) {
+            results.push({
+              id: `oracle_${owner || 'PUBLIC'}_${objectName}`,
+              name: objectName,
+              owner: owner || 'PUBLIC',
+              type: objectType,
+              databaseType: 'Oracle',
+              isSynonym: objectType === 'SYNONYM',
+              targetType: item.targetType || item.TARGET_TYPE,
+              targetName: item.targetName || item.TARGET_NAME,
+              status: item.status || item.STATUS || 'VALID'
+            });
+          }
         });
-
+        
+        // Process PostgreSQL results
+        const postgresData = postgresResponse?.data || {};
+        const postgresItems = postgresData.items || postgresData.results || [];
+        postgresItems.forEach(item => {
+          const objectType = (item.object_type || item.type || item.OBJECT_TYPE || '').toUpperCase();
+          const objectName = item.name || item.OBJECT_NAME || item.TABLE_NAME || item.PROCEDURE_NAME || '';
+          const owner = item.schema || item.owner || item.OWNER || 'public';
+          
+          if (objectName) {
+            results.push({
+              id: `postgres_${owner}_${objectName}`,
+              name: objectName,
+              owner: owner,
+              type: objectType,
+              databaseType: 'PostgreSQL',
+              isSynonym: false,
+              targetType: null,
+              targetName: null,
+              status: item.status || 'VALID',
+              // PostgreSQL-specific fields
+              schema: item.schema || owner,
+              tableSpace: item.tableSpace,
+              rowCount: item.rowCount
+            });
+          }
+        });
+        
+        // Sort results by name
+        results.sort((a, b) => a.name.localeCompare(b.name));
+        
+        console.log(`Search results: ${results.length} total (Oracle: ${oracleItems.length}, PostgreSQL: ${postgresItems.length})`);
+        
         setSearchResults(results);
       } catch (err) {
         console.error('Error searching objects:', err);
@@ -322,6 +382,7 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
     switch(type) {
       case 'TABLE': return <Table size={16} style={{ color: colors.objectType?.table || colors.primary }} />;
       case 'VIEW': return <FileText size={16} style={{ color: colors.objectType?.view || colors.success }} />;
+      case 'MATERIALIZED VIEW': return <Layers size={16} style={{ color: colors.objectType?.view || colors.success }} />;
       case 'PROCEDURE': return <Terminal size={16} style={{ color: colors.objectType?.procedure || colors.warning }} />;
       case 'FUNCTION': return <Code size={16} style={{ color: colors.objectType?.function || colors.info }} />;
       case 'PACKAGE': return <Package size={16} style={{ color: colors.objectType?.package || colors.textSecondary }} />;
@@ -332,8 +393,29 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
     }
   };
 
+  const getDatabaseBadge = (databaseType) => {
+    if (databaseType === 'Oracle') {
+      return (
+        <span className="text-xs px-2 py-0.5 rounded-full ml-2" style={{ 
+          backgroundColor: '#ef444420',
+          color: '#ef4444'
+        }}>
+          Oracle
+        </span>
+      );
+    } else {
+      return (
+        <span className="text-xs px-2 py-0.5 rounded-full ml-2" style={{ 
+          backgroundColor: '#3b82f620',
+          color: '#3b82f6'
+        }}>
+          PostgreSQL
+        </span>
+      );
+    }
+  };
+
   return (
-    <>
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[1100] p-4">
       <div className="rounded-xl shadow-2xl w-3xl max-w-3xl max-h-[80vh] flex flex-col" style={{ 
         backgroundColor: colors.bg,
@@ -350,9 +432,11 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
               <Database className="h-5 w-5" style={{ color: colors.primary }} />
             </div>
             <div>
-              <h2 className="text-lg font-bold" style={{ color: colors.text }}>Select Database Object</h2>
+              <h2 className="text-lg font-bold" style={{ color: colors.text }}>
+                Select Database Object (All Databases)
+              </h2>
               <p className="text-xs" style={{ color: colors.textSecondary }}>
-                Search and select an object to generate API from
+                Search across Oracle and PostgreSQL databases
               </p>
             </div>
           </div>
@@ -378,7 +462,7 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
                 backgroundColor: colors.inputBg,
                 color: colors.text
               }}
-              placeholder="Search for tables, views, procedures, functions..."
+              placeholder="Search across Oracle and PostgreSQL databases (tables, views, procedures, functions)..."
               autoFocus
             />
             {searching && (
@@ -403,13 +487,13 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
           {searching ? (
             <div className="flex flex-col items-center justify-center py-12">
               <Loader className="animate-spin mb-4" size={32} style={{ color: colors.primary }} />
-              <p className="text-sm" style={{ color: colors.text }}>Searching database objects...</p>
+              <p className="text-sm" style={{ color: colors.text }}>Searching across Oracle and PostgreSQL databases...</p>
             </div>
           ) : searchResults.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12">
               <Database size={48} style={{ color: colors.textTertiary, opacity: 0.5 }} />
               <p className="text-sm mt-4" style={{ color: colors.textSecondary }}>
-                {searchTerm.length >= 2 ? 'No objects found' : 'Type to search for objects'}
+                {searchTerm.length >= 2 ? 'No objects found across any database' : 'Type to search across Oracle and PostgreSQL'}
               </p>
             </div>
           ) : (
@@ -430,6 +514,7 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium" style={{ color: colors.text }}>{obj.name}</span>
+                        {getDatabaseBadge(obj.databaseType)}
                         <span className="text-xs px-2 py-0.5 rounded-full" style={{ 
                           backgroundColor: colors.objectType?.[obj.type?.toLowerCase()] + '20' || colors.info + '20',
                           color: colors.objectType?.[obj.type?.toLowerCase()] || colors.info
@@ -465,9 +550,12 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer with stats */}
         <div className="px-6 py-4 border-t" style={{ borderColor: colors.border }}>
-          <div className="flex items-center justify-end gap-3">
+          <div className="flex items-center justify-between">
+            <div className="text-xs" style={{ color: colors.textSecondary }}>
+              Found {searchResults.length} object(s)
+            </div>
             <button
               onClick={onClose}
               className="px-4 py-2 border rounded-lg transition-colors hover-lift"
@@ -483,7 +571,6 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
         </div>
       </div>
     </div>
-    </>
   );
 };
 
@@ -1767,6 +1854,19 @@ export default function ApiGenerationModal({
     compression: 'gzip'
   });
 
+  // Add a state to track the actual database type being used
+  const [currentDatabaseType, setCurrentDatabaseType] = useState(databaseType || 'Oracle');
+
+
+  // Update currentDatabaseType when selectedDbObject changes
+  useEffect(() => {
+    if (selectedDbObject?.databaseType) {
+      setCurrentDatabaseType(selectedDbObject.databaseType);
+    } else if (databaseType) {
+      setCurrentDatabaseType(databaseType);
+    }
+  }, [selectedDbObject, databaseType]);
+
   // Simplified authentication configuration (only 4 types)
   const [authConfig, setAuthConfig] = useState({
     authType: 'none',
@@ -2144,69 +2244,132 @@ export default function ApiGenerationModal({
 
   // ==================== OBJECT SELECTOR FUNCTIONS ====================
 
-  // Update loadSelectedObjectDetails to close modal first
-  const loadSelectedObjectDetails = useCallback(async (object) => {
-    if (!authToken || !object) return;
+  // Update loadSelectedObjectDetails to close modal first and handle both database types
+const loadSelectedObjectDetails = useCallback(async (object) => {
+  if (!authToken || !object) return;
 
-    // Close the selector modal immediately
-    setShowObjectSelector(false);
+  console.log('🔍 Selected object details:', {
+    name: object.name,
+    type: object.type,
+    databaseType: object.databaseType,
+    owner: object.owner
+  });
+
+  // Close the selector modal immediately
+  setShowObjectSelector(false);
+  
+  // Show loading in main modal
+  setLoading(true);
+  setObjectSelectorError(null);
+
+  try {
+    let response;
     
-    // Show loading in main modal
-    setLoading(true);
-    setObjectSelectorError(null);
-
-    try {
-      // Dynamically import the function
-      const { getObjectDetails } = await import('../../controllers/OracleSchemaController.js');
-      
-      const response = await getObjectDetails(authToken, {
+    // Determine if this is PostgreSQL (case-insensitive comparison)
+    const isPostgreSQL = object.databaseType?.toLowerCase() === 'postgresql';
+    
+    console.log(`📡 Using ${isPostgreSQL ? 'PostgreSQL' : 'Oracle'} controller for:`, object.name);
+    
+    // Choose the correct controller based on the object's database type
+    if (isPostgreSQL) {
+      // Use PostgreSQL controller
+      const { getObjectDetails } = await import('../../controllers/PostgreSQLSchemaController.js');
+      response = await getObjectDetails(authToken, {
         objectType: object.type,
         objectName: object.name,
         owner: object.owner
       });
-
-      const responseData = response?.data || {};
-      let parameters = [];
-      let columns = [];
-
-      // Extract parameters for procedures/functions
-      if (object.type === 'PROCEDURE' || object.type === 'FUNCTION') {
-        if (responseData.parameters && Array.isArray(responseData.parameters)) {
-          parameters = responseData.parameters;
-        } else if (responseData.arguments && Array.isArray(responseData.arguments)) {
-          parameters = responseData.arguments;
-        }
-      }
-
-      // Extract columns for tables/views
-      if (object.type === 'TABLE' || object.type === 'VIEW') {
-        if (responseData.columns && Array.isArray(responseData.columns)) {
-          columns = responseData.columns;
-        } else if (responseData.targetObjectDetails?.columns) {
-          columns = responseData.targetObjectDetails.columns;
-        }
-      }
-
-      // Create a selected object with all details
-      const detailedObject = {
-        ...object,
-        ...responseData,
-        parameters: parameters,
-        columns: columns,
-        comment: responseData.comment || responseData.COMMENTS
-      };
-
-      // Set the selected object and populate form
-      setSelectedDbObject(detailedObject);
-      populateFormFromObject(detailedObject);
-      
-    } catch (error) {
-      console.error('Error loading object details:', error);
-      setObjectSelectorError('Failed to load object details');
-    } finally {
-      setLoading(false);
+    } else {
+      // Default to Oracle controller
+      const { getObjectDetails } = await import('../../controllers/OracleSchemaController.js');
+      response = await getObjectDetails(authToken, {
+        objectType: object.type,
+        objectName: object.name,
+        owner: object.owner
+      });
     }
-  }, [authToken, populateFormFromObject]);
+
+    console.log('📦 getObjectDetails response:', response);
+
+    const responseData = response?.data || {};
+    let parameters = [];
+    let columns = [];
+
+    // Extract parameters for procedures/functions
+    if (object.type === 'PROCEDURE' || object.type === 'FUNCTION') {
+      if (responseData.parameters && Array.isArray(responseData.parameters)) {
+        parameters = responseData.parameters;
+        console.log('📦 Found parameters in responseData.parameters:', parameters.length);
+      } else if (responseData.arguments && Array.isArray(responseData.arguments)) {
+        parameters = responseData.arguments;
+        console.log('📦 Found parameters in responseData.arguments:', parameters.length);
+      } else if (responseData.details?.parameters && Array.isArray(responseData.details.parameters)) {
+        parameters = responseData.details.parameters;
+        console.log('📦 Found parameters in responseData.details.parameters:', parameters.length);
+      }
+    }
+
+    // Extract columns for tables/views
+    if (object.type === 'TABLE' || object.type === 'VIEW') {
+      if (responseData.columns && Array.isArray(responseData.columns)) {
+        columns = responseData.columns;
+        console.log('📦 Found columns in responseData.columns:', columns.length);
+      } else if (responseData.targetObjectDetails?.columns) {
+        columns = responseData.targetObjectDetails.columns;
+        console.log('📦 Found columns in responseData.targetObjectDetails.columns:', columns.length);
+      } else if (responseData.details?.columns && Array.isArray(responseData.details.columns)) {
+        columns = responseData.details.columns;
+        console.log('📦 Found columns in responseData.details.columns:', columns.length);
+      }
+    }
+
+    // Log what we found
+    console.log('📊 Extracted data:', {
+      parametersCount: parameters.length,
+      columnsCount: columns.length,
+      objectName: object.name,
+      objectType: object.type,
+      databaseType: object.databaseType
+    });
+
+    // Create a selected object with all details
+    const detailedObject = {
+      ...object,
+      ...responseData,
+      parameters: parameters,
+      columns: columns,
+      comment: responseData.comment || responseData.COMMENTS,
+      databaseType: object.databaseType, // Preserve the database type from the selected object
+      details: {
+        ...responseData.details,
+        parameters: parameters,
+        columns: columns
+      }
+    };
+
+    console.log('📦 Detailed object created:', {
+      name: detailedObject.name,
+      type: detailedObject.type,
+      databaseType: detailedObject.databaseType,
+      parametersCount: detailedObject.parameters?.length,
+      columnsCount: detailedObject.columns?.length
+    });
+
+    // Set the selected object and populate form
+    setSelectedDbObject(detailedObject);
+    
+    // Populate the form with the detailed object
+    await populateFormFromObject(detailedObject);
+    
+    console.log('✅ Object details loaded and form populated successfully');
+    
+  } catch (error) {
+    console.error('❌ Error loading object details:', error);
+    setObjectSelectorError('Failed to load object details: ' + error.message);
+  } finally {
+    setLoading(false);
+  }
+}, [authToken, populateFormFromObject]);
 
   // NEW: Function to populate form from existing API data (for editing)
   const populateFormFromApiData = useCallback(async (apiData) => {
@@ -2371,381 +2534,454 @@ export default function ApiGenerationModal({
   }, [collections]);
 
   // Function to populate form from selected object - FIXED VERSION WITH PROPER MODE FILTERING
-  const populateFormFromObject = useCallback((object) => {
-    console.log('📝 populateFormFromObject called with object:', object);
+  // Function to populate form from selected object - FIXED VERSION WITH PROPER MODE FILTERING
+const populateFormFromObject = useCallback((object) => {
+  console.log('📝 populateFormFromObject called with object:', object);
+  console.log('📝 Object database type:', object.databaseType);
+  console.log('📝 Object type:', object.type);
+  console.log('📝 Object name:', object.name);
+  
+  const objectType = object.type?.toUpperCase() || object.objectType?.toUpperCase();
+  const baseName = object.name?.toLowerCase() || object.objectName?.toLowerCase() || '';
+  const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
+
+  // Get HTTP method from existing state or default based on object type
+  let httpMethod = apiDetails.httpMethod;
+  
+  // For procedures/functions, force POST
+  if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
+    httpMethod = 'POST';
+  } else {
+    httpMethod = httpMethod || 'GET';
+  }
+
+  // Determine operation based on HTTP method and object type
+  let operation = 'SELECT';
+  
+  // For procedures/functions/packages, always use EXECUTE
+  if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
+    operation = 'EXECUTE';
+  } else {
+    // For tables/views, map HTTP method to operation
+    switch(httpMethod) {
+      case 'POST':
+        operation = 'INSERT';
+        break;
+      case 'PUT':
+      case 'PATCH':
+        operation = 'UPDATE';
+        break;
+      case 'DELETE':
+        operation = 'DELETE';
+        break;
+      case 'GET':
+      default:
+        operation = 'SELECT';
+        break;
+    }
+  }
+
+  // Set API details
+  setApiDetails(prev => ({
+    ...prev,
+    apiName: object.name || object.objectName ? `${object.name || object.objectName} API` : 'New API',
+    apiCode: objectType ? `${objectType.slice(0, 3)}_${object.name || object.objectName || 'API'}` : 'API',
+    description: object.comment || (object.name || object.objectName ? `API for ${object.name || object.objectName}` : ''),
+    endpointPath: endpointPath,
+    owner: object.owner || 'HR',
+    httpMethod: httpMethod
+  }));
+
+  // Set schema config with proper operation based on HTTP method
+  setSchemaConfig(prev => ({
+    ...prev,
+    schemaName: object.owner || 'HR',
+    objectType: objectType || 'TABLE',
+    objectName: object.name || object.objectName || '',
+    operation: operation,
+    primaryKeyColumn: ''
+  }));
+
+  // Generate parameters and response mappings
+  const newParameters = [];
+  const newMappings = [];
+
+  // FIX: Check for parameters in object.details.parameters (from validation response)
+  console.log('📦 Looking for parameters in object:', {
+    hasParameters: object.parameters,
+    hasDetailsParameters: object.details?.parameters,
+    details: object.details
+  });
+
+  // Handle parameters - look in both object.parameters and object.details.parameters
+  let parameters = [];
+  if (object.parameters && Array.isArray(object.parameters)) {
+    parameters = object.parameters;
+    console.log('📦 Found parameters in object.parameters:', parameters);
+  } else if (object.details?.parameters && Array.isArray(object.details.parameters)) {
+    parameters = object.details.parameters;
+    console.log('📦 Found parameters in object.details.parameters:', parameters);
+  }
+
+  // Handle columns - look in object.columns and object.details.columns
+  let columns = [];
+  if (object.columns && Array.isArray(object.columns)) {
+    columns = object.columns;
+    console.log('📦 Found columns in object.columns:', columns);
+  } else if (object.details?.columns && Array.isArray(object.details.columns)) {
+    columns = object.details.columns;
+    console.log('📦 Found columns in object.details.columns:', columns);
+  }
+
+  // Process parameters if we have any
+  if (parameters.length > 0) {
+    console.log('📦 Processing parameters (count: ' + parameters.length + ')');
     
-    const objectType = object.type?.toUpperCase() || object.objectType?.toUpperCase();
-    const baseName = object.name?.toLowerCase() || object.objectName?.toLowerCase() || '';
-    const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
-
-    // Get HTTP method from existing state or default based on object type
-    let httpMethod = apiDetails.httpMethod;
-    
-    // For procedures/functions, force POST
-    if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
-      httpMethod = 'POST';
-    } else {
-      httpMethod = httpMethod || 'GET';
-    }
-
-    // Determine operation based on HTTP method and object type
-    let operation = 'SELECT';
-    
-    // For procedures/functions/packages, always use EXECUTE
-    if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
-      operation = 'EXECUTE';
-    } else {
-      // For tables/views, map HTTP method to operation
-      switch(httpMethod) {
-        case 'POST':
-          operation = 'INSERT';
-          break;
-        case 'PUT':
-        case 'PATCH':
-          operation = 'UPDATE';
-          break;
-        case 'DELETE':
-          operation = 'DELETE';
-          break;
-        case 'GET':
-        default:
-          operation = 'SELECT';
-          break;
-      }
-    }
-
-    // Set API details
-    setApiDetails(prev => ({
-      ...prev,
-      apiName: object.name || object.objectName ? `${object.name || object.objectName} API` : 'New API',
-      apiCode: objectType ? `${objectType.slice(0, 3)}_${object.name || object.objectName || 'API'}` : 'API',
-      description: object.comment || (object.name || object.objectName ? `API for ${object.name || object.objectName}` : ''),
-      endpointPath: endpointPath,
-      owner: object.owner || 'HR',
-      httpMethod: httpMethod
-    }));
-
-    // Set schema config with proper operation based on HTTP method
-    setSchemaConfig(prev => ({
-      ...prev,
-      schemaName: object.owner || 'HR',
-      objectType: objectType || 'TABLE',
-      objectName: object.name || object.objectName || '',
-      operation: operation,
-      primaryKeyColumn: ''
-    }));
-
-    // Generate parameters and response mappings
-    const newParameters = [];
-    const newMappings = [];
-
-    // FIX: Check for parameters in object.details.parameters (from validation response)
-    console.log('📦 Looking for parameters in object:', {
-      hasParameters: object.parameters,
-      hasDetailsParameters: object.details?.parameters,
-      details: object.details
-    });
-
-    // Handle parameters - look in both object.parameters and object.details.parameters
-    let parameters = [];
-    if (object.parameters && Array.isArray(object.parameters)) {
-      parameters = object.parameters;
-      console.log('📦 Found parameters in object.parameters:', parameters);
-    } else if (object.details?.parameters && Array.isArray(object.details.parameters)) {
-      parameters = object.details.parameters;
-      console.log('📦 Found parameters in object.details.parameters:', parameters);
-    }
-
-    // Handle columns - look in object.columns and object.details.columns
-    let columns = [];
-    if (object.columns && Array.isArray(object.columns)) {
-      columns = object.columns;
-      console.log('📦 Found columns in object.columns:', columns);
-    } else if (object.details?.columns && Array.isArray(object.details.columns)) {
-      columns = object.details.columns;
-      console.log('📦 Found columns in object.details.columns:', columns);
-    }
-
-    // Process parameters if we have any
-    if (parameters.length > 0) {
-      console.log('📦 Processing parameters (count: ' + parameters.length + ')');
+    parameters.forEach((param, index) => {
+      // Extract parameter data with fallbacks for different naming conventions
+      const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || `param_${index + 1}`;
+      const paramType = param.DATA_TYPE || param.data_type || param.type || param.TYPE || 'VARCHAR2';
+      // IMPORTANT: Use in_out as the key for parameter mode (from your sample data)
+      const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 'IN';
       
-      parameters.forEach((param, index) => {
-        // Extract parameter data with fallbacks for different naming conventions
-        const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || `param_${index + 1}`;
-        const paramType = param.DATA_TYPE || param.data_type || param.type || param.TYPE || 'VARCHAR2';
-        // IMPORTANT: Use in_out as the key for parameter mode (from your sample data)
-        const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 'IN';
-        
-        // Normalize the mode to handle different formats
-        const normalizedMode = paramMode?.toString().toUpperCase().replace(/\s+/g, '_') || 'IN';
-        
-        console.log(`🔍 Processing param ${index}:`, { 
-          paramName, 
-          paramType, 
-          paramMode: normalizedMode,
-          original: paramMode 
-        });
-        
-        // Generate a clean key name
-        let cleanKey = paramName;
-        if (typeof paramName === 'string') {
-          cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
-        } else {
-          cleanKey = `param_${index + 1}`;
-        }
-        
-        // Determine parameter location based on mode and HTTP method
-        let parameterLocation = 'query';
-        
-        // Check if this is an IN or IN/OUT parameter for parameters tab
-        const isInParam = normalizedMode === 'IN' || normalizedMode === 'IN_OUT' || normalizedMode === 'INOUT' || normalizedMode === 'IN/OUT';
-        // Check if this is an OUT or IN/OUT parameter for mappings tab
-        const isOutParam = normalizedMode === 'OUT' || normalizedMode === 'IN_OUT' || normalizedMode === 'INOUT' || normalizedMode === 'IN/OUT';
-        
-        if (isInParam && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
-          parameterLocation = 'body';
-        } else if (isInParam && httpMethod === 'GET') {
-          parameterLocation = 'query';
-        }
+      // Normalize the mode to handle different formats
+      const normalizedMode = paramMode?.toString().toUpperCase().replace(/\s+/g, '_') || 'IN';
+      
+      console.log(`🔍 Processing param ${index}:`, { 
+        paramName, 
+        paramType, 
+        paramMode: normalizedMode,
+        original: paramMode 
+      });
+      
+      // Generate a clean key name
+      let cleanKey = paramName;
+      if (typeof paramName === 'string') {
+        cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
+      } else {
+        cleanKey = `param_${index + 1}`;
+      }
+      
+      // Determine parameter location based on mode and HTTP method
+      let parameterLocation = 'query';
+      
+      // Check if this is an IN or IN/OUT parameter for parameters tab
+      const isInParam = normalizedMode === 'IN' || normalizedMode === 'IN_OUT' || normalizedMode === 'INOUT' || normalizedMode === 'IN/OUT';
+      // Check if this is an OUT or IN/OUT parameter for mappings tab
+      const isOutParam = normalizedMode === 'OUT' || normalizedMode === 'IN_OUT' || normalizedMode === 'INOUT' || normalizedMode === 'IN/OUT';
+      
+      if (isInParam && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
+        parameterLocation = 'body';
+      } else if (isInParam && httpMethod === 'GET') {
+        parameterLocation = 'query';
+      }
 
-        // Determine oracle type
-        let oracleType = 'VARCHAR2';
-        if (paramType.includes('VARCHAR') || paramType.includes('CHAR')) {
+      // Determine database type for type mapping
+      const dbType = object.databaseType?.toLowerCase() || 'oracle';
+      
+      // Determine type based on database type
+      let oracleType = 'VARCHAR2';
+      let apiType = 'string';
+      
+      if (dbType === 'postgresql') {
+        // PostgreSQL type mapping
+        if (paramType.includes('VARCHAR') || paramType.includes('CHAR') || paramType.includes('TEXT')) {
           oracleType = 'VARCHAR2';
-        } else if (paramType.includes('NUMBER') || paramType.includes('INT') || paramType.includes('FLOAT')) {
+          apiType = 'string';
+        } else if (paramType.includes('INT') || paramType.includes('BIGINT') || paramType.includes('SMALLINT') || 
+                   paramType.includes('DECIMAL') || paramType.includes('NUMERIC') || paramType.includes('FLOAT') ||
+                   paramType.includes('DOUBLE') || paramType.includes('REAL')) {
           oracleType = 'NUMBER';
-        } else if (paramType.includes('DATE')) {
-          oracleType = 'DATE';
-        } else if (paramType.includes('TIMESTAMP')) {
-          oracleType = 'TIMESTAMP';
-        } else if (paramType.includes('CLOB')) {
-          oracleType = 'CLOB';
-        }
-
-        // Determine API type
-        let apiType = 'string';
-        if (oracleType === 'NUMBER') {
           apiType = 'integer';
-        } else if (oracleType === 'CLOB') {
+        } else if (paramType.includes('DATE') || paramType.includes('TIME') || paramType.includes('TIMESTAMP')) {
+          oracleType = 'DATE';
+          apiType = 'string';
+        } else if (paramType.includes('BOOLEAN')) {
+          oracleType = 'VARCHAR2';
+          apiType = 'boolean';
+        } else {
+          oracleType = 'VARCHAR2';
           apiType = 'string';
         }
-
-        // FIX: Only add to parameters array for IN and IN/OUT parameters
-        if (isInParam) {
-          newParameters.push({
-            id: `proc-param-${Date.now()}-${index}`,
-            key: cleanKey,
-            dbColumn: paramName,
-            oracleType: oracleType,
-            apiType: apiType,
-            parameterLocation: parameterLocation,
-            required: normalizedMode === 'IN' || normalizedMode === 'IN_OUT' || normalizedMode === 'INOUT' || normalizedMode === 'IN/OUT',
-            description: `${paramName} (${paramMode})`,
-            example: oracleType === 'NUMBER' ? '1000' : 
-                    oracleType === 'DATE' ? '2024-01-01' : 
-                    oracleType === 'CLOB' ? '{...}' : 'sample',
-            validationPattern: '',
-            defaultValue: param.DATA_DEFAULT || param.defaultValue || '',
-            inBody: parameterLocation === 'body',
-            isPrimaryKey: false,
-            paramMode: normalizedMode
-          });
-          console.log(`✅ Added parameter: ${cleanKey} (${normalizedMode})`);
-        }
-
-        // FIX: Only add to response mappings for OUT and IN/OUT parameters
-        if (isOutParam) {
-          newMappings.push({
-            id: `mapping-out-${Date.now()}-${index}`,
-            apiField: cleanKey,
-            dbColumn: paramName,
-            oracleType: oracleType,
-            apiType: apiType,
-            format: oracleType === 'DATE' ? 'date-time' : '',
-            nullable: true,
-            isPrimaryKey: false,
-            includeInResponse: true,
-            inResponse: true,
-            paramMode: normalizedMode
-          });
-          console.log(`✅ Added response mapping: ${cleanKey} (${normalizedMode})`);
-        }
-      });
-
-      // For functions, handle return type
-      const returnType = object.RETURN_TYPE || object.return_type || object.returnType || object.details?.returnType;
-      if (returnType && objectType === 'FUNCTION') {
-        // Determine oracle type for return
-        let oracleType = 'VARCHAR2';
-        if (returnType.includes('VARCHAR') || returnType.includes('CHAR')) {
+      } else {
+        // Oracle type mapping
+        if (paramType.includes('VARCHAR') || paramType.includes('CHAR')) {
           oracleType = 'VARCHAR2';
-        } else if (returnType.includes('NUMBER') || returnType.includes('INT') || returnType.includes('FLOAT')) {
+          apiType = 'string';
+        } else if (paramType.includes('NUMBER') || paramType.includes('INT') || paramType.includes('FLOAT')) {
           oracleType = 'NUMBER';
-        } else if (returnType.includes('DATE')) {
-          oracleType = 'DATE';
-        }
-
-        // Determine API type
-        let apiType = 'string';
-        if (oracleType === 'NUMBER') {
           apiType = 'integer';
+        } else if (paramType.includes('DATE')) {
+          oracleType = 'DATE';
+          apiType = 'string';
+        } else if (paramType.includes('TIMESTAMP')) {
+          oracleType = 'TIMESTAMP';
+          apiType = 'string';
+        } else if (paramType.includes('CLOB')) {
+          oracleType = 'CLOB';
+          apiType = 'string';
+        } else {
+          oracleType = 'VARCHAR2';
+          apiType = 'string';
         }
+      }
 
+      // FIX: Only add to parameters array for IN and IN/OUT parameters
+      if (isInParam) {
+        newParameters.push({
+          id: `proc-param-${Date.now()}-${index}`,
+          key: cleanKey,
+          dbColumn: paramName,
+          oracleType: oracleType,
+          apiType: apiType,
+          parameterLocation: parameterLocation,
+          required: normalizedMode === 'IN' || normalizedMode === 'IN_OUT' || normalizedMode === 'INOUT' || normalizedMode === 'IN/OUT',
+          description: `${paramName} (${paramMode})`,
+          example: oracleType === 'NUMBER' ? '1000' : 
+                  oracleType === 'DATE' ? '2024-01-01' : 
+                  oracleType === 'CLOB' ? '{...}' : 'sample',
+          validationPattern: '',
+          defaultValue: param.DATA_DEFAULT || param.defaultValue || '',
+          inBody: parameterLocation === 'body',
+          isPrimaryKey: false,
+          paramMode: normalizedMode
+        });
+        console.log(`✅ Added parameter: ${cleanKey} (${normalizedMode})`);
+      }
+
+      // FIX: Only add to response mappings for OUT and IN/OUT parameters
+      if (isOutParam) {
         newMappings.push({
-          id: `mapping-return-${Date.now()}`,
-          apiField: 'result',
-          dbColumn: 'RETURN_VALUE',
+          id: `mapping-out-${Date.now()}-${index}`,
+          apiField: cleanKey,
+          dbColumn: paramName,
           oracleType: oracleType,
           apiType: apiType,
           format: oracleType === 'DATE' ? 'date-time' : '',
-          nullable: false,
+          nullable: true,
           isPrimaryKey: false,
           includeInResponse: true,
           inResponse: true,
-          paramMode: 'OUT'
+          paramMode: normalizedMode
         });
-        console.log('✅ Added function return mapping');
+        console.log(`✅ Added response mapping: ${cleanKey} (${normalizedMode})`);
       }
-    }
+    });
 
-    // Process columns if we have any and no parameters (for tables/views)
-    if (columns.length > 0 && parameters.length === 0) {
-      console.log('📦 Processing columns (count: ' + columns.length + ')');
+    // For functions, handle return type
+    const returnType = object.RETURN_TYPE || object.return_type || object.returnType || object.details?.returnType;
+    if (returnType && objectType === 'FUNCTION') {
+      // Determine oracle type for return based on database type
+      const dbType = object.databaseType?.toLowerCase() || 'oracle';
+      let oracleType = 'VARCHAR2';
       
-      columns.forEach((col, index) => {
-        const colName = col.name || col.COLUMN_NAME || col.column_name;
-        const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
-        const colNullable = col.nullable || col.NULLABLE || 'Y';
-        const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
+      if (dbType === 'postgresql') {
+        if (returnType.includes('INT') || returnType.includes('BIGINT') || returnType.includes('NUMERIC')) {
+          oracleType = 'NUMBER';
+        } else if (returnType.includes('DATE') || returnType.includes('TIMESTAMP')) {
+          oracleType = 'DATE';
+        } else if (returnType.includes('BOOLEAN')) {
+          oracleType = 'VARCHAR2';
+        } else {
+          oracleType = 'VARCHAR2';
+        }
+      } else {
+        if (returnType.includes('NUMBER') || returnType.includes('INT') || returnType.includes('FLOAT')) {
+          oracleType = 'NUMBER';
+        } else if (returnType.includes('DATE')) {
+          oracleType = 'DATE';
+        } else if (returnType.includes('VARCHAR') || returnType.includes('CHAR')) {
+          oracleType = 'VARCHAR2';
+        } else {
+          oracleType = 'VARCHAR2';
+        }
+      }
+
+      // Determine API type
+      let apiType = 'string';
+      if (oracleType === 'NUMBER') {
+        apiType = 'integer';
+      }
+
+      newMappings.push({
+        id: `mapping-return-${Date.now()}`,
+        apiField: 'result',
+        dbColumn: 'RETURN_VALUE',
+        oracleType: oracleType,
+        apiType: apiType,
+        format: oracleType === 'DATE' ? 'date-time' : '',
+        nullable: false,
+        isPrimaryKey: false,
+        includeInResponse: true,
+        inResponse: true,
+        paramMode: 'OUT'
+      });
+      console.log('✅ Added function return mapping');
+    }
+  }
+
+  // Process columns if we have any and no parameters (for tables/views)
+  if (columns.length > 0 && parameters.length === 0) {
+    console.log('📦 Processing columns (count: ' + columns.length + ')');
+    
+    columns.forEach((col, index) => {
+      const colName = col.name || col.COLUMN_NAME || col.column_name;
+      const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
+      const colNullable = col.nullable || col.NULLABLE || 'Y';
+      const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
+      
+      if (colName) {
+        // Clean up column name for API key
+        const cleanKey = typeof colName === 'string' ? colName.toLowerCase() : `column_${index + 1}`;
         
-        if (colName) {
-          // Clean up column name for API key
-          const cleanKey = typeof colName === 'string' ? colName.toLowerCase() : `column_${index + 1}`;
-          
-          // Determine oracle type
-          let oracleType = 'VARCHAR2';
-          if (colType.includes('VARCHAR') || colType.includes('CHAR')) {
+        // Determine database type for type mapping
+        const dbType = object.databaseType?.toLowerCase() || 'oracle';
+        
+        // Determine type based on database type
+        let oracleType = 'VARCHAR2';
+        
+        if (dbType === 'postgresql') {
+          if (colType.includes('INT') || colType.includes('BIGINT') || colType.includes('SMALLINT') || 
+              colType.includes('DECIMAL') || colType.includes('NUMERIC') || colType.includes('FLOAT') ||
+              colType.includes('DOUBLE') || colType.includes('REAL')) {
+            oracleType = 'NUMBER';
+          } else if (colType.includes('DATE') || colType.includes('TIME') || colType.includes('TIMESTAMP')) {
+            oracleType = 'DATE';
+          } else if (colType.includes('BOOLEAN')) {
             oracleType = 'VARCHAR2';
-          } else if (colType.includes('NUMBER') || colType.includes('INT') || colType.includes('FLOAT')) {
+          } else if (colType.includes('VARCHAR') || colType.includes('CHAR') || colType.includes('TEXT')) {
+            oracleType = 'VARCHAR2';
+          } else {
+            oracleType = 'VARCHAR2';
+          }
+        } else {
+          if (colType.includes('NUMBER') || colType.includes('INT') || colType.includes('FLOAT')) {
             oracleType = 'NUMBER';
           } else if (colType.includes('DATE')) {
             oracleType = 'DATE';
           } else if (colType.includes('TIMESTAMP')) {
             oracleType = 'TIMESTAMP';
-          }
-
-          // Determine API type
-          let apiType = 'string';
-          if (oracleType === 'NUMBER') {
-            apiType = 'integer';
-          }
-
-          // Determine parameter location
-          let parameterLocation = 'query';
-          if (isPrimaryKey && (httpMethod === 'GET' || httpMethod === 'PUT' || httpMethod === 'DELETE')) {
-            parameterLocation = 'path';
-          } else if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
-            parameterLocation = 'body';
-          }
-          
-          // For tables/views, all columns go to both parameters and mappings
-          newParameters.push({
-            id: `param-col-${Date.now()}-${index}`,
-            key: cleanKey,
-            dbColumn: colName,
-            oracleType: oracleType,
-            apiType: apiType,
-            parameterLocation: parameterLocation,
-            required: isPrimaryKey || colNullable === 'N',
-            description: col.comment || col.COMMENTS || `From ${object.name || object.objectName}.${colName}`,
-            example: colName.includes('ID') ? '1' : 
-                    colName.includes('DATE') ? '2024-01-01' :
-                    colName.includes('NAME') ? 'Sample' : '',
-            validationPattern: '',
-            defaultValue: col.DATA_DEFAULT || col.defaultValue || '',
-            inBody: parameterLocation === 'body',
-            isPrimaryKey: isPrimaryKey,
-            paramMode: null
-          });
-
-          newMappings.push({
-            id: `mapping-col-${Date.now()}-${index}`,
-            apiField: cleanKey,
-            dbColumn: colName,
-            oracleType: oracleType,
-            apiType: apiType,
-            format: oracleType === 'DATE' ? 'date-time' : '',
-            nullable: colNullable === 'Y',
-            isPrimaryKey: isPrimaryKey,
-            includeInResponse: true,
-            inResponse: true,
-            paramMode: null
-          });
-        }
-      });
-    }
-
-    console.log('📊 Final results:', {
-      parametersCount: newParameters.length,
-      mappingsCount: newMappings.length,
-      inCount: newParameters.filter(p => p.paramMode === 'IN' || p.paramMode === 'IN_OUT' || p.paramMode === 'INOUT' || p.paramMode === 'IN/OUT' || p.paramMode === null).length,
-      outCount: newMappings.length
-    });
-
-    setParameters(newParameters);
-    setResponseMappings(newMappings);
-    
-    // Generate sample response based on mappings
-    if (newMappings.length > 0) {
-      const sampleData = {};
-      newMappings.slice(0, 50).forEach(mapping => {
-        if (mapping.apiType === 'integer') {
-          sampleData[mapping.apiField] = 123;
-        } else if (mapping.apiType === 'string') {
-          if (mapping.format === 'date-time') {
-            sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+          } else if (colType.includes('VARCHAR') || colType.includes('CHAR')) {
+            oracleType = 'VARCHAR2';
+          } else if (colType.includes('CLOB')) {
+            oracleType = 'CLOB';
           } else {
-            sampleData[mapping.apiField] = mapping.apiField.includes('id') ? 1 : 'sample';
+            oracleType = 'VARCHAR2';
           }
-        } else if (mapping.apiType === 'boolean') {
-          sampleData[mapping.apiField] = true;
         }
-      });
-      
-      const successSchema = JSON.stringify({
-        success: true,
-        data: sampleData,
-        message: 'Request processed successfully',
-        metadata: {
-          timestamp: '{{timestamp}}',
-          apiVersion: apiDetails.version,
-          requestId: '{{requestId}}'
+
+        // Determine API type
+        let apiType = 'string';
+        if (oracleType === 'NUMBER') {
+          apiType = 'integer';
         }
-      }, null, 2);
-      
-      setResponseBody(prev => ({
-        ...prev,
-        successSchema
-      }));
-    }
 
-    // Set body type based on HTTP method
-    if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
-      setRequestBody(prev => ({
-        ...prev,
-        bodyType: 'json'
-      }));
-    } else {
-      setRequestBody(prev => ({
-        ...prev,
-        bodyType: 'none'
-      }));
-    }
+        // Determine parameter location
+        let parameterLocation = 'query';
+        if (isPrimaryKey && (httpMethod === 'GET' || httpMethod === 'PUT' || httpMethod === 'DELETE')) {
+          parameterLocation = 'path';
+        } else if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
+          parameterLocation = 'body';
+        }
+        
+        // For tables/views, all columns go to both parameters and mappings
+        newParameters.push({
+          id: `param-col-${Date.now()}-${index}`,
+          key: cleanKey,
+          dbColumn: colName,
+          oracleType: oracleType,
+          apiType: apiType,
+          parameterLocation: parameterLocation,
+          required: isPrimaryKey || colNullable === 'N',
+          description: col.comment || col.COMMENTS || `From ${object.name || object.objectName}.${colName}`,
+          example: colName.includes('ID') ? '1' : 
+                  colName.includes('DATE') ? '2024-01-01' :
+                  colName.includes('NAME') ? 'Sample' : '',
+          validationPattern: '',
+          defaultValue: col.DATA_DEFAULT || col.defaultValue || '',
+          inBody: parameterLocation === 'body',
+          isPrimaryKey: isPrimaryKey,
+          paramMode: null
+        });
 
-    console.log(`✅ Form populated for ${objectType} with operation: ${operation} (HTTP ${httpMethod})`);
-    console.log(`📊 Parameters: ${newParameters.length}, Mappings: ${newMappings.length}`);
-  }, [apiDetails.version, setApiDetails, setSchemaConfig, setParameters, setResponseMappings, setRequestBody, setResponseBody]);
+        newMappings.push({
+          id: `mapping-col-${Date.now()}-${index}`,
+          apiField: cleanKey,
+          dbColumn: colName,
+          oracleType: oracleType,
+          apiType: apiType,
+          format: oracleType === 'DATE' ? 'date-time' : '',
+          nullable: colNullable === 'Y',
+          isPrimaryKey: isPrimaryKey,
+          includeInResponse: true,
+          inResponse: true,
+          paramMode: null
+        });
+      }
+    });
+  }
+
+  console.log('📊 Final results:', {
+    parametersCount: newParameters.length,
+    mappingsCount: newMappings.length,
+    inCount: newParameters.filter(p => p.paramMode === 'IN' || p.paramMode === 'IN_OUT' || p.paramMode === 'INOUT' || p.paramMode === 'IN/OUT' || p.paramMode === null).length,
+    outCount: newMappings.length
+  });
+
+  setParameters(newParameters);
+  setResponseMappings(newMappings);
+  
+  // Generate sample response based on mappings
+  if (newMappings.length > 0) {
+    const sampleData = {};
+    newMappings.slice(0, 50).forEach(mapping => {
+      if (mapping.apiType === 'integer') {
+        sampleData[mapping.apiField] = 123;
+      } else if (mapping.apiType === 'string') {
+        if (mapping.format === 'date-time') {
+          sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+        } else {
+          sampleData[mapping.apiField] = mapping.apiField.includes('id') ? 1 : 'sample';
+        }
+      } else if (mapping.apiType === 'boolean') {
+        sampleData[mapping.apiField] = true;
+      }
+    });
+    
+    const successSchema = JSON.stringify({
+      success: true,
+      data: sampleData,
+      message: 'Request processed successfully',
+      metadata: {
+        timestamp: '{{timestamp}}',
+        apiVersion: apiDetails.version,
+        requestId: '{{requestId}}'
+      }
+    }, null, 2);
+    
+    setResponseBody(prev => ({
+      ...prev,
+      successSchema
+    }));
+  }
+
+  // Set body type based on HTTP method
+  if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
+    setRequestBody(prev => ({
+      ...prev,
+      bodyType: 'json'
+    }));
+  } else {
+    setRequestBody(prev => ({
+      ...prev,
+      bodyType: 'none'
+    }));
+  }
+
+  console.log(`✅ Form populated for ${objectType} with operation: ${operation} (HTTP ${httpMethod})`);
+  console.log(`📊 Parameters: ${newParameters.length}, Mappings: ${newMappings.length}`);
+  console.log(`📊 Database type: ${object.databaseType}`);
+}, [apiDetails.version, setApiDetails, setSchemaConfig, setParameters, setResponseMappings, setRequestBody, setResponseBody]);
 
   // ==================== VALIDATION FUNCTIONS ====================
 
@@ -3962,8 +4198,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
     setPreviewOpen(true);
   };
 
-  // Handle preview confirmation - actually call the generateApi function
-const handlePreviewConfirm = async () => {
+  const handlePreviewConfirm = async () => {
   setPreviewOpen(false);
   setLoadingOpen(true);
   
@@ -3973,12 +4208,19 @@ const handlePreviewConfirm = async () => {
       throw new Error('Collection and folder are required');
     }
 
+    // IMPORTANT: Get the database type from the selected object
+    // This ensures we use the correct database type for the API generation
+    const actualDatabaseType = selectedDbObject?.databaseType || databaseType;
+    
+    console.log('🚀 Generating API for database type:', actualDatabaseType);
+    console.log('📦 Selected object:', selectedDbObject?.name, 'Type:', selectedDbObject?.databaseType);
+
     // Prepare the request object for the generateApi function
     const generateRequest = {
       apiName: apiDetails.apiName,
       apiCode: apiDetails.apiCode,
       description: apiDetails.description,
-      databaseType: databaseType, // This is the key fix!
+      databaseType: actualDatabaseType, // Use the actual database type from selected object
       version: apiDetails.version,
       httpMethod: apiDetails.httpMethod,
       basePath: apiDetails.basePath,
@@ -3999,7 +4241,7 @@ const handlePreviewConfirm = async () => {
         objectType: schemaConfig.objectType,
         objectName: schemaConfig.objectName,
         operation: schemaConfig.operation,
-        databaseType: databaseType, // Add this!
+        databaseType: actualDatabaseType, // Use the actual database type here too
         primaryKeyColumn: schemaConfig.primaryKeyColumn,
         sequenceName: schemaConfig.sequenceName,
         enablePagination: schemaConfig.enablePagination,
@@ -4008,7 +4250,10 @@ const handlePreviewConfirm = async () => {
         defaultSortColumn: schemaConfig.defaultSortColumn,
         defaultSortDirection: schemaConfig.defaultSortDirection
       },
-      schemaConfig: schemaConfig,
+      schemaConfig: {
+        ...schemaConfig,
+        databaseType: actualDatabaseType // Also add to schemaConfig
+      },
       // Only send IN parameters in parameters array
       parameters: getInParameters().map(p => ({
         ...p,
@@ -4023,7 +4268,7 @@ const handlePreviewConfirm = async () => {
                   requestBody.bodyType === 'form-data' ? 'multipart/form-data' :
                   requestBody.bodyType === 'urlencoded' ? 'application/x-www-form-urlencoded' :
                   requestBody.bodyType === 'raw' ? 'text/plain' :
-                  null, // null for 'none'
+                  null,
         sample: (() => {
           if (requestBody.bodyType === 'none') return null;
           if (typeof requestBody.sample === 'string') {
@@ -4106,9 +4351,8 @@ const handlePreviewConfirm = async () => {
       regenerateComponents: true
     };
 
-    console.log('📡 Sending to backend with format:', requestBody.bodyType, generateRequest.requestBody.contentType);
-    console.log('📡 IN Parameters count:', generateRequest.parameters.length);
-    console.log('📡 Response Mappings count:', generateRequest.responseMappings.length);
+    console.log('📡 Sending request with database type:', generateRequest.databaseType);
+    console.log('📡 Source object database type:', generateRequest.sourceObject.databaseType);
     
     let response;
     
@@ -4380,13 +4624,20 @@ return ReactDOM.createPortal(
                   </p>
                 )}
 
-                {/* Dashboard selected object indicator */}
+                {/* Dashboard selected object indicator - UPDATED with database type badge */}
                 {fromDashboard && selectedDbObject && (
                   <div className="flex items-center gap-2 mt-1">
                     <p className="text-xs" style={{ color: themeColors.success }}>
                       <CheckCircle className="h-3 w-3 inline mr-1" />
                       Selected: {selectedDbObject.owner}.{selectedDbObject.name} ({selectedDbObject.type})
                     </p>
+                    {/* Database Type Badge */}
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ 
+                      backgroundColor: selectedDbObject.databaseType === 'PostgreSQL' ? '#3b82f620' : '#ef444420',
+                      color: selectedDbObject.databaseType === 'PostgreSQL' ? '#3b82f6' : '#ef4444'
+                    }}>
+                      {selectedDbObject.databaseType === 'PostgreSQL' ? 'PostgreSQL' : 'Oracle'}
+                    </span>
                     <button
                       onClick={() => setShowObjectSelector(true)}
                       className="text-xs underline hover:no-underline"
@@ -4396,8 +4647,35 @@ return ReactDOM.createPortal(
                     </button>
                   </div>
                 )}
-                
-                {/* UPDATED: API Code Already Exists Warning - Using apiCodeExists state */}
+
+                {/* Database Type Indicator - ADD THIS NEW SECTION */}
+                {/* {(currentDatabaseType || selectedDbObject?.databaseType || databaseType) && (
+                  <div className="mt-2 p-2 rounded-lg border" style={{ 
+                    backgroundColor: currentDatabaseType === 'PostgreSQL' ? '#3b82f610' : '#ef444410',
+                    borderColor: currentDatabaseType === 'PostgreSQL' ? '#3b82f640' : '#ef444440'
+                  }}>
+                    <div className="flex items-center gap-2">
+                      <Database size={14} style={{ 
+                        color: currentDatabaseType === 'PostgreSQL' ? '#3b82f6' : '#ef4444' 
+                      }} />
+                      <span className="text-xs font-medium" style={{ color: themeColors.text }}>
+                        Generating API for:
+                      </span>
+                      <span className="text-xs font-semibold" style={{ 
+                        color: currentDatabaseType === 'PostgreSQL' ? '#3b82f6' : '#ef4444' 
+                      }}>
+                        {currentDatabaseType === 'PostgreSQL' ? 'PostgreSQL Database' : 'Oracle Database'}
+                      </span>
+                    </div>
+                    <p className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
+                      {currentDatabaseType === 'PostgreSQL' 
+                        ? 'API will be optimized for PostgreSQL syntax and features' 
+                        : 'API will be optimized for Oracle PL/SQL syntax and features'}
+                    </p>
+                  </div>
+                )} */}
+
+                {/* UPDATED: API Code Already Exists Warning */}
                 {!isEditing && apiCodeExists && (
                   <div className="mt-2 p-2 rounded-lg border flex items-center gap-2" style={{ 
                     backgroundColor: themeColors.error + '20',
@@ -7239,6 +7517,7 @@ WHERE ROWNUM <= 100;` : ''}`}
           }}
           colors={themeColors}
           authToken={authToken}
+          databaseType={databaseType}  // <-- ADD THIS LINE
         />
       )}
 
