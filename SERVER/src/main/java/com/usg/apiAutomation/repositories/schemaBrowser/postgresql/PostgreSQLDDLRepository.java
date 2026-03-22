@@ -1,13 +1,23 @@
 package com.usg.apiAutomation.repositories.schemaBrowser.postgresql;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Repository
 public class PostgreSQLDDLRepository extends PostgreSQLRepository {
+    private final JdbcTemplate postgreSQLJdbcTemplate;
+
+    public PostgreSQLDDLRepository(JdbcTemplate postgreSQLJdbcTemplate) {
+        super();
+        this.postgreSQLJdbcTemplate = postgreSQLJdbcTemplate;
+    }
 
     // ============================================================
     // DDL METHODS
@@ -27,31 +37,48 @@ public class PostgreSQLDDLRepository extends PostgreSQLRepository {
             // Method 1: Using pg_get_functiondef for functions/procedures
             if (isFunctionBasedObject(objectType)) {
                 ddl = getFunctionDDL(objectName, objectType);
-                if (ddl != null && !ddl.isEmpty()) methodUsed = "pg_get_functiondef";
+                if (ddl != null && !ddl.isEmpty()) {
+                    methodUsed = "pg_get_functiondef";
+                }
             }
 
             // Method 2: Using pg_get_viewdef for views
             if (ddl == null && isViewBasedObject(objectType)) {
                 ddl = getViewDDL(objectName, objectType);
-                if (ddl != null && !ddl.isEmpty()) methodUsed = "pg_get_viewdef";
+                if (ddl != null && !ddl.isEmpty()) {
+                    methodUsed = "pg_get_viewdef";
+                }
             }
 
-            // Method 3: Using pg_get_tabledef for tables
+            // Method 3: Generate DDL for tables
             if (ddl == null && "TABLE".equalsIgnoreCase(objectType)) {
-                ddl = getTableDDL(objectName, objectType);
-                if (ddl != null && !ddl.isEmpty()) methodUsed = "pg_get_tabledef";
+                ddl = generateTableDDL(objectName);
+                if (ddl != null && !ddl.isEmpty()) {
+                    methodUsed = "TABLE_GENERATED";
+                    // Clean up the DDL
+                    ddl = cleanUpDDL(ddl, objectType);
+                }
             }
 
-            // Method 4: From pg_class and pg_namespace
+            // Method 4: From pg_class and pg_namespace for other object types
             if (ddl == null) {
                 ddl = getDDLFromSystemCatalog(objectName, objectType);
-                if (ddl != null && !ddl.isEmpty()) methodUsed = "SYSTEM_CATALOG";
+                if (ddl != null && !ddl.isEmpty()) {
+                    methodUsed = "SYSTEM_CATALOG";
+                }
             }
 
             // Method 5: Generate from information_schema
             if (ddl == null) {
                 ddl = generateDDLFromSchema(objectName, objectType);
-                if (ddl != null && !ddl.isEmpty()) methodUsed = "GENERATED_FROM_SCHEMA";
+                if (ddl != null && !ddl.isEmpty()) {
+                    methodUsed = "GENERATED_FROM_SCHEMA";
+                }
+            }
+
+            // Clean up the DDL if it exists
+            if (ddl != null && !ddl.isEmpty()) {
+                ddl = cleanUpDDL(ddl, objectType);
             }
 
             long executionTime = System.currentTimeMillis() - startTime;
@@ -74,9 +101,502 @@ public class PostgreSQLDDLRepository extends PostgreSQLRepository {
             result.put("ddl", "-- Error retrieving DDL: " + e.getMessage());
             result.put("status", "ERROR");
             result.put("error", e.getMessage());
+            result.put("executionTimeMs", System.currentTimeMillis() - startTime);
         }
+
         return result;
     }
+
+    /**
+     * Generate clean CREATE TABLE DDL with proper PostgreSQL syntax - FIXED
+     */
+    private String generateTableDDL(String tableName) {
+        try {
+            // Get columns with detailed information
+            String columnSql = "SELECT " +
+                    "    column_name, " +
+                    "    data_type, " +
+                    "    is_nullable, " +
+                    "    column_default, " +
+                    "    udt_name, " +
+                    "    character_maximum_length, " +
+                    "    numeric_precision, " +
+                    "    numeric_scale " +
+                    "FROM information_schema.columns " +
+                    "WHERE table_name = ? AND table_schema = 'public' " +
+                    "ORDER BY ordinal_position";
+
+            List<Map<String, Object>> columns = postgreSQLJdbcTemplate.queryForList(columnSql, tableName);
+
+            if (columns.isEmpty()) {
+                return null;
+            }
+
+            // Get primary key columns
+            String pkSql = "SELECT " +
+                    "    kcu.column_name " +
+                    "FROM information_schema.table_constraints tc " +
+                    "JOIN information_schema.key_column_usage kcu " +
+                    "    ON tc.constraint_name = kcu.constraint_name " +
+                    "WHERE tc.table_name = ? " +
+                    "    AND tc.table_schema = 'public' " +
+                    "    AND tc.constraint_type = 'PRIMARY KEY' " +
+                    "ORDER BY kcu.ordinal_position";
+
+            List<Map<String, Object>> pkColumns = postgreSQLJdbcTemplate.queryForList(pkSql, tableName);
+
+            // Build CREATE TABLE statement with proper formatting
+            StringBuilder ddl = new StringBuilder();
+            ddl.append("CREATE TABLE ").append(tableName).append(" (\n");
+
+            // Add columns
+            List<String> columnLines = new ArrayList<>();
+            for (Map<String, Object> col : columns) {
+                String columnName = (String) col.get("column_name");
+                String dataType = getPostgreSQLDataType(col);
+                String isNullable = (String) col.get("is_nullable");
+                String defaultValue = (String) col.get("column_default");
+
+                StringBuilder colLine = new StringBuilder();
+                colLine.append("    ").append(columnName).append(" ").append(dataType);
+
+                // Add DEFAULT clause
+                if (defaultValue != null && !defaultValue.isEmpty() &&
+                        !defaultValue.equals("NULL") && !defaultValue.equals("null")) {
+                    colLine.append(" DEFAULT ").append(defaultValue);
+                }
+
+                // Add NOT NULL constraint
+                if ("NO".equalsIgnoreCase(isNullable)) {
+                    colLine.append(" NOT NULL");
+                }
+
+                columnLines.add(colLine.toString());
+            }
+
+            // Add PRIMARY KEY constraint as a separate line if there are primary keys
+            if (!pkColumns.isEmpty()) {
+                StringBuilder pkLine = new StringBuilder();
+                pkLine.append("    CONSTRAINT ").append(tableName).append("_pkey PRIMARY KEY (");
+                for (int i = 0; i < pkColumns.size(); i++) {
+                    if (i > 0) pkLine.append(", ");
+                    pkLine.append(pkColumns.get(i).get("column_name"));
+                }
+                pkLine.append(")");
+                columnLines.add(pkLine.toString());
+            }
+
+            // Join all lines with commas
+            for (int i = 0; i < columnLines.size(); i++) {
+                ddl.append(columnLines.get(i));
+                if (i < columnLines.size() - 1) {
+                    ddl.append(",\n");
+                } else {
+                    ddl.append("\n");
+                }
+            }
+
+            ddl.append(");");
+
+            return ddl.toString();
+
+        } catch (Exception e) {
+            log.error("Error generating table DDL for {}: {}", tableName, e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Get PostgreSQL data type with length/precision - FIXED for Integer/Long casting
+     */
+    private String getPostgreSQLDataType(Map<String, Object> column) {
+        String dataType = (String) column.get("data_type");
+        String udtName = (String) column.get("udt_name");
+        Object charMaxLengthObj = column.get("character_maximum_length");
+        Object numericPrecisionObj = column.get("numeric_precision");
+        Object numericScaleObj = column.get("numeric_scale");
+
+        // Safely convert to Long
+        Long charMaxLength = null;
+        if (charMaxLengthObj != null) {
+            if (charMaxLengthObj instanceof Long) {
+                charMaxLength = (Long) charMaxLengthObj;
+            } else if (charMaxLengthObj instanceof Integer) {
+                charMaxLength = ((Integer) charMaxLengthObj).longValue();
+            } else if (charMaxLengthObj instanceof Number) {
+                charMaxLength = ((Number) charMaxLengthObj).longValue();
+            }
+        }
+
+        Long numericPrecision = null;
+        if (numericPrecisionObj != null) {
+            if (numericPrecisionObj instanceof Long) {
+                numericPrecision = (Long) numericPrecisionObj;
+            } else if (numericPrecisionObj instanceof Integer) {
+                numericPrecision = ((Integer) numericPrecisionObj).longValue();
+            } else if (numericPrecisionObj instanceof Number) {
+                numericPrecision = ((Number) numericPrecisionObj).longValue();
+            }
+        }
+
+        Long numericScale = null;
+        if (numericScaleObj != null) {
+            if (numericScaleObj instanceof Long) {
+                numericScale = (Long) numericScaleObj;
+            } else if (numericScaleObj instanceof Integer) {
+                numericScale = ((Integer) numericScaleObj).longValue();
+            } else if (numericScaleObj instanceof Number) {
+                numericScale = ((Number) numericScaleObj).longValue();
+            }
+        }
+
+        // Handle character types
+        if ("character varying".equals(dataType) || "varchar".equals(dataType)) {
+            if (charMaxLength != null && charMaxLength > 0) {
+                return "VARCHAR(" + charMaxLength + ")";
+            }
+            return "VARCHAR";
+        }
+
+        if ("character".equals(dataType) || "char".equals(dataType)) {
+            if (charMaxLength != null && charMaxLength > 0) {
+                return "CHAR(" + charMaxLength + ")";
+            }
+            return "CHAR";
+        }
+
+        // Handle text type
+        if ("text".equals(dataType)) {
+            return "TEXT";
+        }
+
+        // Handle numeric types with precision
+        if ("numeric".equals(dataType) || "decimal".equals(dataType)) {
+            if (numericPrecision != null) {
+                if (numericScale != null && numericScale > 0) {
+                    return "NUMERIC(" + numericPrecision + "," + numericScale + ")";
+                }
+                return "NUMERIC(" + numericPrecision + ")";
+            }
+            return "NUMERIC";
+        }
+
+        // Handle integer types
+        if ("integer".equals(dataType) || "int".equals(dataType) || "int4".equals(udtName)) {
+            return "INTEGER";
+        }
+
+        if ("bigint".equals(dataType) || "int8".equals(udtName)) {
+            return "BIGINT";
+        }
+
+        if ("smallint".equals(dataType) || "int2".equals(udtName)) {
+            return "SMALLINT";
+        }
+
+        // Handle floating point types
+        if ("real".equals(dataType) || "float4".equals(udtName)) {
+            return "REAL";
+        }
+
+        if ("double precision".equals(dataType) || "float8".equals(udtName)) {
+            return "DOUBLE PRECISION";
+        }
+
+        // Handle date/time types
+        if ("timestamp without time zone".equals(dataType)) {
+            return "TIMESTAMP";
+        }
+
+        if ("timestamp with time zone".equals(dataType)) {
+            return "TIMESTAMPTZ";
+        }
+
+        if ("date".equals(dataType)) {
+            return "DATE";
+        }
+
+        if ("time without time zone".equals(dataType)) {
+            return "TIME";
+        }
+
+        if ("time with time zone".equals(dataType)) {
+            return "TIMETZ";
+        }
+
+        // Handle interval
+        if ("interval".equals(dataType)) {
+            return "INTERVAL";
+        }
+
+        // Handle boolean
+        if ("boolean".equals(dataType)) {
+            return "BOOLEAN";
+        }
+
+        // Handle JSON types
+        if ("json".equals(dataType)) {
+            return "JSON";
+        }
+
+        if ("jsonb".equals(dataType)) {
+            return "JSONB";
+        }
+
+        // Handle UUID
+        if ("uuid".equals(dataType)) {
+            return "UUID";
+        }
+
+        // Handle array types
+        if (dataType != null && dataType.endsWith("[]")) {
+            return dataType.toUpperCase();
+        }
+
+        // Handle geometry/PostGIS types
+        if ("geometry".equals(udtName)) {
+            return "GEOMETRY";
+        }
+
+        // Return the actual type name in uppercase
+        return dataType != null ? dataType.toUpperCase() :
+                udtName != null ? udtName.toUpperCase() : "TEXT";
+    }
+
+    /**
+     * Enhanced DDL cleaning with better formatting
+     */
+    private String cleanUpDDL(String ddl, String objectType) {
+        if (ddl == null || ddl.isEmpty()) {
+            return ddl;
+        }
+
+        String cleaned = ddl;
+
+        // For TABLE objects
+        if ("TABLE".equalsIgnoreCase(objectType)) {
+            // Ensure proper formatting with newlines and indentation
+            cleaned = formatTableDDLNicely(cleaned);
+
+            // Ensure there's a semicolon at the end
+            if (!cleaned.trim().endsWith(";")) {
+                cleaned = cleaned.trim() + ";";
+            }
+        }
+
+        return cleaned;
+    }
+
+    /**
+     * Format table DDL nicely with proper indentation
+     */
+    private String formatTableDDLNicely(String ddl) {
+        // If the DDL is all on one line, reformat it
+        if (!ddl.contains("\n")) {
+            // Find the CREATE TABLE part
+            String createPart = ddl.substring(0, ddl.indexOf("(")).trim();
+            String columnsPart = ddl.substring(ddl.indexOf("(") + 1, ddl.lastIndexOf(")"));
+
+            // Split columns by commas, but be careful with commas inside parentheses
+            List<String> columns = new ArrayList<>();
+            StringBuilder current = new StringBuilder();
+            int parenCount = 0;
+
+            for (char c : columnsPart.toCharArray()) {
+                if (c == '(') parenCount++;
+                if (c == ')') parenCount--;
+
+                if (c == ',' && parenCount == 0) {
+                    columns.add(current.toString().trim());
+                    current = new StringBuilder();
+                } else {
+                    current.append(c);
+                }
+            }
+            columns.add(current.toString().trim());
+
+            // Rebuild with proper formatting
+            StringBuilder formatted = new StringBuilder();
+            formatted.append(createPart).append(" (\n");
+
+            for (int i = 0; i < columns.size(); i++) {
+                formatted.append("    ").append(columns.get(i));
+                if (i < columns.size() - 1) {
+                    formatted.append(",\n");
+                } else {
+                    formatted.append("\n");
+                }
+            }
+
+            formatted.append(")");
+            return formatted.toString();
+        }
+
+        // If already formatted, just ensure indentation is consistent
+        String[] lines = ddl.split("\n");
+        StringBuilder formatted = new StringBuilder();
+
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i].trim();
+            if (line.isEmpty()) continue;
+
+            if (i == 0 || line.startsWith("CREATE")) {
+                formatted.append(line);
+            } else if (line.startsWith(")")) {
+                formatted.append(line);
+            } else {
+                formatted.append("    ").append(line);
+            }
+
+            if (i < lines.length - 1) {
+                formatted.append("\n");
+            }
+        }
+
+        return formatted.toString();
+    }
+
+
+    /**
+     * Fix missing commas before constraints
+     */
+    private String fixMissingCommasBeforeConstraints(String ddl) {
+        // Pattern: column definition followed by CONSTRAINT without comma
+        // e.g., "version character varying(255)\n    CONSTRAINT"
+        Pattern pattern = Pattern.compile("(\\w+\\s+[\\w\\s\\(\\)]+)\\s+(CONSTRAINT)", Pattern.MULTILINE);
+        Matcher matcher = pattern.matcher(ddl);
+
+        StringBuffer result = new StringBuffer();
+        while (matcher.find()) {
+            // Check if there's already a comma before CONSTRAINT
+            String before = matcher.group(1);
+            if (!before.trim().endsWith(",")) {
+                matcher.appendReplacement(result, "$1,\n    $2");
+            } else {
+                matcher.appendReplacement(result, "$1\n    $2");
+            }
+        }
+        matcher.appendTail(result);
+
+        return result.toString();
+    }
+
+    /**
+     * Fix trailing commas
+     */
+    private String fixTrailingCommas(String ddl) {
+        // Remove commas before closing parenthesis
+        return ddl.replaceAll(",\\s*\\)", "\n)");
+    }
+
+    /**
+     * Format table DDL nicely
+     */
+    private String formatTableDDL(String ddl) {
+        // Split into lines
+        String[] lines = ddl.split("\n");
+        StringBuilder formatted = new StringBuilder();
+
+        for (String line : lines) {
+            // Indent column definitions
+            if (line.trim().matches("^\\w+\\s+\\w+.*") && !line.trim().startsWith("CREATE")) {
+                formatted.append("    ").append(line.trim());
+            } else {
+                formatted.append(line.trim());
+            }
+
+            // Add proper spacing
+            if (!line.trim().endsWith("(") && !line.trim().endsWith(")")) {
+                formatted.append("\n");
+            }
+        }
+
+        return formatted.toString();
+    }
+
+    /**
+     * Clean view DDL
+     */
+    private String cleanViewDDL(String ddl) {
+        // Remove extra whitespace
+        ddl = ddl.replaceAll("\\s+", " ");
+
+        // Format SELECT part nicely
+        if (ddl.toUpperCase().contains("SELECT")) {
+            ddl = ddl.replaceAll("SELECT", "\nSELECT");
+            ddl = ddl.replaceAll("FROM", "\nFROM");
+            ddl = ddl.replaceAll("WHERE", "\nWHERE");
+            ddl = ddl.replaceAll("JOIN", "\n  JOIN");
+            ddl = ddl.replaceAll("LEFT JOIN", "\n  LEFT JOIN");
+            ddl = ddl.replaceAll("RIGHT JOIN", "\n  RIGHT JOIN");
+            ddl = ddl.replaceAll("INNER JOIN", "\n  INNER JOIN");
+            ddl = ddl.replaceAll("GROUP BY", "\nGROUP BY");
+            ddl = ddl.replaceAll("ORDER BY", "\nORDER BY");
+            ddl = ddl.replaceAll("HAVING", "\nHAVING");
+        }
+
+        return ddl;
+    }
+
+    /**
+     * Clean function/procedure DDL
+     */
+    private String cleanFunctionDDL(String ddl) {
+        // Format function/procedure for readability
+        ddl = ddl.replaceAll("\\s+", " ");
+        ddl = ddl.replaceAll("CREATE OR REPLACE", "CREATE OR REPLACE\n");
+        ddl = ddl.replaceAll("RETURNS", "\nRETURNS");
+        ddl = ddl.replaceAll("LANGUAGE", "\nLANGUAGE");
+        ddl = ddl.replaceAll("AS \\$\\$", "\nAS $$\n");
+        ddl = ddl.replaceAll("\\$\\$;", "\n$$;");
+
+        return ddl;
+    }
+
+    /**
+     * Get DDL from system catalog (improved version)
+     */
+    private String getDDLFromSystemCatalog(String objectName, String objectType) {
+        try {
+            String sql = null;
+
+            if ("TABLE".equalsIgnoreCase(objectType)) {
+                // Use pg_dump or generate from system catalogs
+                return generateTableDDL(objectName);
+            } else if ("VIEW".equalsIgnoreCase(objectType)) {
+                sql = "SELECT pg_get_viewdef(c.oid, true) as ddl " +
+                        "FROM pg_class c " +
+                        "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                        "WHERE c.relname = ? AND c.relkind = 'v'";
+            } else if ("MATERIALIZED VIEW".equalsIgnoreCase(objectType)) {
+                sql = "SELECT pg_get_viewdef(c.oid, true) as ddl " +
+                        "FROM pg_class c " +
+                        "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                        "WHERE c.relname = ? AND c.relkind = 'm'";
+            } else if ("SEQUENCE".equalsIgnoreCase(objectType)) {
+                sql = "SELECT 'CREATE SEQUENCE ' || c.relname || ';' as ddl " +
+                        "FROM pg_class c " +
+                        "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                        "WHERE c.relname = ? AND c.relkind = 'S'";
+            }
+
+            if (sql != null) {
+                try {
+                    return postgreSQLJdbcTemplate.queryForObject(sql, String.class, objectName);
+                } catch (EmptyResultDataAccessException e) {
+                    log.debug("Object not found in system catalog: {} {}", objectType, objectName);
+                    return null;
+                }
+            }
+
+            return null;
+        } catch (Exception e) {
+            log.error("Error getting DDL from system catalog: {}", e.getMessage());
+            return null;
+        }
+    }
+
+
 
     // ============================================================
     // PRIVATE HELPER METHODS
@@ -185,39 +705,6 @@ public class PostgreSQLDDLRepository extends PostgreSQLRepository {
         }
     }
 
-    private String getDDLFromSystemCatalog(String objectName, String objectType) {
-        try {
-            Map<String, Object> objectLocation = findObjectLocation(objectName, objectType);
-            String schema = (String) objectLocation.get("schema");
-            String relKind = getRelationKind(objectType);
-
-            if (schema == null || relKind == null) {
-                return null;
-            }
-
-            // Try to get DDL using pg_dump like functionality
-            String sql = "SELECT 'CREATE ' || " +
-                    "CASE WHEN c.relkind = 'v' THEN 'VIEW' " +
-                    "WHEN c.relkind = 'm' THEN 'MATERIALIZED VIEW' " +
-                    "WHEN c.relkind = 'r' THEN 'TABLE' " +
-                    "WHEN c.relkind = 's' THEN 'SEQUENCE' " +
-                    "WHEN c.relkind = 'i' THEN 'INDEX' END || ' ' || " +
-                    "n.nspname || '.' || c.relname || ' AS ' || " +
-                    "pg_get_viewdef(c.oid) as ddl " +
-                    "FROM pg_class c " +
-                    "JOIN pg_namespace n ON c.relnamespace = n.oid " +
-                    "WHERE n.nspname = ? AND c.relname = ? AND c.relkind = ?";
-
-            try {
-                return getJdbcTemplate().queryForObject(sql, String.class, schema, objectName.toLowerCase(), relKind);
-            } catch (Exception e) {
-                return null;
-            }
-        } catch (Exception e) {
-            log.debug("getDDLFromSystemCatalog failed: {}", e.getMessage());
-            return null;
-        }
-    }
 
     private String generateDDLFromSchema(String objectName, String objectType) {
         String upperType = objectType.toUpperCase();

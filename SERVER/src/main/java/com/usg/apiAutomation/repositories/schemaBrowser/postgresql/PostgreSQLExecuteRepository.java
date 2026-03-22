@@ -2,6 +2,7 @@ package com.usg.apiAutomation.repositories.schemaBrowser.postgresql;
 
 import com.usg.apiAutomation.enums.PostgreSQLSqlStatementTypeEnum;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.stereotype.Repository;
 
 import java.sql.*;
@@ -837,7 +838,7 @@ public class PostgreSQLExecuteRepository extends PostgreSQLRepository {
 
 
     /**
-     * Execute DDL statements
+     * Execute DDL statements with proper error handling
      */
     public Map<String, Object> executeDdl(String ddl) {
         try {
@@ -856,6 +857,76 @@ public class PostgreSQLExecuteRepository extends PostgreSQLRepository {
 
             return result;
 
+        } catch (BadSqlGrammarException e) {
+            // Extract root cause and format user-friendly error
+            Throwable rootCause = e;
+            while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+                rootCause = rootCause.getCause();
+            }
+
+            String errorMessage = rootCause.getMessage();
+            String cleanErrorMessage = extractPostgreSQLError(errorMessage);
+
+            // Check for insufficient privileges
+            if (errorMessage != null && (errorMessage.contains("permission denied") ||
+                    errorMessage.contains("ERROR: permission denied"))) {
+                String userFriendlyError = "Insufficient privileges: You don't have permission to execute this DDL statement.\n\n" +
+                        "Please contact your database administrator to grant the required privileges.\n" +
+                        "Required privileges may include: CREATE, ALTER, DROP on the schema or database.";
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Check for syntax error
+            else if (errorMessage != null && (errorMessage.contains("syntax error") ||
+                    errorMessage.contains("ERROR: syntax error"))) {
+                String userFriendlyError = "Syntax error: " + cleanErrorMessage + "\n\n" +
+                        "Please check your SQL syntax. Common issues:\n" +
+                        "- Missing or extra commas\n" +
+                        "- Invalid data type\n" +
+                        "- Missing required keywords\n" +
+                        "- Schema name doesn't exist or you don't have permission";
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Check for relation already exists
+            else if (errorMessage != null && (errorMessage.contains("already exists") ||
+                    errorMessage.contains("ERROR: relation") && errorMessage.contains("already exists"))) {
+                String userFriendlyError = "Object already exists: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Check for relation does not exist
+            else if (errorMessage != null && (errorMessage.contains("does not exist") ||
+                    errorMessage.contains("ERROR: relation") && errorMessage.contains("does not exist"))) {
+                String userFriendlyError = "Table or view does not exist: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Check for duplicate key
+            else if (errorMessage != null && errorMessage.contains("duplicate key")) {
+                String userFriendlyError = "Duplicate key violates unique constraint: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Check for foreign key violation
+            else if (errorMessage != null && errorMessage.contains("foreign key")) {
+                String userFriendlyError = "Foreign key violation: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Check for not null violation
+            else if (errorMessage != null && errorMessage.contains("null value") && errorMessage.contains("violates not-null")) {
+                String userFriendlyError = "Not null violation: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Check for check constraint violation
+            else if (errorMessage != null && errorMessage.contains("violates check constraint")) {
+                String userFriendlyError = "Check constraint violation: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Generic PostgreSQL error
+            else if (errorMessage != null && (errorMessage.contains("ERROR:") || errorMessage.contains("PG::"))) {
+                String userFriendlyError = "PostgreSQL error: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Unknown error
+            else {
+                throw new RuntimeException("Failed to execute DDL: " + e.getMessage(), e);
+            }
         } catch (Exception e) {
             log.error("Error executing DDL: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to execute DDL: " + e.getMessage(), e);
@@ -863,7 +934,7 @@ public class PostgreSQLExecuteRepository extends PostgreSQLRepository {
     }
 
     /**
-     * Execute stored program (procedure/function)
+     * Execute stored program (procedure/function) with proper error handling
      */
     public Map<String, Object> executeStoredProgram(String program, PostgreSQLSqlStatementTypeEnum programType, int timeoutSeconds) {
         try {
@@ -909,6 +980,45 @@ public class PostgreSQLExecuteRepository extends PostgreSQLRepository {
 
             return result;
 
+        } catch (BadSqlGrammarException e) {
+            // Extract root cause and format user-friendly error
+            Throwable rootCause = e;
+            while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+                rootCause = rootCause.getCause();
+            }
+
+            String errorMessage = rootCause.getMessage();
+            String cleanErrorMessage = extractPostgreSQLError(errorMessage);
+
+            // Check for insufficient privileges
+            if (errorMessage != null && (errorMessage.contains("permission denied") ||
+                    errorMessage.contains("ERROR: permission denied"))) {
+                String userFriendlyError = "Insufficient privileges (Permission denied): You don't have permission to execute this operation.\n\n" +
+                        "Please contact your database administrator to grant the required privileges.\n" +
+                        "Required privileges may include: EXECUTE on the function/procedure, CREATE on the schema.";
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Check for function/procedure does not exist
+            else if (errorMessage != null && (errorMessage.contains("does not exist") ||
+                    errorMessage.contains("function") && errorMessage.contains("does not exist"))) {
+                String userFriendlyError = "Function or procedure does not exist: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Check for argument mismatch
+            else if (errorMessage != null && (errorMessage.contains("function") && errorMessage.contains("does not match"))) {
+                String userFriendlyError = "Function/procedure argument mismatch: " + cleanErrorMessage + "\n\n" +
+                        "Please check the number and types of parameters.";
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Generic PostgreSQL error
+            else if (errorMessage != null && (errorMessage.contains("ERROR:") || errorMessage.contains("PG::"))) {
+                String userFriendlyError = "PostgreSQL error: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Unknown error
+            else {
+                throw new RuntimeException("Failed to execute stored program: " + e.getMessage(), e);
+            }
         } catch (Exception e) {
             log.error("Error executing stored program: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to execute stored program: " + e.getMessage(), e);
@@ -916,46 +1026,7 @@ public class PostgreSQLExecuteRepository extends PostgreSQLRepository {
     }
 
     /**
-     * Execute direct CALL or EXEC statement
-     */
-    public Map<String, Object> executeDirectCall(String callStatement, int timeoutSeconds) {
-        try {
-            log.info("Executing direct call: {}", callStatement);
-            long startTime = System.currentTimeMillis();
-
-            Connection conn = getJdbcTemplate().getDataSource().getConnection();
-            if (timeoutSeconds > 0) {
-                conn.setNetworkTimeout(null, timeoutSeconds * 1000);
-            }
-
-            // Format the call properly for PostgreSQL
-            String executableCall = callStatement;
-            if (callStatement.toUpperCase().startsWith("EXEC") ||
-                    callStatement.toUpperCase().startsWith("EXECUTE")) {
-                String procedureCall = callStatement.substring(4).trim();
-                executableCall = "CALL " + procedureCall;
-            }
-
-            getJdbcTemplate().execute(executableCall);
-
-            long executionTime = System.currentTimeMillis() - startTime;
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("executionTime", executionTime);
-            result.put("success", true);
-            result.put("message", "Call executed successfully");
-            result.put("rowCount", 0);
-
-            return result;
-
-        } catch (Exception e) {
-            log.error("Error executing direct call: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to execute call: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Execute PL/pgSQL block
+     * Execute PL/pgSQL block with proper error handling
      */
     public Map<String, Object> executePlPgSqlBlock(String plSqlBlock, int timeoutSeconds, boolean readOnly) {
         try {
@@ -995,10 +1066,140 @@ public class PostgreSQLExecuteRepository extends PostgreSQLRepository {
 
             return result;
 
+        } catch (BadSqlGrammarException e) {
+            // Extract root cause and format user-friendly error
+            Throwable rootCause = e;
+            while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+                rootCause = rootCause.getCause();
+            }
+
+            String errorMessage = rootCause.getMessage();
+            String cleanErrorMessage = extractPostgreSQLError(errorMessage);
+
+            // Check for syntax error in PL/pgSQL
+            if (errorMessage != null && (errorMessage.contains("syntax error") ||
+                    errorMessage.contains("ERROR: syntax error"))) {
+                String userFriendlyError = "Syntax error in PL/pgSQL block: " + cleanErrorMessage + "\n\n" +
+                        "Please check your PL/pgSQL syntax. Common issues:\n" +
+                        "- Missing semicolons at end of statements\n" +
+                        "- Invalid variable declarations\n" +
+                        "- Missing BEGIN/END blocks\n" +
+                        "- Incorrect use of language features";
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Check for undefined variable
+            else if (errorMessage != null && errorMessage.contains("column") && errorMessage.contains("does not exist")) {
+                String userFriendlyError = "Undefined variable or column: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Generic PostgreSQL error
+            else if (errorMessage != null && (errorMessage.contains("ERROR:") || errorMessage.contains("PG::"))) {
+                String userFriendlyError = "PostgreSQL error: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Unknown error
+            else {
+                throw new RuntimeException("Failed to execute PL/pgSQL block: " + e.getMessage(), e);
+            }
         } catch (Exception e) {
             log.error("Error executing PL/pgSQL block: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to execute PL/pgSQL block: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Execute direct CALL or EXEC statement with proper error handling
+     */
+    public Map<String, Object> executeDirectCall(String callStatement, int timeoutSeconds) {
+        try {
+            log.info("Executing direct call: {}", callStatement);
+            long startTime = System.currentTimeMillis();
+
+            Connection conn = getJdbcTemplate().getDataSource().getConnection();
+            if (timeoutSeconds > 0) {
+                conn.setNetworkTimeout(null, timeoutSeconds * 1000);
+            }
+
+            // Format the call properly for PostgreSQL
+            String executableCall = callStatement;
+            if (callStatement.toUpperCase().startsWith("EXEC") ||
+                    callStatement.toUpperCase().startsWith("EXECUTE")) {
+                String procedureCall = callStatement.substring(4).trim();
+                executableCall = "CALL " + procedureCall;
+            }
+
+            getJdbcTemplate().execute(executableCall);
+
+            long executionTime = System.currentTimeMillis() - startTime;
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("executionTime", executionTime);
+            result.put("success", true);
+            result.put("message", "Call executed successfully");
+            result.put("rowCount", 0);
+
+            return result;
+
+        } catch (BadSqlGrammarException e) {
+            // Extract root cause and format user-friendly error
+            Throwable rootCause = e;
+            while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+                rootCause = rootCause.getCause();
+            }
+
+            String errorMessage = rootCause.getMessage();
+            String cleanErrorMessage = extractPostgreSQLError(errorMessage);
+
+            // Check for procedure does not exist
+            if (errorMessage != null && (errorMessage.contains("does not exist") ||
+                    errorMessage.contains("procedure") && errorMessage.contains("does not exist"))) {
+                String userFriendlyError = "Procedure does not exist: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Check for argument mismatch
+            else if (errorMessage != null && (errorMessage.contains("procedure") && errorMessage.contains("does not match"))) {
+                String userFriendlyError = "Procedure argument mismatch: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Generic PostgreSQL error
+            else if (errorMessage != null && (errorMessage.contains("ERROR:") || errorMessage.contains("PG::"))) {
+                String userFriendlyError = "PostgreSQL error: " + cleanErrorMessage;
+                throw new RuntimeException(userFriendlyError, e);
+            }
+            // Unknown error
+            else {
+                throw new RuntimeException("Failed to execute call: " + e.getMessage(), e);
+            }
+        } catch (Exception e) {
+            log.error("Error executing direct call: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to execute call: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Helper method to extract clean PostgreSQL error message
+     */
+    private String extractPostgreSQLError(String errorMessage) {
+        if (errorMessage == null) {
+            return "";
+        }
+
+        // Extract the first line of the error
+        int newlineIndex = errorMessage.indexOf('\n');
+        String firstLine = newlineIndex > 0 ? errorMessage.substring(0, newlineIndex) : errorMessage;
+
+        // Remove the "ERROR:" prefix if present
+        if (firstLine.startsWith("ERROR:")) {
+            firstLine = firstLine.substring(6).trim();
+        }
+
+        // Remove the SQL state if present
+        int colonIndex = firstLine.indexOf(':');
+        if (colonIndex > 0 && colonIndex < 20) {
+            firstLine = firstLine.substring(colonIndex + 1).trim();
+        }
+
+        return firstLine;
     }
 
     /**

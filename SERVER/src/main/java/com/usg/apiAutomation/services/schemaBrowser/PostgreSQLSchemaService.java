@@ -1875,7 +1875,13 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
                         statementType
                 );
                 log.warn("RequestEntity ID: {}, {}", requestId, errorMsg);
-                throw new IllegalArgumentException(errorMsg);
+
+                Map<String, Object> errorResult = new HashMap<>();
+                errorResult.put("success", false);
+                errorResult.put("message", errorMsg);
+                errorResult.put("error", errorMsg);
+                errorResult.put("data", Map.of("rows", new ArrayList<>(), "columns", new ArrayList<>(), "rowCount", 0));
+                return errorResult;
             }
 
             Map<String, Object> queryResults;
@@ -1884,20 +1890,17 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
                 case SELECT:
                 case WITH:
                 case EXPLAIN_PLAN:
-                    // Regular SQL queries
                     queryResults = postgreSQLExecuteRepository.executeQuery(query, timeoutSeconds, readOnly);
                     break;
 
                 case PROCEDURE:
                 case FUNCTION:
                 case PACKAGE:
-                    // Stored procedures/functions/packages (PostgreSQL uses functions)
                     queryResults = postgreSQLExecuteRepository.executeStoredProgram(trimmedQuery, statementType, timeoutSeconds);
                     break;
 
                 case PLSQL_BLOCK:
                 case ANONYMOUS_BLOCK:
-                    // Anonymous PL/pgSQL blocks
                     queryResults = postgreSQLExecuteRepository.executePlPgSqlBlock(query, timeoutSeconds, readOnly);
                     break;
 
@@ -1909,7 +1912,6 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
                 case CREATE_SYNONYM:
                 case CREATE_TYPE:
                 case DDL:
-                    // DDL statements
                     if (readOnly) {
                         throw new IllegalArgumentException("DDL operations are not allowed in read-only mode");
                     }
@@ -1920,7 +1922,6 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
                 case UPDATE:
                 case DELETE:
                 case MERGE:
-                    // DML statements
                     if (readOnly) {
                         throw new IllegalArgumentException("DML operations are not allowed in read-only mode");
                     }
@@ -1929,17 +1930,14 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
 
                 case CALL:
                 case EXECUTE:
-                    // Direct procedure/function calls
                     queryResults = postgreSQLExecuteRepository.executeDirectCall(trimmedQuery, timeoutSeconds);
                     break;
 
                 case VIEW_QUERY:
-                    // Query against a view
                     queryResults = postgreSQLExecuteRepository.executeQuery(query, timeoutSeconds, readOnly);
                     break;
 
                 default:
-                    // Try to execute as regular query first, fallback to PL/pgSQL
                     try {
                         queryResults = postgreSQLExecuteRepository.executeQuery(query, timeoutSeconds, readOnly);
                     } catch (Exception e) {
@@ -1949,7 +1947,6 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
                     break;
             }
 
-            // Add metadata about the execution
             Map<String, Object> result = new HashMap<>();
             result.put("data", queryResults);
             result.put("responseCode", 200);
@@ -1958,28 +1955,44 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
             result.put("timestamp", java.time.Instant.now().toString());
             result.put("statementType", statementType.toString());
 
-            log.info("RequestEntity ID: {}, {} executed successfully, returned {} rows/affected",
-                    requestId, statementType,
-                    queryResults.getOrDefault("rowCount", queryResults.getOrDefault("rowsAffected", 0)));
+            log.info("RequestEntity ID: {}, {} executed successfully", requestId, statementType);
 
             return result;
 
-        } catch (Exception e) {
-            log.error("RequestEntity ID: {}, Error executing {}: {}",
-                    requestId, detectSqlStatementType(query.trim(), query.trim().toUpperCase()), e.getMessage());
-
-            Map<String, Object> errorData = new HashMap<>();
-            errorData.put("rows", new ArrayList<>());
-            errorData.put("columns", new ArrayList<>());
-            errorData.put("rowCount", 0);
+        } catch (RuntimeException e) {
+            String errorMessage = e.getMessage();
+            log.error("RequestEntity ID: {}, Error executing {}: {}", requestId,
+                    detectSqlStatementType(query.trim(), query.trim().toUpperCase()), errorMessage);
 
             Map<String, Object> errorResult = new HashMap<>();
-            errorResult.put("data", errorData);
-            errorResult.put("responseCode", 500);
-            errorResult.put("message", e.getMessage());
+            errorResult.put("success", false);
+            errorResult.put("message", errorMessage);
+            errorResult.put("error", errorMessage);
+            errorResult.put("data", Map.of(
+                    "rows", new ArrayList<>(),
+                    "columns", new ArrayList<>(),
+                    "rowCount", 0
+            ));
             errorResult.put("requestId", requestId);
             errorResult.put("timestamp", java.time.Instant.now().toString());
-            errorResult.put("statementType", detectSqlStatementType(query.trim(), query.trim().toUpperCase()).toString());
+
+            return errorResult;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error executing {}: {}", requestId,
+                    detectSqlStatementType(query.trim(), query.trim().toUpperCase()), e.getMessage(), e);
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("success", false);
+            errorResult.put("message", "Execution failed: " + e.getMessage());
+            errorResult.put("error", e.getMessage());
+            errorResult.put("data", Map.of(
+                    "rows", new ArrayList<>(),
+                    "columns", new ArrayList<>(),
+                    "rowCount", 0
+            ));
+            errorResult.put("requestId", requestId);
+            errorResult.put("timestamp", java.time.Instant.now().toString());
 
             return errorResult;
         }

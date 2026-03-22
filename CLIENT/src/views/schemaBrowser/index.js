@@ -294,6 +294,15 @@ const DatabaseTopNav = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const handleDatabaseClick = (db) => {
+    const hasComponent = !!db.component;
+    if (hasComponent) {
+      onSelectDatabase(db);
+    } else {
+      onComingSoonClick(db); // This will show the coming soon modal
+    }
+  };
+
   return (
     <div 
       className={`sticky top-0 z-20 transition-all duration-500 ${
@@ -343,17 +352,8 @@ const DatabaseTopNav = ({
                 return (
                   <button
                     key={db.id}
-                    onClick={() => {
-                      if (hasComponent) {
-                        onSelectDatabase(db);
-                      } else {
-                        onComingSoonClick(db);
-                      }
-                    }}
-                    disabled={!hasComponent}
-                    className={`group relative px-4 py-2 rounded-xl transition-all duration-300 ${
-                      hasComponent ? 'cursor-pointer hover:scale-105 hover-lift' : 'cursor-pointer hover:scale-105 hover-lift'
-                    }`}
+                    onClick={() => handleDatabaseClick(db)}
+                    className={`group relative px-4 py-2 rounded-xl transition-all duration-300 hover:scale-105 hover-lift`}
                     style={{
                       background: isSelected 
                         ? `linear-gradient(135deg, ${db.color}20, ${db.color}10)`

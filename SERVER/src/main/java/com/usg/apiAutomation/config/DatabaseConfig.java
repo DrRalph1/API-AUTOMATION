@@ -54,8 +54,8 @@ public class DatabaseConfig {
     }
 
     @Primary
-    @Bean(name = "postgresJdbcTemplate")
-    public JdbcTemplate postgresJdbcTemplate(@Qualifier("postgresDataSource") DataSource dataSource) {
+    @Bean(name = "postgreSQLJdbcTemplate")
+    public JdbcTemplate postgreSQLJdbcTemplate(@Qualifier("postgresDataSource") DataSource dataSource) {
         return new JdbcTemplate(dataSource);
     }
 

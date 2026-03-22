@@ -1008,27 +1008,85 @@ END;`
       readOnly: false  // Always false for compilations
     });
     
-    // Process response...
+    // Process response for ALL database types
     let success = false;
     let message = '';
     let output = '';
     let error = null;
     
-    if (databaseType === 'oracle') {
-      success = response?.responseCode === 200 || response?.success;
-      message = response?.message || (success ? 'Execution completed successfully' : 'Execution failed');
-      
-      if (response?.data) {
-        if (Array.isArray(response.data)) {
-          output = JSON.stringify(response.data, null, 2);
-        } else if (typeof response.data === 'object') {
-          output = JSON.stringify(response.data, null, 2);
-        } else {
-          output = String(response.data);
-        }
+    console.log('Response received:', response);
+    
+    // Check if the response indicates an error structure
+    if (response && typeof response === 'object') {
+      // Check for success field directly in response (PostgreSQL style)
+      if (response.hasOwnProperty('success')) {
+        success = response.success === true;
+        message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
+        output = response.output || response.data?.output || '';
+        error = response.error || response.message || null;
       }
-      
-      error = response?.error || null;
+      // Check for responseCode field (Oracle style)
+      else if (response.hasOwnProperty('responseCode')) {
+        success = response.responseCode === 200;
+        message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
+        
+        // Extract data based on structure
+        if (response.data) {
+          if (typeof response.data === 'string') {
+            output = response.data;
+          } else if (response.data.ddl) {
+            output = response.data.ddl;
+          } else if (response.data.rows) {
+            output = JSON.stringify(response.data.rows, null, 2);
+          } else if (response.data.output) {
+            output = response.data.output;
+          } else {
+            output = JSON.stringify(response.data, null, 2);
+          }
+        }
+        error = response.error || null;
+      }
+      // Check for data object directly with rows/columns
+      else if (response.hasOwnProperty('data') && (response.data.hasOwnProperty('rows') || response.data.hasOwnProperty('rowCount'))) {
+        // This is a successful response with data
+        success = true;
+        message = 'Query executed successfully';
+        
+        if (response.data.rows && response.data.rows.length > 0) {
+          output = JSON.stringify(response.data.rows, null, 2);
+        } else if (response.data.rowCount !== undefined) {
+          output = `${response.data.rowCount} row(s) returned`;
+        } else {
+          output = 'Query executed successfully';
+        }
+        error = null;
+      }
+      // Check for error message in response
+      else if (response.hasOwnProperty('error') || response.hasOwnProperty('message')) {
+        success = false;
+        message = response.message || 'Execution failed';
+        error = response.error || response.message;
+        output = response.output || '';
+      }
+      // Default - try to treat as successful
+      else {
+        success = true;
+        message = 'Execution completed successfully';
+        output = JSON.stringify(response, null, 2);
+        error = null;
+      }
+    } else if (typeof response === 'string') {
+      // Response is a string
+      success = true;
+      message = 'Execution completed successfully';
+      output = response;
+      error = null;
+    } else {
+      // Unknown response format
+      success = true;
+      message = 'Execution completed successfully';
+      output = String(response);
+      error = null;
     }
     
     setCompilationResult({
@@ -1039,11 +1097,27 @@ END;`
     });
     
   } catch (error) {
+    console.error('Execution error:', error);
+    
+    // Extract error message from the error object
+    let errorMessage = error.message || String(error);
+    let errorDetail = null;
+    
+    // Try to parse error response if it's an object
+    if (error.response && error.response.data) {
+      if (error.response.data.message) {
+        errorMessage = error.response.data.message;
+        errorDetail = error.response.data.error || error.response.data.detail;
+      } else if (error.response.data.error) {
+        errorMessage = error.response.data.error;
+      }
+    }
+    
     setCompilationResult({
       success: false,
       message: 'Execution failed',
-      error: error.message || String(error),
-      output: ''
+      error: errorMessage,
+      output: errorDetail || ''
     });
   } finally {
     setIsCompiling(false);
