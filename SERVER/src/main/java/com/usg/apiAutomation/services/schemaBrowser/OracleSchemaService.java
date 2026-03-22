@@ -1,5 +1,7 @@
 package com.usg.apiAutomation.services.schemaBrowser;
 
+import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
+import com.usg.apiAutomation.enums.DatabaseType;
 import com.usg.apiAutomation.repositories.schemaBrowser.oracle.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,7 +23,7 @@ import java.util.Map;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class OracleSchemaService {
+public class OracleSchemaService implements DatabaseSchemaService {
 
     private final OracleTableRepository oracleTableRepository;
     private final OracleViewRepository oracleViewRepository;
@@ -2367,27 +2369,6 @@ public class OracleSchemaService {
         return oracleJdbcTemplate.queryForList(sql, owner, objectName);
     }
 
-    private Map<String, Object> getObjectStatistics(String owner, String objectName, String objectType) {
-        Map<String, Object> stats = new HashMap<>();
-        try {
-            if (objectType.equalsIgnoreCase("TABLE")) {
-                String sql = "SELECT num_rows, blocks, empty_blocks, avg_space, " +
-                        "chain_cnt, avg_row_len, sample_size, last_analyzed " +
-                        "FROM all_tab_statistics " +
-                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
-                stats = oracleJdbcTemplate.queryForMap(sql, owner, objectName);
-            } else if (objectType.equalsIgnoreCase("INDEX")) {
-                String sql = "SELECT blevel, leaf_blocks, distinct_keys, avg_leaf_blocks_per_key, " +
-                        "avg_data_blocks_per_key, clustering_factor, num_rows, sample_size, last_analyzed " +
-                        "FROM all_ind_statistics " +
-                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(index_name) = UPPER(?)";
-                stats = oracleJdbcTemplate.queryForMap(sql, owner, objectName);
-            }
-        } catch (EmptyResultDataAccessException e) {
-            // No statistics found
-        }
-        return stats;
-    }
 
     private List<Map<String, Object>> getObjectPartitions(String owner, String objectName, String objectType) {
         try {
@@ -4524,5 +4505,87 @@ public class OracleSchemaService {
         errorResponse.put("requestId", requestId);
         errorResponse.put("timestamp", Instant.now().toString());
         return ResponseEntity.status(statusCode).body(errorResponse);
+    }
+
+
+
+    @Override
+    public boolean objectExists(String owner, String objectName, String objectType) {
+        try {
+            String sql = "SELECT COUNT(*) FROM ALL_OBJECTS WHERE " +
+                    "UPPER(OWNER) = UPPER(?) AND " +
+                    "UPPER(OBJECT_NAME) = UPPER(?) AND " +
+                    "UPPER(OBJECT_TYPE) = UPPER(?)";
+            Integer count = oracleJdbcTemplate.queryForObject(sql, Integer.class, owner, objectName, objectType);
+            return count != null && count > 0;
+        } catch (Exception e) {
+            log.error("Error checking object existence: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public Map<String, Object> getSourceObjectDetails(ApiSourceObjectDTO sourceObject) {
+        // Delegate to your existing method
+        return getSourceObjectDetails(this, sourceObject);
+    }
+
+    // Your existing method
+    public Map<String, Object> getSourceObjectDetails(OracleSchemaService oracleSchemaService, ApiSourceObjectDTO sourceObject) {
+        // Your existing implementation...
+        Map<String, Object> details = new HashMap<>();
+        // ... rest of your code ...
+        return details;
+    }
+
+    @Override
+    public DatabaseType getDatabaseType() {
+        return DatabaseType.ORACLE;
+    }
+
+    @Override
+    public String getDatabaseVersion() {
+        try {
+            return oracleJdbcTemplate.queryForObject("SELECT VERSION FROM PRODUCT_COMPONENT_VERSION WHERE ROWNUM = 1", String.class);
+        } catch (Exception e) {
+            return "Oracle Database";
+        }
+    }
+
+    @Override
+    public boolean isConnected() {
+        try {
+            oracleJdbcTemplate.queryForObject("SELECT 1 FROM DUAL", Integer.class);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @Override
+    public String getObjectDDL(String objectName, String objectType, String owner) {
+        try {
+            // Get DDL using DBMS_METADATA
+            String sql = "SELECT DBMS_METADATA.GET_DDL(?, ?) FROM DUAL";
+            return oracleJdbcTemplate.queryForObject(sql, String.class, objectType, objectName);
+        } catch (Exception e) {
+            log.error("Error getting DDL: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public Map<String, Object> getObjectStatistics(String objectName, String objectType, String owner) {
+        try {
+            // Get statistics from USER_TAB_STATISTICS or ALL_TAB_STATISTICS
+            String sql = "SELECT NUM_ROWS, BLOCKS, EMPTY_BLOCKS, AVG_SPACE, " +
+                    "CHAIN_CNT, AVG_ROW_LEN, LAST_ANALYZED " +
+                    "FROM ALL_TAB_STATISTICS WHERE OWNER = ? AND TABLE_NAME = ?";
+            Map<String, Object> stats = oracleJdbcTemplate.queryForMap(sql, owner, objectName);
+            return stats;
+        } catch (Exception e) {
+            log.error("Error getting statistics: {}", e.getMessage());
+            return new HashMap<>();
+        }
     }
 }

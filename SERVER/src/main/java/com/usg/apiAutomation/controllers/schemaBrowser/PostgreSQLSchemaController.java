@@ -3104,8 +3104,9 @@ public class PostgreSQLSchemaController {
             loggerUtil.log("postgresqlSchema", "RequestEntity ID: " + requestId +
                     ", Validating PostgreSQL object: " + objectName + " of type: " + objectType);
 
+            // FIX: Pass null for requestBody (or extract from request if needed)
             Map<String, Object> result = postgresqlSchemaService.validateObject(
-                    requestId, req, performedBy, objectName, objectType, owner);
+                    requestId, null, performedBy, objectName, objectType, owner);
             return ResponseEntity.ok(result);
 
         } catch (Exception e) {
@@ -3120,6 +3121,7 @@ public class PostgreSQLSchemaController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
+
 
     @GetMapping("/objects/{objectType}/{objectName}/size")
     @Operation(summary = "Get object size",

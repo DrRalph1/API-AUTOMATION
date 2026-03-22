@@ -61,6 +61,9 @@ public class GeneratedApiEntity {
     @Column(name = "owner")
     private String owner;
 
+    @Column(name = "database_type", length = 50)
+    private String databaseType; // "oracle", "postgresql", "mysql", etc.
+
     // =====================================================
     // Audit & Metrics
     // =====================================================

@@ -408,6 +408,7 @@ public class OracleTableExecutorUtil {
 
         log.info("=== TABLE INSERT DEBUG ===");
         log.info("Table: {}.{}", owner, tableName);
+        log.info("Original params: {}", params);
 
         // Build parameter mapping
         Map<String, String> apiToDbColumnMap = new HashMap<>();
@@ -422,63 +423,109 @@ public class OracleTableExecutorUtil {
                         dbColumnName = param.getKey();
                     }
                     apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toUpperCase());
+                    log.info("Parameter mapping: API '{}' -> DB Column '{}'", param.getKey(), dbColumnName.toUpperCase());
                 }
             }
         }
 
-        // Process XML body if present
+        // Process all parameters and map them to database columns
         Map<String, Object> processedParams = new HashMap<>();
+
+        // Process XML body if present
         String xmlBody = null;
+        boolean isXmlBody = false;
 
         if (params.containsKey("_xml")) {
             Object xmlObj = params.get("_xml");
             if (xmlObj instanceof String) {
                 String xmlString = (String) xmlObj;
                 if (xmlString.trim().startsWith("<")) {
-                    log.info("XML BODY DETECTED in INSERT operation!");
+                    isXmlBody = true;
                     xmlBody = xmlString;
+                    log.info("=========================================");
+                    log.info("XML BODY DETECTED in INSERT operation!");
+                    log.info("XML Length: {} characters", xmlBody.length());
+                    log.info("XML Preview: {}", xmlBody.substring(0, Math.min(500, xmlBody.length())));
+                    log.info("=========================================");
 
                     // Extract parameters from XML
                     Map<String, Object> extractedParams = parseXmlParameters(xmlBody, configuredParamDTOs, apiToDbColumnMap);
                     if (!extractedParams.isEmpty()) {
                         processedParams.putAll(extractedParams);
-                        log.info("✅ Extracted {} parameters from XML for INSERT", extractedParams.size());
+                        log.info("✅ Extracted {} parameters from XML and added to processedParams", extractedParams.size());
                     }
                 }
             }
         }
 
-        // Copy all parameters, mapping to database column names
+        // IMPORTANT FIX: Process all parameters, not just XML-extracted ones
         for (Map.Entry<String, Object> entry : params.entrySet()) {
             String key = entry.getKey();
-            // Skip the _xml key as it's already processed
+            Object value = entry.getValue();
+
+            // Skip the _xml key if we already processed it (or if it's not needed)
             if ("_xml".equals(key)) {
+                // Only skip if we actually used the XML body (i.e., it was valid XML)
+                // If it was just a string but not XML, we might still need it
+                if (isXmlBody) {
+                    continue;
+                }
+            }
+
+            // Skip if this key is already in processedParams (from XML extraction)
+            if (processedParams.containsKey(key) || processedParams.containsKey(key.toUpperCase())) {
                 continue;
             }
 
             // Map the key to database column name if mapping exists
-            String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
-            processedParams.put(dbColumnName, entry.getValue());
-        }
+            String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key.toUpperCase());
 
-        // Handle collection/array parameters - convert to single values for database
-        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
-            Object value = entry.getValue();
+            // Handle the value
+            Object finalValue = value;
             if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);
                 if (!collection.isEmpty()) {
-                    // Take the first value
-                    processedParams.put(entry.getKey(), collection.iterator().next());
-                    log.info("Converted collection parameter '{}' to single value for INSERT", entry.getKey());
+                    finalValue = collection.iterator().next();
+                    log.info("Converted collection parameter '{}' to single value: {}", key, finalValue);
                 } else {
-                    processedParams.put(entry.getKey(), null);
+                    finalValue = null;
+                }
+            }
+
+            if (finalValue != null && !finalValue.toString().trim().isEmpty()) {
+                processedParams.put(dbColumnName, finalValue);
+                log.info("Added param: {} -> {} = {}", key, dbColumnName, finalValue);
+            } else {
+                log.info("Skipped empty param: {} -> {}", key, dbColumnName);
+            }
+        }
+
+        // Also process any parameters that might be in the API parameters but not in the request
+        // This handles default values
+        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+            for (ApiParameterEntity apiParam : api.getParameters()) {
+                String paramKey = apiParam.getKey();
+                String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey.toLowerCase(), paramKey.toUpperCase());
+
+                // If this parameter hasn't been set yet and has a default value, use it
+                if (!processedParams.containsKey(dbColumnName) && apiParam.getDefaultValue() != null) {
+                    processedParams.put(dbColumnName, apiParam.getDefaultValue());
+                    log.info("Using default value for parameter '{}': {}", paramKey, apiParam.getDefaultValue());
                 }
             }
         }
 
-        log.info("Processed params for INSERT: {}", processedParams.keySet());
+        log.info("Final processed params for INSERT: {}", processedParams);
+        log.info("Final processed params keys: {}", processedParams.keySet());
 
+        // Check if we have any parameters to insert
+        if (processedParams.isEmpty()) {
+            log.error("No parameters to insert! Original params: {}, Processed params: {}", params.keySet(), processedParams.keySet());
+            throw new RuntimeException("No parameters provided for INSERT operation");
+        }
+
+        // Build the INSERT SQL
         StringBuilder columns = new StringBuilder();
         StringBuilder values = new StringBuilder();
         List<Object> paramValues = new ArrayList<>();
@@ -491,10 +538,14 @@ public class OracleTableExecutorUtil {
             columns.append(entry.getKey());
             values.append("?");
             paramValues.add(entry.getValue());
+            log.debug("Column: {} = {}", entry.getKey(), entry.getValue());
         }
 
         String sql = "INSERT INTO " + (owner != null && !owner.isEmpty() ? owner + "." : "") + tableName +
                 " (" + columns + ") VALUES (" + values + ")";
+
+        log.info("Final INSERT SQL: {}", sql);
+        log.info("INSERT parameters: {}", paramValues);
 
         try {
             int rowsAffected = oracleJdbcTemplate.update(sql, paramValues.toArray());
@@ -503,20 +554,26 @@ public class OracleTableExecutorUtil {
             result.put("rowsAffected", rowsAffected);
             result.put("message", rowsAffected > 0 ? "Insert successful" : "No rows inserted");
 
+            // If we have response mappings, try to fetch the inserted record
             if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+                // Find primary key column
                 String pkColumn = api.getResponseMappings().stream()
                         .filter(m -> Boolean.TRUE.equals(m.getIsPrimaryKey()))
                         .map(ApiResponseMappingEntity::getDbColumn)
                         .findFirst()
                         .orElse(null);
 
-                if (pkColumn != null && processedParams.containsKey(pkColumn.toUpperCase())) {
+                if (pkColumn != null && processedParams.containsKey(pkColumn)) {
                     String selectSql = "SELECT * FROM " + (owner != null && !owner.isEmpty() ? owner + "." : "") + tableName +
                             " WHERE " + pkColumn + " = ?";
-                    List<Map<String, Object>> inserted = oracleJdbcTemplate.queryForList(
-                            selectSql, processedParams.get(pkColumn.toUpperCase()));
-                    if (!inserted.isEmpty()) {
-                        result.put("data", inserted.get(0));
+                    try {
+                        List<Map<String, Object>> inserted = oracleJdbcTemplate.queryForList(
+                                selectSql, processedParams.get(pkColumn));
+                        if (!inserted.isEmpty()) {
+                            result.put("data", inserted.get(0));
+                        }
+                    } catch (Exception e) {
+                        log.warn("Could not fetch inserted record: {}", e.getMessage());
                     }
                 }
             }
@@ -546,28 +603,21 @@ public class OracleTableExecutorUtil {
                     throw new RuntimeException("Check constraint violation: " + detailedError, e);
                 }
                 if (e.getMessage().contains("ORA-12899")) {
-                    throw new RuntimeException(detailedError, e);
+                    throw new RuntimeException("Value too large for column: " + detailedError, e);
                 }
                 if (e.getMessage().contains("ORA-00001")) {
                     throw new RuntimeException("Unique constraint violation: " + detailedError, e);
                 }
-                if (e.getMessage().contains("ORA-01461")) {
-                    throw new RuntimeException("Value too long for column (only bind LONG values): " + detailedError, e);
-                }
                 if (e.getMessage().contains("ORA-01722")) {
                     throw new RuntimeException("Invalid number: " + detailedError, e);
-                }
-                if (e.getMessage().contains("ORA-01843")) {
-                    throw new RuntimeException("Invalid month/date format: " + detailedError, e);
-                }
-                if (e.getMessage().contains("ORA-01858")) {
-                    throw new RuntimeException("Invalid date format: " + detailedError, e);
                 }
             }
 
             throw new RuntimeException("Failed to execute INSERT operation: " + detailedError, e);
         }
     }
+
+
 
     public Object executeUpdate(String tableName, String owner, Map<String, Object> params,
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {

@@ -5025,6 +5025,7 @@ const renderTabContent = () => {
           onClose={() => setShowApiModal(false)}
           selectedObject={selectedForApiGeneration}
           colors={colors}
+          databaseType={'oracle'}
           obType={obType}
           theme={theme}
           authToken={authToken}

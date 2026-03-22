@@ -1823,8 +1823,12 @@ export const getObjectDetails = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
     const { objectType, objectName, owner } = params;
     
+    console.log('📊 getObjectDetails called with:', { objectType, objectName, owner });
+    
     const queryParams = buildQueryParams({ owner });
     const url = `/postgresql/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/details${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    console.log('📊 Calling URL:', url);
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
@@ -1834,9 +1838,217 @@ export const getObjectDetails = async (authorizationHeader, params = {}) => {
             requestId: requestId
         })
     ).then(response => {
+        console.log('📊 getObjectDetails RAW response:', response);
         return transformObjectDetailsResponse(response, objectType, objectName);
     });
 };
+
+
+
+// Add this to your PostgreSQLSchemaController.js after the other transform functions
+
+/**
+ * Transform object details response - MIRRORS ORACLE STRUCTURE FOR MODAL COMPATIBILITY
+ * @param {Object} response - API response
+ * @param {string} objectType - Type of object
+ * @param {string} objectName - Name of object
+ * @returns {Object} Transformed response matching Oracle format
+ */
+const transformObjectDetailsResponse = (response, objectType, objectName) => {
+    const data = response.data || {};
+    
+    console.log('📊 transformObjectDetailsResponse - FULL INPUT:', {
+        objectType,
+        objectName,
+        responseKeys: Object.keys(response),
+        dataKeys: Object.keys(data),
+        hasDetails: !!data.details,
+        detailsKeys: data.details ? Object.keys(data.details) : [],
+        parameters: data.parameters,
+        columns: data.columns,
+        detailsColumns: data.details?.columns
+    });
+    
+    console.log('📊 transformObjectDetailsResponse - input:', { objectType, objectName, data });
+    
+    // Extract parameters - look for them in the response
+    let parameters = [];
+    let columns = [];
+    
+    // Try to find parameters in the response (for functions/procedures)
+    if (data.parameters && Array.isArray(data.parameters)) {
+        parameters = data.parameters;
+        console.log('✅ Found parameters in data.parameters:', parameters.length);
+    } else if (data.arguments && Array.isArray(data.arguments)) {
+        parameters = data.arguments;
+        console.log('✅ Found parameters in data.arguments:', parameters.length);
+    } else if (data.params && Array.isArray(data.params)) {
+        parameters = data.params;
+        console.log('✅ Found parameters in data.params:', parameters.length);
+    } else if (data.paramList && Array.isArray(data.paramList)) {
+        parameters = data.paramList;
+        console.log('✅ Found parameters in data.paramList:', parameters.length);
+    }
+    
+    // If still no parameters, check nested details
+    if (parameters.length === 0 && (objectType === 'FUNCTION' || objectType === 'PROCEDURE')) {
+        if (data.details && data.details.parameters) {
+            parameters = data.details.parameters;
+            console.log('✅ Found parameters in data.details.parameters:', parameters.length);
+        } else if (data.parametersList) {
+            parameters = data.parametersList;
+            console.log('✅ Found parameters in data.parametersList:', parameters.length);
+        } else if (data.parameterList) {
+            parameters = data.parameterList;
+            console.log('✅ Found parameters in data.parameterList:', parameters.length);
+        }
+    }
+    
+    // Try to find columns in the response (for tables/views)
+    if (data.columns && Array.isArray(data.columns)) {
+        columns = data.columns;
+        console.log('✅ Found columns in data.columns:', columns.length);
+    } else if (data.columnList && Array.isArray(data.columnList)) {
+        columns = data.columnList;
+        console.log('✅ Found columns in data.columnList:', columns.length);
+    } else if (data.fields && Array.isArray(data.fields)) {
+        columns = data.fields;
+        console.log('✅ Found columns in data.fields:', columns.length);
+    }
+    
+    // If still no columns, check nested details
+    if (columns.length === 0 && (objectType === 'TABLE' || objectType === 'VIEW')) {
+        if (data.details && data.details.columns) {
+            columns = data.details.columns;
+            console.log('✅ Found columns in data.details.columns:', columns.length);
+        } else if (data.columnInfo) {
+            columns = data.columnInfo;
+            console.log('✅ Found columns in data.columnInfo:', columns.length);
+        } else if (data.schema && data.schema.columns) {
+            columns = data.schema.columns;
+            console.log('✅ Found columns in data.schema.columns:', columns.length);
+        }
+    }
+    
+    // Format parameters to match Oracle's structure (with uppercase field names)
+    const formattedParameters = parameters.map((param, idx) => {
+        // Handle both uppercase and lowercase field names
+        const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || param.parameter_name || `param_${idx + 1}`;
+        const paramType = param.DATA_TYPE || param.data_type || param.type || param.TYPE || param.parameter_type || 'VARCHAR2';
+        const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 
+                         (objectType === 'FUNCTION' && idx === 0 ? 'RETURN' : 'IN');
+        
+        // Handle function return type
+        const isReturn = paramMode === 'RETURN' || 
+                        (objectType === 'FUNCTION' && idx === 0 && !paramName) ||
+                        (param.IS_RETURN === true);
+        
+        return {
+            // Oracle-style uppercase fields (what the modal expects)
+            POSITION: param.POSITION || param.position || idx + 1,
+            ARGUMENT_NAME: paramName,
+            DATA_TYPE: paramType,
+            IN_OUT: paramMode,
+            DATA_LENGTH: param.DATA_LENGTH || param.data_length || param.length || '-',
+            DATA_PRECISION: param.DATA_PRECISION || param.data_precision || null,
+            DATA_SCALE: param.DATA_SCALE || param.data_scale || null,
+            DEFAULT_VALUE: param.DEFAULT_VALUE || param.default_value || param.defaultValue || null,
+            DEFAULTED: param.DEFAULTED || param.defaulted || 'N',
+            // Also keep original fields for compatibility
+            isReturn: isReturn,
+            // For the modal's parameter processing
+            name: paramName,
+            type: paramType,
+            mode: paramMode
+        };
+    });
+    
+    // Format columns to match Oracle's structure (with uppercase field names)
+    const formattedColumns = columns.map((col, idx) => {
+        // Handle both uppercase and lowercase field names
+        const colName = col.COLUMN_NAME || col.column_name || col.name || col.NAME || `column_${idx + 1}`;
+        const colType = col.DATA_TYPE || col.data_type || col.type || col.TYPE || 'VARCHAR2';
+        const colNullable = col.NULLABLE || col.nullable;
+        const isNullable = colNullable === 'Y' || colNullable === true || colNullable === 'YES';
+        const isPrimaryKey = col.IS_PRIMARY_KEY || col.is_primary_key || col.key === 'PK' || col.CONSTRAINT_TYPE === 'P';
+        
+        return {
+            // Oracle-style uppercase fields (what the modal expects)
+            COLUMN_NAME: colName,
+            DATA_TYPE: colType,
+            NULLABLE: isNullable ? 'Y' : 'N',
+            DATA_LENGTH: col.DATA_LENGTH || col.data_length || col.length || 0,
+            DATA_PRECISION: col.DATA_PRECISION || col.data_precision || null,
+            DATA_SCALE: col.DATA_SCALE || col.data_scale || null,
+            COLUMN_ID: col.COLUMN_ID || col.column_id || idx + 1,
+            DATA_DEFAULT: col.DATA_DEFAULT || col.data_default || col.defaultValue || null,
+            CONSTRAINT_TYPE: isPrimaryKey ? 'P' : null,
+            // Also keep original fields for compatibility
+            name: colName,
+            type: colType,
+            nullable: isNullable,
+            isPrimaryKey: isPrimaryKey
+        };
+    });
+    
+    // Build the transformed data - MIRRORS ORACLE STRUCTURE
+    const transformedData = {
+        // Basic object info (Oracle-style)
+        OBJECT_NAME: data.object_name || data.name || objectName,
+        OBJECT_TYPE: data.object_type || data.type || objectType,
+        OWNER: data.owner || data.schema || 'public',
+        STATUS: data.status || 'VALID',
+        CREATED: data.created || data.creation_date,
+        LAST_DDL_TIME: data.last_modified || data.modified_date,
+        
+        // Keep original fields for compatibility
+        object_name: data.object_name || data.name || objectName,
+        object_type: data.object_type || data.type || objectType,
+        owner: data.owner || data.schema || 'public',
+        status: data.status || 'VALID',
+        created: data.created || data.creation_date,
+        lastModified: data.last_modified || data.modified_date,
+        
+        // For synonyms (PostgreSQL doesn't have synonyms, but keep for compatibility)
+        isSynonym: false,
+        
+        // Store parameters and columns in the format the modal expects
+        parameters: formattedParameters,
+        columns: formattedColumns,
+        
+        // Also store in details for modal's populateFormFromObject to find
+        details: {
+            parameters: formattedParameters,
+            columns: formattedColumns,
+            ...data.details
+        },
+        
+        // Return type for functions
+        returnType: data.return_type || data.returnType || null,
+        
+        // Keep all original data for reference
+        ...data,
+        
+        // Timestamp for tracking
+        queryTime: new Date().toISOString()
+    };
+    
+    console.log('📊 transformObjectDetailsResponse - output:', {
+        objectName: transformedData.OBJECT_NAME,
+        objectType: transformedData.OBJECT_TYPE,
+        owner: transformedData.OWNER,
+        parametersCount: transformedData.parameters.length,
+        columnsCount: transformedData.columns.length,
+        detailsParametersCount: transformedData.details?.parameters?.length || 0,
+        detailsColumnsCount: transformedData.details?.columns?.length || 0
+    });
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
 
 /**
  * Get paginated object details

@@ -409,7 +409,7 @@ const WelcomeHeader = ({ colors }) => {
           style={{ background: `radial-gradient(circle, ${colors.primary}40, transparent 70%)` }}
         />
       </div>
-      <h1 className="text-4xl font-bold mb-4 text-transparent" style={{ color: colors.textSecondary }}>
+      <h1 className="text-4xl font-bold mb-4 text-transparent uppercase" style={{ color: colors.textSecondary }}>
         Schema Browser
       </h1>
       <p className="text-lg max-w-2xl mx-auto" style={{ color: colors.textSecondary }}>

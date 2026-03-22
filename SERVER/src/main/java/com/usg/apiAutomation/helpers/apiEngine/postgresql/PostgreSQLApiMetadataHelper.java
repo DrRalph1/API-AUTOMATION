@@ -6,8 +6,12 @@ import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.GeneratedApiResponseDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiExecutionLogEntity;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
+import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.helpers.ApiAnalyticsHelper;
+import com.usg.apiAutomation.helpers.DatabaseMetadataHelper;
 import com.usg.apiAutomation.repositories.apiGenerationEngine.ApiExecutionLogRepository;
 import com.usg.apiAutomation.repositories.schemaBrowser.postgresql.*;
+import com.usg.apiAutomation.services.schemaBrowser.DatabaseSchemaService;
 import com.usg.apiAutomation.services.schemaBrowser.PostgreSQLSchemaService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,7 +25,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Component
-public class PostgreSQLApiMetadataHelper {
+public class PostgreSQLApiMetadataHelper implements DatabaseMetadataHelper, ApiAnalyticsHelper {
 
     private final PostgreSQLTableRepository tableRepository;
     private final PostgreSQLViewRepository viewRepository;
@@ -328,137 +332,64 @@ public class PostgreSQLApiMetadataHelper {
         }
     }
 
-    private void getProcedureDetails(Map<String, Object> details, String procedureName, String schema) {
-        try {
-            Map<String, Object> procDetails = procedureRepository.getProcedureDetails(schema, procedureName);
-
-            if (procDetails != null && !procDetails.isEmpty()) {
-                List<Map<String, Object>> parameters = (List<Map<String, Object>>) procDetails.get("parameters");
-
-                if (parameters != null && !parameters.isEmpty()) {
-                    int inCount = 0, outCount = 0, inOutCount = 0;
-
-                    for (Map<String, Object> param : parameters) {
-                        String inOut = (String) param.get("in_out");
-                        if (inOut != null) {
-                            String upperInOut = inOut.toUpperCase();
-                            if (upperInOut.contains("IN") && upperInOut.contains("OUT")) {
-                                inOutCount++;
-                            } else if (upperInOut.contains("OUT")) {
-                                outCount++;
-                            } else if (upperInOut.contains("IN")) {
-                                inCount++;
-                            }
-                        }
-                    }
-
-                    details.put("parameters", parameters);
-                    details.put("parameterCount", parameters.size());
-                    details.put("inParameterCount", inCount);
-                    details.put("outParameterCount", outCount);
-                    details.put("inOutParameterCount", inOutCount);
-                }
-
-                if (!procDetails.containsKey("source") && !procDetails.containsKey("sourceCode")) {
-                    String source = getSourceFromPgCatalog(procedureName, schema, "PROCEDURE");
-                    if (source != null) {
-                        details.put("sourceCode", source);
-                    }
-                }
-
-                copyCommonDetails(details, procDetails);
-            }
-        } catch (Exception e) {
-            log.warn("Error getting procedure details: {}", e.getMessage());
-            details.put("error", e.getMessage());
-        }
-    }
 
     private void getFunctionDetails(Map<String, Object> details, String functionName, String schema) {
         try {
+            // First try to get from repository
+            Map<String, Object> funcDetails = functionRepository.getFunctionDetails(schema, functionName);
+            List<Map<String, Object>> parameters = null;
+
+            if (funcDetails != null && !funcDetails.isEmpty()) {
+                parameters = (List<Map<String, Object>>) funcDetails.get("parameters");
+
+                // If parameters missing, parse from source
+                if (parameters == null || parameters.isEmpty()) {
+                    log.info("Database parameters missing for {}.{}, parsing from source", schema, functionName);
+                    parameters = parseFunctionParametersFromSource(functionName, schema);
+                }
+            } else {
+                // No repository details, try source directly
+                log.info("No repository details for {}.{}, trying source", schema, functionName);
+                parameters = parseFunctionParametersFromSource(functionName, schema);
+            }
+
+            // Also try to get source for the function
             String source = getSourceFromPgCatalog(functionName, schema, "FUNCTION");
-
             if (source != null && !source.isEmpty()) {
-                log.info("Found source for function {}.{}, length: {}", schema, functionName, source.length());
-
-                String sourceWithoutComments = removeComments(source);
-
-                // Parse function signature
-                Pattern pattern = Pattern.compile(
-                        "CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+" +
-                                Pattern.quote(functionName) +
-                                "\\s*\\(([\\s\\S]*?)\\)\\s*RETURNS\\s+",
-                        Pattern.CASE_INSENSITIVE | Pattern.DOTALL
-                );
-                Matcher matcher = pattern.matcher(sourceWithoutComments);
-
-                List<Map<String, Object>> parameters = new ArrayList<>();
-
-                if (matcher.find()) {
-                    String paramsSection = matcher.group(1).trim();
-                    if (!paramsSection.isEmpty()) {
-                        List<String> paramDefs = splitParameters(paramsSection);
-                        int position = 1;
-                        for (String paramDef : paramDefs) {
-                            Map<String, Object> param = parseFunctionParameter(paramDef, position);
-                            if (param != null && !param.isEmpty()) {
-                                parameters.add(param);
-                                position++;
-                            }
-                        }
-                    }
-                }
-
-                // Parse return type
-                Pattern returnPattern = Pattern.compile(
-                        "RETURNS\\s+(\\w+(?:\\([^)]*\\))?)",
-                        Pattern.CASE_INSENSITIVE
-                );
-                Matcher returnMatcher = returnPattern.matcher(sourceWithoutComments);
-                if (returnMatcher.find()) {
-                    String returnTypeStr = returnMatcher.group(1).trim();
-
-                    Map<String, Object> returnParam = new HashMap<>();
-                    returnParam.put("argument_name", "RETURN");
-                    returnParam.put("position", 0);
-                    returnParam.put("sequence", 1);
-                    returnParam.put("data_type", returnTypeStr);
-                    returnParam.put("in_out", "OUT");
-                    returnParam.put("is_return", true);
-
-                    parameters.add(0, returnParam);
-                }
-
-                if (!parameters.isEmpty()) {
-                    details.put("parameters", parameters);
-                    details.put("parameterCount", parameters.size());
-
-                    int inCount = 0, outCount = 0, inOutCount = 0;
-                    for (Map<String, Object> param : parameters) {
-                        String inOut = (String) param.get("in_out");
-                        if (inOut != null) {
-                            if (inOut.equals("IN_OUT")) {
-                                inOutCount++;
-                            } else if (inOut.equals("OUT")) {
-                                outCount++;
-                            } else if (inOut.equals("IN")) {
-                                inCount++;
-                            }
-                        }
-                    }
-
-                    details.put("inParameterCount", inCount);
-                    details.put("outParameterCount", outCount);
-                    details.put("inOutParameterCount", inOutCount);
-                }
-
                 details.put("sourceCode", source);
             }
 
-            // Fallback to repository
-            Map<String, Object> funcDetails = functionRepository.getFunctionDetails(schema, functionName);
+            if (parameters != null && !parameters.isEmpty()) {
+                details.put("parameters", parameters);
+                details.put("parameterCount", parameters.size());
+
+                int inCount = 0, outCount = 0, inOutCount = 0;
+                for (Map<String, Object> param : parameters) {
+                    String inOut = (String) param.get("in_out");
+                    if (inOut != null) {
+                        if (inOut.equals("IN_OUT")) {
+                            inOutCount++;
+                        } else if (inOut.equals("OUT")) {
+                            outCount++;
+                        } else if (inOut.equals("IN")) {
+                            inCount++;
+                        }
+                    }
+                }
+
+                details.put("inParameterCount", inCount);
+                details.put("outParameterCount", outCount);
+                details.put("inOutParameterCount", inOutCount);
+            }
+
             if (funcDetails != null && !funcDetails.isEmpty()) {
                 copyCommonDetails(details, funcDetails);
+            } else if (source != null) {
+                // Set basic info from source
+                details.put("objectName", functionName);
+                details.put("owner", schema);
+                details.put("objectType", "FUNCTION");
+                details.put("status", "VALID");
             }
 
         } catch (Exception e) {
@@ -822,4 +753,586 @@ public class PostgreSQLApiMetadataHelper {
         }
         return null;
     }
+
+
+
+    // Add this method to PostgreSQLApiMetadataHelper.java
+
+    private void getProcedureDetails(Map<String, Object> details, String procedureName, String schema) {
+        try {
+            Map<String, Object> procDetails = procedureRepository.getProcedureDetails(schema, procedureName);
+
+            if (procDetails != null && !procDetails.isEmpty()) {
+                List<Map<String, Object>> parameters = (List<Map<String, Object>>) procDetails.get("parameters");
+
+                if (parameters == null || parameters.isEmpty()) {
+                    log.info("Database parameters missing for {}.{}, parsing from source", schema, procedureName);
+                    parameters = parseProcedureParametersFromSource(procedureName, schema);
+                }
+
+                if (parameters != null && !parameters.isEmpty()) {
+                    // Transform parameters to Oracle-style uppercase fields
+                    List<Map<String, Object>> transformedParams = transformParametersToOracleStyle(parameters);
+
+                    details.put("parameters", transformedParams);
+                    details.put("parameterCount", transformedParams.size());
+
+                    // Also put in details for the validation response
+                    Map<String, Object> detailsMap = new HashMap<>();
+                    detailsMap.put("parameters", transformedParams);
+                    detailsMap.put("parameterCount", transformedParams.size());
+                    details.put("details", detailsMap);
+
+                    // Add counts
+                    int inCount = 0, outCount = 0, inOutCount = 0;
+                    for (Map<String, Object> param : parameters) {
+                        String inOut = (String) param.get("in_out");
+                        if (inOut != null) {
+                            String upperInOut = inOut.toUpperCase();
+                            if (upperInOut.contains("IN") && upperInOut.contains("OUT")) {
+                                inOutCount++;
+                            } else if (upperInOut.contains("OUT")) {
+                                outCount++;
+                            } else if (upperInOut.contains("IN")) {
+                                inCount++;
+                            }
+                        }
+                    }
+                    details.put("inParameterCount", inCount);
+                    details.put("outParameterCount", outCount);
+                    details.put("inOutParameterCount", inOutCount);
+                }
+
+                // Get source code
+                String source = getSourceFromPgCatalog(procedureName, schema, "PROCEDURE");
+                if (source != null) {
+                    details.put("sourceCode", source);
+                    details.put("source", source);
+                }
+
+                copyCommonDetails(details, procDetails);
+
+                // CRITICAL: Ensure these fields are set for validation
+                details.put("exists", true);
+                details.put("valid", true);
+                details.put("objectName", procedureName);
+                details.put("objectType", "PROCEDURE");
+                details.put("owner", schema);
+
+            } else {
+                // Try to get from source directly
+                String source = getSourceFromPgCatalog(procedureName, schema, "PROCEDURE");
+                if (source != null && !source.isEmpty()) {
+                    details.put("sourceCode", source);
+                    details.put("exists", true);
+                    details.put("valid", true);
+                    details.put("objectName", procedureName);
+                    details.put("objectType", "PROCEDURE");
+                    details.put("owner", schema);
+
+                    // Try to parse parameters from source
+                    List<Map<String, Object>> parameters = parseProcedureParametersFromSource(procedureName, schema);
+                    if (!parameters.isEmpty()) {
+                        List<Map<String, Object>> transformedParams = transformParametersToOracleStyle(parameters);
+                        details.put("parameters", transformedParams);
+                        details.put("parameterCount", transformedParams.size());
+
+                        Map<String, Object> detailsMap = new HashMap<>();
+                        detailsMap.put("parameters", transformedParams);
+                        details.put("details", detailsMap);
+                    }
+                } else {
+                    details.put("exists", false);
+                    details.put("valid", false);
+                    details.put("message", "Object not found: " + procedureName);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error getting procedure details: {}", e.getMessage());
+            details.put("error", e.getMessage());
+            details.put("exists", false);
+            details.put("valid", false);
+        }
+    }
+
+
+    /**
+     * Transform parameters to Oracle-style uppercase fields
+     */
+    private List<Map<String, Object>> transformParametersToOracleStyle(List<Map<String, Object>> parameters) {
+        List<Map<String, Object>> transformed = new ArrayList<>();
+
+        for (Map<String, Object> param : parameters) {
+            Map<String, Object> oracleParam = new HashMap<>();
+
+            // Map to Oracle-style uppercase field names
+            oracleParam.put("POSITION", param.get("position"));
+            oracleParam.put("ARGUMENT_NAME", param.get("argument_name"));
+            oracleParam.put("DATA_TYPE", param.get("data_type"));
+            oracleParam.put("IN_OUT", param.get("in_out"));
+            oracleParam.put("DATA_LENGTH", param.get("data_length"));
+            oracleParam.put("DATA_PRECISION", param.get("data_precision"));
+            oracleParam.put("DATA_SCALE", param.get("data_scale"));
+            oracleParam.put("DEFAULT_VALUE", param.get("default_value"));
+            oracleParam.put("DEFAULTED", param.get("defaulted"));
+
+            // Also keep lowercase versions for compatibility
+            oracleParam.put("argument_name", param.get("argument_name"));
+            oracleParam.put("data_type", param.get("data_type"));
+            oracleParam.put("in_out", param.get("in_out"));
+
+            transformed.add(oracleParam);
+        }
+
+        return transformed;
+    }
+
+// Add these helper methods to PostgreSQLApiMetadataHelper.java
+
+    /**
+     * Parse procedure parameters from source code
+     */
+    private List<Map<String, Object>> parseProcedureParametersFromSource(String procedureName, String schema) {
+        List<Map<String, Object>> params = new ArrayList<>();
+
+        try {
+            String source = getSourceFromPgCatalog(procedureName, schema, "PROCEDURE");
+            if (source == null || source.isEmpty()) {
+                log.warn("No source found for procedure {}.{}", schema, procedureName);
+                return params;
+            }
+
+            log.info("Parsing procedure parameters from source for {}.{}", schema, procedureName);
+
+            // Remove comments
+            String sourceWithoutComments = removeComments(source);
+
+            // PostgreSQL function/procedure signature pattern
+            // Pattern: CREATE [OR REPLACE] PROCEDURE name (param1 type, param2 type, ...)
+            Pattern pattern = Pattern.compile(
+                    "CREATE\\s+(?:OR\\s+REPLACE\\s+)?PROCEDURE\\s+" +
+                            Pattern.quote(procedureName) +
+                            "\\s*\\(([\\s\\S]*?)\\)\\s*(?:AS|LANGUAGE|\\$\\$|IS)",
+                    Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+            );
+
+            Matcher matcher = pattern.matcher(sourceWithoutComments);
+
+            if (matcher.find()) {
+                String paramsSection = matcher.group(1).trim();
+                log.info("Found parameters section: '{}'", paramsSection);
+
+                if (!paramsSection.isEmpty()) {
+                    List<String> paramDefs = splitParameters(paramsSection);
+                    int position = 1;
+
+                    for (String paramDef : paramDefs) {
+                        Map<String, Object> param = parsePostgresParameter(paramDef, position, "PROCEDURE");
+                        if (param != null && !param.isEmpty()) {
+                            params.add(param);
+                            position++;
+                        }
+                    }
+                }
+            } else {
+                // Try alternative pattern for procedures with no parameters
+                Pattern altPattern = Pattern.compile(
+                        "CREATE\\s+(?:OR\\s+REPLACE\\s+)?PROCEDURE\\s+" +
+                                Pattern.quote(procedureName) +
+                                "\\s*(?:\\(\\))?\\s*(?:AS|LANGUAGE|\\$\\$|IS)",
+                        Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+                );
+                Matcher altMatcher = altPattern.matcher(sourceWithoutComments);
+                if (altMatcher.find()) {
+                    log.info("Procedure has no parameters: {}", procedureName);
+                }
+            }
+
+            log.info("Parsed {} parameters for procedure {}", params.size(), procedureName);
+
+        } catch (Exception e) {
+            log.warn("Error parsing procedure parameters: {}", e.getMessage(), e);
+        }
+
+        return params;
+    }
+
+    /**
+     * Parse function parameters from source
+     */
+    private List<Map<String, Object>> parseFunctionParametersFromSource(String functionName, String schema) {
+        List<Map<String, Object>> params = new ArrayList<>();
+
+        try {
+            String source = getSourceFromPgCatalog(functionName, schema, "FUNCTION");
+            if (source == null || source.isEmpty()) {
+                log.warn("No source found for function {}.{}", schema, functionName);
+                return params;
+            }
+
+            log.info("Parsing function parameters from source for {}.{}", schema, functionName);
+
+            // Remove comments
+            String sourceWithoutComments = removeComments(source);
+
+            // PostgreSQL function signature pattern
+            Pattern pattern = Pattern.compile(
+                    "CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+" +
+                            Pattern.quote(functionName) +
+                            "\\s*\\(([\\s\\S]*?)\\)\\s*RETURNS\\s+",
+                    Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+            );
+
+            Matcher matcher = pattern.matcher(sourceWithoutComments);
+
+            if (matcher.find()) {
+                String paramsSection = matcher.group(1).trim();
+                log.info("Found parameters section: '{}'", paramsSection);
+
+                if (!paramsSection.isEmpty()) {
+                    List<String> paramDefs = splitParameters(paramsSection);
+                    int position = 1;
+
+                    for (String paramDef : paramDefs) {
+                        Map<String, Object> param = parsePostgresParameter(paramDef, position, "FUNCTION");
+                        if (param != null && !param.isEmpty()) {
+                            params.add(param);
+                            position++;
+                        }
+                    }
+                }
+            } else {
+                // Try alternative pattern
+                Pattern altPattern = Pattern.compile(
+                        "CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+" +
+                                Pattern.quote(functionName) +
+                                "\\s*(?:\\(\\))?\\s*RETURNS",
+                        Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+                );
+                Matcher altMatcher = altPattern.matcher(sourceWithoutComments);
+                if (altMatcher.find()) {
+                    log.info("Function has no parameters: {}", functionName);
+                }
+            }
+
+            log.info("Parsed {} parameters for function {}", params.size(), functionName);
+
+        } catch (Exception e) {
+            log.warn("Error parsing function parameters: {}", e.getMessage(), e);
+        }
+
+        return params;
+    }
+
+    /**
+     * Parse a single PostgreSQL parameter
+     */
+    private Map<String, Object> parsePostgresParameter(String paramDef, int position, String objectType) {
+        Map<String, Object> param = new HashMap<>();
+
+        // Clean up the parameter definition
+        paramDef = paramDef.replaceAll("\\s+", " ").trim();
+
+        // Remove DEFAULT clause for now
+        String defaultValue = null;
+        int defaultIdx = paramDef.toUpperCase().indexOf("DEFAULT");
+        if (defaultIdx > 0) {
+            defaultValue = paramDef.substring(defaultIdx + 7).trim();
+            paramDef = paramDef.substring(0, defaultIdx).trim();
+        }
+
+        // Remove IN/OUT keywords from the definition for parsing
+        String paramDefWithoutMode = paramDef;
+        String mode = "IN";
+
+        if (paramDefWithoutMode.toUpperCase().startsWith("IN ")) {
+            mode = "IN";
+            paramDefWithoutMode = paramDefWithoutMode.substring(3).trim();
+        } else if (paramDefWithoutMode.toUpperCase().startsWith("OUT ")) {
+            mode = "OUT";
+            paramDefWithoutMode = paramDefWithoutMode.substring(4).trim();
+        } else if (paramDefWithoutMode.toUpperCase().startsWith("INOUT ")) {
+            mode = "IN_OUT";
+            paramDefWithoutMode = paramDefWithoutMode.substring(6).trim();
+        }
+
+        // Parse parameter name and type
+        // Pattern: name type
+        Pattern pattern = Pattern.compile(
+                "^(\\w+)\\s+(\\w+(?:\\([^)]*\\))?)",
+                Pattern.CASE_INSENSITIVE
+        );
+
+        Matcher matcher = pattern.matcher(paramDefWithoutMode);
+
+        if (matcher.find()) {
+            String paramName = matcher.group(1);
+            String dataType = matcher.group(2).trim().toUpperCase();
+
+            param.put("argument_name", paramName);
+            param.put("position", position);
+            param.put("sequence", position);
+            param.put("data_type", dataType);
+            param.put("in_out", mode);
+            param.put("defaulted", defaultValue != null ? "YES" : "NO");
+
+            // Extract length/precision if present
+            if (dataType.contains("(")) {
+                param.put("data_length", extractLength(dataType));
+                param.put("data_precision", extractPrecision(dataType));
+                param.put("data_scale", extractScale(dataType));
+            }
+
+            log.debug("Parsed parameter: name={}, type={}, mode={}", paramName, dataType, mode);
+        } else {
+            log.warn("Could not parse parameter: '{}'", paramDef);
+        }
+
+        return param.isEmpty() ? null : param;
+    }
+
+    /**
+     * Extract length from data type (e.g., VARCHAR(100) -> 100)
+     */
+    private Integer extractLength(String dataType) {
+        if (dataType == null) return null;
+        Pattern pattern = Pattern.compile("\\((\\d+)\\)");
+        Matcher matcher = pattern.matcher(dataType);
+        return matcher.find() ? Integer.parseInt(matcher.group(1)) : null;
+    }
+
+    /**
+     * Extract precision from data type (e.g., NUMERIC(10,2) -> 10)
+     */
+    private Integer extractPrecision(String dataType) {
+        if (dataType == null) return null;
+        Pattern pattern = Pattern.compile("\\((\\d+),\\s*\\d+\\)");
+        Matcher matcher = pattern.matcher(dataType);
+        return matcher.find() ? Integer.parseInt(matcher.group(1)) : null;
+    }
+
+    /**
+     * Extract scale from data type (e.g., NUMERIC(10,2) -> 2)
+     */
+    private Integer extractScale(String dataType) {
+        if (dataType == null) return null;
+        Pattern pattern = Pattern.compile("\\(\\d+,\\s*(\\d+)\\)");
+        Matcher matcher = pattern.matcher(dataType);
+        return matcher.find() ? Integer.parseInt(matcher.group(1)) : null;
+    }
+
+
+    @Override
+    public Map<String, Object> getSourceObjectDetails(DatabaseSchemaService schemaService, ApiSourceObjectDTO sourceObject) {
+        // Cast to PostgreSQLSchemaService
+        if (!(schemaService instanceof PostgreSQLSchemaService)) {
+            throw new IllegalArgumentException("Expected PostgreSQLSchemaService but got: " + schemaService.getClass().getSimpleName());
+        }
+        // Call your existing method
+        return getSourceObjectDetails((PostgreSQLSchemaService) schemaService, sourceObject);
+    }
+
+
+    @Override
+    public DatabaseType getSupportedDatabaseType() {
+        return DatabaseType.ORACLE;
+    }
+
+    @Override
+    public List<Map<String, Object>> parseParametersFromSource(String sourceCode, String objectType) {
+        List<Map<String, Object>> parameters = new ArrayList<>();
+
+        if (sourceCode == null || sourceCode.isEmpty()) {
+            return parameters;
+        }
+
+        try {
+            String sourceWithoutComments = removeComments(sourceCode);
+
+            // Parse based on object type
+            if ("FUNCTION".equalsIgnoreCase(objectType)) {
+                // PostgreSQL function signature pattern
+                Pattern pattern = Pattern.compile(
+                        "CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+\\w+\\s*\\(([\\s\\S]*?)\\)\\s*RETURNS\\s+",
+                        Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+                );
+                Matcher matcher = pattern.matcher(sourceWithoutComments);
+                if (matcher.find()) {
+                    String paramsSection = matcher.group(1).trim();
+                    parameters = parsePostgresParameterSection(paramsSection);
+                }
+            } else if ("PROCEDURE".equalsIgnoreCase(objectType)) {
+                // PostgreSQL procedure signature pattern
+                Pattern pattern = Pattern.compile(
+                        "CREATE\\s+(?:OR\\s+REPLACE\\s+)?PROCEDURE\\s+\\w+\\s*\\(([\\s\\S]*?)\\)\\s*(?:AS|LANGUAGE|\\$\\$|IS)",
+                        Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+                );
+                Matcher matcher = pattern.matcher(sourceWithoutComments);
+                if (matcher.find()) {
+                    String paramsSection = matcher.group(1).trim();
+                    parameters = parsePostgresParameterSection(paramsSection);
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("Error parsing parameters from source: {}", e.getMessage(), e);
+        }
+
+        return parameters;
+    }
+
+    @Override
+    public Map<String, Object> transformToCommonFormat(Map<String, Object> rawData) {
+        Map<String, Object> commonFormat = new HashMap<>();
+
+        if (rawData == null) return commonFormat;
+
+        // Transform columns to common format
+        if (rawData.containsKey("columns") && rawData.get("columns") instanceof List) {
+            List<Map<String, Object>> columns = (List<Map<String, Object>>) rawData.get("columns");
+            List<Map<String, Object>> commonColumns = columns.stream().map(col -> {
+                Map<String, Object> commonCol = new HashMap<>();
+                // PostgreSQL uses lowercase field names
+                commonCol.put("name", col.getOrDefault("column_name", col.get("name")));
+                commonCol.put("dataType", col.getOrDefault("data_type", col.get("type")));
+
+                // Handle nullable - PostgreSQL uses YES/NO or true/false
+                Object nullable = col.getOrDefault("is_nullable", col.get("nullable"));
+                boolean isNullable = false;
+                if (nullable instanceof String) {
+                    isNullable = "YES".equalsIgnoreCase((String) nullable);
+                } else if (nullable instanceof Boolean) {
+                    isNullable = (Boolean) nullable;
+                }
+                commonCol.put("nullable", isNullable);
+
+                commonCol.put("position", col.getOrDefault("ordinal_position", col.get("position")));
+                commonCol.put("dataLength", col.getOrDefault("character_maximum_length", col.get("data_length")));
+                commonCol.put("dataPrecision", col.getOrDefault("numeric_precision", col.get("data_precision")));
+                commonCol.put("dataScale", col.getOrDefault("numeric_scale", col.get("data_scale")));
+                commonCol.put("defaultValue", col.getOrDefault("column_default", col.get("default_value")));
+                return commonCol;
+            }).collect(Collectors.toList());
+            commonFormat.put("columns", commonColumns);
+        }
+
+        // Transform parameters to common format
+        if (rawData.containsKey("parameters") && rawData.get("parameters") instanceof List) {
+            List<Map<String, Object>> parameters = (List<Map<String, Object>>) rawData.get("parameters");
+            List<Map<String, Object>> commonParams = parameters.stream().map(param -> {
+                Map<String, Object> commonParam = new HashMap<>();
+                // PostgreSQL uses lowercase field names
+                commonParam.put("name", param.getOrDefault("argument_name", param.get("name")));
+                commonParam.put("dataType", param.getOrDefault("data_type", param.get("type")));
+                commonParam.put("mode", param.getOrDefault("in_out", param.get("mode")));
+                commonParam.put("position", param.getOrDefault("position", param.get("sequence")));
+                commonParam.put("defaultValue", param.getOrDefault("default_value", param.get("defaultValue")));
+                return commonParam;
+            }).collect(Collectors.toList());
+            commonFormat.put("parameters", commonParams);
+        }
+
+        // Copy common fields - PostgreSQL uses lowercase field names
+        commonFormat.put("objectName", rawData.getOrDefault("object_name", rawData.get("name")));
+        commonFormat.put("objectType", rawData.getOrDefault("object_type", rawData.get("type")));
+        commonFormat.put("owner", rawData.getOrDefault("owner", rawData.get("schema")));
+        commonFormat.put("status", rawData.getOrDefault("status", "VALID"));
+        commonFormat.put("created", rawData.get("created"));
+        commonFormat.put("lastModified", rawData.get("lastModified"));
+
+        return commonFormat;
+    }
+
+    /**
+     * Helper method to parse PostgreSQL parameter section
+     */
+    private List<Map<String, Object>> parsePostgresParameterSection(String paramsSection) {
+        List<Map<String, Object>> parameters = new ArrayList<>();
+
+        if (paramsSection == null || paramsSection.isEmpty()) {
+            return parameters;
+        }
+
+        List<String> paramDefs = splitParameters(paramsSection);
+        int position = 1;
+
+        for (String paramDef : paramDefs) {
+            Map<String, Object> param = parsePostgresParameterDefinition(paramDef, position++);
+            if (param != null && !param.isEmpty()) {
+                parameters.add(param);
+            }
+        }
+
+        return parameters;
+    }
+
+    /**
+     * Parse a single PostgreSQL parameter definition
+     */
+    private Map<String, Object> parsePostgresParameterDefinition(String paramDef, int position) {
+        Map<String, Object> param = new HashMap<>();
+
+        // Clean up the parameter definition
+        paramDef = paramDef.replaceAll("\\s+", " ").trim();
+
+        // Remove DEFAULT clause for now
+        String defaultValue = null;
+        int defaultIdx = paramDef.toUpperCase().indexOf("DEFAULT");
+        if (defaultIdx > 0) {
+            defaultValue = paramDef.substring(defaultIdx + 7).trim();
+            paramDef = paramDef.substring(0, defaultIdx).trim();
+        }
+
+        // Remove IN/OUT keywords from the definition for parsing
+        String paramDefWithoutMode = paramDef;
+        String mode = "IN";
+
+        if (paramDefWithoutMode.toUpperCase().startsWith("IN ")) {
+            mode = "IN";
+            paramDefWithoutMode = paramDefWithoutMode.substring(3).trim();
+        } else if (paramDefWithoutMode.toUpperCase().startsWith("OUT ")) {
+            mode = "OUT";
+            paramDefWithoutMode = paramDefWithoutMode.substring(4).trim();
+        } else if (paramDefWithoutMode.toUpperCase().startsWith("INOUT ")) {
+            mode = "INOUT";
+            paramDefWithoutMode = paramDefWithoutMode.substring(6).trim();
+        }
+
+        // Parse parameter name and type
+        // Pattern: name type
+        Pattern pattern = Pattern.compile(
+                "^(\\w+)\\s+(\\w+(?:\\([^)]*\\))?)",
+                Pattern.CASE_INSENSITIVE
+        );
+
+        Matcher matcher = pattern.matcher(paramDefWithoutMode);
+
+        if (matcher.find()) {
+            String paramName = matcher.group(1);
+            String dataType = matcher.group(2).trim().toUpperCase();
+
+            param.put("argument_name", paramName);
+            param.put("position", position);
+            param.put("sequence", position);
+            param.put("data_type", dataType);
+            param.put("in_out", mode);
+            param.put("defaulted", defaultValue != null ? "YES" : "NO");
+            param.put("default_value", defaultValue);
+
+            // Extract length/precision if present
+            if (dataType.contains("(")) {
+                param.put("data_length", extractLength(dataType));
+                param.put("data_precision", extractPrecision(dataType));
+                param.put("data_scale", extractScale(dataType));
+            }
+
+            log.debug("Parsed parameter: name={}, type={}, mode={}", paramName, dataType, mode);
+        } else {
+            log.warn("Could not parse parameter: '{}'", paramDef);
+        }
+
+        return param.isEmpty() ? null : param;
+    }
+
+
 }

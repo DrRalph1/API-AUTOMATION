@@ -871,4 +871,214 @@ public class ApiConversionHelper {
                 .build();
     }
 
+
+    /**
+     * Create Auth Config Entity from DTO
+     */
+    public ApiAuthConfigEntity createAuthConfigEntity(ApiAuthConfigDTO authConfigDTO) {
+        if (authConfigDTO == null) return null;
+
+        ApiAuthConfigEntity entity = new ApiAuthConfigEntity();
+
+        entity.setAuthType(authConfigDTO.getAuthType());
+
+        // API Key fields
+        entity.setApiKeyHeader(authConfigDTO.getApiKeyHeader());
+        entity.setApiKeyValue(authConfigDTO.getApiKeyValue());
+        entity.setApiKeySecret(authConfigDTO.getApiKeySecret());
+        entity.setApiSecretHeader(authConfigDTO.getApiSecretHeader());
+        entity.setApiSecretValue(authConfigDTO.getApiSecretValue());
+        entity.setApiKeyLocation(authConfigDTO.getApiKeyLocation());
+        entity.setApiKeyPrefix(authConfigDTO.getApiKeyPrefix());
+
+        // Basic Auth fields
+        entity.setBasicUsername(authConfigDTO.getBasicUsername());
+        entity.setBasicPassword(authConfigDTO.getBasicPassword());
+        entity.setBasicRealm(authConfigDTO.getBasicRealm());
+
+        // JWT fields
+        entity.setJwtToken(authConfigDTO.getJwtToken());
+        entity.setJwtSecret(authConfigDTO.getJwtSecret());
+        entity.setJwtIssuer(authConfigDTO.getJwtIssuer());
+        entity.setJwtAudience(authConfigDTO.getJwtAudience());
+        entity.setJwtExpiration(authConfigDTO.getJwtExpiration());
+        entity.setJwtAlgorithm(authConfigDTO.getJwtAlgorithm());
+
+        // OAuth2 fields
+        entity.setOauthClientId(authConfigDTO.getOauthClientId());
+        entity.setOauthClientSecret(authConfigDTO.getOauthClientSecret());
+        entity.setOauthTokenUrl(authConfigDTO.getOauthTokenUrl());
+        entity.setOauthAuthUrl(authConfigDTO.getOauthAuthUrl());
+        entity.setOauthScopes(authConfigDTO.getOauthScopes());
+
+        // Oracle Roles fields
+        entity.setRequiredRoles(authConfigDTO.getRequiredRoles());
+
+        // Other fields
+        entity.setCustomAuthFunction(authConfigDTO.getCustomAuthFunction());
+        entity.setValidateSession(authConfigDTO.getValidateSession());
+        entity.setCheckObjectPrivileges(authConfigDTO.getCheckObjectPrivileges());
+        entity.setIpWhitelist(authConfigDTO.getIpWhitelist());
+        entity.setRateLimitRequests(authConfigDTO.getRateLimitRequests());
+        entity.setRateLimitPeriod(authConfigDTO.getRateLimitPeriod());
+        entity.setEnableRateLimiting(authConfigDTO.getEnableRateLimiting());
+        entity.setAuditLevel(authConfigDTO.getAuditLevel());
+
+        // CORS fields
+        if (authConfigDTO.getCorsOrigins() != null && !authConfigDTO.getCorsOrigins().isEmpty()) {
+            entity.setCorsOrigins(String.join(",", authConfigDTO.getCorsOrigins()));
+        }
+        entity.setCorsCredentials(authConfigDTO.getCorsCredentials());
+
+        return entity;
+    }
+
+    /**
+     * Create Request Config Entity from DTO
+     */
+    public ApiRequestConfigEntity createRequestConfigEntity(ApiRequestConfigDTO requestConfigDTO) {
+        if (requestConfigDTO == null) return null;
+
+        ApiRequestConfigEntity entity = new ApiRequestConfigEntity();
+        entity.setBodyType(requestConfigDTO.getBodyType());
+        entity.setSample(requestConfigDTO.getSample());
+        entity.setMaxSize(requestConfigDTO.getMaxSize());
+        entity.setValidateSchema(requestConfigDTO.getValidateSchema());
+
+        if (requestConfigDTO.getAllowedMediaTypes() != null && !requestConfigDTO.getAllowedMediaTypes().isEmpty()) {
+            entity.setAllowedMediaTypes(String.join(",", requestConfigDTO.getAllowedMediaTypes()));
+        }
+
+        entity.setRequiredFields(requestConfigDTO.getRequiredFields());
+
+        return entity;
+    }
+
+    /**
+     * Create Response Config Entity from DTO
+     */
+    public ApiResponseConfigEntity createResponseConfigEntity(ApiResponseConfigDTO responseConfigDTO) {
+        if (responseConfigDTO == null) return null;
+
+        ApiResponseConfigEntity entity = new ApiResponseConfigEntity();
+        entity.setSuccessSchema(responseConfigDTO.getSuccessSchema());
+        entity.setErrorSchema(responseConfigDTO.getErrorSchema());
+        entity.setIncludeMetadata(responseConfigDTO.getIncludeMetadata());
+        entity.setMetadataFields(responseConfigDTO.getMetadataFields());
+        entity.setContentType(responseConfigDTO.getContentType());
+        entity.setCompression(responseConfigDTO.getCompression());
+
+        return entity;
+    }
+
+    /**
+     * Create Schema Config Entity from Source Object DTO
+     */
+    public ApiSchemaConfigEntity createSchemaConfigEntity(ApiSourceObjectDTO sourceObjectDTO) {
+        if (sourceObjectDTO == null) return null;
+
+        ApiSchemaConfigEntity entity = new ApiSchemaConfigEntity();
+        entity.setSchemaName(sourceObjectDTO.getOwner());
+        entity.setObjectType(sourceObjectDTO.getObjectType());
+        entity.setObjectName(sourceObjectDTO.getObjectName());
+        entity.setOperation(sourceObjectDTO.getOperation());
+
+        // Set default values
+        entity.setEnablePagination(true);
+        entity.setPageSize(10);
+        entity.setEnableSorting(true);
+        entity.setDefaultSortDirection("ASC");
+        entity.setIsSynonym(sourceObjectDTO.getIsSynonym() != null ? sourceObjectDTO.getIsSynonym() : false);
+        entity.setTargetType(sourceObjectDTO.getTargetType());
+        entity.setTargetName(sourceObjectDTO.getTargetName());
+        entity.setTargetOwner(sourceObjectDTO.getTargetOwner());
+
+        return entity;
+    }
+
+    /**
+     * Create Settings Entity from DTO
+     */
+    public ApiSettingsEntity createSettingsEntity(ApiSettingsDTO settingsDTO) {
+        if (settingsDTO == null) return null;
+
+        ApiSettingsEntity entity = new ApiSettingsEntity();
+        entity.setTimeout(settingsDTO.getTimeout());
+        entity.setMaxRecords(settingsDTO.getMaxRecords());
+        entity.setEnableLogging(settingsDTO.getEnableLogging());
+        entity.setLogLevel(settingsDTO.getLogLevel());
+        entity.setEnableCaching(settingsDTO.getEnableCaching());
+        entity.setCacheTtl(settingsDTO.getCacheTtl());
+        entity.setEnableRateLimiting(settingsDTO.getEnableRateLimiting());
+        entity.setRateLimit(settingsDTO.getRateLimit());
+        entity.setRateLimitPeriod(settingsDTO.getRateLimitPeriod());
+        entity.setEnableAudit(settingsDTO.getEnableAudit());
+        entity.setAuditLevel(settingsDTO.getAuditLevel());
+        entity.setGenerateSwagger(settingsDTO.getGenerateSwagger());
+        entity.setGeneratePostman(settingsDTO.getGeneratePostman());
+        entity.setGenerateClientSDK(settingsDTO.getGenerateClientSDK());
+        entity.setEnableMonitoring(settingsDTO.getEnableMonitoring());
+        entity.setEnableAlerts(settingsDTO.getEnableAlerts());
+        entity.setAlertEmail(settingsDTO.getAlertEmail());
+        entity.setEnableTracing(settingsDTO.getEnableTracing());
+        entity.setCorsEnabled(settingsDTO.getCorsEnabled());
+
+        if (settingsDTO.getCorsOrigins() != null && !settingsDTO.getCorsOrigins().isEmpty()) {
+            entity.setCorsOrigins(String.join(",", settingsDTO.getCorsOrigins()));
+        }
+
+        return entity;
+    }
+
+    /**
+     * Create Header Entities from DTOs
+     */
+    public List<ApiHeaderEntity> createHeaderEntities(List<ApiHeaderDTO> headerDTOs, GeneratedApiEntity api) {
+        if (headerDTOs == null) return new ArrayList<>();
+
+        List<ApiHeaderEntity> headers = new ArrayList<>();
+        for (ApiHeaderDTO dto : headerDTOs) {
+            ApiHeaderEntity entity = ApiHeaderEntity.builder()
+                    .key(dto.getKey())
+                    .value(dto.getValue())
+                    .required(dto.getRequired())
+                    .description(dto.getDescription())
+                    .isRequestHeader(dto.getIsRequestHeader() != null ? dto.getIsRequestHeader() : true)
+                    .isResponseHeader(dto.getIsResponseHeader() != null ? dto.getIsResponseHeader() : false)
+                    .build();
+
+            // Set the bidirectional relationship
+            entity.setGeneratedApi(api);
+            headers.add(entity);
+        }
+
+        return headers;
+    }
+
+    /**
+     * Create Response Mapping Entities from DTOs
+     */
+    public List<ApiResponseMappingEntity> createResponseMappingEntities(
+            List<ApiResponseMappingDTO> mappingDTOs, String generatedApiId) {
+        if (mappingDTOs == null) return new ArrayList<>();
+
+        List<ApiResponseMappingEntity> mappings = new ArrayList<>();
+        for (ApiResponseMappingDTO dto : mappingDTOs) {
+            ApiResponseMappingEntity entity = new ApiResponseMappingEntity();
+            entity.setGeneratedApi(null); // Will be set by caller
+            entity.setApiField(dto.getApiField());
+            entity.setDbColumn(dto.getDbColumn());
+            entity.setOracleType(dto.getOracleType());
+            entity.setApiType(dto.getApiType());
+            entity.setFormat(dto.getFormat());
+            entity.setNullable(dto.getNullable());
+            entity.setIsPrimaryKey(dto.getIsPrimaryKey());
+            entity.setIncludeInResponse(dto.getIncludeInResponse());
+            entity.setInResponse(dto.getInResponse());
+            entity.setPosition(dto.getPosition());
+            mappings.add(entity);
+        }
+
+        return mappings;
+    }
 }

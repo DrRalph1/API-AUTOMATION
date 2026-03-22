@@ -6,6 +6,7 @@ import com.usg.apiAutomation.dtos.apiGenerationEngine.ExecuteApiRequestDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiHeaderEntity;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiParameterEntity;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
+import com.usg.apiAutomation.helpers.DatabaseValidationHelper;
 import com.usg.apiAutomation.repositories.apiGenerationEngine.GeneratedAPIRepository;
 import com.usg.apiAutomation.services.schemaBrowser.OracleSchemaService;
 import lombok.RequiredArgsConstructor;
@@ -13,11 +14,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
+import java.util.function.Function;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class OracleApiValidationHelper {
+public class OracleApiValidationHelper implements DatabaseValidationHelper {
 
     public void validateApiCodeUniqueness(GeneratedAPIRepository repository, String apiCode) {
         if (repository.existsByApiCode(apiCode)) {
@@ -282,5 +284,21 @@ public class OracleApiValidationHelper {
     @FunctionalInterface
     public interface SourceObjectDetailsProvider {
         Map<String, Object> getSourceObjectDetails(ApiSourceObjectDTO sourceObject);
+    }
+
+
+    @Override
+    public Map<String, Object> validateSourceObject(
+            Object schemaService,
+            ApiSourceObjectDTO sourceObject,
+            Function<ApiSourceObjectDTO, Map<String, Object>> detailsProvider) {
+
+        if (!(schemaService instanceof OracleSchemaService)) {
+            throw new IllegalArgumentException("Expected OracleSchemaService but got: " + schemaService.getClass().getSimpleName());
+        }
+
+        // Convert the Function to SourceObjectDetailsProvider and call the concrete method
+        SourceObjectDetailsProvider provider = detailsProvider::apply;
+        return validateSourceObject((OracleSchemaService) schemaService, sourceObject, provider);
     }
 }

@@ -5878,6 +5878,7 @@ const renderColumnsTab = () => {
           selectedObject={selectedForApiGeneration}
           colors={colors}
           obType={obType}
+          databaseType={'postgresql'}
           theme={theme}
           authToken={authToken}
           isEditing={false}

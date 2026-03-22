@@ -6,8 +6,12 @@ import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.GeneratedApiResponseDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiExecutionLogEntity;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
+import com.usg.apiAutomation.enums.DatabaseType;
+import com.usg.apiAutomation.helpers.ApiAnalyticsHelper;
+import com.usg.apiAutomation.helpers.DatabaseMetadataHelper;
 import com.usg.apiAutomation.repositories.apiGenerationEngine.ApiExecutionLogRepository;
 import com.usg.apiAutomation.repositories.schemaBrowser.oracle.*;
+import com.usg.apiAutomation.services.schemaBrowser.DatabaseSchemaService;
 import com.usg.apiAutomation.services.schemaBrowser.OracleSchemaService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,7 +25,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Component
-public class OracleApiMetadataHelper {
+public class OracleApiMetadataHelper implements DatabaseMetadataHelper, ApiAnalyticsHelper {
 
     private final OracleTableRepository oracleTableRepository;
     private final OracleViewRepository oracleViewRepository;
@@ -1402,4 +1406,118 @@ public class OracleApiMetadataHelper {
         }
         return null;
     }
+
+
+    @Override
+    public List<Map<String, Object>> parseParametersFromSource(String sourceCode, String objectType) {
+        List<Map<String, Object>> parameters = new ArrayList<>();
+
+        if (sourceCode == null || sourceCode.isEmpty()) {
+            return parameters;
+        }
+
+        try {
+            String sourceWithoutComments = removeComments(sourceCode);
+
+            // Parse based on object type
+            if ("FUNCTION".equalsIgnoreCase(objectType)) {
+                // Parse function parameters
+                Pattern pattern = Pattern.compile(
+                        "FUNCTION\\s+\\w+\\s*\\(([\\s\\S]*?)\\)\\s*RETURN",
+                        Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+                );
+                Matcher matcher = pattern.matcher(sourceWithoutComments);
+                if (matcher.find()) {
+                    String paramsSection = matcher.group(1).trim();
+                    parameters = parseParameterSection(paramsSection);
+                }
+            } else if ("PROCEDURE".equalsIgnoreCase(objectType)) {
+                // Parse procedure parameters
+                Pattern pattern = Pattern.compile(
+                        "PROCEDURE\\s+\\w+\\s*\\(([\\s\\S]*?)\\)\\s*(?:IS|AS)",
+                        Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+                );
+                Matcher matcher = pattern.matcher(sourceWithoutComments);
+                if (matcher.find()) {
+                    String paramsSection = matcher.group(1).trim();
+                    parameters = parseParameterSection(paramsSection);
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("Error parsing parameters from source: {}", e.getMessage(), e);
+        }
+
+        return parameters;
+    }
+
+    @Override
+    public Map<String, Object> transformToCommonFormat(Map<String, Object> rawData) {
+        Map<String, Object> commonFormat = new HashMap<>();
+
+        if (rawData == null) return commonFormat;
+
+        // Transform columns to common format
+        if (rawData.containsKey("columns") && rawData.get("columns") instanceof List) {
+            List<Map<String, Object>> columns = (List<Map<String, Object>>) rawData.get("columns");
+            List<Map<String, Object>> commonColumns = columns.stream().map(col -> {
+                Map<String, Object> commonCol = new HashMap<>();
+                commonCol.put("name", col.getOrDefault("COLUMN_NAME", col.get("column_name")));
+                commonCol.put("dataType", col.getOrDefault("DATA_TYPE", col.get("data_type")));
+                commonCol.put("nullable", "Y".equals(col.getOrDefault("NULLABLE", col.get("nullable"))));
+                commonCol.put("position", col.getOrDefault("COLUMN_ID", col.get("column_id")));
+                commonCol.put("dataLength", col.getOrDefault("DATA_LENGTH", col.get("data_length")));
+                commonCol.put("dataPrecision", col.getOrDefault("DATA_PRECISION", col.get("data_precision")));
+                commonCol.put("dataScale", col.getOrDefault("DATA_SCALE", col.get("data_scale")));
+                commonCol.put("defaultValue", col.getOrDefault("DATA_DEFAULT", col.get("data_default")));
+                return commonCol;
+            }).collect(Collectors.toList());
+            commonFormat.put("columns", commonColumns);
+        }
+
+        // Transform parameters to common format
+        if (rawData.containsKey("parameters") && rawData.get("parameters") instanceof List) {
+            List<Map<String, Object>> parameters = (List<Map<String, Object>>) rawData.get("parameters");
+            List<Map<String, Object>> commonParams = parameters.stream().map(param -> {
+                Map<String, Object> commonParam = new HashMap<>();
+                commonParam.put("name", param.getOrDefault("ARGUMENT_NAME", param.get("argument_name")));
+                commonParam.put("dataType", param.getOrDefault("DATA_TYPE", param.get("data_type")));
+                commonParam.put("mode", param.getOrDefault("IN_OUT", param.get("in_out")));
+                commonParam.put("position", param.getOrDefault("POSITION", param.get("position")));
+                commonParam.put("defaultValue", param.getOrDefault("DEFAULT_VALUE", param.get("default_value")));
+                return commonParam;
+            }).collect(Collectors.toList());
+            commonFormat.put("parameters", commonParams);
+        }
+
+        // Copy common fields
+        commonFormat.put("objectName", rawData.getOrDefault("OBJECT_NAME", rawData.get("object_name")));
+        commonFormat.put("objectType", rawData.getOrDefault("OBJECT_TYPE", rawData.get("object_type")));
+        commonFormat.put("owner", rawData.getOrDefault("OWNER", rawData.get("owner")));
+        commonFormat.put("status", rawData.getOrDefault("STATUS", rawData.get("status")));
+        commonFormat.put("created", rawData.getOrDefault("CREATED", rawData.get("created")));
+        commonFormat.put("lastModified", rawData.getOrDefault("LAST_DDL_TIME", rawData.get("lastModified")));
+
+        return commonFormat;
+    }
+
+    // ==================== Your Existing Methods ====================
+
+
+    @Override
+    public Map<String, Object> getSourceObjectDetails(DatabaseSchemaService schemaService, ApiSourceObjectDTO sourceObject) {
+        // Cast to OracleSchemaService
+        if (!(schemaService instanceof OracleSchemaService)) {
+            throw new IllegalArgumentException("Expected OracleSchemaService but got: " + schemaService.getClass().getSimpleName());
+        }
+        // Call your existing method
+        return getSourceObjectDetails((OracleSchemaService) schemaService, sourceObject);
+    }
+
+
+    @Override
+    public DatabaseType getSupportedDatabaseType() {
+        return DatabaseType.ORACLE;
+    }
+
 }

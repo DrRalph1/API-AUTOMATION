@@ -4,9 +4,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.collections.*;
+import com.usg.apiAutomation.factories.ApiExecutionHelperFactory;
+import com.usg.apiAutomation.factories.ApiMetadataHelperFactory;
+import com.usg.apiAutomation.factories.DatabaseTypeServiceFactory;
+import com.usg.apiAutomation.factories.ParameterGeneratorFactory;
+import com.usg.apiAutomation.helpers.*;
 import com.usg.apiAutomation.helpers.apiEngine.oracle.OracleApiExecutionHelper;
 import com.usg.apiAutomation.helpers.apiEngine.oracle.OracleApiMetadataHelper;
 import com.usg.apiAutomation.helpers.apiEngine.oracle.OracleApiValidationHelper;
+import com.usg.apiAutomation.helpers.apiEngine.postgresql.PostgreSQLApiMetadataHelper;
+import com.usg.apiAutomation.helpers.apiEngine.postgresql.PostgreSQLApiValidationHelper;
 import com.usg.apiAutomation.repositories.apiGenerationEngine.*;
 import com.usg.apiAutomation.repositories.codeBase.*;
 import com.usg.apiAutomation.repositories.codeBase.FolderRepository;
@@ -14,12 +21,17 @@ import com.usg.apiAutomation.repositories.collections.AuthConfigRepository;
 import com.usg.apiAutomation.repositories.collections.HeaderRepository;
 import com.usg.apiAutomation.repositories.collections.ParameterRepository;
 import com.usg.apiAutomation.repositories.documentation.*;
-import com.usg.apiAutomation.helpers.ApiValidatorHelper;
 import com.usg.apiAutomation.helpers.apiEngine.*;
+import com.usg.apiAutomation.services.schemaBrowser.DatabaseSchemaService;
 import com.usg.apiAutomation.services.schemaBrowser.OracleSchemaService;
+import com.usg.apiAutomation.services.schemaBrowser.PostgreSQLSchemaService;
 import com.usg.apiAutomation.utils.apiEngine.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import com.usg.apiAutomation.utils.apiEngine.executor.oracle.*;
+import com.usg.apiAutomation.utils.apiEngine.executor.postgresql.PostgreSQLFunctionExecutorUtil;
+import com.usg.apiAutomation.utils.apiEngine.executor.postgresql.PostgreSQLProcedureExecutorUtil;
+import com.usg.apiAutomation.utils.apiEngine.executor.postgresql.PostgreSQLTableExecutorUtil;
+import com.usg.apiAutomation.utils.apiEngine.executor.postgresql.PostgreSQLViewExecutorUtil;
 import com.usg.apiAutomation.utils.apiEngine.generator.CodeBaseGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.generator.CollectionsGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.generator.DocumentationGeneratorUtil;
@@ -73,12 +85,14 @@ public class AutomationEngineService {
     private final ChangelogRepository changelogRepository;
 
     // ==================== HELPERS (Business Logic) ====================
-    private final OracleApiValidationHelper validationHelper;
+    private final OracleApiValidationHelper oracleValidationHelper;
+    private final PostgreSQLApiValidationHelper postgresValidationHelper;
     private final ApiConversionHelper conversionHelper;
     private final ApiResponseHelper responseHelper;
-    private final OracleApiExecutionHelper executionHelper;
+    // REMOVE THIS: private final OracleApiExecutionHelper executionHelper;
     private final ApiComponentHelper componentHelper;
-    private final OracleApiMetadataHelper metadataHelper;
+    // REMOVE THESE: private final OracleApiMetadataHelper oracleMetadataHelper;
+    // REMOVE THESE: private final PostgreSQLApiMetadataHelper postgresMetadataHelper;
 
     // ==================== UTILS (Technical Utilities) ====================
     private final GenUrlBuilderUtil genUrlBuilder;
@@ -93,6 +107,10 @@ public class AutomationEngineService {
     private final OracleProcedureExecutorUtil oracleProcedureExecutorUtil;
     private final OracleFunctionExecutorUtil oracleFunctionExecutorUtil;
     private final OraclePackageExecutorUtil oraclePackageExecutorUtil;
+    private final PostgreSQLTableExecutorUtil postgreSQLTableExecutorUtil;
+    private final PostgreSQLViewExecutorUtil postgreSQLViewExecutorUtil;
+    private final PostgreSQLProcedureExecutorUtil postgreSQLProcedureExecutorUtil;
+    private final PostgreSQLFunctionExecutorUtil postgreSQLFunctionExecutorUtil;
 
     // ==================== GENERATORS ====================
     private final CodeBaseGeneratorUtil codeBaseGeneratorUtil;
@@ -100,6 +118,13 @@ public class AutomationEngineService {
     private final DocumentationGeneratorUtil documentationGeneratorUtil;
     private final CodeLanguageGeneratorUtil codeLanguageGeneratorUtil;
     private final OracleParameterGeneratorUtil oracleParameterGeneratorUtil;
+    private final PostgreSQLParameterGeneratorUtil postgreSQLParameterGeneratorUtil;
+
+    // ==================== FACTORIES ====================
+    private final ParameterGeneratorFactory parameterGeneratorFactory;
+    private final DatabaseTypeServiceFactory databaseTypeFactory;
+    private final ApiExecutionHelperFactory executionHelperFactory;
+    private final ApiMetadataHelperFactory metadataHelperFactory;
 
     // ==================== API REQUEST LOGGING ====================
     private final ApiRequestService apiRequestService;
@@ -109,6 +134,7 @@ public class AutomationEngineService {
     private final LoggerUtil loggerUtil;
     private final ApiValidatorHelper validatorService;
     private final OracleSchemaService oracleSchemaService;
+    private final PostgreSQLSchemaService postgreSQLSchemaService;
     private final EntityManager entityManager;
 
     @Autowired
@@ -121,52 +147,58 @@ public class AutomationEngineService {
     public GeneratedApiResponseDTO generateApi(String requestId, String performedBy, GenerateApiRequestDTO request) {
         long startTime = System.currentTimeMillis();
         try {
-            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
-                    ", Generating API: " + request.getApiName() + " by: " + performedBy);
+            String databaseType = request.getDatabaseType();
+            if (databaseType == null || databaseType.isEmpty()) {
+                if (request.getSourceObject() != null && request.getSourceObject().containsKey("databaseType")) {
+                    databaseType = (String) request.getSourceObject().get("databaseType");
+                }
+            }
+            if (databaseType == null || databaseType.isEmpty()) {
+                databaseType = "oracle";
+            }
 
-            // Validate API code uniqueness
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
+                    ", Generating API: " + request.getApiName() +
+                    " for database: " + databaseType + " by: " + performedBy);
+
+            DatabaseValidationHelper validationHelper = databaseTypeFactory.getValidationHelper(databaseType);
             validationHelper.validateApiCodeUniqueness(generatedAPIRepository, request.getApiCode());
 
-            // Convert and validate source object
-            ApiSourceObjectDTO sourceObjectDTO = conversionHelper.convertAndValidateSourceObject(
-                    request.getSourceObject(), oracleSchemaService, objectMapper);
-
-            // Validate collection info
+            Object schemaService = databaseTypeFactory.getSchemaService(databaseType);
+            ApiSourceObjectDTO sourceObjectDTO = convertAndValidateSourceObjectForGeneration(request, schemaService, databaseType);
             CollectionInfoDTO collectionInfo = validationHelper.validateAndGetCollectionInfo(request.getCollectionInfo());
-
-            // Build endpoint path with parameters
             String endpointPath = buildEndpointPathFromRequest(request);
+            DatabaseParameterGeneratorUtil parameterGenerator = parameterGeneratorFactory.getGenerator(databaseType);
 
-            // Create and save main API entity (WITHOUT setting sourceRequestId yet)
+            // Use factory to get the correct execution helper
+            BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
+
             GeneratedApiEntity savedApi = executionHelper.createAndSaveApiEntity(
-                    request, sourceObjectDTO, collectionInfo, endpointPath, performedBy, null,  // Pass null for requestId
-                    generatedAPIRepository, objectMapper, oracleParameterGeneratorUtil, conversionHelper);
+                    request, sourceObjectDTO, collectionInfo, endpointPath, performedBy, null,
+                    generatedAPIRepository, objectMapper, parameterGenerator, conversionHelper, databaseType);
 
-            // Generate related components
             GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(savedApi);
             String codeBaseRequestId = codeBaseGeneratorUtil.generate(savedApi, performedBy, request, collectionInfo);
 
-            // Generate collections and get both collection ID and request ID
             Map<String, String> collectionResult = collectionsGeneratorUtil.generateWithDetails(
                     savedApi, performedBy, request, collectionInfo);
             String collectionId = collectionResult.get("collectionId");
-            String collectionsRequestId = collectionResult.get("requestId");  // This is the tb_col_requests ID
+            String collectionsRequestId = collectionResult.get("requestId");
 
-            // CRITICAL: Update the GeneratedApiEntity with the collections request ID
             savedApi.setSourceRequestId(collectionsRequestId);
             generatedAPIRepository.save(savedApi);
 
             String docCollectionId = documentationGeneratorUtil.generate(savedApi, performedBy, request,
                     codeBaseRequestId, collectionId, collectionInfo);
 
-            // Build response
             GeneratedApiResponseDTO response = responseHelper.buildGenerateApiResponse(
                     savedApi, genUrlInfo, codeBaseRequestId, collectionId, docCollectionId,
-                    collectionInfo, genUrlBuilder, conversionHelper, this::generateApiCode);
+                    collectionInfo, genUrlBuilder, conversionHelper,
+                    (api) -> generateApiCode(api));
 
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", API generated successfully with ID: " + savedApi.getId() +
-                    ", Source Request ID (tb_col_requests): " + collectionsRequestId +
+                    ", Database: " + databaseType +
                     " in " + (System.currentTimeMillis() - startTime) + "ms");
 
             return response;
@@ -180,6 +212,7 @@ public class AutomationEngineService {
     }
 
 
+
     @Transactional
     public GeneratedApiResponseDTO updateApi(String requestId, String apiId, String performedBy,
                                              GenerateApiRequestDTO request) {
@@ -187,18 +220,36 @@ public class AutomationEngineService {
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Updating API: " + apiId + " by: " + performedBy);
 
-            GeneratedApiEntity api = executionHelper.getApiEntity(generatedAPIRepository, apiId);
+            // Get the existing API entity
+            GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
+                    .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
+
+            // Get the database type from the existing API
+            String databaseType = api.getDatabaseType();
+            if (databaseType == null || databaseType.isEmpty()) {
+                databaseType = "oracle";
+            }
+
+            log.info("Updating API: {} on database: {}", apiId, databaseType);
+
+            // Get the appropriate execution helper
+            BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
 
             // Store the original sourceRequestId before clearing relationships
             String originalSourceRequestId = api.getSourceRequestId();
+
+            // Get the appropriate validation helper
+            DatabaseValidationHelper validationHelper = databaseTypeFactory.getValidationHelper(databaseType);
 
             // Check API code uniqueness if changed
             validationHelper.validateApiCodeUniquenessOnUpdate(
                     generatedAPIRepository, api.getApiCode(), request.getApiCode());
 
+            // Get the appropriate schema service
+            Object schemaService = databaseTypeFactory.getSchemaService(databaseType);
+
             // Convert and validate source object
-            ApiSourceObjectDTO sourceObjectDTO = conversionHelper.convertAndValidateSourceObject(
-                    request.getSourceObject(), oracleSchemaService, objectMapper);
+            ApiSourceObjectDTO sourceObjectDTO = convertAndValidateSourceObjectForUpdate(request, schemaService, databaseType);
 
             // Validate collection info
             CollectionInfoDTO collectionInfo = validationHelper.validateAndGetCollectionInfo(request.getCollectionInfo());
@@ -208,57 +259,120 @@ public class AutomationEngineService {
 
             // Clear and recreate relationships
             executionHelper.clearApiRelationships(api);
-            executionHelper.recreateApiRelationships(api, request, sourceObjectDTO,
-                    oracleParameterGeneratorUtil, conversionHelper);
 
-            // IMPORTANT: Temporarily set the original sourceRequestId back
+            // Get the appropriate parameter generator
+            DatabaseParameterGeneratorUtil parameterGenerator = parameterGeneratorFactory.getGenerator(databaseType);
+
+            // Recreate relationships
+            executionHelper.recreateApiRelationships(api, request, sourceObjectDTO,
+                    parameterGenerator, conversionHelper);
+
+            // Set the original sourceRequestId back
             api.setSourceRequestId(originalSourceRequestId);
 
-            GeneratedApiEntity savedApi = generatedAPIRepository.save(api);
+            // Ensure database type is preserved
+            api.setDatabaseType(databaseType);
 
-            // ============ CRITICAL FIX: Flush only, don't clear ============
-            // This forces Hibernate to execute all pending SQL statements
+            GeneratedApiEntity savedApi = generatedAPIRepository.save(api);
             entityManager.flush();
 
-            // DO NOT clear the persistence context - we need the entity to stay managed
-            // entityManager.clear(); // REMOVE THIS LINE
-            // =============================================================================
-
-            // Update components - now passing generateApiCode function
+            // Update components
             componentHelper.updateComponents(
-                    savedApi,  // This entity is still managed
-                    performedBy,
-                    request,
-                    collectionInfo,
+                    savedApi, performedBy, request, collectionInfo,
                     shouldRegenerateComponents(request),
-                    codeBaseGeneratorUtil,
-                    collectionsGeneratorUtil,
-                    documentationGeneratorUtil,
-                    // QuadConsumer with 4 params: (api, user, req, collInfo)
+                    codeBaseGeneratorUtil, collectionsGeneratorUtil, documentationGeneratorUtil,
                     (apiEntity, user, req, collInfo) -> updateCodeBase(apiEntity, user, req, collInfo),
-                    // QuintConsumer with 5 params: (api, user, req, collInfo, originalRequestId)
                     (apiEntity, user, req, collInfo, originalId) ->
                             updateCollections(apiEntity, user, req, collInfo, originalId),
-                    // SextConsumer with 6 params: (api, user, req, collInfo, codeBaseId, collectionId)
                     (apiEntity, user, req, collInfo, codeBaseId, collectionId) ->
                             updateDocumentation(apiEntity, user, req, collInfo, codeBaseId, collectionId),
-                    this::getCodeBaseRequestId,
-                    this::getCollectionsCollectionId,
-                    this::generateApiCode
+                    (apiEntity) -> getCodeBaseRequestId(apiEntity),
+                    (apiEntity) -> getCollectionsCollectionId(apiEntity),
+                    (apiEntity) -> generateApiCode(apiEntity)
             );
 
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
-                    ", API updated successfully: " + savedApi.getId());
+                    ", API updated successfully: " + savedApi.getId() +
+                    " on database: " + databaseType);
 
             return conversionHelper.mapToResponse(savedApi);
 
         } catch (Exception e) {
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Error updating API: " + e.getMessage());
+            log.error("Error updating API on database: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to update API: " + e.getMessage(), e);
         }
     }
 
+
+
+        // Helper method to convert and validate source object based on database type
+    private ApiSourceObjectDTO convertAndValidateSourceObject(GenerateApiRequestDTO request, String databaseType) {
+        if ("postgresql".equalsIgnoreCase(databaseType)) {
+            // For PostgreSQL, use PostgreSQL-specific conversion if needed
+            // Your existing conversion logic, but with PostgreSQL in mind
+            return conversionHelper.convertAndValidateSourceObject(
+                    request.getSourceObject(), null, objectMapper);
+        } else {
+            // Default to Oracle
+            return conversionHelper.convertAndValidateSourceObject(
+                    request.getSourceObject(), oracleSchemaService, objectMapper);
+        }
+    }
+
+
+    /**
+     * Helper method to convert and validate source object for generation
+     */
+    private ApiSourceObjectDTO convertAndValidateSourceObjectForGeneration(GenerateApiRequestDTO request,
+                                                                           Object schemaService,
+                                                                           String databaseType) {
+        if ("postgresql".equalsIgnoreCase(databaseType)) {
+            // For PostgreSQL, use PostgreSQL-specific conversion
+            // Pass null for OracleSchemaService as it's not needed for PostgreSQL
+            return conversionHelper.convertAndValidateSourceObject(
+                    request.getSourceObject(), null, objectMapper);
+        } else {
+            // Default to Oracle
+            if (!(schemaService instanceof OracleSchemaService)) {
+                throw new IllegalArgumentException("Expected OracleSchemaService for Oracle database type");
+            }
+            return conversionHelper.convertAndValidateSourceObject(
+                    request.getSourceObject(), (OracleSchemaService) schemaService, objectMapper);
+        }
+    }
+
+
+
+
+    /**
+     * Helper method to convert and validate source object for update based on database type
+     */
+    private ApiSourceObjectDTO convertAndValidateSourceObjectForUpdate(GenerateApiRequestDTO request,
+                                                                       Object schemaService,
+                                                                       String databaseType) {
+        if ("postgresql".equalsIgnoreCase(databaseType)) {
+            // For PostgreSQL, use PostgreSQL-specific conversion
+            // You might need to inject a PostgreSQL-specific conversion helper
+            return conversionHelper.convertAndValidateSourceObject(
+                    request.getSourceObject(), null, objectMapper);
+        } else {
+            // Default to Oracle
+            if (!(schemaService instanceof OracleSchemaService)) {
+                throw new IllegalArgumentException("Expected OracleSchemaService for Oracle database type");
+            }
+            return conversionHelper.convertAndValidateSourceObject(
+                    request.getSourceObject(), (OracleSchemaService) schemaService, objectMapper);
+        }
+    }
+
+    /**
+     * Get the appropriate parameter generator based on database type
+     */
+    private DatabaseParameterGeneratorUtil getParameterGenerator(String databaseType) {
+        return parameterGeneratorFactory.getGenerator(databaseType);
+    }
 
 
     // Add this overloaded updateCollections method that accepts the original sourceRequestId
@@ -683,6 +797,10 @@ public class AutomationEngineService {
     }
 
 
+    /**
+     * Execute API based on the database type stored in the API entity
+     * Supports multiple database types: Oracle, PostgreSQL, etc.
+     */
     @Transactional
     public ExecuteApiResponseDTO executeApi(String requestId, String performedBy,
                                             String apiId, ExecuteApiRequestDTO executeRequest,
@@ -697,15 +815,24 @@ public class AutomationEngineService {
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Executing API: " + apiId + " by: " + performedBy);
 
-            System.out.println("executeRequest::::::" + executeRequest);
-
             // 1. Get the API entity
-            GeneratedApiEntity api = executionHelper.getApiEntity(generatedAPIRepository, apiId);
+            GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
+                    .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
 
-            // 2. ENHANCED: Check API status with specific messages
+            // 2. Get the database type from the API entity
+            String databaseType = api.getDatabaseType();
+            if (databaseType == null || databaseType.isEmpty()) {
+                databaseType = "oracle";
+            }
+
+            log.info("Executing API: {} on database: {}", apiId, databaseType);
+
+            // 3. Get the appropriate execution helper based on database type
+            BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
+
+            // 4. Check API status
             String apiStatus = api.getStatus() != null ? api.getStatus().toUpperCase() : "UNKNOWN";
 
-            // If status is not ACTIVE, handle accordingly
             if (!"ACTIVE".equals(apiStatus)) {
                 String errorMsg;
                 int statusCode;
@@ -713,27 +840,27 @@ public class AutomationEngineService {
                 switch (apiStatus) {
                     case "ARCHIVED":
                         errorMsg = "This API has been archived and cannot be executed. Please contact system administrator.";
-                        statusCode = 410; // Gone
+                        statusCode = 410;
                         break;
                     case "DEPRECATED":
                         errorMsg = "This API is deprecated and no longer available for execution. Please contact system administrator for migration assistance.";
-                        statusCode = 410; // Gone
+                        statusCode = 410;
                         break;
                     case "DRAFT":
                         errorMsg = "This API is in draft mode and has not been published yet. Please contact system administrator to publish the API.";
-                        statusCode = 403; // Forbidden
+                        statusCode = 403;
                         break;
                     case "INACTIVE":
                         errorMsg = "This API is inactive and cannot be executed. Please contact system administrator to activate it.";
-                        statusCode = 403; // Forbidden
+                        statusCode = 403;
                         break;
                     case "PENDING":
                         errorMsg = "This API is pending approval and cannot be executed yet. Please contact system administrator.";
-                        statusCode = 403; // Forbidden
+                        statusCode = 403;
                         break;
                     case "SUSPENDED":
                         errorMsg = "This API has been suspended and cannot be executed. Please contact system administrator.";
-                        statusCode = 403; // Forbidden
+                        statusCode = 403;
                         break;
                     default:
                         errorMsg = String.format("API is in '%s' state and cannot be executed. Please contact system administrator.",
@@ -742,9 +869,8 @@ public class AutomationEngineService {
                         break;
                 }
 
-                log.warn("API execution blocked - Status: {}, API ID: {}", apiStatus, apiId);
+                log.warn("API execution blocked - Status: {}, API ID: {}, Database: {}", apiStatus, apiId, databaseType);
 
-                // Update captured request if it exists
                 if (capturedRequestId != null) {
                     try {
                         updateCapturedRequestWithError(requestId, capturedRequestId, statusCode,
@@ -761,7 +887,7 @@ public class AutomationEngineService {
                 return responseHelper.createErrorResponse(statusCode, errorMsg, startTime);
             }
 
-            // Also check the isActive flag for backward compatibility
+            // 5. Check isActive flag
             if (!api.getIsActive()) {
                 String errorMsg = "API is inactive and cannot be executed. Please contact system administrator to activate it.";
                 log.warn("API execution blocked - isActive flag is false for API ID: {}", apiId);
@@ -782,13 +908,13 @@ public class AutomationEngineService {
                 return responseHelper.createErrorResponse(403, errorMsg, startTime);
             }
 
-            // 3. Validate request structure
+            // 6. Validate request structure
             if (executeRequest == null) {
                 executeRequest = new ExecuteApiRequestDTO();
                 executeRequest.setRequestId(UUID.randomUUID().toString());
             }
 
-            // 4. CRITICAL: Extract HTTP method from HttpServletRequest
+            // 7. Extract HTTP method
             String httpMethod = null;
             if (httpServletRequest != null) {
                 httpMethod = httpServletRequest.getMethod();
@@ -796,47 +922,35 @@ public class AutomationEngineService {
                 executeRequest.setHttpMethod(httpMethod);
             }
 
-            // 5. Prepare and validate the request
+            // 8. Prepare and validate the request
             ExecuteApiRequestDTO validatedRequest = executionHelper.prepareValidatedRequest(api, executeRequest);
 
-            // 6. Ensure HTTP method is preserved
             if (validatedRequest.getHttpMethod() == null && httpMethod != null) {
                 validatedRequest.setHttpMethod(httpMethod);
                 log.info("Re-set HTTP method in validatedRequest: {}", httpMethod);
             }
 
-            // ============= CAPTURE REQUEST BEFORE EXECUTION =============
+            // 9. Capture request before execution
             try {
-                // Convert ExecuteApiRequestDTO to ApiRequestDTO for capture
                 ApiRequestDTO requestDTO = convertExecuteRequestToApiRequestDTO(validatedRequest, api);
                 requestDTO.setClientIpAddress(clientIp);
                 requestDTO.setUserAgent(userAgent);
                 requestDTO.setRequestedBy(performedBy);
                 requestDTO.setCorrelationId(executeRequest.getRequestId());
 
-                // Capture the request
                 capturedRequest = apiRequestService.captureRequest(
-                        requestId,
-                        apiId,
-                        requestDTO,
-                        performedBy,
-                        httpServletRequest
-                );
+                        requestId, apiId, requestDTO, performedBy, httpServletRequest);
                 capturedRequestId = capturedRequest.getId();
                 log.info("Request captured successfully with ID: {}", capturedRequestId);
             } catch (Exception e) {
-                log.error("Failed to capture request, but continuing with execution: {}", e.getMessage());
+                log.error("Failed to capture request: {}", e.getMessage());
             }
 
-            // 7. Validate HTTP method
+            // 10. Validate HTTP method
             if (!validateHttpMethod(api, validatedRequest.getHttpMethod())) {
                 String errorMsg = String.format("HTTP method not allowed. Expected: %s, Actual: %s",
-                        api.getHttpMethod(), validatedRequest.getHttpMethod() != null ?
-                                validatedRequest.getHttpMethod() : "null");
+                        api.getHttpMethod(), validatedRequest.getHttpMethod());
 
-                log.warn("HTTP method mismatch. {}", errorMsg);
-
-                // Update captured request with error if it was captured (in a separate try-catch)
                 if (capturedRequestId != null) {
                     try {
                         updateCapturedRequestWithError(requestId, capturedRequestId, 405, errorMsg,
@@ -853,19 +967,14 @@ public class AutomationEngineService {
                 return responseHelper.createErrorResponse(405, errorMsg, startTime);
             }
 
-            // 8. Validate authentication
-            log.info("=== STEP 8: Starting authentication validation ===");
+            // 11. Validate authentication
             try {
                 AuthenticationServiceUtil.AuthenticationResult authResult =
                         authenticationService.validateAuthentication(api, validatedRequest);
 
-                log.info("Authentication result: authenticated={}, reason={}",
-                        authResult.isAuthenticated(), authResult.getReason());
-
                 if (!authResult.isAuthenticated()) {
                     String errorMsg = "Authentication failed: " + authResult.getReason();
 
-                    // Update captured request with auth error
                     if (capturedRequestId != null) {
                         try {
                             updateCapturedRequestWithError(requestId, capturedRequestId, 401,
@@ -881,34 +990,51 @@ public class AutomationEngineService {
 
                     return responseHelper.createErrorResponse(401, errorMsg, startTime);
                 }
-                log.info("=== STEP 8: Authentication validation completed successfully ===");
             } catch (Exception e) {
-                log.error("Exception during authentication validation: {}", e.getMessage(), e);
+                log.error("Authentication validation error: {}", e.getMessage(), e);
                 throw e;
             }
 
-            // 9. Get all API parameters and log them
+            // 12. Get all API parameters
             List<ApiParameterEntity> apiParameters = api.getParameters();
-            log.info("API parameter definitions:");
+            log.info("API parameter definitions for database: {}", databaseType);
             apiParameters.forEach(p ->
                     log.info("  - {}: type={}, location={}, required={}",
                             p.getKey(), p.getParameterType(), p.getParameterLocation(), p.getRequired()));
 
-            // 10. Create consolidated params
+            // 13. Create consolidated params
             Map<String, Object> consolidatedParams = createConsolidatedParamsWithHeaders(validatedRequest);
 
-            // NEW: Parse XML body if present
+            // 14. Parse XML body if present
+            // Parse XML body if present
             if (validatedRequest.getBody() instanceof String) {
                 String rawBody = (String) validatedRequest.getBody();
                 if (rawBody.trim().startsWith("<")) {
                     log.info("XML body detected, parsing to extract parameters");
                     Map<String, Object> xmlParams = parseXmlParameters(rawBody, api.getParameters());
+
+                    // CRITICAL FIX: Add the extracted parameters to the validatedRequest
+                    // Either add them to the body as a map, or add them to query params/path params
+                    if (validatedRequest.getBody() == null) {
+                        validatedRequest.setBody(new HashMap<>());
+                    }
+
+                    if (validatedRequest.getBody() instanceof Map) {
+                        ((Map<String, Object>) validatedRequest.getBody()).putAll(xmlParams);
+                        log.info("Added {} extracted XML parameters to request body", xmlParams.size());
+                    } else {
+                        // If body is not a map, create a new map with the extracted params
+                        Map<String, Object> newBody = new HashMap<>();
+                        newBody.putAll(xmlParams);
+                        validatedRequest.setBody(newBody);
+                        log.info("Replaced body with extracted XML parameters: {}", xmlParams.keySet());
+                    }
+
                     consolidatedParams.putAll(xmlParams);
-                    log.info("Extracted XML parameters: {}", xmlParams.keySet());
                 }
             }
 
-            // 11. AUTO-ADD CONTENT-TYPE HEADER IF MISSING BUT REQUIRED
+            // 15. Auto-add Content-Type header if missing
             boolean contentTypeRequired = apiParameters.stream()
                     .anyMatch(p -> "Content-Type".equalsIgnoreCase(p.getKey()) && p.getRequired());
 
@@ -917,28 +1043,20 @@ public class AutomationEngineService {
 
             if (contentTypeRequired && contentTypeMissing) {
                 String contentTypeValue = "application/json";
-                log.info("Auto-adding missing required Content-Type header with value: {}", contentTypeValue);
-
                 consolidatedParams.put("Content-Type", contentTypeValue);
-
                 if (validatedRequest.getHeaders() == null) {
                     validatedRequest.setHeaders(new HashMap<>());
                 }
                 validatedRequest.getHeaders().put("Content-Type", contentTypeValue);
-
-                log.info("Content-Type header auto-added successfully");
             }
 
-            log.info("Consolidated params after extraction: {}", consolidatedParams);
-
-            // 12. Validate required parameters
+            // 16. Validate required parameters
             Map<String, String> validationErrors = validateRequiredParametersEnhanced(api, consolidatedParams, validatedRequest);
 
             if (!validationErrors.isEmpty()) {
                 String missingParams = String.join(", ", validationErrors.keySet());
                 String errorMsg = "Required parameter(s) missing: " + missingParams;
 
-                // Update captured request with validation error
                 if (capturedRequestId != null) {
                     try {
                         updateCapturedRequestWithError(requestId, capturedRequestId, 400,
@@ -955,11 +1073,10 @@ public class AutomationEngineService {
                 return responseHelper.createErrorResponse(400, errorMsg, startTime);
             }
 
-            // 13. Authorization check
+            // 17. Authorization check
             if (!validatorService.validateAuthorization(api, performedBy)) {
                 String errorMsg = "User not authorized to access this API";
 
-                // Update captured request with authorization error
                 if (capturedRequestId != null) {
                     try {
                         updateCapturedRequestWithError(requestId, capturedRequestId, 403,
@@ -976,11 +1093,10 @@ public class AutomationEngineService {
                 return responseHelper.createErrorResponse(403, errorMsg, startTime);
             }
 
-            // 14. Rate limiting check
+            // 18. Rate limiting check
             if (!validatorService.checkRateLimit(api, clientIp)) {
                 String errorMsg = "Rate limit exceeded";
 
-                // Update captured request with rate limit error
                 if (capturedRequestId != null) {
                     try {
                         updateCapturedRequestWithError(requestId, capturedRequestId, 429,
@@ -998,121 +1114,94 @@ public class AutomationEngineService {
                         "Rate limit exceeded. Please try again later.", startTime);
             }
 
-            // 15. Extract source object from API
+            // 19. Extract source object from API
             ApiSourceObjectDTO sourceObject = conversionHelper.extractSourceObject(api, objectMapper);
 
-            // 16. Convert parameters to DTOs for execution
+            // 20. Convert parameters to DTOs for execution
             List<ApiParameterDTO> configuredParamDTOs = conversionHelper.convertParametersToDTOs(api.getParameters());
 
-            // 17. Execute against Oracle
+            // 21. Execute against the appropriate database
             Object result;
             long executionTime;
 
             try {
-                result = executionHelper.executeAgainstOracle(
-                        api,
-                        sourceObject,
-                        validatedRequest,
-                        configuredParamDTOs,
-                        objectResolver,
-                        parameterValidator,
-                        oracleTableExecutorUtil,
-                        oracleViewExecutorUtil,
-                        oracleProcedureExecutorUtil,
-                        oracleFunctionExecutorUtil,
-                        oraclePackageExecutorUtil,
-                        this::generateSampleResponse
-                );
+                log.info("Executing against database: {}", databaseType);
+
+                // Use the execution helper to execute against the database
+                result = executionHelper.executeAgainstDatabase(api, sourceObject, validatedRequest, configuredParamDTOs);
 
                 executionTime = System.currentTimeMillis() - startTime;
 
-                // 18. Format the response
+                // 22. Format the response
                 Object formattedResponse = responseHelper.formatResponse(api, result);
 
-
-                // ============= UPDATE CAPTURED REQUEST WITH SUCCESS RESPONSE =============
+                // 23. Update captured request with success response
                 if (capturedRequestId != null) {
                     try {
-                        // Create a simpler success response without executionTimeMs and correlationId
                         ExecuteApiResponseDTO successResponse = new ExecuteApiResponseDTO();
                         successResponse.setResponseCode(200);
                         successResponse.setSuccess(true);
                         successResponse.setMessage("Success");
                         successResponse.setData(formattedResponse);
-                        // DON'T set executionTimeMs and correlationId here either
 
                         apiRequestService.updateRequestWithResponse(
-                                requestId,
-                                capturedRequestId,
-                                successResponse,
-                                200,
-                                "Success",
-                                executionTime
-                        );
-                        log.info("Captured request updated with success response");
+                                requestId, capturedRequestId, successResponse, 200, "Success", executionTime);
                     } catch (Exception e) {
-                        log.error("Failed to update captured request with response: {}", e.getMessage());
+                        log.error("Failed to update captured request: {}", e.getMessage());
                     }
                 }
 
-
-                // 19. Update API statistics
+                // 24. Update API statistics
                 executionHelper.updateApiStats(api, generatedAPIRepository);
 
-                // 20. Log the successful execution
+                // 25. Log the successful execution
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         formattedResponse, 200, executionTime, performedBy,
                         clientIp, userAgent, null, objectMapper);
 
-                // 21. Build success response
+                // 26. Build success response
                 ExecuteApiResponseDTO response = responseHelper.buildSuccessResponse(
                         formattedResponse, executionTime, api);
 
                 loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                         ", API executed successfully: " + apiId +
+                        " on database: " + databaseType +
                         " - Time: " + executionTime + "ms");
 
                 return response;
 
             } catch (Exception e) {
                 executionTime = System.currentTimeMillis() - startTime;
-                log.error("Oracle execution failed: ", e);
+                log.error("Database execution failed for {}: ", databaseType, e);
 
-                // Extract the detailed Oracle error message
-                String detailedError = extractDetailedOracleError(e);
+                // Extract the meaningful error message
+                String detailedError = extractDatabaseError(e, databaseType);
 
-                // Log the full error for debugging
-                log.error("Detailed Oracle error: {}", detailedError);
+                // Create a user-friendly error response
+                ExecuteApiResponseDTO errorResponse = new ExecuteApiResponseDTO();
+                errorResponse.setResponseCode(500);
+                errorResponse.setSuccess(false);
+                errorResponse.setMessage(detailedError);
 
-                // Create a client-friendly message (keep the full Oracle error for the client)
-                String clientErrorMessage = "Database execution error: " + detailedError;
+                Map<String, Object> errorData = new HashMap<>();
+                errorData.put("error", detailedError);
+                errorData.put("timestamp", LocalDateTime.now().toString());
+                errorData.put("executionTimeMs", executionTime);
+                errorResponse.setData(Collections.singletonList(errorData));
 
-                // Create the error response FIRST (before any database operations that might fail)
-                ExecuteApiResponseDTO errorResponse = responseHelper.createErrorResponse(500,
-                        clientErrorMessage, startTime);
-
-                // THEN try to update the captured request, but use a truncated version for database
+                // Update captured request with the error
                 if (capturedRequestId != null) {
                     try {
-                        // Truncate for database storage (255 chars max)
+                        // Truncate error message for database storage
                         String dbErrorMessage = truncateErrorMessage(detailedError, 250);
-
                         apiRequestService.updateRequestWithError(
-                                requestId,
-                                capturedRequestId,
-                                500,
-                                dbErrorMessage,
-                                executionTime
-                        );
-                        log.info("Captured request updated with error response (truncated to {} chars)",
-                                dbErrorMessage.length());
+                                requestId, capturedRequestId, 500, dbErrorMessage, executionTime);
                     } catch (Exception updateError) {
-                        log.error("Failed to update captured request with error: {}", updateError.getMessage());
-                        // Don't rethrow - we already have our error response
+                        log.error("Failed to update captured request: {}", updateError.getMessage());
                     }
                 }
 
-                // Try to log the execution, but use truncated version for database
+                // Log the error
                 try {
                     String logErrorMessage = truncateErrorMessage(detailedError, 1000);
                     executionHelper.logExecution(executionLogRepository, api, validatedRequest,
@@ -1122,7 +1211,8 @@ public class AutomationEngineService {
                     log.error("Failed to log execution error: {}", logError.getMessage());
                 }
 
-                return errorResponse;  // Return the error response regardless of update/log failures
+                // Return the error response with meaningful message
+                return errorResponse;
             }
 
         } catch (Exception e) {
@@ -1132,16 +1222,12 @@ public class AutomationEngineService {
                     ", Error executing API: " + e.getMessage());
             log.error("Error executing API: ", e);
 
-            // Extract detailed error
-            String detailedError = extractDetailedOracleError(e);
+            String detailedError = extractDatabaseError(e, "unknown");
 
-            // Create a safe error response that doesn't depend on any database operations
             ExecuteApiResponseDTO safeResponse = new ExecuteApiResponseDTO();
             safeResponse.setResponseCode(500);
             safeResponse.setSuccess(false);
             safeResponse.setMessage("Database execution error: " + detailedError);
-//            safeResponse.setExecutionTimeMs(executionTime);
-//            safeResponse.setCorrelationId(requestId);
 
             Map<String, Object> errorData = new HashMap<>();
             errorData.put("error", detailedError);
@@ -1149,24 +1235,16 @@ public class AutomationEngineService {
             errorData.put("executionTimeMs", executionTime);
             safeResponse.setData(Collections.singletonList(errorData));
 
-            // Try to update captured request, but use truncated version
             if (capturedRequestId != null) {
                 try {
                     String dbErrorMessage = truncateErrorMessage(detailedError, 250);
-
                     apiRequestService.updateRequestWithError(
-                            requestId,
-                            capturedRequestId,
-                            500,
-                            dbErrorMessage,
-                            executionTime
-                    );
+                            requestId, capturedRequestId, 500, dbErrorMessage, executionTime);
                 } catch (Exception updateError) {
-                    log.error("Failed to update captured request with error: {}", updateError.getMessage());
+                    log.error("Failed to update captured request: {}", updateError.getMessage());
                 }
             }
 
-            // Try to log the error in execution log
             try {
                 GeneratedApiEntity api = null;
                 try {
@@ -1176,15 +1254,115 @@ public class AutomationEngineService {
                 }
 
                 String logErrorMessage = truncateErrorMessage(detailedError, 1000);
-                executionHelper.logExecution(executionLogRepository, api, executeRequest,
+                BaseApiExecutionHelper defaultHelper = executionHelperFactory.getExecutionHelper("oracle");
+                defaultHelper.logExecution(executionLogRepository, api, executeRequest,
                         null, 500, executionTime, performedBy, clientIp, userAgent,
                         logErrorMessage, objectMapper);
             } catch (Exception logError) {
                 log.error("Failed to log execution error: {}", logError.getMessage());
             }
 
-            return safeResponse;  // Always return a valid response, never throw
+            return safeResponse;
         }
+    }
+
+
+    /**
+     * Execute PostgreSQL table operation
+     */
+    private Object executePostgreSQLTable(String tableName, String schema, String operation,
+                                          Map<String, Object> params, GeneratedApiEntity api,
+                                          List<ApiParameterDTO> configuredParamDTOs) {
+
+        switch (operation.toUpperCase()) {
+            case "SELECT":
+                return postgreSQLTableExecutorUtil.executeSelect(tableName, schema, params, api, configuredParamDTOs);
+            case "INSERT":
+                return postgreSQLTableExecutorUtil.executeInsert(tableName, schema, params, api, configuredParamDTOs);
+            case "UPDATE":
+                return postgreSQLTableExecutorUtil.executeUpdate(tableName, schema, params, api, configuredParamDTOs);
+            case "DELETE":
+                return postgreSQLTableExecutorUtil.executeDelete(tableName, schema, params, api, configuredParamDTOs);
+            default:
+                throw new RuntimeException("Unsupported table operation: " + operation);
+        }
+    }
+
+    /**
+     * Extract database-specific error message from exception chain
+     */
+    private String extractDatabaseError(Exception e, String databaseType) {
+        Throwable cause = e;
+        while (cause != null) {
+            String message = cause.getMessage();
+            if (message != null) {
+                // PostgreSQL-specific errors
+                if (databaseType.equalsIgnoreCase("postgresql") || databaseType.equalsIgnoreCase("postgres")) {
+                    if (message.contains("ERROR: null value in column")) {
+                        // Extract column name from error
+                        Pattern pattern = Pattern.compile("null value in column \"([^\"]+)\"");
+                        Matcher matcher = pattern.matcher(message);
+                        if (matcher.find()) {
+                            String columnName = matcher.group(1);
+                            return String.format("Missing required field: '%s' cannot be null. Please provide a value for this field.", columnName);
+                        }
+                        return "Missing required field: " + message;
+                    }
+                    if (message.contains("ERROR: duplicate key value violates unique constraint")) {
+                        return "Duplicate entry: A record with this value already exists.";
+                    }
+                    if (message.contains("ERROR: value too long for type")) {
+                        return "Value too long: The provided value exceeds the maximum length allowed.";
+                    }
+                    if (message.contains("ERROR: invalid input syntax for type")) {
+                        return "Invalid data type: Please check the format of your input values.";
+                    }
+                    if (message.contains("violates foreign key constraint")) {
+                        return "Invalid reference: The referenced record does not exist.";
+                    }
+                    if (message.contains("violates check constraint")) {
+                        return "Validation failed: The provided values do not meet the required conditions.";
+                    }
+                }
+
+                // Oracle-specific errors
+                if (databaseType.equalsIgnoreCase("oracle")) {
+                    if (message.contains("ORA-01400")) {
+                        // Extract column name if possible
+                        Pattern pattern = Pattern.compile("cannot insert NULL into \\(([^\\)]+)\\)");
+                        Matcher matcher = pattern.matcher(message);
+                        if (matcher.find()) {
+                            String columnInfo = matcher.group(1);
+                            return String.format("Missing required field: %s cannot be null.", columnInfo);
+                        }
+                        return "Missing required field: A required value was not provided.";
+                    }
+                    if (message.contains("ORA-00001")) {
+                        return "Duplicate entry: A record with this value already exists.";
+                    }
+                    if (message.contains("ORA-12899")) {
+                        return "Value too large: The provided value exceeds the maximum length allowed.";
+                    }
+                    if (message.contains("ORA-01722")) {
+                        return "Invalid number format: Please check numeric fields for correct format.";
+                    }
+                    if (message.contains("ORA-02291")) {
+                        return "Invalid reference: The referenced record does not exist.";
+                    }
+                    if (message.contains("ORA-02290")) {
+                        return "Validation failed: The provided values do not meet the required conditions.";
+                    }
+                }
+
+                // Check for SQLException
+                if (cause instanceof java.sql.SQLException) {
+                    return message;
+                }
+            }
+            cause = cause.getCause();
+        }
+
+        return e.getMessage() != null ? e.getMessage() : "Unknown database error";
     }
 
     /**
@@ -1319,7 +1497,18 @@ public class AutomationEngineService {
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Testing API: " + apiId + " with test: " + testRequest.getTestName());
 
-            GeneratedApiEntity api = executionHelper.getApiEntity(generatedAPIRepository, apiId);
+            // Get the API entity first
+            GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
+                    .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
+
+            // Get the database type
+            String databaseType = api.getDatabaseType();
+            if (databaseType == null || databaseType.isEmpty()) {
+                databaseType = "oracle";
+            }
+
+            // Get the appropriate execution helper
+            BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
 
             long startTime = System.currentTimeMillis();
 
@@ -1350,7 +1539,19 @@ public class AutomationEngineService {
 
     public GeneratedApiResponseDTO getApiDetails(String requestId, String apiId) {
         try {
-            GeneratedApiEntity api = executionHelper.getApiEntity(generatedAPIRepository, apiId);
+            // Get the API entity first
+            GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
+                    .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
+
+            // Get the database type
+            String databaseType = api.getDatabaseType();
+            if (databaseType == null || databaseType.isEmpty()) {
+                databaseType = "oracle";
+            }
+
+            // Get the appropriate execution helper
+            BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
+
             GeneratedApiResponseDTO response = conversionHelper.mapToResponse(api);
 
             response.setTotalCalls(api.getTotalCalls());
@@ -1358,7 +1559,8 @@ public class AutomationEngineService {
 
             Double avgTime = executionLogRepository.getAverageExecutionTime(apiId);
             if (avgTime != null) {
-                metadataHelper.addAverageExecutionTime(response, avgTime);
+                ApiAnalyticsHelper analyticsHelper = databaseTypeFactory.getAnalyticsHelper(databaseType);
+                analyticsHelper.addAverageExecutionTime(response, avgTime);
             }
 
             return response;
@@ -1374,13 +1576,31 @@ public class AutomationEngineService {
 
     public GeneratedAPIDTO getGeneratedApiDetails(String requestId, String apiId) {
         try {
-            GeneratedApiEntity api = executionHelper.getApiEntity(generatedAPIRepository, apiId);
-            GeneratedAPIDTO response = conversionHelper.mapToGeneratedAPIDTO(api, objectMapper);
+            // First get the API entity to know its database type
+            GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
+                    .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
 
-            response.setTotalCalls(api.getTotalCalls());
-            response.setLastCalledAt(api.getLastCalledAt());
+            // Get the database type from the API
+            String databaseType = api.getDatabaseType();
+            if (databaseType == null || databaseType.isEmpty()) {
+                databaseType = "oracle";
+            }
+
+            // Get the appropriate execution helper based on database type
+            BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
+
+            // Get the API entity using the helper (though we already have it, this ensures consistency)
+            GeneratedApiEntity apiEntity = executionHelper.getApiEntity(generatedAPIRepository, apiId);
+
+            // Map to DTO
+            GeneratedAPIDTO response = conversionHelper.mapToGeneratedAPIDTO(apiEntity, objectMapper);
+
+            // Set statistics
+            response.setTotalCalls(apiEntity.getTotalCalls());
+            response.setLastCalledAt(apiEntity.getLastCalledAt());
 
             Double avgTime = executionLogRepository.getAverageExecutionTime(apiId);
+            // Optionally add average time to response if needed
 
             return response;
 
@@ -1420,7 +1640,8 @@ public class AutomationEngineService {
 
             Double avgTime = executionLogRepository.getAverageExecutionTime(apiId);
             if (avgTime != null) {
-                metadataHelper.addAverageExecutionTimeToDetails(response, avgTime);
+                ApiAnalyticsHelper analyticsHelper = databaseTypeFactory.getAnalyticsHelper(api.getDatabaseType());
+                analyticsHelper.addAverageExecutionTimeToDetails(response, avgTime);
             }
 
             return response;
@@ -1530,7 +1751,21 @@ public class AutomationEngineService {
     @Transactional
     public GeneratedApiResponseDTO updateApiStatus(String apiId, String status, String performedBy) {
         try {
-            GeneratedApiEntity api = executionHelper.getApiEntity(generatedAPIRepository, apiId);
+            // Get the API entity first
+            GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
+                    .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
+
+            // Get the database type
+            String databaseType = api.getDatabaseType();
+            if (databaseType == null || databaseType.isEmpty()) {
+                databaseType = "oracle";
+            }
+
+            // Get the appropriate execution helper (not really needed for status update, but for consistency)
+            BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
+
+            // Get the appropriate validation helper based on the API's database type
+            DatabaseValidationHelper validationHelper = databaseTypeFactory.getValidationHelper(databaseType);
 
             validationHelper.validateApiStatus(status);
 
@@ -1556,7 +1791,18 @@ public class AutomationEngineService {
     public ApiAnalyticsDTO getApiAnalytics(String requestId, String apiId,
                                            LocalDateTime startDate, LocalDateTime endDate) {
         try {
-            return metadataHelper.buildApiAnalytics(
+            // Get the API entity first
+            GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
+                    .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
+
+            // Get the database type
+            String databaseType = api.getDatabaseType();
+            if (databaseType == null || databaseType.isEmpty()) {
+                databaseType = "oracle";
+            }
+
+            ApiAnalyticsHelper analyticsHelper = databaseTypeFactory.getAnalyticsHelper(databaseType);
+            return analyticsHelper.buildApiAnalytics(
                     executionLogRepository, apiId, startDate, endDate);
         } catch (Exception e) {
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
@@ -1566,9 +1812,118 @@ public class AutomationEngineService {
     }
 
 
+        /**
+         * Validates source object for API generation
+         * Supports multiple database types: Oracle, PostgreSQL, etc.
+         */
     public Map<String, Object> validateSourceObject(ApiSourceObjectDTO sourceObject) {
+        // Get database type from source object
+        String databaseType = sourceObject.getDatabaseType();
+
+        // If not set, try to determine from context
+        if (databaseType == null || databaseType.isEmpty()) {
+            databaseType = determineDatabaseType(sourceObject);
+            sourceObject.setDatabaseType(databaseType);
+        }
+
+        log.info("Validating source object: {}.{} ({}) on database: {}",
+                sourceObject.getOwner(), sourceObject.getObjectName(),
+                sourceObject.getObjectType(), databaseType);
+
+        // Get the appropriate validation helper
+        DatabaseValidationHelper validationHelper = databaseTypeFactory.getValidationHelper(databaseType);
+
+        // Get the appropriate schema service and cast to DatabaseSchemaService
+        DatabaseSchemaService schemaService = (DatabaseSchemaService) databaseTypeFactory.getSchemaService(databaseType);
+
+        // Get the appropriate metadata helper
+        DatabaseMetadataHelper metadataHelper = databaseTypeFactory.getMetadataHelper(databaseType);
+
+        // Validate using the helper
         return validationHelper.validateSourceObject(
-                oracleSchemaService, sourceObject, this::getSourceObjectDetails);
+                schemaService,
+                sourceObject,
+                (source) -> metadataHelper.getSourceObjectDetails(schemaService, source)
+        );
+    }
+
+    /**
+     * Validate Oracle source object
+     */
+    private Map<String, Object> validateOracleSourceObject(ApiSourceObjectDTO sourceObject) {
+        return oracleValidationHelper.validateSourceObject(
+                oracleSchemaService,
+                sourceObject,
+                this::getOracleSourceObjectDetails
+        );
+    }
+
+    /**
+     * Validate PostgreSQL source object
+     */
+    private Map<String, Object> validatePostgreSQLSourceObject(ApiSourceObjectDTO sourceObject) {
+        return postgresValidationHelper.validateSourceObject(
+                postgreSQLSchemaService,
+                sourceObject,
+                this::getPostgreSQLSourceObjectDetails
+        );
+    }
+
+    /**
+     * Get Oracle source object details using metadata helper factory
+     */
+    private Map<String, Object> getOracleSourceObjectDetails(ApiSourceObjectDTO sourceObject) {
+        DatabaseMetadataHelper metadataHelper = metadataHelperFactory.getMetadataHelper("oracle");
+        return metadataHelper.getSourceObjectDetails(oracleSchemaService, sourceObject);
+    }
+
+    /**
+     * Get PostgreSQL source object details using metadata helper factory
+     */
+    private Map<String, Object> getPostgreSQLSourceObjectDetails(ApiSourceObjectDTO sourceObject) {
+        DatabaseMetadataHelper metadataHelper = metadataHelperFactory.getMetadataHelper("postgresql");
+        return metadataHelper.getSourceObjectDetails(postgreSQLSchemaService, sourceObject);
+    }
+
+
+    /**
+     * Determine database type from source object context
+     */
+    private String determineDatabaseType(ApiSourceObjectDTO sourceObject) {
+        // First, check if database type is explicitly set in the DTO
+        if (sourceObject.getDatabaseType() != null && !sourceObject.getDatabaseType().isEmpty()) {
+            return sourceObject.getDatabaseType();
+        }
+
+        // Check owner - PostgreSQL often uses 'public' schema
+        if ("public".equalsIgnoreCase(sourceObject.getOwner())) {
+            return "postgresql";
+        }
+
+        // Check if the object name uses PostgreSQL naming conventions (lowercase with underscores)
+        String objectName = sourceObject.getObjectName();
+        if (objectName != null && objectName.matches("^[a-z0-9_]+$")) {
+            return "postgresql";
+        }
+
+        // Check if the object type is PostgreSQL-specific
+        String objectType = sourceObject.getObjectType();
+        if (objectType != null) {
+            String upperType = objectType.toUpperCase();
+            if (upperType.equals("MATERIALIZED VIEW") ||
+                    upperType.equals("SEQUENCE") ||
+                    upperType.equals("TYPE")) {
+                return "postgresql";
+            }
+        }
+
+        // Check if the object has target info (for synonyms - Oracle specific)
+        if (sourceObject.getIsSynonym() != null && sourceObject.getIsSynonym()) {
+            return "oracle";
+        }
+
+        // Default to Oracle
+        return "oracle";
     }
 
 
@@ -1595,6 +1950,18 @@ public class AutomationEngineService {
 
 
     public GeneratedApiEntity getApiEntity(String apiId) {
+        // First get the API entity to know its database type
+        GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
+                .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
+
+        // Get the database type from the API
+        String databaseType = api.getDatabaseType();
+        if (databaseType == null || databaseType.isEmpty()) {
+            databaseType = "oracle";
+        }
+
+        // Get the appropriate execution helper based on database type
+        BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
         return executionHelper.getApiEntity(generatedAPIRepository, apiId);
     }
 
@@ -1626,7 +1993,20 @@ public class AutomationEngineService {
     }
 
     private Map<String, Object> getSourceObjectDetails(ApiSourceObjectDTO sourceObject) {
-        return metadataHelper.getSourceObjectDetails(oracleSchemaService, sourceObject);
+        // This method is called from validation - we need to know the database type
+        String databaseType = sourceObject.getDatabaseType();
+        if (databaseType == null || databaseType.isEmpty()) {
+            databaseType = determineDatabaseType(sourceObject);
+            sourceObject.setDatabaseType(databaseType);
+        }
+
+        // Get the appropriate metadata helper
+        DatabaseMetadataHelper metadataHelper = databaseTypeFactory.getMetadataHelper(databaseType);
+
+        // Get the appropriate schema service and cast to DatabaseSchemaService
+        DatabaseSchemaService schemaService = (DatabaseSchemaService) databaseTypeFactory.getSchemaService(databaseType);
+
+        return metadataHelper.getSourceObjectDetails(schemaService, sourceObject);
     }
 
     private boolean shouldRegenerateComponents(GenerateApiRequestDTO request) {
@@ -1635,15 +2015,18 @@ public class AutomationEngineService {
     }
 
     private String getCodeBaseRequestId(GeneratedApiEntity api) {
-        return metadataHelper.getCodeBaseRequestId(api);
+        ApiAnalyticsHelper analyticsHelper = databaseTypeFactory.getAnalyticsHelper(api.getDatabaseType());
+        return analyticsHelper.getCodeBaseRequestId(api);
     }
 
     private String getCollectionsCollectionId(GeneratedApiEntity api) {
-        return metadataHelper.getCollectionsCollectionId(api);
+        ApiAnalyticsHelper analyticsHelper = databaseTypeFactory.getAnalyticsHelper(api.getDatabaseType());
+        return analyticsHelper.getCollectionsCollectionId(api);
     }
 
     private String getDocumentationCollectionId(GeneratedApiEntity api) {
-        return metadataHelper.getDocumentationCollectionId(api);
+        ApiAnalyticsHelper analyticsHelper = databaseTypeFactory.getAnalyticsHelper(api.getDatabaseType());
+        return analyticsHelper.getDocumentationCollectionId(api);
     }
 
     private void updateCodeBase(GeneratedApiEntity api, String performedBy,

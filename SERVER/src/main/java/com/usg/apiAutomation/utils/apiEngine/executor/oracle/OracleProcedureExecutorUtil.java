@@ -517,7 +517,7 @@ public class OracleProcedureExecutorUtil {
             return sourceObject.getOwner().trim().toUpperCase();
         }
 
-        // Strategy 3: Try sourceObject.getSchemaName()
+        // Strategy 3: Try sourceObject.getSchemaName() (note: this is the getter for schemaName)
         if (sourceObject != null && sourceObject.getSchemaName() != null && !sourceObject.getSchemaName().trim().isEmpty()) {
             log.info("Strategy 3 - Using sourceObject.getSchemaName(): {}", sourceObject.getSchemaName());
             return sourceObject.getSchemaName().trim().toUpperCase();
@@ -529,29 +529,37 @@ public class OracleProcedureExecutorUtil {
                 // Check if it's already a Map
                 if (api.getSourceObjectInfo() instanceof Map) {
                     Map<String, Object> sourceInfo = (Map<String, Object>) api.getSourceObjectInfo();
-                    if (sourceInfo.containsKey("schemaName") && sourceInfo.get("schemaName") != null) {
-                        String schemaName = sourceInfo.get("schemaName").toString();
-                        log.info("Strategy 4 - Using schemaName from source_object_info Map: {}", schemaName);
-                        return schemaName.trim().toUpperCase();
-                    }
-                    if (sourceInfo.containsKey("owner") && sourceInfo.get("owner") != null) {
-                        String ownerName = sourceInfo.get("owner").toString();
-                        log.info("Strategy 4 - Using owner from source_object_info Map: {}", ownerName);
-                        return ownerName.trim().toUpperCase();
+
+                    // Try multiple possible keys (case-insensitive)
+                    String[] possibleKeys = {"schemaName", "SchemaName", "schema_name", "SCHEMA_NAME",
+                            "owner", "Owner", "OWNER", "targetOwner", "TargetOwner"};
+
+                    for (String key : possibleKeys) {
+                        if (sourceInfo.containsKey(key) && sourceInfo.get(key) != null) {
+                            String value = sourceInfo.get(key).toString();
+                            if (!value.trim().isEmpty()) {
+                                log.info("Strategy 4 - Using {} from source_object_info Map: {}", key, value);
+                                return value.trim().toUpperCase();
+                            }
+                        }
                     }
                 } else {
                     // If it's a String, parse it
                     String jsonString = api.getSourceObjectInfo().toString();
                     Map<String, Object> sourceInfo = objectMapper.readValue(jsonString, new TypeReference<Map<String, Object>>() {});
-                    if (sourceInfo.containsKey("schemaName") && sourceInfo.get("schemaName") != null) {
-                        String schemaName = sourceInfo.get("schemaName").toString();
-                        log.info("Strategy 4 - Using schemaName from source_object_info JSON: {}", schemaName);
-                        return schemaName.trim().toUpperCase();
-                    }
-                    if (sourceInfo.containsKey("owner") && sourceInfo.get("owner") != null) {
-                        String ownerName = sourceInfo.get("owner").toString();
-                        log.info("Strategy 4 - Using owner from source_object_info JSON: {}", ownerName);
-                        return ownerName.trim().toUpperCase();
+
+                    // Try multiple possible keys (case-insensitive)
+                    String[] possibleKeys = {"schemaName", "SchemaName", "schema_name", "SCHEMA_NAME",
+                            "owner", "Owner", "OWNER", "targetOwner", "TargetOwner"};
+
+                    for (String key : possibleKeys) {
+                        if (sourceInfo.containsKey(key) && sourceInfo.get(key) != null) {
+                            String value = sourceInfo.get(key).toString();
+                            if (!value.trim().isEmpty()) {
+                                log.info("Strategy 4 - Using {} from source_object_info JSON: {}", key, value);
+                                return value.trim().toUpperCase();
+                            }
+                        }
                     }
                 }
             } catch (Exception e) {

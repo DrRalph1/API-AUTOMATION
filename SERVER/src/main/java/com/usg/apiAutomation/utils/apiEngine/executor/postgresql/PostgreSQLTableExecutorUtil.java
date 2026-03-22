@@ -39,29 +39,20 @@ public class PostgreSQLTableExecutorUtil {
      */
     private String extractFullPostgreSQLError(Exception e) {
         Throwable cause = e;
-        Set<String> seenMessages = new HashSet<>();
-        StringBuilder fullError = new StringBuilder();
-
         while (cause != null) {
             String message = cause.getMessage();
-            if (message != null && !message.isEmpty()) {
-                if (!seenMessages.contains(message)) {
-                    seenMessages.add(message);
-
-                    if (message.contains("ERROR:")) {
-                        return message;
-                    }
-
-                    if (fullError.length() > 0) {
-                        fullError.append(" -> ");
-                    }
-                    fullError.append(message);
+            if (message != null && message.contains("ERROR:")) {
+                // Extract the actual PostgreSQL error without the stack trace
+                Pattern pattern = Pattern.compile("ERROR:[^\\n]*");
+                Matcher matcher = pattern.matcher(message);
+                if (matcher.find()) {
+                    return matcher.group();
                 }
+                return message;
             }
             cause = cause.getCause();
         }
-
-        return fullError.length() > 0 ? fullError.toString() : e.getMessage();
+        return e.getMessage();
     }
 
     /**
@@ -395,6 +386,7 @@ public class PostgreSQLTableExecutorUtil {
 
         log.info("=== TABLE INSERT DEBUG ===");
         log.info("Table: {}.{}", schema, tableName);
+        log.info("Original params: {}", params);
 
         // Build parameter mapping
         Map<String, String> apiToDbColumnMap = new HashMap<>();
@@ -409,6 +401,7 @@ public class PostgreSQLTableExecutorUtil {
                         dbColumnName = param.getKey();
                     }
                     apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toLowerCase());
+                    log.info("Parameter mapping: API '{}' -> DB Column '{}'", param.getKey(), dbColumnName.toLowerCase());
                 }
             }
         }
@@ -431,6 +424,7 @@ public class PostgreSQLTableExecutorUtil {
                     Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, true);
                     if (!extractedParams.isEmpty()) {
                         processedParams.putAll(extractedParams);
+                        log.info("✅ Extracted {} parameters from XML", extractedParams.size());
                     }
                 }
             }
@@ -448,12 +442,15 @@ public class PostgreSQLTableExecutorUtil {
                     Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, false);
                     if (!extractedParams.isEmpty()) {
                         processedParams.putAll(extractedParams);
+                        log.info("✅ Extracted {} parameters from JSON", extractedParams.size());
                     }
                 }
             }
         }
 
-        // Copy all parameters
+        // Copy all parameters and convert to proper types
+        Map<String, Object> typedParams = new HashMap<>();
+
         for (Map.Entry<String, Object> entry : params.entrySet()) {
             String key = entry.getKey();
             if ("_xml".equals(key) || "_json".equals(key)) {
@@ -461,41 +458,79 @@ public class PostgreSQLTableExecutorUtil {
             }
 
             String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
-            processedParams.put(dbColumnName, entry.getValue());
+            Object value = entry.getValue();
+
+            // Convert value to proper type based on parameter definition
+            Object convertedValue = convertParameterValue(value, dbColumnName, api);
+            if (convertedValue != null) {
+                typedParams.put(dbColumnName, convertedValue);
+                log.debug("Added param: {} -> {} = {} (converted from {})", key, dbColumnName, convertedValue, value);
+            } else {
+                log.debug("Skipped null/empty param: {} -> {}", key, dbColumnName);
+            }
+        }
+
+        // Also process any XML/JSON extracted parameters that weren't already in params
+        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
+            String dbColumnName = entry.getKey();
+            if (!typedParams.containsKey(dbColumnName)) {
+                Object convertedValue = convertParameterValue(entry.getValue(), dbColumnName, api);
+                if (convertedValue != null) {
+                    typedParams.put(dbColumnName, convertedValue);
+                    log.debug("Added extracted param: {} = {} (converted)", dbColumnName, convertedValue);
+                }
+            }
         }
 
         // Handle collection/array parameters
-        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
+        for (Map.Entry<String, Object> entry : typedParams.entrySet()) {
             Object value = entry.getValue();
             if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);
                 if (!collection.isEmpty()) {
-                    processedParams.put(entry.getKey(), collection.iterator().next());
+                    typedParams.put(entry.getKey(), collection.iterator().next());
+                    log.info("Converted collection parameter '{}' to single value", entry.getKey());
                 } else {
-                    processedParams.put(entry.getKey(), null);
+                    typedParams.put(entry.getKey(), null);
                 }
             }
         }
 
-        log.info("Processed params for INSERT: {}", processedParams.keySet());
+        log.info("Final typed params for INSERT: {}", typedParams.keySet());
 
+        // Check if we have any parameters to insert
+        if (typedParams.isEmpty()) {
+            log.error("No valid parameters to insert after type conversion!");
+            throw new ValidationException(
+                    "No valid parameters provided for INSERT operation. " +
+                            "Please provide at least one field with a non-empty value."
+            );
+        }
+
+        // Build the INSERT SQL
         StringBuilder columns = new StringBuilder();
         StringBuilder values = new StringBuilder();
         List<Object> paramValues = new ArrayList<>();
 
-        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
-            if (columns.length() > 0) {
-                columns.append(", ");
-                values.append(", ");
+        for (Map.Entry<String, Object> entry : typedParams.entrySet()) {
+            if (entry.getValue() != null) {
+                if (columns.length() > 0) {
+                    columns.append(", ");
+                    values.append(", ");
+                }
+                columns.append(entry.getKey());
+                values.append("?");
+                paramValues.add(entry.getValue());
+                log.debug("Column: {} = {}", entry.getKey(), entry.getValue());
             }
-            columns.append(entry.getKey());
-            values.append("?");
-            paramValues.add(entry.getValue());
         }
 
         String sql = "INSERT INTO " + (schema != null && !schema.isEmpty() ? schema + "." : "") + tableName +
                 " (" + columns + ") VALUES (" + values + ") RETURNING *";
+
+        log.info("Final INSERT SQL: {}", sql);
+        log.info("INSERT parameters: {}", paramValues);
 
         try {
             List<Map<String, Object>> inserted = postgresqlJdbcTemplate.queryForList(sql, paramValues.toArray());
@@ -515,6 +550,7 @@ public class PostgreSQLTableExecutorUtil {
 
             String detailedError = extractFullPostgreSQLError(e);
 
+            // Provide user-friendly error messages
             if (e.getMessage() != null) {
                 if (e.getMessage().contains("ERROR: relation") && e.getMessage().contains("does not exist")) {
                     throw new RuntimeException("Table not found: " + detailedError, e);
@@ -525,20 +561,26 @@ public class PostgreSQLTableExecutorUtil {
                 if (e.getMessage().contains("ERROR: null value in column")) {
                     throw new RuntimeException("Cannot insert NULL into non-nullable column: " + detailedError, e);
                 }
-                if (e.getMessage().contains("ERROR: insert or update on table") && e.getMessage().contains("violates foreign key constraint")) {
+                if (e.getMessage().contains("violates foreign key constraint")) {
                     throw new RuntimeException("Parent key not found - integrity constraint violation: " + detailedError, e);
                 }
-                if (e.getMessage().contains("ERROR: new row for relation") && e.getMessage().contains("violates check constraint")) {
+                if (e.getMessage().contains("violates check constraint")) {
                     throw new RuntimeException("Check constraint violation: " + detailedError, e);
                 }
                 if (e.getMessage().contains("ERROR: value too long for type")) {
-                    throw new RuntimeException(detailedError, e);
+                    throw new RuntimeException("Value too large for column: " + detailedError, e);
                 }
                 if (e.getMessage().contains("ERROR: duplicate key value violates unique constraint")) {
                     throw new RuntimeException("Unique constraint violation: " + detailedError, e);
                 }
                 if (e.getMessage().contains("ERROR: invalid input syntax")) {
                     throw new RuntimeException("Invalid number or date format: " + detailedError, e);
+                }
+                if (e.getMessage().contains("column is of type boolean but expression is of type")) {
+                    throw new RuntimeException(
+                            "Type mismatch: Please use boolean values (true/false) for boolean columns. " +
+                                    "Received: " + e.getMessage()
+                    );
                 }
             }
 
@@ -867,6 +909,76 @@ public class PostgreSQLTableExecutorUtil {
             }
 
             throw new RuntimeException("Failed to execute DELETE operation: " + detailedError, e);
+        }
+    }
+
+
+    private Object convertParameterValue(Object value, String dbColumn, GeneratedApiEntity api) {
+        if (value == null || value.toString().trim().isEmpty()) {
+            return null;
+        }
+
+        // Find the parameter definition for this column
+        ApiParameterEntity paramDef = api.getParameters().stream()
+                .filter(p -> dbColumn.equalsIgnoreCase(p.getDbColumn()))
+                .findFirst()
+                .orElse(null);
+
+        if (paramDef == null) {
+            return value;
+        }
+
+        String oracleType = paramDef.getOracleType();
+        if (oracleType == null) {
+            oracleType = paramDef.getApiType();
+        }
+
+        if (oracleType == null) {
+            return value;
+        }
+
+        String type = oracleType.toUpperCase();
+        String stringValue = value.toString();
+
+        try {
+            if (type.contains("BOOL")) {
+                // Handle boolean conversion
+                if ("true".equalsIgnoreCase(stringValue) || "1".equals(stringValue) || "yes".equalsIgnoreCase(stringValue)) {
+                    return true;
+                }
+                if ("false".equalsIgnoreCase(stringValue) || "0".equals(stringValue) || "no".equalsIgnoreCase(stringValue)) {
+                    return false;
+                }
+                return Boolean.parseBoolean(stringValue);
+            }
+            else if (type.contains("INT") || type.contains("NUMERIC")) {
+                // Handle numeric conversion
+                if (stringValue.matches("-?\\d+")) {
+                    return Long.parseLong(stringValue);
+                }
+                if (stringValue.matches("-?\\d+\\.\\d+")) {
+                    return Double.parseDouble(stringValue);
+                }
+                return value;
+            }
+            else if (type.contains("DATE") || type.contains("TIMESTAMP")) {
+                // Handle date conversion (you may need to parse different formats)
+                try {
+                    return java.sql.Timestamp.valueOf(stringValue);
+                } catch (Exception e) {
+                    try {
+                        return java.sql.Date.valueOf(stringValue);
+                    } catch (Exception e2) {
+                        return value;
+                    }
+                }
+            }
+            else {
+                return value;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to convert value '{}' to type {}: {}", stringValue, type, e.getMessage());
+            return value;
         }
     }
 }

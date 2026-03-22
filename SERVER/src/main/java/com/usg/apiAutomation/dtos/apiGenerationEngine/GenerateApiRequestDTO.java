@@ -29,6 +29,8 @@ public class GenerateApiRequestDTO {
     private String apiDetails;
     private List<String> tags;
 
+    private String databaseType; // "oracle", "postgresql", "mysql", etc.
+
     // Collection & Folder Info
     private CollectionInfoDTO collectionInfo;
 

@@ -1656,6 +1656,7 @@ export default function ApiGenerationModal({
   colors = {},
   obType,
   theme = 'dark',
+  databaseType,
   authToken = null,
   isEditing = false,
   fromDashboard = false // NEW: Flag to indicate if modal is opened from dashboard
@@ -3966,6 +3967,7 @@ const handlePreviewConfirm = async () => {
       apiName: apiDetails.apiName,
       apiCode: apiDetails.apiCode,
       description: apiDetails.description,
+      databaseType: databaseType, // This is the key fix!
       version: apiDetails.version,
       httpMethod: apiDetails.httpMethod,
       basePath: apiDetails.basePath,
@@ -3986,6 +3988,7 @@ const handlePreviewConfirm = async () => {
         objectType: schemaConfig.objectType,
         objectName: schemaConfig.objectName,
         operation: schemaConfig.operation,
+        databaseType: databaseType, // Add this!
         primaryKeyColumn: schemaConfig.primaryKeyColumn,
         sequenceName: schemaConfig.sequenceName,
         enablePagination: schemaConfig.enablePagination,

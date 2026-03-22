@@ -1,5 +1,7 @@
 package com.usg.apiAutomation.services.schemaBrowser;
 
+import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
+import com.usg.apiAutomation.enums.DatabaseType;
 import com.usg.apiAutomation.repositories.schemaBrowser.postgresql.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,7 +21,7 @@ import java.util.*;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class PostgreSQLSchemaService {
+public class PostgreSQLSchemaService implements DatabaseSchemaService {
 
     private final PostgreSQLTableRepository tableRepository;
     private final PostgreSQLViewRepository viewRepository;
@@ -1727,32 +1729,59 @@ public class PostgreSQLSchemaService {
 
 
 
-    public Map<String, Object> validateObject(String requestId, HttpServletRequest req,
+    public Map<String, Object> validateObject(String requestId, String requestBody,
                                               String performedBy, String objectName,
                                               String objectType, String schema) {
-        log.info("RequestEntity ID: {}, Validating {}: {}, schema: {}, user: {}",
-                requestId, objectType, objectName, schema, performedBy);
+        Map<String, Object> result = new HashMap<>();
+        Map<String, Object> data = new HashMap<>();
 
         try {
-            Map<String, Object> validation = objectRepository.validateObject(objectName, objectType, schema);
+            log.info("RequestEntity ID: {}, Validating {}: {}, schema: {}, user: {}",
+                    requestId, objectType, objectName, schema, performedBy);
 
-            Map<String, Object> result = new HashMap<>();
-            result.put("data", validation);
-            result.put("responseCode", 200);
-            result.put("message", "Object validation completed");
+            boolean exists = objectExists(schema, objectName, objectType);
+
+            if (exists) {
+                data.put("exists", true);
+                data.put("valid", true);
+                data.put("objectName", objectName);
+                data.put("objectType", objectType);
+                data.put("schema", schema);
+                data.put("message", "Object exists and is accessible");
+
+                result.put("responseCode", 200);
+                result.put("message", "Source object validated successfully");
+            } else {
+                data.put("exists", false);
+                data.put("valid", false);
+                data.put("objectName", objectName);
+                data.put("objectType", objectType);
+                data.put("schema", schema);
+                data.put("message", "Source object not found");
+
+                result.put("responseCode", 200);
+                result.put("message", "Source object validated successfully");
+            }
+
+            result.put("data", data);
             result.put("requestId", requestId);
-            result.put("timestamp", java.time.Instant.now().toString());
 
             log.info("RequestEntity ID: {}, Validation completed for {}: {}, exists: {}",
-                    requestId, objectType, objectName, validation.get("exists"));
-
-            return result;
+                    requestId, objectType, objectName, exists);
 
         } catch (Exception e) {
-            log.error("RequestEntity ID: {}, Error validating {} {}: {}",
-                    requestId, objectType, objectName, e.getMessage());
-            return createErrorResponse(requestId, e.getMessage());
+            log.error("Error validating object: {}", e.getMessage(), e);
+            data.put("exists", false);
+            data.put("valid", false);
+            data.put("error", e.getMessage());
+
+            result.put("responseCode", 500);
+            result.put("message", "Error validating source object: " + e.getMessage());
+            result.put("data", data);
+            result.put("requestId", requestId);
         }
+
+        return result;
     }
 
     // ============================================================
@@ -3745,5 +3774,152 @@ public class PostgreSQLSchemaService {
         errorResponse.put("requestId", requestId);
         errorResponse.put("timestamp", Instant.now().toString());
         return ResponseEntity.status(statusCode).body(errorResponse);
+    }
+
+
+    @Override
+    public boolean objectExists(String schema, String objectName, String objectType) {
+        try {
+            log.debug("Checking if {}.{} ({}) exists", schema, objectName, objectType);
+
+            String upperObjectType = objectType.toUpperCase();
+            String sql = null;
+
+            switch (upperObjectType) {
+                case "TABLE":
+                    sql = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?";
+                    break;
+                case "VIEW":
+                    sql = "SELECT COUNT(*) FROM information_schema.views WHERE table_schema = ? AND table_name = ?";
+                    break;
+                case "MATERIALIZED VIEW":
+                    sql = "SELECT COUNT(*) FROM pg_matviews WHERE schemaname = ? AND matviewname = ?";
+                    break;
+                case "FUNCTION":
+                    sql = "SELECT COUNT(*) FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname = ? AND p.proname = ?";
+                    break;
+                case "PROCEDURE":
+                    sql = "SELECT COUNT(*) FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname = ? AND p.proname = ? AND p.prokind = 'p'";
+                    break;
+                case "SEQUENCE":
+                    sql = "SELECT COUNT(*) FROM information_schema.sequences WHERE sequence_schema = ? AND sequence_name = ?";
+                    break;
+                case "TYPE":
+                    sql = "SELECT COUNT(*) FROM pg_type t JOIN pg_namespace n ON t.typnamespace = n.oid WHERE n.nspname = ? AND t.typname = ?";
+                    break;
+                case "TRIGGER":
+                    sql = "SELECT COUNT(*) FROM pg_trigger t JOIN pg_class c ON t.tgrelid = c.oid JOIN pg_namespace n ON c.relnamespace = n.oid WHERE n.nspname = ? AND t.tgname = ?";
+                    break;
+                case "INDEX":
+                    sql = "SELECT COUNT(*) FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid WHERE n.nspname = ? AND c.relname = ? AND c.relkind = 'i'";
+                    break;
+                default:
+                    // Generic check for any object
+                    sql = "SELECT COUNT(*) FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid WHERE n.nspname = ? AND c.relname = ?";
+                    break;
+            }
+
+            if (sql == null) {
+                log.warn("No SQL defined for object type: {}", objectType);
+                return false;
+            }
+
+            Integer count = postgresqlJdbcTemplate.queryForObject(sql, Integer.class, schema, objectName);
+            log.debug("Object {}.{} exists: {} (count: {})", schema, objectName, count != null && count > 0, count);
+
+            return count != null && count > 0;
+
+        } catch (Exception e) {
+            log.error("Error checking if object {}.{} exists: {}", schema, objectName, e.getMessage());
+            return false;
+        }
+    }
+
+
+    @Override
+    public Map<String, Object> getSourceObjectDetails(ApiSourceObjectDTO sourceObject) {
+        // Delegate to your existing method
+        return getSourceObjectDetails(this, sourceObject);
+    }
+
+    // Your existing method
+    public Map<String, Object> getSourceObjectDetails(PostgreSQLSchemaService schemaService, ApiSourceObjectDTO sourceObject) {
+        // Your existing implementation...
+        Map<String, Object> details = new HashMap<>();
+        // ... rest of your code ...
+        return details;
+    }
+
+    @Override
+    public DatabaseType getDatabaseType() {
+        return DatabaseType.POSTGRESQL;
+    }
+
+    @Override
+    public String getDatabaseVersion() {
+        try {
+            return postgresqlJdbcTemplate.queryForObject("SELECT version()", String.class);
+        } catch (Exception e) {
+            return "PostgreSQL Database";
+        }
+    }
+
+    @Override
+    public boolean isConnected() {
+        try {
+            postgresqlJdbcTemplate.queryForObject("SELECT 1", Integer.class);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @Override
+    public String getObjectDDL(String objectName, String objectType, String owner) {
+        try {
+            if ("FUNCTION".equalsIgnoreCase(objectType) || "PROCEDURE".equalsIgnoreCase(objectType)) {
+                String sql = "SELECT pg_get_functiondef(oid) FROM pg_proc p " +
+                        "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                        "WHERE n.nspname = ? AND p.proname = ?";
+                return postgresqlJdbcTemplate.queryForObject(sql, String.class, owner, objectName);
+            } else if ("VIEW".equalsIgnoreCase(objectType)) {
+                String sql = "SELECT pg_get_viewdef(oid) FROM pg_class c " +
+                        "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                        "WHERE n.nspname = ? AND c.relname = ? AND c.relkind = 'v'";
+                return postgresqlJdbcTemplate.queryForObject(sql, String.class, owner, objectName);
+            } else if ("TABLE".equalsIgnoreCase(objectType)) {
+                String sql = "SELECT 'CREATE TABLE ' || ? || '.' || ? || ' (\\n' || " +
+                        "string_agg(column_name || ' ' || data_type || " +
+                        "CASE WHEN is_nullable = 'NO' THEN ' NOT NULL' ELSE '' END, ',\\n') || " +
+                        "\\n');' FROM information_schema.columns " +
+                        "WHERE table_schema = ? AND table_name = ? " +
+                        "GROUP BY table_name";
+                return postgresqlJdbcTemplate.queryForObject(sql, String.class, owner, objectName, owner, objectName);
+            }
+            return null;
+        } catch (Exception e) {
+            log.error("Error getting DDL: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public Map<String, Object> getObjectStatistics(String objectName, String objectType, String owner) {
+        try {
+            if ("TABLE".equalsIgnoreCase(objectType)) {
+                String sql = "SELECT reltuples::bigint AS estimated_row_count, " +
+                        "relpages AS page_count, " +
+                        "n_live_tup AS live_tuples, " +
+                        "n_dead_tup AS dead_tuples, " +
+                        "last_vacuum, last_autovacuum, last_analyze, last_autoanalyze " +
+                        "FROM pg_stat_user_tables WHERE schemaname = ? AND relname = ?";
+                Map<String, Object> stats = postgresqlJdbcTemplate.queryForMap(sql, owner, objectName);
+                return stats;
+            }
+            return new HashMap<>();
+        } catch (Exception e) {
+            log.error("Error getting statistics: {}", e.getMessage());
+            return new HashMap<>();
+        }
     }
 }

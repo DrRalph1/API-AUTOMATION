@@ -17,7 +17,9 @@ public class ApiSourceObjectDTO {
     private String owner;
     private String operation; // SELECT, INSERT, UPDATE, DELETE, EXECUTE
 
-    private String SchemaName;
+    private String schemaName;
+
+    private String databaseType; // "oracle" or "postgresql"
 
     // For synonyms - target object info
     private Boolean isSynonym;

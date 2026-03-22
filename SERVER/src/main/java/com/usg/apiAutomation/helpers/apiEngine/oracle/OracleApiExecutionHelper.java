@@ -3,8 +3,12 @@ package com.usg.apiAutomation.helpers.apiEngine.oracle;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
+import com.usg.apiAutomation.helpers.BaseApiExecutionHelper;
 import com.usg.apiAutomation.helpers.apiEngine.ApiConversionHelper;
+import com.usg.apiAutomation.helpers.apiEngine.ApiResponseHelper;
 import com.usg.apiAutomation.repositories.apiGenerationEngine.*;
+import com.usg.apiAutomation.utils.LoggerUtil;
+import com.usg.apiAutomation.utils.apiEngine.DatabaseParameterGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.executor.oracle.*;
 import com.usg.apiAutomation.utils.apiEngine.OracleObjectResolverUtil;
 import com.usg.apiAutomation.utils.apiEngine.OracleParameterGeneratorUtil;
@@ -20,8 +24,36 @@ import java.util.regex.Pattern;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
-public class OracleApiExecutionHelper {
+public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
+
+    private final OracleObjectResolverUtil objectResolver;
+    private final OracleParameterValidatorUtil parameterValidator;
+    private final OracleTableExecutorUtil oracleTableExecutorUtil;
+    private final OracleViewExecutorUtil oracleViewExecutorUtil;
+    private final OracleProcedureExecutorUtil oracleProcedureExecutorUtil;
+    private final OracleFunctionExecutorUtil oracleFunctionExecutorUtil;
+    private final OraclePackageExecutorUtil oraclePackageExecutorUtil;
+
+    public OracleApiExecutionHelper(
+            ApiResponseHelper responseHelper,
+            LoggerUtil loggerUtil,
+            ApiConversionHelper conversionHelper,
+            OracleObjectResolverUtil objectResolver,
+            OracleParameterValidatorUtil parameterValidator,
+            OracleTableExecutorUtil oracleTableExecutorUtil,
+            OracleViewExecutorUtil oracleViewExecutorUtil,
+            OracleProcedureExecutorUtil oracleProcedureExecutorUtil,
+            OracleFunctionExecutorUtil oracleFunctionExecutorUtil,
+            OraclePackageExecutorUtil oraclePackageExecutorUtil) {
+        super(responseHelper, loggerUtil, conversionHelper);
+        this.objectResolver = objectResolver;
+        this.parameterValidator = parameterValidator;
+        this.oracleTableExecutorUtil = oracleTableExecutorUtil;
+        this.oracleViewExecutorUtil = oracleViewExecutorUtil;
+        this.oracleProcedureExecutorUtil = oracleProcedureExecutorUtil;
+        this.oracleFunctionExecutorUtil = oracleFunctionExecutorUtil;
+        this.oraclePackageExecutorUtil = oraclePackageExecutorUtil;
+    }
 
     public GeneratedApiEntity getApiEntity(GeneratedAPIRepository repository, String apiId) {
         return repository.findById(apiId)
@@ -37,7 +69,7 @@ public class OracleApiExecutionHelper {
             String requestId,  // This parameter might be renamed to generationRequestId for clarity
             GeneratedAPIRepository generatedAPIRepository,
             ObjectMapper objectMapper,
-            OracleParameterGeneratorUtil parameterGenerator,
+            DatabaseParameterGeneratorUtil parameterGenerator,
             ApiConversionHelper conversionHelper) {
 
         // Create main API entity
@@ -177,7 +209,7 @@ public class OracleApiExecutionHelper {
     public void recreateApiRelationships(GeneratedApiEntity api,
                                          GenerateApiRequestDTO request,
                                          ApiSourceObjectDTO sourceObjectDTO,
-                                         OracleParameterGeneratorUtil parameterGenerator,
+                                         DatabaseParameterGeneratorUtil parameterGenerator,
                                          ApiConversionHelper conversionHelper) {
 
         log.debug("Recreating relationships for API: {}", api.getId());
@@ -765,7 +797,6 @@ public class OracleApiExecutionHelper {
         for (int i = 0; i < dtos.size(); i++) {
             ApiParameterDTO dto = dtos.get(i);
             ApiParameterEntity param = ApiParameterEntity.builder()
-                    .id(UUID.randomUUID().toString())
                     .generatedApi(api)
                     .key(dto.getKey())
                     .dbColumn(dto.getDbColumn())
@@ -869,5 +900,195 @@ public class OracleApiExecutionHelper {
     @FunctionalInterface
     public interface SampleResponseGenerator {
         Object generateSampleResponse(GeneratedApiEntity api);
+    }
+
+
+    @Override
+    protected void setupApiRelationships(GeneratedApiEntity api,
+                                         GenerateApiRequestDTO request,
+                                         ApiSourceObjectDTO sourceObjectDTO,
+                                         DatabaseParameterGeneratorUtil parameterGenerator,
+                                         ApiConversionHelper conversionHelper) {
+
+        // Create and set auth config
+        if (request.getAuthConfig() != null) {
+            ApiAuthConfigEntity authConfig = conversionHelper.createAuthConfigEntity(request.getAuthConfig());
+            authConfig.setGeneratedApi(api);
+            api.setAuthConfig(authConfig);
+        }
+
+        // Create and set request config
+        if (request.getRequestBody() != null) {
+            ApiRequestConfigEntity requestConfig = conversionHelper.createRequestConfigEntity(request.getRequestBody());
+            requestConfig.setGeneratedApi(api);
+            api.setRequestConfig(requestConfig);
+        }
+
+        // Create and set response config
+        if (request.getResponseBody() != null) {
+            ApiResponseConfigEntity responseConfig = conversionHelper.createResponseConfigEntity(request.getResponseBody());
+            responseConfig.setGeneratedApi(api);
+            api.setResponseConfig(responseConfig);
+        }
+
+        // Create and set schema config
+        ApiSchemaConfigEntity schemaConfig = conversionHelper.createSchemaConfigEntity(sourceObjectDTO);
+        schemaConfig.setGeneratedApi(api);
+        api.setSchemaConfig(schemaConfig);
+
+        // Create and set settings
+        if (request.getSettings() != null) {
+            ApiSettingsEntity settings = conversionHelper.createSettingsEntity(request.getSettings());
+            settings.setGeneratedApi(api);
+            api.setSettings(settings);
+        }
+
+        // Generate and set parameters
+        List<ApiParameterEntity> parameters = parameterGenerator.generateParameters(
+                sourceObjectDTO, request.getParameters(), api.getId());
+        parameters.forEach(param -> param.setGeneratedApi(api));
+        api.setParameters(parameters);
+
+        // Set headers
+        if (request.getHeaders() != null) {
+            List<ApiHeaderEntity> headers = conversionHelper.createHeaderEntities(request.getHeaders(), api);
+            headers.forEach(header -> header.setGeneratedApi(api));
+            api.setHeaders(headers);
+        }
+
+        // Set response mappings
+        if (request.getResponseMappings() != null) {
+            List<ApiResponseMappingEntity> responseMappings =
+                    conversionHelper.createResponseMappingEntities(request.getResponseMappings(), api.getId());
+            responseMappings.forEach(mapping -> mapping.setGeneratedApi(api));
+            api.setResponseMappings(responseMappings);
+        }
+    }
+
+    @Override
+    public Object executeAgainstDatabase(GeneratedApiEntity api,
+                                         ApiSourceObjectDTO sourceObject,
+                                         ExecuteApiRequestDTO validatedRequest,
+                                         List<ApiParameterDTO> configuredParamDTOs) {
+
+        log.info("Executing Oracle operation for API: {}", api.getId());
+
+        // Your existing Oracle execution logic here
+        // This is where you'd call your existing Oracle executors
+
+        ApiSchemaConfigEntity schemaConfig = api.getSchemaConfig();
+        if (schemaConfig == null) {
+            throw new RuntimeException("Schema configuration not found");
+        }
+
+        String objectType = schemaConfig.getObjectType();
+
+        switch (objectType.toUpperCase()) {
+            case "TABLE":
+                return executeTableOperation(api, sourceObject, validatedRequest, configuredParamDTOs);
+            case "VIEW":
+                return executeViewOperation(api, sourceObject, validatedRequest, configuredParamDTOs);
+            case "PROCEDURE":
+                return executeProcedureOperation(api, sourceObject, validatedRequest, configuredParamDTOs);
+            case "FUNCTION":
+                return executeFunctionOperation(api, sourceObject, validatedRequest, configuredParamDTOs);
+            case "PACKAGE":
+                return executePackageOperation(api, sourceObject, validatedRequest, configuredParamDTOs);
+            default:
+                throw new RuntimeException("Unsupported Oracle object type: " + objectType);
+        }
+    }
+
+    private Object executeTableOperation(GeneratedApiEntity api,
+                                         ApiSourceObjectDTO sourceObject,
+                                         ExecuteApiRequestDTO validatedRequest,
+                                         List<ApiParameterDTO> configuredParamDTOs) {
+        // Your existing table execution logic
+        String tableName = api.getSchemaConfig().getObjectName();
+        String schema = api.getSchemaConfig().getSchemaName();
+        String operation = api.getSchemaConfig().getOperation();
+
+        Map<String, Object> params = new HashMap<>();
+        if (validatedRequest.getPathParams() != null) params.putAll(validatedRequest.getPathParams());
+        if (validatedRequest.getQueryParams() != null) params.putAll(validatedRequest.getQueryParams());
+        if (validatedRequest.getBody() instanceof Map) {
+            params.putAll((Map<String, Object>) validatedRequest.getBody());
+        }
+
+        switch (operation.toUpperCase()) {
+            case "SELECT":
+                return oracleTableExecutorUtil.executeSelect(tableName, schema, params, api, configuredParamDTOs);
+            case "INSERT":
+                return oracleTableExecutorUtil.executeInsert(tableName, schema, params, api, configuredParamDTOs);
+            case "UPDATE":
+                return oracleTableExecutorUtil.executeUpdate(tableName, schema, params, api, configuredParamDTOs);
+            case "DELETE":
+                return oracleTableExecutorUtil.executeDelete(tableName, schema, params, api, configuredParamDTOs);
+            default:
+                throw new RuntimeException("Unsupported table operation: " + operation);
+        }
+    }
+
+    // Add similar methods for view, procedure, function, package...
+    private Object executeViewOperation(GeneratedApiEntity api,
+                                        ApiSourceObjectDTO sourceObject,
+                                        ExecuteApiRequestDTO validatedRequest,
+                                        List<ApiParameterDTO> configuredParamDTOs) {
+        // Your view execution logic
+        return oracleViewExecutorUtil.execute(
+                api,                          // GeneratedApiEntity api
+                sourceObject,                 // ApiSourceObjectDTO sourceObject
+                api.getSchemaConfig().getObjectName(),  // String viewName
+                api.getSchemaConfig().getSchemaName(),  // String owner
+                validatedRequest,             // ExecuteApiRequestDTO request
+                configuredParamDTOs           // List<ApiParameterDTO> configuredParamDTOs
+        );
+    }
+
+    private Object executeProcedureOperation(GeneratedApiEntity api,
+                                             ApiSourceObjectDTO sourceObject,
+                                             ExecuteApiRequestDTO validatedRequest,
+                                             List<ApiParameterDTO> configuredParamDTOs) {
+        // Your procedure execution logic
+        return oracleProcedureExecutorUtil.execute(
+                api,                          // GeneratedApiEntity api
+                sourceObject,                 // ApiSourceObjectDTO sourceObject
+                api.getSchemaConfig().getObjectName(),  // String procedureName
+                api.getSchemaConfig().getSchemaName(),  // String owner
+                validatedRequest,             // ExecuteApiRequestDTO request
+                configuredParamDTOs           // List<ApiParameterDTO> configuredParamDTOs
+        );
+    }
+
+
+    private Object executeFunctionOperation(GeneratedApiEntity api,
+                                            ApiSourceObjectDTO sourceObject,
+                                            ExecuteApiRequestDTO validatedRequest,
+                                            List<ApiParameterDTO> configuredParamDTOs) {
+        // Your function execution logic
+        return oracleFunctionExecutorUtil.execute(
+                api,                          // GeneratedApiEntity api
+                sourceObject,                 // ApiSourceObjectDTO sourceObject
+                api.getSchemaConfig().getObjectName(),  // String functionName
+                api.getSchemaConfig().getSchemaName(),  // String owner
+                validatedRequest,             // ExecuteApiRequestDTO request
+                configuredParamDTOs           // List<ApiParameterDTO> configuredParamDTOs
+        );
+    }
+
+    private Object executePackageOperation(GeneratedApiEntity api,
+                                           ApiSourceObjectDTO sourceObject,
+                                           ExecuteApiRequestDTO validatedRequest,
+                                           List<ApiParameterDTO> configuredParamDTOs) {
+        // Your package execution logic
+        // Check if OraclePackageExecutorUtil has a version without procedureName
+        return oraclePackageExecutorUtil.execute(
+                api,                          // GeneratedApiEntity api
+                sourceObject,                 // ApiSourceObjectDTO sourceObject
+                api.getSchemaConfig().getObjectName(),  // String packageName
+                api.getSchemaConfig().getSchemaName(),  // String owner
+                validatedRequest,             // ExecuteApiRequestDTO request
+                configuredParamDTOs           // List<ApiParameterDTO> configuredParamDTOs
+        );
     }
 }

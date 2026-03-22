@@ -16,7 +16,8 @@ import java.util.Objects;
 public class ApiParameterEntity {
 
     @Id
-//    @GeneratedValue(strategy = GenerationType.UUID)
+    @GeneratedValue(generator = "UUID")
+    @GenericGenerator(name = "UUID", strategy = "org.hibernate.id.UUIDGenerator")
     @EqualsAndHashCode.Include
     @ToString.Include
     private String id;
