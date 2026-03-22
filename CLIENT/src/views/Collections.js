@@ -651,11 +651,50 @@ try (Response response = client.newCall(request).execute()) {
             type="button"
             className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center justify-center gap-2 hover-lift"
             onClick={() => {
-              navigator.clipboard.writeText(codeSnippet);
-              showToast('Copied to clipboard!', 'success');
+              // Get the raw code text (without HTML tags)
+              let textToCopy = codeSnippet;
+              
+              // If it's HTML content (from SyntaxHighlighter), extract the text
+              if (textToCopy.includes('<span') || textToCopy.includes('<div')) {
+                // Create a temporary div to parse the HTML
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = textToCopy;
+                // Get text content (removes all HTML tags)
+                textToCopy = tempDiv.textContent || tempDiv.innerText || '';
+              }
+              
+              // Clean up the text (remove extra whitespace)
+              textToCopy = textToCopy.replace(/\n\s*\n/g, '\n\n').trim();
+              
+              // Copy to clipboard
+              navigator.clipboard.writeText(textToCopy)
+                .then(() => {
+                  showToast('Copied to clipboard!', 'success');
+                })
+                .catch((err) => {
+                  console.error('Failed to copy:', err);
+                  // Fallback method
+                  const textarea = document.createElement('textarea');
+                  textarea.value = textToCopy;
+                  document.body.appendChild(textarea);
+                  textarea.select();
+                  const success = document.execCommand('copy');
+                  document.body.removeChild(textarea);
+                  
+                  if (success) {
+                    showToast('Copied to clipboard!', 'success');
+                  } else {
+                    showToast('Failed to copy to clipboard', 'error');
+                  }
+                });
             }}
             disabled={loading.generateSnippet}
-            style={{ backgroundColor: colors.primaryDark, color: colors.white, opacity: loading.generateSnippet ? 0.5 : 1 }}>
+            style={{ 
+              backgroundColor: colors.primaryDark, 
+              color: colors.white, 
+              opacity: loading.generateSnippet ? 0.5 : 1 
+            }}
+          >
             <Copy size={12} />
             Copy to Clipboard
           </button>
@@ -6455,22 +6494,54 @@ const renderResponseContent = () => {
     )}
   </div>
   {response && (
-    <div className="flex items-center gap-2">
-      <button type="button" 
-        className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-        style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
-        onClick={() => {
-          const contentToCopy = response.responseBody || 
-                              JSON.stringify(response.data, null, 2) || 
-                              JSON.stringify(response, null, 2);
-          navigator.clipboard.writeText(contentToCopy);
-          showToast('Response copied to clipboard!', 'success');
-        }}>
-        <Copy size={12} className="mr-1 inline" />
-        Copy
-      </button>
-    </div>
-  )}
+  <div className="flex items-center gap-2">
+    <button 
+      type="button" 
+      className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift flex items-center gap-1"
+      style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+      onClick={() => {
+        // Get the content to copy
+        let contentToCopy = '';
+        
+        // Get based on current view
+        if (responseView === 'raw' || responseView === 'preview') {
+          contentToCopy = response.responseBody || 
+                         JSON.stringify(response.data, null, 2) || 
+                         JSON.stringify(response, null, 2);
+        } else if (responseView === 'headers') {
+          const headers = response.headers || [];
+          const headerArray = Array.isArray(headers) ? headers : Object.entries(headers);
+          contentToCopy = headerArray.map(([key, value]) => `${key}: ${value}`).join('\n');
+        }
+        
+        // Copy to clipboard
+        navigator.clipboard.writeText(contentToCopy)
+          .then(() => {
+            showToast('Response copied to clipboard!', 'success');
+          })
+          .catch((err) => {
+            console.error('Failed to copy:', err);
+            // Fallback method
+            const textarea = document.createElement('textarea');
+            textarea.value = contentToCopy;
+            document.body.appendChild(textarea);
+            textarea.select();
+            const success = document.execCommand('copy');
+            document.body.removeChild(textarea);
+            
+            if (success) {
+              showToast('Response copied to clipboard!', 'success');
+            } else {
+              showToast('Failed to copy response', 'error');
+            }
+          });
+      }}
+    >
+      <Copy size={12} />
+      Copy
+    </button>
+  </div>
+)}
 </div>
 
   // Render other right panels

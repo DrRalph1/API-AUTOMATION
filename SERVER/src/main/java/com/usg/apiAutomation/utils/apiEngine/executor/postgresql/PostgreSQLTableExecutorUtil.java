@@ -452,37 +452,62 @@ public class PostgreSQLTableExecutorUtil {
             }
         }
 
-        // Copy all parameters and convert to proper types
-        Map<String, Object> typedParams = new HashMap<>();
-
+        // Copy all parameters
+        Map<String, Object> allParams = new HashMap<>();
         for (Map.Entry<String, Object> entry : params.entrySet()) {
             String key = entry.getKey();
             if ("_xml".equals(key) || "_json".equals(key)) {
                 continue;
             }
-
             String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
+            allParams.put(dbColumnName, entry.getValue());
+        }
+        allParams.putAll(processedParams);
+
+        log.info("All params before type conversion: {}", allParams);
+
+        // Convert to proper types
+        Map<String, Object> typedParams = new HashMap<>();
+
+        for (Map.Entry<String, Object> entry : allParams.entrySet()) {
+            String dbColumnName = entry.getKey();
             Object value = entry.getValue();
 
-            // Convert value to proper type based on parameter definition
-            Object convertedValue = convertParameterValue(value, dbColumnName, api);
+            // First, try to find the parameter definition for this column
+            ApiParameterEntity paramDef = api.getParameters().stream()
+                    .filter(p -> dbColumnName.equalsIgnoreCase(p.getDbColumn()) ||
+                            dbColumnName.equalsIgnoreCase(p.getKey()))
+                    .findFirst()
+                    .orElse(null);
+
+            Object convertedValue = null;
+
+            if (paramDef != null) {
+                // We have parameter definition, use it for conversion
+                convertedValue = convertParameterValueWithDefinition(value, paramDef);
+                log.debug("Converted param {} using definition: {} -> {}", dbColumnName, value, convertedValue);
+            } else {
+                // No parameter definition, try automatic conversion for dates
+                if (value instanceof String) {
+                    String strValue = (String) value;
+                    // Check if it looks like a timestamp
+                    if (strValue.matches("\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?.*")) {
+                        convertedValue = convertToTimestamp(strValue);
+                        log.debug("Auto-converted param {} as timestamp: {} -> {}", dbColumnName, value, convertedValue);
+                    } else {
+                        convertedValue = value;
+                    }
+                } else {
+                    convertedValue = value;
+                }
+            }
+
             if (convertedValue != null) {
                 typedParams.put(dbColumnName, convertedValue);
-                log.debug("Added param: {} -> {} = {} (converted from {})", key, dbColumnName, convertedValue, value);
+                log.debug("Added param: {} = {} (type: {})", dbColumnName, convertedValue,
+                        convertedValue != null ? convertedValue.getClass().getSimpleName() : "null");
             } else {
-                log.debug("Skipped null/empty param: {} -> {}", key, dbColumnName);
-            }
-        }
-
-        // Also process any XML/JSON extracted parameters that weren't already in params
-        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
-            String dbColumnName = entry.getKey();
-            if (!typedParams.containsKey(dbColumnName)) {
-                Object convertedValue = convertParameterValue(entry.getValue(), dbColumnName, api);
-                if (convertedValue != null) {
-                    typedParams.put(dbColumnName, convertedValue);
-                    log.debug("Added extracted param: {} = {} (converted)", dbColumnName, convertedValue);
-                }
+                log.debug("Skipped null/empty param: {}", dbColumnName);
             }
         }
 
@@ -526,7 +551,8 @@ public class PostgreSQLTableExecutorUtil {
                 columns.append(entry.getKey());
                 values.append("?");
                 paramValues.add(entry.getValue());
-                log.debug("Column: {} = {}", entry.getKey(), entry.getValue());
+                log.debug("Column: {} = {} (type: {})", entry.getKey(), entry.getValue(),
+                        entry.getValue().getClass().getSimpleName());
             }
         }
 
@@ -551,13 +577,102 @@ public class PostgreSQLTableExecutorUtil {
 
         } catch (Exception e) {
             log.error("Error executing INSERT on {}: {}", tableName, e.getMessage(), e);
-
-            // Get the raw PostgreSQL error message
             String rawError = extractFullPostgreSQLError(e);
-
-            // THROW THE RAW ERROR DIRECTLY - don't wrap or modify it
-            // This ensures users see the actual database constraint violation
             throw new RuntimeException(rawError, e);
+        }
+    }
+
+    private Object convertParameterValueWithDefinition(Object value, ApiParameterEntity paramDef) {
+        if (value == null || value.toString().trim().isEmpty()) {
+            return null;
+        }
+
+        String stringValue = value.toString();
+
+        // AUTO-DETECT date/time strings even if type is not explicitly set
+        boolean looksLikeDate = stringValue.matches("\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?.*");
+
+        // Check if it looks like a UUID
+        boolean looksLikeUUID = stringValue.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+
+        String oracleType = paramDef.getOracleType();
+        if (oracleType == null) {
+            oracleType = paramDef.getApiType();
+        }
+
+        // If no type defined but it looks like a UUID, convert it
+        if (oracleType == null && looksLikeUUID) {
+            try {
+                log.info("Auto-converting param {} as UUID: {}", paramDef.getKey(), stringValue);
+                return java.util.UUID.fromString(stringValue);
+            } catch (IllegalArgumentException e) {
+                log.debug("Failed to parse as UUID: {}", e.getMessage());
+            }
+        }
+
+        // If no type defined but it looks like a date, convert it
+        if (oracleType == null) {
+            if (looksLikeDate) {
+                log.info("Auto-converting param {} as date (no type defined): {}", paramDef.getKey(), stringValue);
+                return convertToTimestamp(stringValue);
+            }
+            return value;
+        }
+
+        String type = oracleType.toUpperCase();
+
+        try {
+            if (type.contains("BOOL")) {
+                if ("true".equalsIgnoreCase(stringValue) || "1".equals(stringValue) || "yes".equalsIgnoreCase(stringValue)) {
+                    return true;
+                }
+                if ("false".equalsIgnoreCase(stringValue) || "0".equals(stringValue) || "no".equalsIgnoreCase(stringValue)) {
+                    return false;
+                }
+                return Boolean.parseBoolean(stringValue);
+            }
+            else if (type.contains("INT") || type.contains("NUMERIC")) {
+                if (stringValue.matches("-?\\d+")) {
+                    return Long.parseLong(stringValue);
+                }
+                if (stringValue.matches("-?\\d+\\.\\d+")) {
+                    return Double.parseDouble(stringValue);
+                }
+                return value;
+            }
+            else if (type.contains("DATE") || type.contains("TIMESTAMP")) {
+                log.info("Converting date value: {} with type: {}", stringValue, type);
+                return convertToTimestamp(stringValue);
+            }
+            else if (type.contains("UUID")) {
+                log.info("Converting UUID value: {} with type: {}", stringValue, type);
+                try {
+                    return java.util.UUID.fromString(stringValue);
+                } catch (IllegalArgumentException e) {
+                    log.warn("Failed to parse UUID: {}", stringValue);
+                    return value;
+                }
+            }
+            else {
+                // Even if type doesn't contain DATE/TIMESTAMP, check if it looks like a date
+                if (looksLikeDate) {
+                    log.info("Auto-converting param {} as date (type {} doesn't match): {}", paramDef.getKey(), type, stringValue);
+                    return convertToTimestamp(stringValue);
+                }
+                // Check if it looks like a UUID
+                if (looksLikeUUID) {
+                    try {
+                        log.info("Auto-converting param {} as UUID: {}", paramDef.getKey(), stringValue);
+                        return java.util.UUID.fromString(stringValue);
+                    } catch (IllegalArgumentException e) {
+                        log.debug("Failed to parse as UUID: {}", e.getMessage());
+                    }
+                }
+                return value;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to convert value '{}' to type {}: {}", stringValue, type, e.getMessage());
+            return value;
         }
     }
 
@@ -897,16 +1012,8 @@ public class PostgreSQLTableExecutorUtil {
                 return value;
             }
             else if (type.contains("DATE") || type.contains("TIMESTAMP")) {
-                // Handle date conversion (you may need to parse different formats)
-                try {
-                    return java.sql.Timestamp.valueOf(stringValue);
-                } catch (Exception e) {
-                    try {
-                        return java.sql.Date.valueOf(stringValue);
-                    } catch (Exception e2) {
-                        return value;
-                    }
-                }
+                // FIXED: Properly handle ISO 8601 datetime strings
+                return convertToTimestamp(stringValue);
             }
             else {
                 return value;
@@ -915,5 +1022,124 @@ public class PostgreSQLTableExecutorUtil {
             log.warn("Failed to convert value '{}' to type {}: {}", stringValue, type, e.getMessage());
             return value;
         }
+    }
+
+    /**
+     * Convert various datetime formats to java.sql.Timestamp
+     * Handles ISO 8601 formats like:
+     * - 2026-03-22T19:07:59.830+00:00
+     * - 2026-03-22T19:07:59.830Z
+     * - 2026-03-22 19:07:59.830
+     */
+    private Object convertToTimestamp(String dateStr) {
+        if (dateStr == null || dateStr.trim().isEmpty()) {
+            return null;
+        }
+
+        try {
+            // Remove any leading/trailing whitespace
+            dateStr = dateStr.trim();
+
+            // Check if it's already in JDBC format
+            try {
+                return java.sql.Timestamp.valueOf(dateStr);
+            } catch (IllegalArgumentException e) {
+                // Not in standard format, continue
+            }
+
+            // Handle ISO 8601 format: 2026-03-22T19:07:59.830+00:00 or 2026-03-22T19:07:59.830Z
+            if (dateStr.contains("T")) {
+                // Remove timezone part (everything after + or - or Z)
+                String dateTimePart = dateStr.split("[+-]")[0];
+                dateTimePart = dateTimePart.replace("Z", "");
+
+                // Replace T with space
+                String jdbcFormat = dateTimePart.replace("T", " ");
+
+                // Handle milliseconds (ensure proper format)
+                if (jdbcFormat.contains(".")) {
+                    // Keep as is
+                } else {
+                    jdbcFormat = jdbcFormat + ".0";
+                }
+
+                try {
+                    return java.sql.Timestamp.valueOf(jdbcFormat);
+                } catch (IllegalArgumentException e) {
+                    log.debug("Failed to parse as JDBC format after conversion: {}", jdbcFormat);
+                }
+            }
+
+            // Try to parse with OffsetDateTime directly and convert to LocalDateTime
+            try {
+                // Handle Zulu time
+                String tempStr = dateStr;
+                if (tempStr.endsWith("Z")) {
+                    tempStr = tempStr.substring(0, tempStr.length() - 1) + "+00:00";
+                }
+
+                java.time.OffsetDateTime odt = java.time.OffsetDateTime.parse(tempStr);
+                // Convert to LocalDateTime (strip timezone) for timestamp without time zone
+                java.time.LocalDateTime ldt = odt.toLocalDateTime();
+                return java.sql.Timestamp.valueOf(ldt);
+            } catch (Exception e) {
+                log.debug("Failed to parse as OffsetDateTime: {}", e.getMessage());
+            }
+
+            // Try to parse with LocalDateTime directly (without timezone)
+            try {
+                String noZoneStr = dateStr.split("[+-]")[0].replace("T", " ");
+                java.time.LocalDateTime ldt = java.time.LocalDateTime.parse(noZoneStr, java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"));
+                return java.sql.Timestamp.valueOf(ldt);
+            } catch (Exception e) {
+                log.debug("Failed to parse as LocalDateTime: {}", e.getMessage());
+            }
+
+            // Try date only format
+            try {
+                return java.sql.Timestamp.valueOf(dateStr + " 00:00:00.000");
+            } catch (Exception e) {
+                // Still can't parse
+            }
+
+            // If all else fails, log warning and return the original string
+            log.warn("Unable to parse date string: {}, keeping as string", dateStr);
+            return dateStr;
+
+        } catch (Exception e) {
+            log.warn("Error converting date string '{}': {}", dateStr, e.getMessage());
+            return dateStr;
+        }
+    }
+
+
+    /**
+     * Pre-process parameters to convert ISO 8601 datetime strings to Timestamp
+     */
+    private Map<String, Object> preProcessDateTimeParameters(Map<String, Object> params, GeneratedApiEntity api) {
+        Map<String, Object> processed = new HashMap<>();
+
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            Object value = entry.getValue();
+            String key = entry.getKey();
+
+            // Check if this parameter corresponds to a date/timestamp column
+            boolean isDateTimeColumn = api.getParameters().stream()
+                    .filter(p -> key.equalsIgnoreCase(p.getKey()) || key.equalsIgnoreCase(p.getDbColumn()))
+                    .anyMatch(p -> {
+                        String type = p.getOracleType();
+                        if (type == null) type = p.getApiType();
+                        return type != null && (type.toUpperCase().contains("DATE") || type.toUpperCase().contains("TIMESTAMP"));
+                    });
+
+            if (isDateTimeColumn && value instanceof String) {
+                // Convert ISO 8601 string to Timestamp
+                value = convertToTimestamp((String) value);
+            }
+
+            processed.put(key, value);
+        }
+
+        return processed;
     }
 }

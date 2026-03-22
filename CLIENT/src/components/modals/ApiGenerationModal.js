@@ -4004,64 +4004,424 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
     return JSON.stringify(collection, null, 2);
   };
 
-  // Update preview based on mode
-  useEffect(() => {
-    switch(previewMode) {
-      case 'plsql':
-        setGeneratedCode(generatePLSQLCode());
-        break;
-      case 'openapi':
-        setGeneratedCode(generateOpenAPISpec());
-        break;
-      case 'postman':
-        setGeneratedCode(generatePostmanCollection());
-        break;
-      default:
-        setGeneratedCode(JSON.stringify({
-          apiDetails,
-          schemaConfig,
-          collectionInfo: {
-            collectionId: selectedCollection?.id,
-            collectionName: selectedCollection?.name,
-            collectionType: selectedCollection?.type,
-            folderId: selectedFolder?.id,
-            folderName: selectedFolder?.name
-          },
-          // Only include IN parameters in the config
-          parameters: getInParameters().map(p => ({
-            key: p.key,
-            dbColumn: p.dbColumn,
-            type: p.apiType,
-            oracleType: p.oracleType,
-            required: p.required,
-            parameterLocation: p.parameterLocation,
-            description: p.description,
-            example: p.example,
-            defaultValue: p.defaultValue,
-            isPrimaryKey: p.isPrimaryKey,
-            paramMode: p.paramMode
-          })),
-          // Include all response mappings (including OUT parameters)
-          responseMappings: getOutMappings().map(m => ({
-            apiField: m.apiField,
-            dbColumn: m.dbColumn,
-            oracleType: m.oracleType,
-            apiType: m.apiType,
-            nullable: m.nullable,
-            isPrimaryKey: m.isPrimaryKey,
-            paramMode: m.paramMode
-          })),
-          requestBody,
-          responseBody,
-          authConfig,
-          settings,
-          sourceObjectInfo,
-          tests,
-          validation: validationResult,
-          isEditing
-        }, null, 2));
+
+
+  // Add a new function to generate SQL INSERT statements for the API configuration
+const generateSQLInsertStatements = () => {
+  const inParams = getInParameters();
+  const outMappings = getOutMappings();
+  
+  // Generate a unique API ID if not present
+  const apiId = isEditing ? (selectedObject?.id || `api-${Date.now()}`) : `api-${Date.now()}`;
+  const now = new Date().toISOString();
+  
+  // Build the API configuration object
+  const apiConfig = {
+    id: apiId,
+    api_name: apiDetails.apiName,
+    api_code: apiDetails.apiCode,
+    description: apiDetails.description,
+    version: apiDetails.version,
+    status: apiDetails.status,
+    http_method: apiDetails.httpMethod,
+    base_path: apiDetails.basePath,
+    endpoint_path: apiDetails.endpointPath,
+    category: apiDetails.category,
+    owner: apiDetails.owner,
+    tags: apiDetails.tags.join(','),
+    
+    // Collection info
+    collection_id: selectedCollection?.id || null,
+    collection_name: selectedCollection?.name || null,
+    collection_type: selectedCollection?.type || null,
+    folder_id: selectedFolder?.id || null,
+    folder_name: selectedFolder?.name || null,
+    
+    // Schema config
+    schema_name: schemaConfig.schemaName,
+    object_type: schemaConfig.objectType,
+    object_name: schemaConfig.objectName,
+    operation: schemaConfig.operation,
+    primary_key_column: schemaConfig.primaryKeyColumn,
+    sequence_name: schemaConfig.sequenceName,
+    enable_pagination: schemaConfig.enablePagination ? 'Y' : 'N',
+    page_size: schemaConfig.pageSize,
+    enable_sorting: schemaConfig.enableSorting ? 'Y' : 'N',
+    default_sort_column: schemaConfig.defaultSortColumn,
+    default_sort_direction: schemaConfig.defaultSortDirection,
+    
+    // Source object info
+    is_synonym: sourceObjectInfo.isSynonym ? 'Y' : 'N',
+    synonym_target_type: sourceObjectInfo.targetType,
+    synonym_target_name: sourceObjectInfo.targetName,
+    synonym_target_owner: sourceObjectInfo.targetOwner,
+    
+    // Request body config
+    request_body_type: requestBody.bodyType,
+    request_body_sample: requestBody.sample,
+    request_validate_schema: requestBody.validateSchema ? 'Y' : 'N',
+    request_max_size: requestBody.maxSize,
+    request_allowed_media_types: requestBody.allowedMediaTypes.join(','),
+    request_required_fields: requestBody.requiredFields.join(','),
+    
+    // Response body config
+    response_success_schema: responseBody.successSchema,
+    response_error_schema: responseBody.errorSchema,
+    response_include_metadata: responseBody.includeMetadata ? 'Y' : 'N',
+    response_metadata_fields: responseBody.metadataFields.join(','),
+    response_content_type: responseBody.contentType,
+    response_compression: responseBody.compression,
+    
+    // Auth config
+    auth_type: authConfig.authType,
+    auth_api_key_header: authConfig.apiKeyHeader,
+    auth_api_key_value: authConfig.apiKeyValue,
+    auth_api_secret_header: authConfig.apiSecretHeader,
+    auth_api_secret_value: authConfig.apiSecretValue,
+    auth_jwt_token: authConfig.jwtToken,
+    auth_jwt_issuer: authConfig.jwtIssuer,
+    auth_basic_username: authConfig.basicUsername,
+    auth_basic_password: authConfig.basicPassword,
+    auth_ip_whitelist: authConfig.ipWhitelist,
+    auth_rate_limit_requests: authConfig.rateLimitRequests,
+    auth_rate_limit_period: authConfig.rateLimitPeriod,
+    auth_enable_rate_limiting: authConfig.enableRateLimiting ? 'Y' : 'N',
+    auth_cors_origins: authConfig.corsOrigins?.join(',') || '*',
+    auth_audit_level: authConfig.auditLevel,
+    
+    // Settings
+    settings_timeout: settings.timeout,
+    settings_max_records: settings.maxRecords,
+    settings_enable_logging: settings.enableLogging ? 'Y' : 'N',
+    settings_log_level: settings.logLevel,
+    settings_enable_caching: settings.enableCaching ? 'Y' : 'N',
+    settings_cache_ttl: settings.cacheTtl,
+    settings_generate_swagger: settings.generateSwagger ? 'Y' : 'N',
+    settings_generate_postman: settings.generatePostman ? 'Y' : 'N',
+    settings_generate_client_sdk: settings.generateClientSDK ? 'Y' : 'N',
+    settings_enable_monitoring: settings.enableMonitoring ? 'Y' : 'N',
+    settings_enable_alerts: settings.enableAlerts ? 'Y' : 'N',
+    settings_alert_email: settings.alertEmail,
+    settings_enable_tracing: settings.enableTracing ? 'Y' : 'N',
+    settings_cors_enabled: settings.corsEnabled ? 'Y' : 'N',
+    
+    // Timestamps
+    created_at: now,
+    updated_at: now,
+    created_by: authConfig.basicUsername || apiDetails.owner || 'SYSTEM',
+    updated_by: authConfig.basicUsername || apiDetails.owner || 'SYSTEM',
+    is_editing: isEditing ? 'Y' : 'N'
+  };
+  
+  // Escape single quotes for SQL
+  const escapeSql = (str) => {
+    if (str === null || str === undefined) return 'NULL';
+    if (typeof str === 'string') {
+      // Handle empty strings
+      if (str === '') return "''";
+      // Escape single quotes by doubling them
+      return "'" + str.replace(/'/g, "''") + "'";
     }
-  }, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, requestBody, responseBody, authConfig, settings, sourceObjectInfo, tests, validationResult, selectedCollection, selectedFolder, isEditing]);
+    return "'" + String(str).replace(/'/g, "''") + "'";
+  };
+  
+  // Generate the main INSERT statement
+  const columns = Object.keys(apiConfig);
+  const values = columns.map(col => {
+    const val = apiConfig[col];
+    if (val === null || val === undefined) return 'NULL';
+    if (typeof val === 'boolean') return val ? "'Y'" : "'N'";
+    if (typeof val === 'number') return String(val);
+    return escapeSql(val);
+  });
+  
+  const insertStatement = `INSERT INTO api_configurations (${columns.join(', ')})
+VALUES (${values.join(', ')});`;
+  
+  // Generate INSERT statements for parameters
+  const parameterInserts = inParams.map((param, idx) => {
+    const paramConfig = {
+      id: `param-${apiId}-${idx}`,
+      api_id: apiId,
+      param_key: param.key,
+      db_column: param.dbColumn,
+      oracle_type: param.oracleType,
+      api_type: param.apiType,
+      parameter_location: param.parameterLocation,
+      is_required: param.required ? 'Y' : 'N',
+      description: param.description,
+      example_value: param.example,
+      validation_pattern: param.validationPattern,
+      default_value: param.defaultValue,
+      is_primary_key: param.isPrimaryKey ? 'Y' : 'N',
+      param_mode: param.paramMode || 'IN',
+      sort_order: idx,
+      created_at: now
+    };
+    
+    const paramColumns = Object.keys(paramConfig);
+    const paramValues = paramColumns.map(col => {
+      const val = paramConfig[col];
+      if (val === null || val === undefined) return 'NULL';
+      if (typeof val === 'boolean') return val ? "'Y'" : "'N'";
+      if (typeof val === 'number') return String(val);
+      return escapeSql(val);
+    });
+    
+    return `INSERT INTO api_parameters (${paramColumns.join(', ')})
+VALUES (${paramValues.join(', ')});`;
+  });
+  
+  // Generate INSERT statements for response mappings
+  const mappingInserts = outMappings.map((mapping, idx) => {
+    const mappingConfig = {
+      id: `mapping-${apiId}-${idx}`,
+      api_id: apiId,
+      api_field: mapping.apiField,
+      db_column: mapping.dbColumn,
+      oracle_type: mapping.oracleType,
+      api_type: mapping.apiType,
+      format_pattern: mapping.format,
+      is_nullable: mapping.nullable ? 'Y' : 'N',
+      is_primary_key: mapping.isPrimaryKey ? 'Y' : 'N',
+      include_in_response: mapping.includeInResponse !== false ? 'Y' : 'N',
+      param_mode: mapping.paramMode || 'OUT',
+      sort_order: idx,
+      created_at: now
+    };
+    
+    const mappingColumns = Object.keys(mappingConfig);
+    const mappingValues = mappingColumns.map(col => {
+      const val = mappingConfig[col];
+      if (val === null || val === undefined) return 'NULL';
+      if (typeof val === 'boolean') return val ? "'Y'" : "'N'";
+      if (typeof val === 'number') return String(val);
+      return escapeSql(val);
+    });
+    
+    return `INSERT INTO api_response_mappings (${mappingColumns.join(', ')})
+VALUES (${mappingValues.join(', ')});`;
+  });
+  
+  // Generate INSERT statements for headers
+  const headerInserts = headers.map((header, idx) => {
+    if (!header.key) return null;
+    
+    const headerConfig = {
+      id: `header-${apiId}-${idx}`,
+      api_id: apiId,
+      header_key: header.key,
+      header_value: header.value,
+      is_required: header.required ? 'Y' : 'N',
+      description: header.description,
+      sort_order: idx,
+      created_at: now
+    };
+    
+    const headerColumns = Object.keys(headerConfig);
+    const headerValues = headerColumns.map(col => {
+      const val = headerConfig[col];
+      if (val === null || val === undefined) return 'NULL';
+      if (typeof val === 'boolean') return val ? "'Y'" : "'N'";
+      return escapeSql(val);
+    });
+    
+    return `INSERT INTO api_headers (${headerColumns.join(', ')})
+VALUES (${headerValues.join(', ')});`;
+  }).filter(Boolean);
+  
+  // Generate INSERT statements for tests
+  const testsConfig = {
+    id: `tests-${apiId}`,
+    api_id: apiId,
+    test_connection: tests.testConnection ? 'Y' : 'N',
+    test_object_access: tests.testObjectAccess ? 'Y' : 'N',
+    test_privileges: tests.testPrivileges ? 'Y' : 'N',
+    test_data_types: tests.testDataTypes ? 'Y' : 'N',
+    test_null_constraints: tests.testNullConstraints ? 'Y' : 'N',
+    test_unique_constraints: tests.testUniqueConstraints ? 'Y' : 'N',
+    test_foreign_key_refs: tests.testForeignKeyReferences ? 'Y' : 'N',
+    test_query_performance: tests.testQueryPerformance ? 'Y' : 'N',
+    performance_threshold: tests.performanceThreshold,
+    test_with_sample_data: tests.testWithSampleData ? 'Y' : 'N',
+    sample_data_rows: tests.sampleDataRows,
+    test_procedure_execution: tests.testProcedureExecution ? 'Y' : 'N',
+    test_function_return: tests.testFunctionReturn ? 'Y' : 'N',
+    test_exception_handling: tests.testExceptionHandling ? 'Y' : 'N',
+    test_sql_injection: tests.testSQLInjection ? 'Y' : 'N',
+    test_authentication: tests.testAuthentication ? 'Y' : 'N',
+    test_authorization: tests.testAuthorization ? 'Y' : 'N',
+    test_data_json: tests.testData ? JSON.stringify(tests.testData) : null,
+    test_queries_json: tests.testQueries ? JSON.stringify(tests.testQueries) : null,
+    created_at: now
+  };
+  
+  const testsColumns = Object.keys(testsConfig);
+  const testsValues = testsColumns.map(col => {
+    const val = testsConfig[col];
+    if (val === null || val === undefined) return 'NULL';
+    if (typeof val === 'boolean') return val ? "'Y'" : "'N'";
+    if (typeof val === 'number') return String(val);
+    return escapeSql(val);
+  });
+  
+  const testsInsert = `INSERT INTO api_tests_config (${testsColumns.join(', ')})
+VALUES (${testsValues.join(', ')});`;
+  
+  // Generate the complete SQL script
+  let sql = `-- ============================================================================
+-- API Configuration INSERT Statements
+-- Generated: ${new Date().toISOString()}
+-- API Name: ${apiDetails.apiName}
+-- API Code: ${apiDetails.apiCode}
+-- ============================================================================
+
+-- 1. Insert the main API configuration
+-- ============================================================================
+${insertStatement}
+
+-- 2. Insert API Parameters (IN/IN OUT parameters)
+-- ============================================================================
+${parameterInserts.length > 0 ? parameterInserts.join('\n\n') : '-- No parameters defined'}
+
+-- 3. Insert API Response Mappings (OUT/IN OUT parameters and response fields)
+-- ============================================================================
+${mappingInserts.length > 0 ? mappingInserts.join('\n\n') : '-- No response mappings defined'}
+
+-- 4. Insert API Headers
+-- ============================================================================
+${headerInserts.length > 0 ? headerInserts.join('\n\n') : '-- No headers defined'}
+
+-- 5. Insert API Tests Configuration
+-- ============================================================================
+${testsInsert}
+
+-- ============================================================================
+-- COMMIT to save all changes
+-- ============================================================================
+COMMIT;
+
+-- ============================================================================
+-- Verification Queries
+-- ============================================================================
+-- View the inserted API configuration:
+-- SELECT * FROM api_configurations WHERE id = '${apiId}';
+
+-- View the parameters for this API:
+-- SELECT * FROM api_parameters WHERE api_id = '${apiId}' ORDER BY sort_order;
+
+-- View the response mappings for this API:
+-- SELECT * FROM api_response_mappings WHERE api_id = '${apiId}' ORDER BY sort_order;
+
+-- View the headers for this API:
+-- SELECT * FROM api_headers WHERE api_id = '${apiId}' ORDER BY sort_order;
+
+-- View the tests configuration for this API:
+-- SELECT * FROM api_tests_config WHERE api_id = '${apiId}';
+`;
+
+  // Add a note about required tables
+  sql += `
+
+-- ============================================================================
+-- NOTES:
+-- ============================================================================
+-- This script assumes the following tables exist:
+--   1. api_configurations - Main API configuration table
+--   2. api_parameters - API parameters table
+--   3. api_response_mappings - API response mappings table
+--   4. api_headers - API headers table
+--   5. api_tests_config - API tests configuration table
+--
+-- If these tables don't exist, create them using the schema definition:
+-- 
+-- CREATE TABLE api_configurations (
+--   id VARCHAR2(100) PRIMARY KEY,
+--   api_name VARCHAR2(200) NOT NULL,
+--   api_code VARCHAR2(100) NOT NULL UNIQUE,
+--   description CLOB,
+--   version VARCHAR2(20),
+--   status VARCHAR2(20),
+--   http_method VARCHAR2(10),
+--   base_path VARCHAR2(200),
+--   endpoint_path VARCHAR2(200),
+--   category VARCHAR2(50),
+--   owner VARCHAR2(100),
+--   tags VARCHAR2(500),
+--   -- ... (other columns from above)
+--   created_at TIMESTAMP,
+--   updated_at TIMESTAMP,
+--   created_by VARCHAR2(100),
+--   updated_by VARCHAR2(100)
+-- );
+-- ============================================================================
+`;
+
+  return sql;
+};
+
+// Update the useEffect that generates preview code
+useEffect(() => {
+  switch(previewMode) {
+    case 'plsql':
+      setGeneratedCode(generatePLSQLCode());
+      break;
+    case 'openapi':
+      setGeneratedCode(generateOpenAPISpec());
+      break;
+    case 'postman':
+      setGeneratedCode(generatePostmanCollection());
+      break;
+    case 'sql_insert':
+      setGeneratedCode(generateSQLInsertStatements());
+      break;
+    default:
+      setGeneratedCode(JSON.stringify({
+        apiDetails,
+        schemaConfig,
+        collectionInfo: {
+          collectionId: selectedCollection?.id,
+          collectionName: selectedCollection?.name,
+          collectionType: selectedCollection?.type,
+          folderId: selectedFolder?.id,
+          folderName: selectedFolder?.name
+        },
+        // Only include IN parameters in the config
+        parameters: getInParameters().map(p => ({
+          key: p.key,
+          dbColumn: p.dbColumn,
+          type: p.apiType,
+          oracleType: p.oracleType,
+          required: p.required,
+          parameterLocation: p.parameterLocation,
+          description: p.description,
+          example: p.example,
+          defaultValue: p.defaultValue,
+          isPrimaryKey: p.isPrimaryKey,
+          paramMode: p.paramMode
+        })),
+        // Include all response mappings (including OUT parameters)
+        responseMappings: getOutMappings().map(m => ({
+          apiField: m.apiField,
+          dbColumn: m.dbColumn,
+          oracleType: m.oracleType,
+          apiType: m.apiType,
+          nullable: m.nullable,
+          isPrimaryKey: m.isPrimaryKey,
+          paramMode: m.paramMode
+        })),
+        requestBody,
+        responseBody,
+        authConfig,
+        settings,
+        sourceObjectInfo,
+        tests,
+        validation: validationResult,
+        isEditing
+      }, null, 2));
+  }
+}, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, requestBody, responseBody, authConfig, settings, sourceObjectInfo, tests, validationResult, selectedCollection, selectedFolder, isEditing]);
+
 
   // Handle save - show preview first - UPDATED to check for existing API code only for new APIs
   const handleSave = () => {
@@ -4427,28 +4787,103 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
   // Copy generated code
   const copyGeneratedCode = () => {
-    navigator.clipboard.writeText(generatedCode);
-  };
+  try {
+    // Get the code content
+    const codeContent = generatedCode;
+    
+    // Create a temporary textarea element
+    const textarea = document.createElement('textarea');
+    textarea.value = codeContent;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-999999px';
+    textarea.style.top = '-999999px';
+    document.body.appendChild(textarea);
+    
+    // Select and copy the text
+    textarea.select();
+    textarea.setSelectionRange(0, codeContent.length);
+    
+    // Execute copy command
+    const successful = document.execCommand('copy');
+    
+    // Remove the textarea
+    document.body.removeChild(textarea);
+    
+    // Show a temporary notification
+    if (successful) {
+      // Create notification element
+      const notification = document.createElement('div');
+      notification.textContent = '✓ Copied to clipboard!';
+      notification.style.position = 'fixed';
+      notification.style.bottom = '20px';
+      notification.style.right = '20px';
+      notification.style.padding = '8px 16px';
+      notification.style.backgroundColor = themeColors.success;
+      notification.style.color = '#ffffff';
+      notification.style.borderRadius = '8px';
+      notification.style.fontSize = '12px';
+      notification.style.zIndex = '10000';
+      notification.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
+      
+      document.body.appendChild(notification);
+      
+      // Remove notification after 2 seconds
+      setTimeout(() => {
+        notification.remove();
+      }, 2000);
+    } else {
+      // Fallback for browsers that don't support execCommand
+      navigator.clipboard.writeText(codeContent).catch(err => {
+        console.error('Failed to copy: ', err);
+        alert('Failed to copy to clipboard. Please select and copy manually.');
+      });
+    }
+  } catch (err) {
+    console.error('Copy failed: ', err);
+    // Fallback using modern clipboard API
+    navigator.clipboard.writeText(generatedCode).catch(() => {
+      alert('Failed to copy to clipboard. Please select and copy manually.');
+    });
+  }
+};
 
   // Download generated code
   const downloadGeneratedCode = () => {
-    const extension = previewMode === 'plsql' ? 'sql' : 'json';
-    const filename = previewMode === 'plsql' ? 
-      `${schemaConfig.schemaName}_${apiDetails.apiCode}_PKG.sql` :
-      previewMode === 'openapi' ? `${apiDetails.apiCode}_openapi.json` :
-      previewMode === 'postman' ? `${apiDetails.apiCode}_postman.json` :
-      `${apiDetails.apiCode}_configuration.json`;
-    
-    const blob = new Blob([generatedCode], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
+  let extension = 'json';
+  let filename = '';
+  
+  switch(previewMode) {
+    case 'plsql':
+      extension = 'sql';
+      filename = `${schemaConfig.schemaName}_${apiDetails.apiCode}_PKG.sql`;
+      break;
+    case 'openapi':
+      extension = 'json';
+      filename = `${apiDetails.apiCode}_openapi.json`;
+      break;
+    case 'postman':
+      extension = 'json';
+      filename = `${apiDetails.apiCode}_postman.json`;
+      break;
+    case 'sql_insert':
+      extension = 'sql';
+      filename = `${apiDetails.apiCode}_insert_statements.sql`;
+      break;
+    default:
+      extension = 'json';
+      filename = `${apiDetails.apiCode}_configuration.json`;
+  }
+  
+  const blob = new Blob([generatedCode], { type: extension === 'sql' ? 'text/plain' : 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
 
   if (!isOpen) return null;
 
@@ -7387,6 +7822,7 @@ WHERE ROWNUM <= 100;` : ''}`}
                           <option value="plsql">PL/SQL Package</option>
                           <option value="openapi">OpenAPI Spec</option>
                           <option value="postman">Postman Collection</option>
+                          <option value="sql_insert">SQL INSERT Statements</option> {/* NEW */}
                         </select>
                         <button
                           onClick={copyGeneratedCode}
@@ -7414,17 +7850,23 @@ WHERE ROWNUM <= 100;` : ''}`}
                       <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
                         <span className="text-xs font-medium" style={{ color: themeColors.text }}>
                           {previewMode === 'plsql' ? 'PL/SQL Package' : 
-                           previewMode === 'openapi' ? 'OpenAPI Specification' :
-                           previewMode === 'postman' ? 'Postman Collection' : 'Configuration'}
+                          previewMode === 'openapi' ? 'OpenAPI Specification' :
+                          previewMode === 'postman' ? 'Postman Collection' : 
+                          previewMode === 'sql_insert' ? 'SQL INSERT Statements' : 'Configuration'}
                         </span>
                         <span className="text-xs font-mono" style={{ color: themeColors.textSecondary }}>
-                          {previewMode === 'plsql' ? '.sql' : '.json'}
+                          {previewMode === 'plsql' ? '.sql' : 
+                          previewMode === 'sql_insert' ? '.sql' : '.json'}
                         </span>
                       </div>
-                      <pre className="w-full h-[400px] px-4 py-3 overflow-auto text-xs" style={{ 
-                        backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
-                        color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
-                      }}>
+                      <pre 
+                        id="code-preview-content"
+                        className="w-full h-[400px] px-4 py-3 overflow-auto text-xs" 
+                        style={{ 
+                          backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                          color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                        }}
+                      >
                         {generatedCode}
                       </pre>
                     </div>
