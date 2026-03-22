@@ -1,5 +1,6 @@
 // components/modals/ApiGenerationModal.js - COMPLETE FIXED VERSION WITH LOADING STATE
 import React, { useState, useEffect, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { 
   X, Plus, Trash2, Save, Copy, Code, Globe, Lock, FileText, 
   Settings, Database, Map, FileJson, TestTube, Wrench, 
@@ -332,6 +333,7 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
   };
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[1100] p-4">
       <div className="rounded-xl shadow-2xl w-3xl max-w-3xl max-h-[80vh] flex flex-col" style={{ 
         backgroundColor: colors.bg,
@@ -481,6 +483,7 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
         </div>
       </div>
     </div>
+    </>
   );
 };
 
@@ -1708,6 +1711,14 @@ export default function ApiGenerationModal({
     category: 'general',
     owner: 'HR',
   });
+
+  // For React 18+, you can also use a ref to ensure body exists
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+      setMounted(true);
+      return () => setMounted(false);
+    }, []);
 
   // Add this with your other useState declarations
   const [codeCheckTimeout, setCodeCheckTimeout] = useState(null);
@@ -4274,13 +4285,23 @@ const handlePreviewConfirm = async () => {
     );
   };
 
-  return (
-    <>
-      <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4" style={{ zIndex: 1000 }}>
-        <div className="rounded-xl shadow-2xl w-5xl max-w-5xl max-h-[90vh] overflow-y-scroll flex flex-col" style={{ 
-          backgroundColor: themeColors.bg,
-          border: `1px solid ${themeColors.modalBorder}`
-        }}>
+  if (!isOpen) return null;
+
+    // For SSR compatibility, return null if not in browser
+    if (typeof window === 'undefined') {
+      return null;
+    }
+
+    if (!mounted) return null;
+
+return ReactDOM.createPortal(
+  <>
+    {/* Main Modal */}
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[1000] p-4">
+      <div className="rounded-xl shadow-2xl w-5xl max-w-5xl max-h-[90vh] overflow-y-scroll flex flex-col" style={{ 
+        backgroundColor: themeColors.bg,
+        border: `1px solid ${themeColors.modalBorder}`
+      }}>
           {/* Header - MODIFIED to show loading state */}
           <div className="px-6 py-4 border-b flex items-center justify-between" style={{ 
             borderColor: themeColors.border,
@@ -7257,6 +7278,7 @@ WHERE ROWNUM <= 100;` : ''}`}
         colors={colors}
         theme={theme}
       />
-    </>
+    </>,
+    document.body
   );
 }
