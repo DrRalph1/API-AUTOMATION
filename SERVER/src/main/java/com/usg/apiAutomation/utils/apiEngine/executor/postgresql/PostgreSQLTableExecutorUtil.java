@@ -42,7 +42,7 @@ public class PostgreSQLTableExecutorUtil {
         while (cause != null) {
             String message = cause.getMessage();
             if (message != null && message.contains("ERROR:")) {
-                // Extract the actual PostgreSQL error without the stack trace
+                // Return the complete PostgreSQL error line
                 Pattern pattern = Pattern.compile("ERROR:[^\\n]*");
                 Matcher matcher = pattern.matcher(message);
                 if (matcher.find()) {
@@ -56,7 +56,7 @@ public class PostgreSQLTableExecutorUtil {
     }
 
     /**
-     * Helper method to extract PostgreSQL error message
+     * Helper method to extract PostgreSQL error message (raw version)
      */
     private String extractPostgreSQLError(String errorMessage) {
         if (errorMessage == null) return "Unknown error";
@@ -374,10 +374,14 @@ public class PostgreSQLTableExecutorUtil {
                 throw new ValidationException("Invalid parameter format. Please check the data types of your parameters.");
             }
 
-            throw new RuntimeException("Failed to execute SELECT operation: " + detailedError, e);
+            // Throw the raw PostgreSQL error
+            throw new RuntimeException(detailedError, e);
         }
     }
 
+    /**
+     * UPDATED: Execute INSERT with raw PostgreSQL error propagation
+     */
     public Object executeInsert(String tableName, String schema, Map<String, Object> params,
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
         if (params == null || params.isEmpty()) {
@@ -548,43 +552,12 @@ public class PostgreSQLTableExecutorUtil {
         } catch (Exception e) {
             log.error("Error executing INSERT on {}: {}", tableName, e.getMessage(), e);
 
-            String detailedError = extractFullPostgreSQLError(e);
+            // Get the raw PostgreSQL error message
+            String rawError = extractFullPostgreSQLError(e);
 
-            // Provide user-friendly error messages
-            if (e.getMessage() != null) {
-                if (e.getMessage().contains("ERROR: relation") && e.getMessage().contains("does not exist")) {
-                    throw new RuntimeException("Table not found: " + detailedError, e);
-                }
-                if (e.getMessage().contains("ERROR: permission denied")) {
-                    throw new RuntimeException("Insufficient privileges: " + detailedError, e);
-                }
-                if (e.getMessage().contains("ERROR: null value in column")) {
-                    throw new RuntimeException("Cannot insert NULL into non-nullable column: " + detailedError, e);
-                }
-                if (e.getMessage().contains("violates foreign key constraint")) {
-                    throw new RuntimeException("Parent key not found - integrity constraint violation: " + detailedError, e);
-                }
-                if (e.getMessage().contains("violates check constraint")) {
-                    throw new RuntimeException("Check constraint violation: " + detailedError, e);
-                }
-                if (e.getMessage().contains("ERROR: value too long for type")) {
-                    throw new RuntimeException("Value too large for column: " + detailedError, e);
-                }
-                if (e.getMessage().contains("ERROR: duplicate key value violates unique constraint")) {
-                    throw new RuntimeException("Unique constraint violation: " + detailedError, e);
-                }
-                if (e.getMessage().contains("ERROR: invalid input syntax")) {
-                    throw new RuntimeException("Invalid number or date format: " + detailedError, e);
-                }
-                if (e.getMessage().contains("column is of type boolean but expression is of type")) {
-                    throw new RuntimeException(
-                            "Type mismatch: Please use boolean values (true/false) for boolean columns. " +
-                                    "Received: " + e.getMessage()
-                    );
-                }
-            }
-
-            throw new RuntimeException("Failed to execute INSERT operation: " + detailedError, e);
+            // THROW THE RAW ERROR DIRECTLY - don't wrap or modify it
+            // This ensures users see the actual database constraint violation
+            throw new RuntimeException(rawError, e);
         }
     }
 
@@ -738,36 +711,11 @@ public class PostgreSQLTableExecutorUtil {
         } catch (Exception e) {
             log.error("Error executing UPDATE on {}: {}", tableName, e.getMessage(), e);
 
-            String detailedError = extractFullPostgreSQLError(e);
+            // Get the raw PostgreSQL error
+            String rawError = extractFullPostgreSQLError(e);
 
-            if (e.getMessage() != null) {
-                if (e.getMessage().contains("ERROR: relation") && e.getMessage().contains("does not exist")) {
-                    throw new RuntimeException("Table not found: " + detailedError, e);
-                }
-                if (e.getMessage().contains("ERROR: permission denied")) {
-                    throw new RuntimeException("Insufficient privileges: " + detailedError, e);
-                }
-                if (e.getMessage().contains("violates foreign key constraint")) {
-                    throw new RuntimeException("Parent key not found - integrity constraint violation: " + detailedError, e);
-                }
-                if (e.getMessage().contains("violates foreign key constraint") && e.getMessage().contains("still referenced")) {
-                    throw new RuntimeException("Child record found - integrity constraint violation: " + detailedError, e);
-                }
-                if (e.getMessage().contains("ERROR: value too long for type")) {
-                    throw new RuntimeException(detailedError, e);
-                }
-                if (e.getMessage().contains("ERROR: duplicate key value violates unique constraint")) {
-                    throw new RuntimeException("Unique constraint violation: " + detailedError, e);
-                }
-                if (e.getMessage().contains("ERROR: null value in column")) {
-                    throw new RuntimeException("Cannot update to NULL: " + detailedError, e);
-                }
-                if (e.getMessage().contains("ERROR: invalid input syntax")) {
-                    throw new RuntimeException("Invalid number or date format: " + detailedError, e);
-                }
-            }
-
-            throw new RuntimeException("Failed to execute UPDATE operation: " + detailedError, e);
+            // Throw raw error
+            throw new RuntimeException(rawError, e);
         }
     }
 
@@ -891,24 +839,11 @@ public class PostgreSQLTableExecutorUtil {
         } catch (Exception e) {
             log.error("Error executing DELETE on {}: {}", tableName, e.getMessage(), e);
 
-            String detailedError = extractFullPostgreSQLError(e);
+            // Get the raw PostgreSQL error
+            String rawError = extractFullPostgreSQLError(e);
 
-            if (e.getMessage() != null) {
-                if (e.getMessage().contains("ERROR: relation") && e.getMessage().contains("does not exist")) {
-                    throw new RuntimeException("Table not found: " + detailedError, e);
-                }
-                if (e.getMessage().contains("ERROR: permission denied")) {
-                    throw new RuntimeException("Insufficient privileges: " + detailedError, e);
-                }
-                if (e.getMessage().contains("violates foreign key constraint") && e.getMessage().contains("still referenced")) {
-                    throw new RuntimeException("Child record found - integrity constraint violation: " + detailedError, e);
-                }
-                if (e.getMessage().contains("violates foreign key constraint")) {
-                    throw new RuntimeException("Parent key not found: " + detailedError, e);
-                }
-            }
-
-            throw new RuntimeException("Failed to execute DELETE operation: " + detailedError, e);
+            // Throw raw error
+            throw new RuntimeException(rawError, e);
         }
     }
 

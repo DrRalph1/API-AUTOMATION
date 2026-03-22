@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.transaction.UnexpectedRollbackException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -19,6 +20,8 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -44,7 +47,65 @@ public class GlobalExceptionHandler {
         }
     }
 
-    // Handle validation errors - 400 Bad RequestEntity
+    /**
+     * Helper method to extract the actual database error from exception chain
+     */
+    private String extractDatabaseErrorMessage(Throwable ex) {
+        Throwable cause = ex;
+        while (cause != null) {
+            String message = cause.getMessage();
+            if (message != null) {
+                // PostgreSQL error
+                if (message.contains("ERROR:")) {
+                    Pattern pattern = Pattern.compile("ERROR:[^\\n]*");
+                    Matcher matcher = pattern.matcher(message);
+                    if (matcher.find()) {
+                        return matcher.group();
+                    }
+                    return message;
+                }
+                // Oracle error
+                if (message.contains("ORA-")) {
+                    Pattern pattern = Pattern.compile("ORA-[0-9]{5}:[^\\n]*");
+                    Matcher matcher = pattern.matcher(message);
+                    if (matcher.find()) {
+                        return matcher.group();
+                    }
+                    return message;
+                }
+            }
+            cause = cause.getCause();
+        }
+        return ex.getMessage();
+    }
+
+    /**
+     * Helper to determine appropriate HTTP status for database errors
+     */
+    private int determineHttpStatusForDatabaseError(String errorMessage) {
+        if (errorMessage == null) {
+            return HttpStatus.BAD_REQUEST.value();
+        }
+
+        String lowerMsg = errorMessage.toLowerCase();
+        if (lowerMsg.contains("unique constraint") ||
+                lowerMsg.contains("duplicate key")) {
+            return HttpStatus.CONFLICT.value(); // 409
+        } else if (lowerMsg.contains("foreign key")) {
+            return HttpStatus.BAD_REQUEST.value(); // 400
+        } else if (lowerMsg.contains("not-null") || lowerMsg.contains("not null")) {
+            return HttpStatus.BAD_REQUEST.value(); // 400
+        } else if (lowerMsg.contains("check constraint")) {
+            return HttpStatus.UNPROCESSABLE_ENTITY.value(); // 422
+        } else if (lowerMsg.contains("value too long")) {
+            return HttpStatus.BAD_REQUEST.value(); // 400
+        } else if (lowerMsg.contains("invalid input syntax")) {
+            return HttpStatus.BAD_REQUEST.value(); // 400
+        }
+        return HttpStatus.BAD_REQUEST.value();
+    }
+
+    // Handle validation errors - 400 Bad Request
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponseDTO<Map<String, String>>> handleValidationExceptions(
             MethodArgumentNotValidException ex) {
@@ -82,32 +143,52 @@ public class GlobalExceptionHandler {
                 .body(ApiResponseDTO.notFound(ex.getMessage()));
     }
 
-    // Handle data integrity violations - 409 Conflict
+    /**
+     * MODIFIED: Handle data integrity violations - Show actual database error
+     */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiResponseDTO<Void>> handleDataIntegrityViolation(
             DataIntegrityViolationException ex) {
 
-        log.warn("Data integrity violation: {}", ex.getMessage());
+        // Extract the actual database error message
+        String databaseError = extractDatabaseErrorMessage(ex);
+
+        log.warn("Data integrity violation: {}", databaseError);
+        log.warn("Full exception: {}", ex.getMessage());
 
         // Log root cause for better debugging
         if (ex.getCause() != null) {
-            log.warn("Data integrity violation root cause: {}", ex.getCause().getMessage());
+            log.warn("Root cause: {}", ex.getCause().getMessage());
         }
 
-        // Log constraint name if available
-        if (ex.getMessage() != null) {
-            log.warn("Full violation message: {}", ex.getMessage());
-        }
+        // Determine appropriate HTTP status
+        int statusCode = determineHttpStatusForDatabaseError(databaseError);
+        String statusMessage = HttpStatus.valueOf(statusCode).getReasonPhrase();
 
-        String message = "A resource with the provided data already exists";
-        if (ex.getMessage() != null &&
-                (ex.getMessage().contains("unique constraint") ||
-                        ex.getMessage().contains("duplicate key"))) {
-            message = "A resource with these values already exists";
-        }
+        // Return the actual database error to the user
+        return ResponseEntity.status(statusCode)
+                .body(ApiResponseDTO.error(statusCode, databaseError));
+    }
 
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ApiResponseDTO.error(409, message));
+    /**
+     * ADDED: Handle UnexpectedRollbackException (which wraps the database error)
+     */
+    @ExceptionHandler(UnexpectedRollbackException.class)
+    public ResponseEntity<ApiResponseDTO<Void>> handleUnexpectedRollbackException(
+            UnexpectedRollbackException ex) {
+
+        // Extract the actual database error from the cause chain
+        String databaseError = extractDatabaseErrorMessage(ex);
+
+        log.warn("Unexpected rollback: {}", databaseError);
+        log.debug("Unexpected rollback exception details:", ex);
+
+        // Determine appropriate HTTP status
+        int statusCode = determineHttpStatusForDatabaseError(databaseError);
+
+        // Return the actual database error to the user
+        return ResponseEntity.status(statusCode)
+                .body(ApiResponseDTO.error(statusCode, databaseError));
     }
 
     // Handle conflict exceptions - 409 Conflict
@@ -136,7 +217,7 @@ public class GlobalExceptionHandler {
                 .body(ApiResponseDTO.error(422, ex.getMessage()));
     }
 
-    // Handle illegal arguments - 400 Bad RequestEntity
+    // Handle illegal arguments - 400 Bad Request
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponseDTO<Void>> handleIllegalArgumentException(
             IllegalArgumentException ex) {
@@ -150,19 +231,19 @@ public class GlobalExceptionHandler {
                 .body(ApiResponseDTO.badRequest(ex.getMessage()));
     }
 
-    // Handle malformed requestEntities - 400 Bad RequestEntity
+    // Handle malformed requests - 400 Bad Request
     @ExceptionHandler({HttpMessageNotReadableException.class,
             MethodArgumentTypeMismatchException.class})
     public ResponseEntity<ApiResponseDTO<Map<String, String>>> handleBadRequestExceptions(Exception ex) {
 
-        log.warn("Bad requestEntity: {} - {}", ex.getClass().getSimpleName(), ex.getMessage());
+        log.warn("Bad request: {} - {}", ex.getClass().getSimpleName(), ex.getMessage());
 
         // Log the full exception for debugging
         if (ex.getCause() != null) {
             log.warn("Root cause: {}", ex.getCause().getMessage());
         }
 
-        String message = "Malformed or invalid requestEntity";
+        String message = "Malformed or invalid request";
         Map<String, String> details = new HashMap<>();
 
         if (ex instanceof MethodArgumentTypeMismatchException) {
@@ -174,19 +255,19 @@ public class GlobalExceptionHandler {
             details.put("actualValue", String.valueOf(mismatchEx.getValue()));
 
             // Log specific mismatch details
-            log.warn("Type mismatch - ParameterEntity: {}, Expected: {}, Actual: {}",
+            log.warn("Type mismatch - Parameter: {}, Expected: {}, Actual: {}",
                     mismatchEx.getName(),
                     mismatchEx.getRequiredType() != null ? mismatchEx.getRequiredType().getSimpleName() : "unknown",
                     mismatchEx.getValue());
 
         } else if (ex instanceof HttpMessageNotReadableException) {
-            message = "Invalid requestEntity body";
+            message = "Invalid request body";
             if (ex.getCause() != null) {
                 details.put("cause", ex.getCause().getMessage());
                 // Log parsing error details
                 log.warn("Message not readable - Cause: {}", ex.getCause().getMessage());
             }
-            details.put("error", "Failed to parse requestEntity body");
+            details.put("error", "Failed to parse request body");
 
             // Log HTTP message reading error
             log.debug("HTTP message not readable stack trace:", ex);
@@ -242,5 +323,4 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponseDTO.internalError("An unexpected error occurred"));
     }
-
 }

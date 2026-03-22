@@ -801,7 +801,7 @@ public class AutomationEngineService {
      * Execute API based on the database type stored in the API entity
      * Supports multiple database types: Oracle, PostgreSQL, etc.
      */
-    @Transactional
+    // @Transactional
     public ExecuteApiResponseDTO executeApi(String requestId, String performedBy,
                                             String apiId, ExecuteApiRequestDTO executeRequest,
                                             String clientIp, String userAgent,
@@ -810,6 +810,7 @@ public class AutomationEngineService {
         long startTime = System.currentTimeMillis();
         String capturedRequestId = null;
         ApiRequestResponseDTO capturedRequest = null;
+        String databaseType = "oracle"; // Declare outside try block with default value
 
         try {
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
@@ -820,7 +821,7 @@ public class AutomationEngineService {
                     .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
 
             // 2. Get the database type from the API entity
-            String databaseType = api.getDatabaseType();
+            databaseType = api.getDatabaseType();
             if (databaseType == null || databaseType.isEmpty()) {
                 databaseType = "oracle";
             }
@@ -1006,15 +1007,12 @@ public class AutomationEngineService {
             Map<String, Object> consolidatedParams = createConsolidatedParamsWithHeaders(validatedRequest);
 
             // 14. Parse XML body if present
-            // Parse XML body if present
             if (validatedRequest.getBody() instanceof String) {
                 String rawBody = (String) validatedRequest.getBody();
                 if (rawBody.trim().startsWith("<")) {
                     log.info("XML body detected, parsing to extract parameters");
                     Map<String, Object> xmlParams = parseXmlParameters(rawBody, api.getParameters());
 
-                    // CRITICAL FIX: Add the extracted parameters to the validatedRequest
-                    // Either add them to the body as a map, or add them to query params/path params
                     if (validatedRequest.getBody() == null) {
                         validatedRequest.setBody(new HashMap<>());
                     }
@@ -1023,7 +1021,6 @@ public class AutomationEngineService {
                         ((Map<String, Object>) validatedRequest.getBody()).putAll(xmlParams);
                         log.info("Added {} extracted XML parameters to request body", xmlParams.size());
                     } else {
-                        // If body is not a map, create a new map with the extracted params
                         Map<String, Object> newBody = new HashMap<>();
                         newBody.putAll(xmlParams);
                         validatedRequest.setBody(newBody);
@@ -1174,10 +1171,13 @@ public class AutomationEngineService {
                 executionTime = System.currentTimeMillis() - startTime;
                 log.error("Database execution failed for {}: ", databaseType, e);
 
-                // Extract the meaningful error message
+                // Extract the actual database error
                 String detailedError = extractDatabaseError(e, databaseType);
 
-                // Create a user-friendly error response
+                // Log the raw error for debugging
+                log.info("Returning raw database error: {}", detailedError);
+
+                // Create error response - DO NOT RE-THROW, return this directly
                 ExecuteApiResponseDTO errorResponse = new ExecuteApiResponseDTO();
                 errorResponse.setResponseCode(500);
                 errorResponse.setSuccess(false);
@@ -1192,7 +1192,6 @@ public class AutomationEngineService {
                 // Update captured request with the error
                 if (capturedRequestId != null) {
                     try {
-                        // Truncate error message for database storage
                         String dbErrorMessage = truncateErrorMessage(detailedError, 250);
                         apiRequestService.updateRequestWithError(
                                 requestId, capturedRequestId, 500, dbErrorMessage, executionTime);
@@ -1211,7 +1210,7 @@ public class AutomationEngineService {
                     log.error("Failed to log execution error: {}", logError.getMessage());
                 }
 
-                // Return the error response with meaningful message
+                // Return the error response directly
                 return errorResponse;
             }
 
@@ -1222,12 +1221,13 @@ public class AutomationEngineService {
                     ", Error executing API: " + e.getMessage());
             log.error("Error executing API: ", e);
 
-            String detailedError = extractDatabaseError(e, "unknown");
+            // Extract the actual database error if it's a data integrity violation
+            String detailedError = extractDatabaseError(e, databaseType);
 
             ExecuteApiResponseDTO safeResponse = new ExecuteApiResponseDTO();
             safeResponse.setResponseCode(500);
             safeResponse.setSuccess(false);
-            safeResponse.setMessage("Database execution error: " + detailedError);
+            safeResponse.setMessage(detailedError);
 
             Map<String, Object> errorData = new HashMap<>();
             errorData.put("error", detailedError);
@@ -1289,80 +1289,72 @@ public class AutomationEngineService {
     }
 
     /**
-     * Extract database-specific error message from exception chain
+     * Extracts the actual database error without modification
+     * This returns the raw error message that PostgreSQL or Oracle returns
      */
     private String extractDatabaseError(Exception e, String databaseType) {
         Throwable cause = e;
         while (cause != null) {
             String message = cause.getMessage();
             if (message != null) {
-                // PostgreSQL-specific errors
+                // PostgreSQL-specific errors - return the raw error
                 if (databaseType.equalsIgnoreCase("postgresql") || databaseType.equalsIgnoreCase("postgres")) {
-                    if (message.contains("ERROR: null value in column")) {
-                        // Extract column name from error
-                        Pattern pattern = Pattern.compile("null value in column \"([^\"]+)\"");
+                    if (message.contains("ERROR:")) {
+                        // Return the complete PostgreSQL error line
+                        Pattern pattern = Pattern.compile("ERROR:[^\\n]*");
                         Matcher matcher = pattern.matcher(message);
                         if (matcher.find()) {
-                            String columnName = matcher.group(1);
-                            return String.format("Missing required field: '%s' cannot be null. Please provide a value for this field.", columnName);
+                            String rawError = matcher.group();
+                            log.info("Returning raw PostgreSQL error: {}", rawError);
+                            return rawError;
                         }
-                        return "Missing required field: " + message;
+                        return message;
                     }
-                    if (message.contains("ERROR: duplicate key value violates unique constraint")) {
-                        return "Duplicate entry: A record with this value already exists.";
-                    }
-                    if (message.contains("ERROR: value too long for type")) {
-                        return "Value too long: The provided value exceeds the maximum length allowed.";
-                    }
-                    if (message.contains("ERROR: invalid input syntax for type")) {
-                        return "Invalid data type: Please check the format of your input values.";
-                    }
-                    if (message.contains("violates foreign key constraint")) {
-                        return "Invalid reference: The referenced record does not exist.";
-                    }
-                    if (message.contains("violates check constraint")) {
-                        return "Validation failed: The provided values do not meet the required conditions.";
+                    // Handle PostgreSQL specific exceptions by checking class name
+                    if (cause.getClass().getName().contains("PSQLException")) {
+                        return cause.getMessage();
                     }
                 }
 
-                // Oracle-specific errors
-                if (databaseType.equalsIgnoreCase("oracle")) {
-                    if (message.contains("ORA-01400")) {
-                        // Extract column name if possible
-                        Pattern pattern = Pattern.compile("cannot insert NULL into \\(([^\\)]+)\\)");
-                        Matcher matcher = pattern.matcher(message);
-                        if (matcher.find()) {
-                            String columnInfo = matcher.group(1);
-                            return String.format("Missing required field: %s cannot be null.", columnInfo);
-                        }
-                        return "Missing required field: A required value was not provided.";
+                // Oracle-specific errors - return raw ORA error
+                if (databaseType.equalsIgnoreCase("oracle") && message.contains("ORA-")) {
+                    Pattern pattern = Pattern.compile("ORA-[0-9]{5}:[^\\n]*");
+                    Matcher matcher = pattern.matcher(message);
+                    if (matcher.find()) {
+                        return matcher.group();
                     }
-                    if (message.contains("ORA-00001")) {
-                        return "Duplicate entry: A record with this value already exists.";
-                    }
-                    if (message.contains("ORA-12899")) {
-                        return "Value too large: The provided value exceeds the maximum length allowed.";
-                    }
-                    if (message.contains("ORA-01722")) {
-                        return "Invalid number format: Please check numeric fields for correct format.";
-                    }
-                    if (message.contains("ORA-02291")) {
-                        return "Invalid reference: The referenced record does not exist.";
-                    }
-                    if (message.contains("ORA-02290")) {
-                        return "Validation failed: The provided values do not meet the required conditions.";
-                    }
-                }
-
-                // Check for SQLException
-                if (cause instanceof java.sql.SQLException) {
                     return message;
+                }
+
+                // Generic SQL Exception
+                if (cause instanceof java.sql.SQLException) {
+                    return cause.getMessage();
                 }
             }
             cause = cause.getCause();
         }
 
+        // If no specific error found, return the original message
         return e.getMessage() != null ? e.getMessage() : "Unknown database error";
+    }
+
+
+    /**
+     * Extracts the full database error with all details
+     */
+    private String extractFullDatabaseError(Exception e) {
+        StringBuilder fullError = new StringBuilder();
+        Throwable cause = e;
+        while (cause != null) {
+            if (cause.getMessage() != null) {
+                if (fullError.length() > 0) {
+                    fullError.append("; ");
+                }
+                fullError.append(cause.getMessage());
+            }
+            cause = cause.getCause();
+        }
+        return fullError.toString();
     }
 
     /**
