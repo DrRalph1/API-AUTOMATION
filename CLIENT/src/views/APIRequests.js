@@ -962,7 +962,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [systemStats, setSystemStats] = useState(null);
   
   const [sidebarPage, setSidebarPage] = useState(0);
-  const [sidebarItemsPerPage, setSidebarItemsPerPage] = useState(6); // Changed to 6 items per page
+  const [sidebarItemsPerPage, setSidebarItemsPerPage] = useState(5);
   const [sidebarTotalItems, setSidebarTotalItems] = useState(0);
   
   const [loading, setLoading] = useState({ 
@@ -1134,28 +1134,12 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   // Expand date range function
   const expandDateRange = (days) => {
     const newFromDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
-    const newToDate = new Date().toISOString().slice(0, 16);
     setDateRange({
       fromDate: newFromDate,
-      toDate: newToDate
+      toDate: new Date().toISOString().slice(0, 16)
     });
     setPagination(prev => ({ ...prev, page: 0 }));
-    // Load requests after date range is updated
     setTimeout(() => loadRequests(), 100);
-  };
-
-  // Sort API summaries by most recent data first (based on lastRequestTime)
-  const sortApiSummariesByRecency = (summaries) => {
-    return [...summaries].sort((a, b) => {
-      // Sort by lastRequestTime - most recent first
-      if (a.lastRequestTime && b.lastRequestTime) {
-        return new Date(b.lastRequestTime) - new Date(a.lastRequestTime);
-      }
-      if (a.lastRequestTime) return -1;
-      if (b.lastRequestTime) return 1;
-      // If no lastRequestTime, sort by totalRequests
-      return (b.totalRequests || 0) - (a.totalRequests || 0);
-    });
   };
 
   // Load full API list from the server
@@ -1173,9 +1157,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
       const response = await searchRequests(authToken, filter);
       
       if (response?.responseCode === 200) {
-        let apiList = response.data?.apiSummaries || [];
-        // Sort by most recent first
-        apiList = sortApiSummariesByRecency(apiList);
+        const apiList = response.data?.apiSummaries || [];
         setApiSummaries(apiList);
         setSidebarTotalItems(apiList.length);
         setFullApiListLoaded(true);
@@ -1186,7 +1168,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
   }, [authToken, dateRange.fromDate, dateRange.toDate]);
 
-  // Load requests with filters - FIXED to properly use date range
+  // Load requests with filters
   const loadRequests = useCallback(async (isRefresh = false) => {
     if (!authToken) {
       showToast('Authentication required', 'error');
@@ -1198,42 +1180,17 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
 
     try {
-      // Build the filter object - MAKE SURE to include date range
       const filter = {
         page: pagination.page,
         size: pagination.size,
-        sortBy: 'requestTimestamp',
-        sortDirection: 'DESC'
+        fromDate: dateRange.fromDate,
+        toDate: dateRange.toDate,
+        search: searchQuery || undefined,
+        ...(selectedApiId && { apiId: selectedApiId }),
+        ...filters
       };
 
-      // CRITICAL FIX: Always include date range if set
-      if (dateRange.fromDate && dateRange.fromDate.trim() !== '') {
-        filter.fromDate = dateRange.fromDate + ':00'; // Add seconds if needed
-      }
-      if (dateRange.toDate && dateRange.toDate.trim() !== '') {
-        filter.toDate = dateRange.toDate + ':59'; // Add seconds if needed
-      }
-
-      // Add search query
-      if (searchQuery && searchQuery.trim() !== '') {
-        filter.search = searchQuery.trim();
-      }
-
-      // Add selected API ID if set
-      if (selectedApiId && selectedApiId !== '') {
-        filter.apiId = selectedApiId;
-      }
-
-      // Add other filters
-      if (filters.requestStatus) {
-        filter.requestStatus = filters.requestStatus;
-      }
-      if (filters.httpMethod) {
-        filter.httpMethod = filters.httpMethod;
-      }
-      if (filters.responseStatusCode) {
-        filter.responseStatusCode = filters.responseStatusCode;
-      }
+      Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
 
       console.log('Loading requests with filter:', filter);
 
@@ -1267,11 +1224,8 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         
         setRequests(responseData.content || []);
         
-        // Update API summaries from response and sort by recency
-        let apiList = responseData.apiSummaries || [];
-        apiList = sortApiSummariesByRecency(apiList);
-        setApiSummaries(apiList);
-        setSidebarTotalItems(apiList.length);
+        const apiList = responseData.apiSummaries || [];
+        setFilteredApiSummaries(apiList);
         
         setPagination({
           page: responseData.currentPage || 0,
@@ -1309,14 +1263,10 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     setLoading(prev => ({ ...prev, statistics: true }));
 
     try {
-      // Use the date range from state
-      const fromDateParam = dateRange.fromDate ? dateRange.fromDate + ':00' : null;
-      const toDateParam = dateRange.toDate ? dateRange.toDate + ':59' : null;
-      
       const systemResponse = await getSystemStatistics(
         authToken,
-        fromDateParam,
-        toDateParam
+        dateRange.fromDate,
+        dateRange.toDate
       );
       
       if (systemResponse?.responseCode === 200) {
@@ -1478,13 +1428,11 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
   };
 
-  // Get paginated API summaries for sidebar - sorted by most recent first
+  // Get paginated API summaries for sidebar
   const getPaginatedApiSummaries = () => {
-    // First sort the summaries by recency
-    const sortedSummaries = sortApiSummariesByRecency(apiSummaries);
     const startIndex = sidebarPage * sidebarItemsPerPage;
     const endIndex = startIndex + sidebarItemsPerPage;
-    return sortedSummaries.slice(startIndex, endIndex);
+    return apiSummaries.slice(startIndex, endIndex);
   };
 
   // Handle search with debounce
@@ -1513,18 +1461,11 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
   }, [activeTab, loadStatistics, loadRequests, loadRecentRequests]);
 
-  // Handle date range apply
-  const handleDateRangeApply = () => {
-    setPagination(prev => ({ ...prev, page: 0 }));
-    loadRequests();
-    loadStatistics(); // Also refresh statistics with new date range
-  };
-
   // Initial load
   useEffect(() => {
     if (authToken && isInitialMount.current) {
       isInitialMount.current = false;
-      console.log('Initial load with date range:', dateRange);
+      console.log('Initial load');
       loadStatistics();
       loadFullApiList();
       
@@ -1762,7 +1703,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                 <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
                 <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
                 <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
-              </tr>
+               </tr>
             </thead>
             <tbody>
               {requests.map((request, index) => {
@@ -2014,6 +1955,18 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           </div>
 
           <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search size={14} className="absolute left-2 top-1/2 transform -translate-y-1/2" style={{ color: colors.textSecondary }} />
+              <input
+                type="text"
+                placeholder="Search requests..."
+                value={searchQuery}
+                onChange={handleSearchChange}
+                className="pl-8 pr-3 py-1.5 rounded text-sm w-64"
+                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+              />
+            </div>
+
             <button 
               onClick={() => setShowFilterModal(true)}
               className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
@@ -2052,56 +2005,69 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           />
         </div>
 
-        {/* NEW LAYOUT: Search box on left, date range on right with proper padding */}
-        <div className="flex items-center justify-between gap-4 px-4 py-3 border-b" style={{ 
+        {/* {selectedApiId && selectedApiData && (
+          <div className="flex items-center gap-4 px-4 py-2 border-b" style={{ 
+            borderColor: colors.border, 
+            backgroundColor: colors.hover
+          }}>
+            <span className="text-xs font-medium" style={{ color: colors.textSecondary }}>API Summary:</span>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1">
+                <CheckCircle size={12} style={{ color: colors.success }} />
+                <span className="text-xs" style={{ color: colors.text }}>Success: {selectedApiData.successCount || 0}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <XCircle size={12} style={{ color: colors.error }} />
+                <span className="text-xs" style={{ color: colors.text }}>Failed: {selectedApiData.failedCount || 0}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <ClockIcon size={12} style={{ color: colors.warning }} />
+                <span className="text-xs" style={{ color: colors.text }}>Avg: {formatExecutionTimeHelper(selectedApiData.averageResponseTimeMs)}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Activity size={12} style={{ color: colors.info }} />
+                <span className="text-xs" style={{ color: colors.text }}>Total: {selectedApiData.totalRequests || 0}</span>
+              </div>
+            </div>
+          </div>
+        )} */}
+
+        <div className="flex items-center gap-4 px-4 py-2 border-b pl-2 pr-2" style={{ 
           borderColor: colors.border, 
           backgroundColor: colors.card
         }}>
-          {/* Left side: Search box */}
-          <div className="flex-1 max-w-md">
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2" style={{ color: colors.textSecondary }} />
-              <input
-                type="text"
-                placeholder="Search requests by name, URL, correlation ID..."
-                value={searchQuery}
-                onChange={handleSearchChange}
-                className="pl-9 pr-3 py-2 rounded text-sm w-full"
-                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-              />
-            </div>
-          </div>
-
-          {/* Right side: Date range controls */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Calendar size={14} style={{ color: colors.textSecondary }} />
             <span className="text-sm" style={{ color: colors.textSecondary }}>Date Range:</span>
-            <input
-              type="datetime-local"
-              value={dateRange.fromDate}
-              onChange={(e) => setDateRange({ ...dateRange, fromDate: e.target.value })}
-              className="px-2 py-1.5 rounded text-sm"
-              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-              disabled={loading.initialLoad || loading.refresh}
-            />
-            <span style={{ color: colors.textSecondary }}>to</span>
-            <input
-              type="datetime-local"
-              value={dateRange.toDate}
-              onChange={(e) => setDateRange({ ...dateRange, toDate: e.target.value })}
-              className="px-2 py-1.5 rounded text-sm"
-              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-              disabled={loading.initialLoad || loading.refresh}
-            />
-            <button
-              onClick={handleDateRangeApply}
-              className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
-              style={{ backgroundColor: colors.primaryDark, color: 'white' }}
-              disabled={loading.initialLoad || loading.refresh}
-            >
-              Apply
-            </button>
           </div>
+          <input
+            type="datetime-local"
+            value={dateRange.fromDate}
+            onChange={(e) => setDateRange({ ...dateRange, fromDate: e.target.value })}
+            className="px-2 py-1 rounded text-sm"
+            style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+            disabled={loading.initialLoad || loading.refresh}
+          />
+          <span style={{ color: colors.textSecondary }}>to</span>
+          <input
+            type="datetime-local"
+            value={dateRange.toDate}
+            onChange={(e) => setDateRange({ ...dateRange, toDate: e.target.value })}
+            className="px-2 py-1 rounded text-sm"
+            style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+            disabled={loading.initialLoad || loading.refresh}
+          />
+          <button
+            onClick={() => {
+              setPagination(prev => ({ ...prev, page: 0 }));
+              loadRequests();
+            }}
+            className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
+            style={{ backgroundColor: colors.primaryDark, color: 'white' }}
+            disabled={loading.initialLoad || loading.refresh}
+          >
+            Apply
+          </button>
         </div>
 
         {renderRequestsTable()}
