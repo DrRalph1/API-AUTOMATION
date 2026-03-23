@@ -95,7 +95,7 @@ public class DashboardService {
         stats.setActiveUsers(userStats.getActiveUsers());
 
         // Documentation stats
-        var docStats = documentationService.getDocumentationStats(performedBy);
+        var docStats = documentationService.getDocumentationStats();
         stats.setTotalDocumentationEndpoints(docStats.getTotalEndpoints());
         stats.setPublishedDocumentation(docStats.getPublishedCollections());
 

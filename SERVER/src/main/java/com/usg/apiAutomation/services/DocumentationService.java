@@ -1152,7 +1152,7 @@ public class DocumentationService {
         try {
             log.info("Request ID: {}, Getting environments for user: {}", requestId, performedBy);
 
-            List<EnvironmentEntity> environments = environmentRepository.findByCreatedBy(performedBy);
+            List<EnvironmentEntity> environments = environmentRepository.findAll();
 
             if (environments.isEmpty()) {
                 environments = environmentRepository.findAll();
@@ -1257,7 +1257,7 @@ public class DocumentationService {
     }
 
     private void deactivateOtherEnvironments(String performedBy) {
-        List<EnvironmentEntity> activeEnvs = environmentRepository.findActiveEnvironmentsByUser(performedBy);
+        List<EnvironmentEntity> activeEnvs = environmentRepository.findAll();
         activeEnvs.forEach(env -> {
             env.setActive(false);
             environmentRepository.save(env);
@@ -2039,12 +2039,12 @@ public class DocumentationService {
 
     // ========== STATISTICS METHODS ==========
 
-    public DocumentationStatsDTO getDocumentationStats(String userId) {
+    public DocumentationStatsDTO getDocumentationStats() {
         DocumentationStatsDTO stats = new DocumentationStatsDTO();
 
         stats.setTotalCollections((int) collectionRepository.count());
         stats.setTotalEndpoints((int) endpointRepository.count());
-        stats.setPublishedCollections((int) publishedDocumentationRepository.findByPublishedBy(userId).size());
+        stats.setPublishedCollections((int) publishedDocumentationRepository.findAll().size());
         stats.setTotalCodeExamples((int) codeExampleRepository.count());
 
         // Get counts by method
