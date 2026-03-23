@@ -460,16 +460,10 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
       
       // In fetchCollectionsList, when auto-selecting first collection:
       if (sortedCollections.length > 0) {
-        const firstCollection = sortedCollections[0];
-        setSelectedCollection(firstCollection);
+        // Load details for ALL collections first
+        await loadAllCollectionDetails(sortedCollections);
         
-        // IMPORTANT: Clear any existing expanded folders first
-        setExpandedFolders([]); // ← Clear all expanded folders
-        
-        // Then expand the first collection
-        setExpandedCollections([firstCollection.id]);
-        
-        await fetchCollectionDetails(firstCollection.id);
+        // After details are loaded, the auto-selection will happen inside loadAllCollectionDetails
       }
       
       showToast('Collections loaded successfully', 'success');
@@ -483,6 +477,120 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
       console.log('🏁 [CodeBase] fetchCollectionsList completed');
     }
   }, [authToken]);
+
+
+  // Load details for all collections (similar to Documentation component)
+const loadAllCollectionDetails = useCallback(async (basicCollections) => {
+  console.log('📡 [CodeBase] Loading details for all collections...');
+  
+  if (!authToken) {
+    console.log('❌ No auth token for loadAllCollectionDetails');
+    return;
+  }
+
+  try {
+    setIsLoading(prev => ({ ...prev, folders: true }));
+    
+    const collectionsWithDetails = await Promise.all(
+      basicCollections.map(async (collection) => {
+        try {
+          console.log(`📡 [CodeBase] Fetching details for collection: ${collection.name}`);
+          const response = await getCollectionDetailsFromCodebase(authToken, collection.id);
+          const handledResponse = handleCodebaseResponse(response);
+          const details = extractCodebaseCollectionDetails(handledResponse);
+          
+          if (details) {
+            // Process folders with request counts
+            const processedFolders = (details.folders || []).map(folder => ({
+              id: folder.id || folder.folderId,
+              name: folder.name || folder.folderName,
+              description: folder.description || '',
+              collectionId: folder.collectionId || collection.id,
+              requests: folder.requests || [],
+              requestCount: folder.requests ? folder.requests.length : 0,
+              hasRequests: (folder.requests && folder.requests.length > 0),
+              isLoading: false,
+              error: null
+            }));
+            
+            // Sort folders alphabetically by name
+            const sortedFolders = sortAlphabetically(processedFolders, 'name');
+            
+            // Sort requests within each folder alphabetically
+            const foldersWithSortedRequests = sortedFolders.map(folder => ({
+              ...folder,
+              requests: sortAlphabetically(folder.requests || [], 'name')
+            }));
+            
+            // Store folder requests in state for quick access
+            const folderRequestsMap = {};
+            foldersWithSortedRequests.forEach(folder => {
+              if (folder.requests.length > 0) {
+                folderRequestsMap[folder.id] = folder.requests;
+              }
+            });
+            
+            if (Object.keys(folderRequestsMap).length > 0) {
+              setFolderRequests(prev => ({
+                ...prev,
+                ...folderRequestsMap
+              }));
+            }
+            
+            return {
+              ...collection,
+              folders: foldersWithSortedRequests,
+              totalFolders: details.totalFolders || sortedFolders.length,
+              totalEndpoints: details.totalEndpoints || 
+                foldersWithSortedRequests.reduce((sum, f) => sum + f.requests.length, 0)
+            };
+          }
+          
+          return collection;
+          
+        } catch (error) {
+          console.error(`❌ Error loading details for collection ${collection.id}:`, error);
+          return collection;
+        }
+      })
+    );
+    
+    // Sort collections again after adding details
+    const sortedCollections = sortAlphabetically(collectionsWithDetails, 'name');
+    console.log('📊 [CodeBase] Collections with details (sorted):', 
+      sortedCollections.map(c => ({ name: c.name, totalEndpoints: c.totalEndpoints })));
+    
+    setCollections(sortedCollections);
+    
+    // Auto-select first collection and its first folder/request
+    if (sortedCollections.length > 0) {
+      const firstCollection = sortedCollections[0];
+      setSelectedCollection(firstCollection);
+      setExpandedCollections([firstCollection.id]);
+      
+      const firstFolderWithRequests = firstCollection.folders?.find(f => f.requests && f.requests.length > 0);
+      if (firstFolderWithRequests) {
+        setExpandedFolders([firstFolderWithRequests.id]);
+        
+        if (firstFolderWithRequests.requests.length > 0 && !selectedRequest) {
+          const firstEndpoint = firstFolderWithRequests.requests[0];
+          console.log(`🎯 [CodeBase] Auto-selecting first endpoint: ${firstEndpoint.name}`);
+          setSelectedRequest(firstEndpoint);
+          await fetchRequestDetails(firstCollection.id, firstEndpoint.id);
+          await fetchAllImplementations(firstCollection.id, firstEndpoint.id);
+          showToast(`Viewing implementation for ${firstEndpoint.name}`, 'info');
+        }
+      } else if (firstCollection.folders && firstCollection.folders.length > 0) {
+        setExpandedFolders([firstCollection.folders[0].id]);
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Error loading collection details:', error);
+  } finally {
+    setIsLoading(prev => ({ ...prev, folders: false }));
+  }
+}, [authToken, selectedRequest, fetchRequestDetails, fetchAllImplementations, showToast]);
 
 
   // DEBUG - Monitor selectedCollection.folders changes
@@ -1319,30 +1427,30 @@ useEffect(() => {
   }
 }, [currentImplementation, selectedLanguage, selectedComponent]);
 
-  // Initialize data
-  useEffect(() => {
-    console.log('🚀 [CodeBase] Component mounted, fetching data...');
+  
+// Initialize data - updated to load all collection details
+useEffect(() => {
+  console.log('🚀 [CodeBase] Component mounted, fetching data...');
+  
+  if (authToken) {
+    const extractedUserId = extractUserIdFromToken(authToken);
+    setUserId(extractedUserId);
     
-    if (authToken) {
-      // Use controller's function
-      const extractedUserId = extractUserIdFromToken(authToken);
-      setUserId(extractedUserId);
-      
-      // Clear cache to force fresh API call
-      clearCachedCodebaseData(extractedUserId);
-      
-      // Wrap initial data fetch with global loading
-      withGlobalLoading(async () => {
-        await Promise.all([
-          fetchCollectionsList(),
-          fetchLanguages()
-        ]);
-      });
-      
-    } else {
-      console.log('🔒 [CodeBase] No auth token, skipping fetch');
-    }
-  }, [authToken, fetchCollectionsList, fetchLanguages]);
+    // Clear cache to force fresh API call
+    clearCachedCodebaseData(extractedUserId);
+    
+    // Wrap initial data fetch with global loading
+    withGlobalLoading(async () => {
+      await fetchCollectionsList();
+      // fetchCollectionsList will now call loadAllCollectionDetails internally
+      await fetchLanguages();
+    });
+    
+  } else {
+    console.log('🔒 [CodeBase] No auth token, skipping fetch');
+  }
+}, [authToken, fetchCollectionsList, fetchLanguages]);
+
 
 // Add this ref near your other refs
 const autoExpandTriggered = useRef(false);
@@ -2166,179 +2274,207 @@ const renderImplementationContent = () => {
           </div>
 
           <div className="flex-1 overflow-auto p-2">
-            {isLoading.collections ? (
-              <div className="text-center py-8" style={{ color: colors.textSecondary }}>
-                <RefreshCw size={16} className="animate-spin mx-auto mb-2" />
-                <p className="text-sm">Loading collections...</p>
-              </div>
-            ) : filteredCollections.length === 0 ? (
-              <div className="text-center p-4" style={{ color: colors.textSecondary }}>
-                <DatabaseIcon size={20} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No collections available</p>
-                <button className="mt-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  onClick={async () => {
-                    try {
-                      await withGlobalLoading(async () => {
-                        await fetchCollectionsList();
-                      });
-                    } catch (error) {
-                      showToast('Failed to load collections', 'error');
-                    }
-                  }}
-                  style={{ backgroundColor: colors.hover, color: colors.text }}>
-                  Load Collections
-                </button>
-              </div>
-            ) : (
+  {isLoading.collections ? (
+    <div className="text-center py-8" style={{ color: colors.textSecondary }}>
+      <RefreshCw size={16} className="animate-spin mx-auto mb-2" />
+      <p className="text-sm">Loading collections...</p>
+    </div>
+  ) : filteredCollections.length === 0 ? (
+    <div className="text-center p-4" style={{ color: colors.textSecondary }}>
+      <DatabaseIcon size={20} className="mx-auto mb-2 opacity-50" />
+      <p className="text-sm">No collections available</p>
+      <button className="mt-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
+        onClick={async () => {
+          try {
+            await withGlobalLoading(async () => {
+              await fetchCollectionsList();
+            });
+          } catch (error) {
+            showToast('Failed to load collections', 'error');
+          }
+        }}
+        style={{ backgroundColor: colors.hover, color: colors.text }}>
+        Load Collections
+      </button>
+    </div>
+  ) : (
+    <>
+      {filteredCollections.map(collection => {
+        // Calculate total endpoints in this collection
+        const totalEndpoints = collection.folders?.reduce((sum, folder) => 
+          sum + (folder.requestCount || 0), 0) || 0;
+        
+        return (
+          <div key={collection.id} className="mb-3">
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
+              onClick={() => toggleCollection(collection.id)}
+              style={{ backgroundColor: colors.hover }}>
+              {expandedCollections.includes(collection.id) ? (
+                <ChevronDown size={12} style={{ color: colors.textSecondary }} />
+              ) : (
+                <ChevronRight size={12} style={{ color: colors.textSecondary }} />
+              )}
+              <button onClick={(e) => {
+                e.stopPropagation();
+                // Toggle favorite
+                const newCollections = collections.map(c => 
+                  c.id === collection.id ? { ...c, isFavorite: !c.isFavorite } : c
+                );
+                setCollections(newCollections);
+                showToast(collection.isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
+              }}>
+                {collection.isFavorite ? (
+                  <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
+                ) : (
+                  <Star size={12} style={{ color: colors.textSecondary }} />
+                )}
+              </button>
+              
+              <span className="text-sm font-medium flex-1 truncate" style={{ color: colors.text }}>
+                {collection.name}
+              </span>
+              
+              {/* Collection count badge - show total endpoints in collection */}
+              {totalEndpoints > 0 && (
+                <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                  backgroundColor: colors.primaryDark,
+                  color: 'white'
+                }}>
+                  {totalEndpoints}
+                </span>
+              )}
+              
+              {/* {collection.version && (
+                <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                  backgroundColor: colors.hover,
+                  color: colors.textSecondary
+                }}>
+                  {collection.version}
+                </span>
+              )} */}
+            </div>
+
+            {expandedCollections.includes(collection.id) && collection.folders && collection.folders.length > 0 && (
               <>
-                {filteredCollections.map(collection => (
-                  <div key={collection.id} className="mb-3">
+                {collection.folders.map(folder => (
+                  <div key={folder.id} className="ml-4 mb-2">
                     <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
-                      onClick={() => toggleCollection(collection.id)}
+                      onClick={() => toggleFolder(folder.id)}
                       style={{ backgroundColor: colors.hover }}>
-                      {expandedCollections.includes(collection.id) ? (
-                        <ChevronDown size={12} style={{ color: colors.textSecondary }} />
+                      {expandedFolders.includes(folder.id) ? (
+                        <ChevronDown size={11} style={{ color: colors.textSecondary }} />
                       ) : (
-                        <ChevronRight size={12} style={{ color: colors.textSecondary }} />
+                        <ChevronRight size={11} style={{ color: colors.textSecondary }} />
                       )}
-                      <button onClick={(e) => {
-                        e.stopPropagation();
-                        // Toggle favorite
-                        const newCollections = collections.map(c => 
-                          c.id === collection.id ? { ...c, isFavorite: !c.isFavorite } : c
-                        );
-                        setCollections(newCollections);
-                        showToast(collection.isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
-                      }}>
-                        {collection.isFavorite ? (
-                          <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
-                        ) : (
-                          <Star size={12} style={{ color: colors.textSecondary }} />
-                        )}
-                      </button>
+                      <FolderOpen size={11} style={{ color: colors.textSecondary }} />
                       
-                      <span className="text-sm font-medium flex-1 truncate" style={{ color: colors.text }}>
-                        {collection.name}
+                      <span className="text-sm flex-1 truncate" style={{ color: colors.text }}>
+                        {folder.name}
                       </span>
                       
-                      {collection.version && (
+                      {/* Folder count badge - show number of endpoints in this folder */}
+                      {folder.requestCount > 0 && (
                         <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
-                          backgroundColor: colors.hover,
-                          color: colors.textSecondary
+                          backgroundColor: colors.primaryDark,
+                          color: 'white'
                         }}>
-                          {collection.version}
+                          {folder.requestCount}
                         </span>
+                      )}
+
+                      {/* If still loading, show a subtle spinner */}
+                      {folder.requestCount === null && isLoading.folderRequests[folder.id] && (
+                        <RefreshCw size={10} className="animate-spin" style={{ color: colors.textTertiary }} />
                       )}
                     </div>
 
-                    {expandedCollections.includes(collection.id) && collection.folders && collection.folders.length > 0 && (
-                      <>
-                        {collection.folders.map(folder => (
-                          <div key={folder.id} className="ml-4 mb-2">
-                            <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
-                              onClick={() => toggleFolder(folder.id)}
-                              style={{ backgroundColor: colors.hover }}>
-                              {expandedFolders.includes(folder.id) ? (
-                                <ChevronDown size={11} style={{ color: colors.textSecondary }} />
-                              ) : (
-                                <ChevronRight size={11} style={{ color: colors.textSecondary }} />
-                              )}
-                              <FolderOpen size={11} style={{ color: colors.textSecondary }} />
-                              
-                              <span className="text-sm flex-1 truncate" style={{ color: colors.text }}>
-                                {folder.name}
-                              </span>
-                              
-                             {folder.requestCount !== null && (
-                                <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
-                                  backgroundColor: folder.hasRequests ? `${colors.success}20` : `${colors.textTertiary}20`,
-                                  color: folder.hasRequests ? colors.success : colors.textTertiary
-                                }}>
-                                  {folder.requestCount}
-                                </span>
-                              )}
-
-                              {/* If still loading (requestCount is null), show nothing or optional spinner */}
-                              {folder.requestCount === null && isLoading.folderRequests[folder.id] && (
-                                <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
-                                  backgroundColor: `${colors.textTertiary}20`,
-                                  color: colors.textTertiary
-                                }}>
-                                  <RefreshCw size={10} className="animate-spin" />
-                                </span>
-                              )}
-                            </div>
-
-                            {expandedFolders.includes(folder.id) && (
-                              <div className="ml-6">
-                                {isLoading.folderRequests[folder.id] ? (
-                                  <div className="py-2 text-center">
-                                    <RefreshCw size={12} className="animate-spin mx-auto mb-1" style={{ color: colors.textSecondary }} />
-                                    <p className="text-xs" style={{ color: colors.textTertiary }}>Loading endpoints...</p>
+                    {expandedFolders.includes(folder.id) && (
+                      <div className="ml-6">
+                        {isLoading.folderRequests[folder.id] ? (
+                          <div className="py-2 text-center">
+                            <RefreshCw size={12} className="animate-spin mx-auto mb-1" style={{ color: colors.textSecondary }} />
+                            <p className="text-xs" style={{ color: colors.textTertiary }}>Loading endpoints...</p>
+                          </div>
+                        ) : (
+                          <>
+                            {getFolderRequests(folder.id).length > 0 ? (
+                              getFolderRequests(folder.id).map(request => {
+                                // Check if request has the expected structure
+                                const requestId = request.id || request.requestId;
+                                const requestName = request.name || request.requestName;
+                                const requestMethod = request.method;
+                                
+                                if (!requestId || !requestName) return null;
+                                
+                                return (
+                                  <div key={requestId} className="flex items-center gap-2 mb-1.5 group">
+                                    <button
+                                      onClick={() => handleSelectRequest(request, collection, folder)}
+                                      className="flex items-center gap-2 text-sm text-left transition-colors flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
+                                      style={{ 
+                                        color: selectedRequest?.id === requestId ? colors.primary : colors.text,
+                                        backgroundColor: selectedRequest?.id === requestId ? colors.selected : 'transparent'
+                                      }}>
+                                      {requestMethod && (
+                                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
+                                          backgroundColor: getMethodColor(requestMethod)
+                                        }} />
+                                      )}
+                                      
+                                      <span className="truncate">{requestName}</span>
+                                    </button>
                                   </div>
-                                ) : (
-                                  <>
-                                    {getFolderRequests(folder.id).length > 0 ? (
-                                      getFolderRequests(folder.id).map(request => {
-                                        // Check if request has the expected structure
-                                        const requestId = request.id || request.requestId;
-                                        const requestName = request.name || request.requestName;
-                                        const requestMethod = request.method;
-                                        
-                                        if (!requestId || !requestName) return null;
-                                        
-                                        return (
-                                          <div key={requestId} className="flex items-center gap-2 mb-1.5 group">
-                                            <button
-                                              onClick={() => handleSelectRequest(request, collection, folder)}
-                                              className="flex items-center gap-2 text-sm text-left transition-colors flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
-                                              style={{ 
-                                                color: selectedRequest?.id === requestId ? colors.primary : colors.text,
-                                                backgroundColor: selectedRequest?.id === requestId ? colors.selected : 'transparent'
-                                              }}>
-                                              {requestMethod && (
-                                                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
-                                                  backgroundColor: getMethodColor(requestMethod)
-                                                }} />
-                                              )}
-                                              
-                                              <span className="truncate">{requestName}</span>
-                                            </button>
-                                          </div>
-                                        );
-                                      })
-                                    ) : (
-                                      <div className="py-2 text-center">
-                                        <p className="text-xs" style={{ color: colors.textTertiary }}>
-                                          {folder.hasRequests ? 'No endpoints available' : 'No endpoints in this folder'}
-                                        </p>
-                                      </div>
-                                    )}
-                                  </>
+                                );
+                              })
+                            ) : (
+                              <div className="py-2 text-center">
+                                <p className="text-xs" style={{ color: colors.textTertiary }}>
+                                  {folder.hasRequests ? 'No endpoints available' : 'No endpoints in this folder'}
+                                </p>
+                                {folder.hasRequests === false && (
+                                  <button 
+                                    className="mt-1 px-2 py-1 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
+                                    onClick={() => fetchFolderRequests(collection.id, folder.id)}
+                                    style={{ backgroundColor: colors.hover, color: colors.text }}>
+                                    <RefreshCw size={10} className="inline mr-1" />
+                                    Retry
+                                  </button>
                                 )}
                               </div>
                             )}
-                          </div>
-                        ))}
-                      </>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}
               </>
             )}
             
-            {filteredCollections.length === 0 && searchQuery && (
-              <div className="text-center p-4" style={{ color: colors.textSecondary }}>
-                <Search size={20} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No collections found for "{searchQuery}"</p>
-                <button className="mt-2 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  onClick={() => setSearchQuery('')}
-                  style={{ backgroundColor: colors.hover, color: colors.text }}>
-                  Clear Search
-                </button>
+            {/* Show "No folders" message when collection is expanded but has no folders */}
+            {expandedCollections.includes(collection.id) && (!collection.folders || collection.folders.length === 0) && (
+              <div className="ml-4 py-2 text-center">
+                <p className="text-xs" style={{ color: colors.textTertiary }}>No folders in this collection</p>
               </div>
             )}
           </div>
+        );
+      })}
+    </>
+  )}
+  
+  {filteredCollections.length === 0 && searchQuery && (
+    <div className="text-center p-4" style={{ color: colors.textSecondary }}>
+      <Search size={20} className="mx-auto mb-2 opacity-50" />
+      <p className="text-sm">No collections found for "{searchQuery}"</p>
+      <button className="mt-2 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
+        onClick={() => setSearchQuery('')}
+        style={{ backgroundColor: colors.hover, color: colors.text }}>
+        Clear Search
+      </button>
+    </div>
+  )}
+</div>
         </div>
 
         {/* Main Content Area */}

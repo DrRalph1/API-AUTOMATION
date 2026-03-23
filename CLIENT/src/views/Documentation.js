@@ -2278,184 +2278,200 @@ req.end();`
           </div>
 
           <div className="flex-1 overflow-auto p-2">
-            {isLoading.collections && !isLoading.initialLoad ? (
-              <div className="text-center py-8" style={{ color: colors.textSecondary }}>
-                <RefreshCw size={16} className="animate-spin mx-auto mb-2" />
-                <p className="text-sm">Loading collections...</p>
-              </div>
-            ) : filteredCollections.length === 0 && !isLoading.initialLoad ? (
-              <div className="text-center p-4" style={{ color: colors.textSecondary }}>
-                <Book size={20} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No collections available</p>
-                <button className="mt-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  onClick={async () => {
-                    try {
-                      await withGlobalLoading(async () => {
-                        await fetchAPICollections();
-                      });
-                    } catch (error) {
-                      showToast('Failed to load collections', 'error');
-                    }
-                  }}
-                  style={{ backgroundColor: colors.hover, color: colors.text }}>
-                  Load Collections
-                </button>
-              </div>
-            ) : (
+  {isLoading.collections && !isLoading.initialLoad ? (
+    <div className="text-center py-8" style={{ color: colors.textSecondary }}>
+      <RefreshCw size={16} className="animate-spin mx-auto mb-2" />
+      <p className="text-sm">Loading collections...</p>
+    </div>
+  ) : filteredCollections.length === 0 && !isLoading.initialLoad ? (
+    <div className="text-center p-4" style={{ color: colors.textSecondary }}>
+      <Book size={20} className="mx-auto mb-2 opacity-50" />
+      <p className="text-sm">No collections available</p>
+      <button className="mt-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
+        onClick={async () => {
+          try {
+            await withGlobalLoading(async () => {
+              await fetchAPICollections();
+            });
+          } catch (error) {
+            showToast('Failed to load collections', 'error');
+          }
+        }}
+        style={{ backgroundColor: colors.hover, color: colors.text }}>
+        Load Collections
+      </button>
+    </div>
+  ) : (
+    <>
+      {filteredCollections.map(collection => {
+        // Calculate total endpoints in this collection from folders
+        const totalEndpoints = collection.folders?.reduce((sum, folder) => 
+          sum + (folder.requests?.length || 0), 0) || collection.totalEndpoints || 0;
+        
+        return (
+          <div key={collection.id} className="mb-3">
+            {/* Collection Header */}
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
+              onClick={() => toggleCollection(collection.id)}
+              style={{ backgroundColor: colors.hover }}>
+              {expandedCollections.includes(collection.id) ? (
+                <ChevronDown size={12} style={{ color: colors.textSecondary }} />
+              ) : (
+                <ChevronRight size={12} style={{ color: colors.textSecondary }} />
+              )}
+              <button onClick={(e) => {
+                e.stopPropagation();
+                const newCollections = collections.map(c => 
+                  c.id === collection.id ? { ...c, isFavorite: !c.isFavorite } : c
+                );
+                setCollections(newCollections);
+                showToast(collection.isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
+              }}>
+                {collection.isFavorite ? (
+                  <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
+                ) : (
+                  <Star size={12} style={{ color: colors.textSecondary }} />
+                )}
+              </button>
+              
+              <span className="text-sm font-medium flex-1 truncate" style={{ color: colors.text }}>
+                {collection.name}
+              </span>
+              
+              {/* Collection count badge - show total endpoints in collection */}
+              {totalEndpoints > 0 && (
+                <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                  backgroundColor: colors.primaryDark,
+                  color: 'white'
+                }}>
+                  {totalEndpoints}
+                </span>
+              )}
+              
+              {/* {collection.version && (
+                <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                  backgroundColor: colors.hover,
+                  color: colors.textSecondary
+                }}>
+                  {collection.version}
+                </span>
+              )} */}
+              
+              {(!collection.folders || collection.folders.length === 0) && isLoading.folders && (
+                <RefreshCw size={10} className="animate-spin" style={{ color: colors.textSecondary }} />
+              )}
+            </div>
+
+            {/* Folders */}
+            {expandedCollections.includes(collection.id) && collection.folders && collection.folders.length > 0 && (
               <>
-                {filteredCollections.map(collection => (
-                  <div key={collection.id} className="mb-3">
-                    {/* Collection Header */}
-                    <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
-                      onClick={() => toggleCollection(collection.id)}
-                      style={{ backgroundColor: colors.hover }}>
-                      {expandedCollections.includes(collection.id) ? (
-                        <ChevronDown size={12} style={{ color: colors.textSecondary }} />
+                {collection.folders.map(folder => (
+                  <div key={folder.id} className="ml-4 mb-2">
+                    {/* Folder Header */}
+                    <div 
+                      className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
+                      onClick={() => toggleFolder(folder.id)}
+                      style={{ backgroundColor: colors.hover }}
+                    >
+                      {expandedFolders.includes(folder.id) ? (
+                        <ChevronDown size={11} style={{ color: colors.textSecondary }} />
                       ) : (
-                        <ChevronRight size={12} style={{ color: colors.textSecondary }} />
+                        <ChevronRight size={11} style={{ color: colors.textSecondary }} />
                       )}
-                      <button onClick={(e) => {
-                        e.stopPropagation();
-                        const newCollections = collections.map(c => 
-                          c.id === collection.id ? { ...c, isFavorite: !c.isFavorite } : c
-                        );
-                        setCollections(newCollections);
-                        showToast(collection.isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
-                      }}>
-                        {collection.isFavorite ? (
-                          <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
-                        ) : (
-                          <Star size={12} style={{ color: colors.textSecondary }} />
-                        )}
-                      </button>
+                      <FolderOpen size={11} style={{ color: colors.textSecondary }} />
                       
-                      <span className="text-sm font-medium flex-1 truncate" style={{ color: colors.text }}>
-                        {collection.name}
+                      <span className="text-sm flex-1 truncate" style={{ color: colors.text }}>
+                        {folder.name}
                       </span>
                       
-                      {collection.version && (
+                      {/* Folder count badge - show number of endpoints in this folder */}
+                      {(folder.requests?.length > 0 || folder.requestCount > 0) && (
                         <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
-                          backgroundColor: colors.hover,
-                          color: colors.textSecondary
+                          backgroundColor: colors.primaryDark,
+                          color: 'white'
                         }}>
-                          {collection.version}
+                          {folder.requests?.length || folder.requestCount || 0}
                         </span>
                       )}
                       
-                      {(!collection.folders || collection.folders.length === 0) && isLoading.folders && (
+                      {folderLoading[folder.id] && (
                         <RefreshCw size={10} className="animate-spin" style={{ color: colors.textSecondary }} />
                       )}
                     </div>
 
-                    {/* Folders */}
-                    {expandedCollections.includes(collection.id) && collection.folders && collection.folders.length > 0 && (
-                      <>
-                        {collection.folders.map(folder => (
-                          <div key={folder.id} className="ml-4 mb-2">
-                            {/* Folder Header */}
-                            <div 
-                              className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
-                              onClick={() => toggleFolder(folder.id)}
-                              style={{ backgroundColor: colors.hover }}
+                    {/* Endpoints - Show when folder is expanded */}
+                    {expandedFolders.includes(folder.id) && (
+                      <div className="ml-6 mt-1 space-y-1">
+                        {folderLoading[folder.id] ? (
+                          <div className="py-2 text-center">
+                            <RefreshCw size={12} className="animate-spin mx-auto mb-1" style={{ color: colors.textSecondary }} />
+                            <p className="text-xs" style={{ color: colors.textTertiary }}>Loading endpoints...</p>
+                          </div>
+                        ) : folder.error ? (
+                          <div className="py-2 text-center">
+                            <p className="text-xs" style={{ color: colors.error }}>{folder.error}</p>
+                            <button 
+                              className="text-xs mt-1 px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                              onClick={() => fetchAPIEndpoints(collection.id, folder.id)}
+                              style={{ backgroundColor: colors.hover, color: colors.text }}
                             >
-                              {expandedFolders.includes(folder.id) ? (
-                                <ChevronDown size={11} style={{ color: colors.textSecondary }} />
-                              ) : (
-                                <ChevronRight size={11} style={{ color: colors.textSecondary }} />
-                              )}
-                              <FolderOpen size={11} style={{ color: colors.textSecondary }} />
-                              
-                              <span className="text-sm flex-1 truncate" style={{ color: colors.text }}>
-                                {folder.name}
-                              </span>
-                              
-                              {/* Show count badge if there are endpoints */}
-                              {folder.requests && folder.requests.length > 0 && (
-                                <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
-                                  backgroundColor: colors.primaryDark,
-                                  color: 'white'
-                                }}>
-                                  {folder.requests.length}
-                                </span>
-                              )}
-                              
-                              {folderLoading[folder.id] && (
-                                <RefreshCw size={10} className="animate-spin" style={{ color: colors.textSecondary }} />
-                              )}
-                            </div>
-
-                            {/* Endpoints - Show when folder is expanded */}
-                            {expandedFolders.includes(folder.id) && (
-                              <div className="ml-6 mt-1 space-y-1">
-                                {folderLoading[folder.id] ? (
-                                  <div className="py-2 text-center">
-                                    <RefreshCw size={12} className="animate-spin mx-auto mb-1" style={{ color: colors.textSecondary }} />
-                                    <p className="text-xs" style={{ color: colors.textTertiary }}>Loading endpoints...</p>
-                                  </div>
-                                ) : folder.error ? (
-                                  <div className="py-2 text-center">
-                                    <p className="text-xs" style={{ color: colors.error }}>{folder.error}</p>
-                                    <button 
-                                      className="text-xs mt-1 px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                                      onClick={() => fetchAPIEndpoints(collection.id, folder.id)}
-                                      style={{ backgroundColor: colors.hover, color: colors.text }}
-                                    >
-                                      Retry
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <>
-                                    {folder.requests && folder.requests.length > 0 ? (
-                                      folder.requests.map(request => (
-                                        <div key={request.id} className="flex items-center gap-2 group">
-                                          <button
-                                            onClick={() => handleSelectRequest(request, collection.id, folder.id)}
-                                            className="flex items-center gap-2 text-sm text-left transition-colors flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
-                                            style={{ 
-                                              color: selectedRequest?.id === request.id ? colors.primary : colors.text,
-                                              backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
-                                            }}>
-                                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
-                                              backgroundColor: getMethodColor(request.method)
-                                            }} />
-                                            
-                                            <span className="truncate">{request.name}</span>
-                                            <span className="text-xs ml-auto opacity-60" style={{ color: colors.textSecondary }}>
-                                              {request.method}
-                                            </span>
-                                          </button>
-                                        </div>
-                                      ))
-                                    ) : (
-                                      <div className="py-2 text-center">
-                                        <p className="text-xs" style={{ color: colors.textTertiary }}>No endpoints available</p>
-                                      </div>
-                                    )}
-                                  </>
-                                )}
+                              Retry
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            {folder.requests && folder.requests.length > 0 ? (
+                              folder.requests.map(request => (
+                                <div key={request.id} className="flex items-center gap-2 group">
+                                  <button
+                                    onClick={() => handleSelectRequest(request, collection.id, folder.id)}
+                                    className="flex items-center gap-2 text-sm text-left transition-colors flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
+                                    style={{ 
+                                      color: selectedRequest?.id === request.id ? colors.primary : colors.text,
+                                      backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
+                                    }}>
+                                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
+                                      backgroundColor: getMethodColor(request.method)
+                                    }} />
+                                    
+                                    <span className="truncate">{request.name}</span>
+                                    {/* <span className="text-xs ml-auto opacity-60" style={{ color: colors.textSecondary }}>
+                                      {request.method}
+                                    </span> */}
+                                  </button>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="py-2 text-center">
+                                <p className="text-xs" style={{ color: colors.textTertiary }}>No endpoints available</p>
                               </div>
                             )}
-                          </div>
-                        ))}
-                      </>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}
               </>
             )}
-            
-            {filteredCollections.length === 0 && searchQuery && (
-              <div className="text-center p-4" style={{ color: colors.textSecondary }}>
-                <Search size={20} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No collections found for "{searchQuery}"</p>
-                <button className="mt-2 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  onClick={() => setSearchQuery('')}
-                  style={{ backgroundColor: colors.hover, color: colors.text }}>
-                  Clear Search
-                </button>
-              </div>
-            )}
           </div>
+        );
+      })}
+    </>
+  )}
+  
+  {filteredCollections.length === 0 && searchQuery && (
+    <div className="text-center p-4" style={{ color: colors.textSecondary }}>
+      <Search size={20} className="mx-auto mb-2 opacity-50" />
+      <p className="text-sm">No collections found for "{searchQuery}"</p>
+      <button className="mt-2 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
+        onClick={() => setSearchQuery('')}
+        style={{ backgroundColor: colors.hover, color: colors.text }}>
+        Clear Search
+      </button>
+    </div>
+  )}
+</div>
         </div>
 
         {/* Main Content Area */}

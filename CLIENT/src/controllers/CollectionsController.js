@@ -384,29 +384,27 @@ export const extractCollectionsList = (response) => {
  * @returns {Object} Collection details
  */
 export const extractCollectionDetails = (response) => {
+  console.log('🔍 [Extract] Extracting collection details from:', response);
+  
   if (!response || !response.data) return null;
   
-  const details = response.data;
+  const data = response.data;
   
   return {
-    id: details.id || details.collectionId,
-    name: details.name || details.collectionName,
-    description: details.description,
-    createdAt: details.createdAt || details.createdDate,
-    updatedAt: details.updatedAt || details.modifiedDate,
-    createdBy: details.createdBy,
-    updatedBy: details.updatedBy,
-    owner: details.owner,
-    folders: details.folders || [],
-    tags: details.tags || [],
-    variables: details.variables || [],
-    favorite: details.favorite || false,
-    totalRequests: details.totalRequests || 0,
-    totalFolders: details.totalFolders || 0,
-    comments: details.comments,
-    lastActivity: details.lastActivity,
-    color: details.color,
-    metadata: details.metadata || {}
+    id: data.id || data.collectionId,
+    name: data.name || data.collectionName,
+    description: data.description,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt,
+    owner: data.owner,
+    folders: data.folders || [],  // Make sure this is an array
+    tags: data.tags || [],
+    variables: data.variables || [],
+    favorite: data.favorite || false,
+    totalRequests: data.totalRequests || 0,
+    totalFolders: data.totalFolders || 0,
+    comments: data.comments,
+    lastActivity: data.lastActivity
   };
 };
 

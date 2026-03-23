@@ -1924,605 +1924,630 @@ const deletePathParam = (id) => {
     });
   };
 
-  // Update the transformCollectionsData function to sort everything
   const transformCollectionsData = (apiData) => {
-    console.log('🔄 [Transform] Input:', apiData);
+  console.log('🔄 [Transform] Input:', apiData);
+  
+  if (!apiData) {
+    console.warn('⚠️ [Transform] No data provided');
+    return [];
+  }
+  
+  let collectionsArray = [];
+  
+  // Handle different data structures
+  if (Array.isArray(apiData)) {
+    collectionsArray = apiData;
+  } else if (apiData.collections && Array.isArray(apiData.collections)) {
+    collectionsArray = apiData.collections;
+  } else if (apiData.data && apiData.data.collections && Array.isArray(apiData.data.collections)) {
+    collectionsArray = apiData.data.collections;
+  } else if (apiData.data && Array.isArray(apiData.data)) {
+    collectionsArray = apiData.data;
+  } else {
+    console.warn('⚠️ [Transform] Unknown data structure:', apiData);
+    return [];
+  }
+  
+  console.log(`📊 [Transform] Processing ${collectionsArray.length} collections`);
+  
+  // Sort collections alphabetically
+  const sortedCollections = sortAlphabetically(collectionsArray);
+  
+  return sortedCollections.map((collection, collectionIndex) => {
+    console.log(`📁 [Transform] Processing collection: ${collection.name || 'Unnamed'}`, {
+      id: collection.id,
+      hasFolders: !!(collection.folders || collection.data?.folders),
+      foldersCount: (collection.folders || collection.data?.folders || []).length
+    });
     
-    if (!apiData) {
-      console.warn('⚠️ [Transform] No data provided');
-      return [];
+    // CRITICAL FIX: Handle folders from both top-level and nested data structure
+    let foldersData = collection.folders || [];
+    
+    // Check if folders are inside a nested data object
+    if (!foldersData.length && collection.data && collection.data.folders) {
+      foldersData = collection.data.folders;
+      console.log(`📁 [Transform] Found folders in collection.data.folders: ${foldersData.length}`);
     }
     
-    let collectionsArray = [];
+    // Process folders and their requests - sort folders alphabetically
+    const folders = foldersData || [];
+    const sortedFolders = sortAlphabetically(folders);
     
-    if (Array.isArray(apiData)) {
-      collectionsArray = apiData;
-    } else if (apiData.collections && Array.isArray(apiData.collections)) {
-      collectionsArray = apiData.collections;
-    } else {
-      console.warn('⚠️ [Transform] Unknown data structure:', apiData);
-      return [];
-    }
-    
-    console.log(`📊 [Transform] Processing ${collectionsArray.length} collections`);
-    
-    // Sort collections alphabetically
-    const sortedCollections = sortAlphabetically(collectionsArray);
-    
-    return sortedCollections.map((collection, collectionIndex) => {
-      // Process folders and their requests - sort folders alphabetically
-      const folders = (collection.folders || []);
-      const sortedFolders = sortAlphabetically(folders);
+    const processedFolders = sortedFolders.map((folder, folderIndex) => {
+      console.log(`📂 [Transform] Processing folder: ${folder.name || 'Unnamed'}`, {
+        id: folder.id,
+        hasRequests: !!(folder.requests || folder.data?.requests),
+        requestsCount: (folder.requests || folder.data?.requests || []).length
+      });
       
-      const processedFolders = sortedFolders.map((folder, folderIndex) => {
-        // Process requests within folder - sort requests alphabetically
-        const requests = (folder.requests || []);
-        const sortedRequests = sortAlphabetically(requests);
+      // CRITICAL FIX: Handle requests from both top-level and nested data structure
+      let requestsData = folder.requests || [];
+      
+      // Check if requests are inside a nested data object
+      if (!requestsData.length && folder.data && folder.data.requests) {
+        requestsData = folder.data.requests;
+        console.log(`📋 [Transform] Found requests in folder.data.requests: ${requestsData.length}`);
+      }
+      
+      // Process requests within folder - sort requests alphabetically
+      const requests = requestsData || [];
+      const sortedRequests = sortAlphabetically(requests);
+      
+      const processedRequests = sortedRequests.map((request, requestIndex) => {
+        // Separate parameters based on parameterLocation
+        const queryParams = [];
+        const pathParams = [];
+        const headerParams = [];
+        const bodyParams = [];
         
-        const processedRequests = sortedRequests.map((request, requestIndex) => {
-          // Separate parameters based on parameterLocation
-          const queryParams = [];
-          const pathParams = [];
-          const headerParams = [];
-          const bodyParams = [];
-          
-          console.log(`📋 [Transform] Processing request: ${request.name || 'Unnamed'}`, {
-            parameters: request.parameters?.length || 0,
-            requestBody: request.requestBody ? 'present' : 'absent'
-          });
-          
-          // Process parameters with location info
-          (request.parameters || []).forEach((param, paramIdx) => {
-            if (param && param.key) {
-              const paramId = param.id || `param-${Date.now()}-${Math.random()}-${paramIdx}`;
-              
-              // CRITICAL FIX: Clean the value at source
-              let paramValue = param.value || '';
-              
-              // If the value contains placeholder patterns, set it to empty string
-              const hasPlaceholder = paramValue.includes('{') || paramValue.includes('}') || 
-                                    paramValue.includes('%7B') || paramValue.includes('%7D');
-              
-              if (hasPlaceholder) {
-                console.log(`🧹 Cleaning placeholder value for param ${param.key}: ${paramValue} -> ''`);
-                paramValue = '';
-              }
-              
-              const paramObject = {
-                id: paramId,
-                key: param.key,
-                value: paramValue,
-                description: param.description || '',
-                enabled: param.enabled !== false,
-                required: param.required || false,
-                type: param.type || 'string',
-                parameterLocation: param.parameterLocation || 'query',
-                paramMode: param.paramMode || 'IN',
-                dbColumn: param.dbColumn || null,
-                oracleType: param.oracleType || null,
-                validationPattern: param.validationPattern || '',
-                defaultValue: param.defaultValue || '',
-                example: param.example || null,
-                bodyFormat: param.bodyFormat || null
-              };
-              
-              console.log(`📍 [Transform] Parameter ${param.key}: location = ${param.parameterLocation}, value = ${paramValue}`);
-              
-              // Sort by location - CRITICAL for path params
-              switch(param.parameterLocation?.toLowerCase()) {
-                case 'query':
-                  queryParams.push(paramObject);
-                  break;
-                case 'path':
-                  pathParams.push(paramObject);
-                  console.log(`🛣️ [Transform] Added to PATH params: ${param.key} = ${paramValue}`);
-                  break;
-                case 'header':
-                  headerParams.push(paramObject);
-                  console.log(`📌 [Transform] Added to HEADER params: ${param.key}`);
-                  break;
-                case 'body':
-                  bodyParams.push(paramObject);
-                  console.log(`📦 [Transform] Added to BODY params: ${param.key}`);
-                  break;
-                default:
-                  queryParams.push(paramObject);
-              }
-            }
-          });
-          
-          // Process headers separately (these are HTTP headers, NOT parameters)
-          const headers = (request.headers || []).map((header, headerIdx) => ({
-            id: header.id || `header-${Date.now()}-${Math.random()}-${headerIdx}`,
-            key: header.key,
-            value: header.value || '',
-            description: header.description || '',
-            enabled: header.enabled !== false,
-            required: header.required || false
-          }));
-          
-          console.log(`📊 [Transform] Request "${request.name || 'Unnamed'}" - Query: ${queryParams.length}, Path: ${pathParams.length}, Header Params: ${headerParams.length}, Body: ${bodyParams.length}, Regular Headers: ${headers.length}`);
-          
-          // Log path params specifically
-          if (pathParams.length > 0) {
-            console.log(`🛣️ [Transform] Path params for ${request.name}:`, 
-              pathParams.map(p => ({ key: p.key, value: p.value })));
-          }
-          
-          // Log header params specifically
-          if (headerParams.length > 0) {
-            console.log(`📌 [Transform] Header params for ${request.name}:`, 
-              headerParams.map(p => ({ key: p.key, value: p.value })));
-          }
-          
-          // Log body params specifically
-          if (bodyParams.length > 0) {
-            console.log(`📦 [Transform] Body params for ${request.name}:`, 
-              bodyParams.map(p => ({ key: p.key, value: p.value, bodyFormat: p.bodyFormat })));
-          }
-          
-          // ============== FIXED: Extract auth info properly ==============
-          console.log('🔐 [Transform] Raw auth data:', {
-            authType: request.authType,
-            authConfig: request.authConfig,
-            auth: request.auth
-          });
-
-          const authType = request.authType || request.auth?.type || 'noauth';
-
-          // Process auth config based on auth type
-          let processedAuthConfig = { type: authType };
-
-          if (authType === 'apikey') {
-            const sourceConfig = request.authConfig || request.auth || {};
-            processedAuthConfig = {
-              type: 'apikey',
-              key: sourceConfig.key || sourceConfig.apiKey || sourceConfig.apiKeyHeader || '',
-              value: sourceConfig.value || sourceConfig.apiSecret || sourceConfig.apiKeyValue || sourceConfig.secret || '',
-              addTo: sourceConfig.addTo || 'header'
-            };
-            console.log('🔐 [Transform] Processed API Key config:', processedAuthConfig);
-          } 
-          else if (authType === 'bearer') {
-            const sourceConfig = request.authConfig || request.auth || {};
-            processedAuthConfig = {
-              type: 'bearer',
-              token: sourceConfig.token || sourceConfig.bearerToken || '',
-              tokenType: sourceConfig.tokenType || 'Bearer'
-            };
-            console.log('🔐 [Transform] Processed Bearer config:', processedAuthConfig);
-          } 
-          else if (authType === 'basic') {
-            const sourceConfig = request.authConfig || request.auth || {};
-            processedAuthConfig = {
-              type: 'basic',
-              username: sourceConfig.username || '',
-              password: sourceConfig.password || ''
-            };
-            console.log('🔐 [Transform] Processed Basic config:', processedAuthConfig);
-          } 
-          else if (authType === 'oauth2') {
-            const sourceConfig = request.authConfig || request.auth || {};
-            processedAuthConfig = {
-              type: 'oauth2',
-              token: sourceConfig.token || ''
-            };
-            console.log('🔐 [Transform] Processed OAuth2 config:', processedAuthConfig);
-          }
-          else {
-            processedAuthConfig = { type: 'noauth' };
-          }
-          // ============== END FIX ==============
-          
-          // Process body content
-          let bodyContent = request.body || '';
-          let requestBodyData = request.requestBody || null;
-
-          if (requestBodyData && requestBodyData.sample) {
-            bodyContent = requestBodyData.sample;
-          }
-
-          if (bodyParams.length > 0 && requestBodyData?.bodyType === 'xml') {
-            try {
-              const xmlParts = ['<?xml version="1.0" encoding="UTF-8"?>', '<request>'];
-              bodyParams.forEach(param => {
-                if (param.key) {
-                  xmlParts.push(`  <${param.key}>${param.value || param.defaultValue || param.example || ''}</${param.key}>`);
-                }
-              });
-              xmlParts.push('</request>');
-              
-              if (xmlParts.length > 2 && !bodyContent) {
-                bodyContent = xmlParts.join('\n');
-              }
-            } catch (e) {
-              console.warn('⚠️ [Transform] Error building XML from body params:', e);
-            }
-          }
-          
-          // CRITICAL FIX: Construct URL with path parameter placeholders
-          let requestUrl = request.url || '';
-          
-          if (pathParams.length > 0) {
-            console.log(`🛣️ [Transform] Building URL with ${pathParams.length} path params`);
-            
-            const hasPlaceholders = pathParams.some(p => 
-              requestUrl.includes(`{${p.key}}`) || requestUrl.includes(`:${p.key}`)
-            );
-            
-            if (!hasPlaceholders) {
-              if (!requestUrl.endsWith('/')) {
-                requestUrl += '/';
-              }
-              
-              pathParams.forEach((param, index) => {
-                if (index === 0) {
-                  requestUrl += `{${param.key}}`;
-                } else {
-                  requestUrl += `/{${param.key}}`;
-                }
-              });
-              
-              console.log(`✅ [Transform] Added placeholders to URL: ${requestUrl}`);
-            } else {
-              console.log(`✅ [Transform] URL already has placeholders: ${requestUrl}`);
-            }
-          }
-          
-          return {
-            id: request.id || `req-${Date.now()}-${Math.random()}-${requestIndex}`,
-            name: request.name || 'New Request',
-            method: request.method || 'GET',
-            url: requestUrl,
-            description: request.description || '',
-            isEditing: false,
-            status: request.status || 'saved',
-            lastModified: request.lastModified || new Date().toISOString(),
-            auth: processedAuthConfig,
-            authType: authType,
-            authConfig: processedAuthConfig,
-            headers: cleanHeaders([...(request.headers || [])]),
-            queryParams: queryParams,
-            pathParams: pathParams,
-            headerParams: headerParams,
-            bodyParams: bodyParams,
-            allParams: request.parameters || [],
-            body: bodyContent,
-            requestBody: requestBodyData,
-            tests: request.tests || '',
-            preRequestScript: request.preRequestScript || '',
-            isSaved: request.saved !== false,
-            collectionId: request.collectionId || collection.id,
-            folderId: request.folderId || folder.id,
-            apiCode: request.apiCode || null,
-            apiName: request.apiName || null
-          };
+        console.log(`📋 [Transform] Processing request: ${request.name || 'Unnamed'}`, {
+          parameters: request.parameters?.length || 0,
+          requestBody: request.requestBody ? 'present' : 'absent',
+          hasUrl: !!request.url
         });
-
+        
+        // Process parameters with location info
+        (request.parameters || []).forEach((param, paramIdx) => {
+          if (param && param.key) {
+            const paramId = param.id || `param-${Date.now()}-${Math.random()}-${paramIdx}`;
+            
+            // Clean placeholder values
+            let paramValue = param.value || '';
+            const hasPlaceholder = paramValue.includes('{') || paramValue.includes('}') || 
+                                  paramValue.includes('%7B') || paramValue.includes('%7D');
+            
+            if (hasPlaceholder) {
+              console.log(`🧹 Cleaning placeholder value for param ${param.key}: ${paramValue} -> ''`);
+              paramValue = '';
+            }
+            
+            const paramObject = {
+              id: paramId,
+              key: param.key,
+              value: paramValue,
+              description: param.description || '',
+              enabled: param.enabled !== false,
+              required: param.required || false,
+              type: param.type || 'string',
+              parameterLocation: param.parameterLocation || 'query',
+              paramMode: param.paramMode || 'IN',
+              dbColumn: param.dbColumn || null,
+              oracleType: param.oracleType || null,
+              validationPattern: param.validationPattern || '',
+              defaultValue: param.defaultValue || '',
+              example: param.example || null,
+              bodyFormat: param.bodyFormat || null
+            };
+            
+            // Sort by location - CRITICAL for path params
+            switch(param.parameterLocation?.toLowerCase()) {
+              case 'query':
+                queryParams.push(paramObject);
+                break;
+              case 'path':
+                pathParams.push(paramObject);
+                console.log(`🛣️ [Transform] Added to PATH params: ${param.key} = ${paramValue}`);
+                break;
+              case 'header':
+                headerParams.push(paramObject);
+                break;
+              case 'body':
+                bodyParams.push(paramObject);
+                break;
+              default:
+                queryParams.push(paramObject);
+            }
+          }
+        });
+        
+        // Process headers separately
+        const headers = (request.headers || []).map((header, headerIdx) => ({
+          id: header.id || `header-${Date.now()}-${Math.random()}-${headerIdx}`,
+          key: header.key,
+          value: header.value || '',
+          description: header.description || '',
+          enabled: header.enabled !== false,
+          required: header.required || false
+        }));
+        
+        console.log(`📊 [Transform] Request "${request.name || 'Unnamed'}" - Query: ${queryParams.length}, Path: ${pathParams.length}, Header Params: ${headerParams.length}, Body: ${bodyParams.length}, Regular Headers: ${headers.length}`);
+        
+        // Process auth info
+        const authType = request.authType || request.auth?.type || 'noauth';
+        let processedAuthConfig = { type: authType };
+        
+        if (authType === 'apikey') {
+          const sourceConfig = request.authConfig || request.auth || {};
+          processedAuthConfig = {
+            type: 'apikey',
+            key: sourceConfig.key || sourceConfig.apiKey || sourceConfig.apiKeyHeader || '',
+            value: sourceConfig.value || sourceConfig.apiSecret || sourceConfig.apiKeyValue || sourceConfig.secret || '',
+            addTo: sourceConfig.addTo || 'header'
+          };
+        } 
+        else if (authType === 'bearer') {
+          const sourceConfig = request.authConfig || request.auth || {};
+          processedAuthConfig = {
+            type: 'bearer',
+            token: sourceConfig.token || sourceConfig.bearerToken || '',
+            tokenType: sourceConfig.tokenType || 'Bearer'
+          };
+        } 
+        else if (authType === 'basic') {
+          const sourceConfig = request.authConfig || request.auth || {};
+          processedAuthConfig = {
+            type: 'basic',
+            username: sourceConfig.username || '',
+            password: sourceConfig.password || ''
+          };
+        } 
+        else if (authType === 'oauth2') {
+          const sourceConfig = request.authConfig || request.auth || {};
+          processedAuthConfig = {
+            type: 'oauth2',
+            token: sourceConfig.token || sourceConfig.jwtToken || '',
+            jwtToken: sourceConfig.jwtToken || sourceConfig.token || ''
+          };
+        }
+        
+        // Process body content
+        let bodyContent = request.body || '';
+        let requestBodyData = request.requestBody || null;
+        
+        if (requestBodyData && requestBodyData.sample) {
+          bodyContent = requestBodyData.sample;
+        }
+        
+        // CRITICAL FIX: Construct URL with path parameter placeholders
+        let requestUrl = request.url || '';
+        
+        if (pathParams.length > 0) {
+          console.log(`🛣️ [Transform] Building URL with ${pathParams.length} path params`);
+          
+          const hasPlaceholders = pathParams.some(p => 
+            requestUrl.includes(`{${p.key}}`) || requestUrl.includes(`:${p.key}`)
+          );
+          
+          if (!hasPlaceholders && !requestUrl.includes('{') && !requestUrl.includes(':')) {
+            if (!requestUrl.endsWith('/')) {
+              requestUrl += '/';
+            }
+            
+            pathParams.forEach((param, index) => {
+              if (index === 0 && requestUrl.endsWith('/')) {
+                requestUrl += `{${param.key}}`;
+              } else if (index === 0) {
+                requestUrl += `/{${param.key}}`;
+              } else {
+                requestUrl += `/{${param.key}}`;
+              }
+            });
+            
+            console.log(`✅ [Transform] Added placeholders to URL: ${requestUrl}`);
+          } else {
+            console.log(`✅ [Transform] URL already has placeholders: ${requestUrl}`);
+          }
+        }
+        
         return {
-          id: folder.id || `folder-${Date.now()}-${Math.random()}-${folderIndex}`,
-          name: folder.name || 'New Folder',
-          description: folder.description || '',
-          isExpanded: false,
+          id: request.id || `req-${Date.now()}-${Math.random()}-${requestIndex}`,
+          name: request.name || 'New Request',
+          method: request.method || 'GET',
+          url: requestUrl,
+          description: request.description || '',
           isEditing: false,
-          requestCount: folder.requestCount || processedRequests.length,
-          requests: processedRequests
+          status: request.status || 'saved',
+          lastModified: request.lastModified || new Date().toISOString(),
+          auth: processedAuthConfig,
+          authType: authType,
+          authConfig: processedAuthConfig,
+          headers: cleanHeaders([...(request.headers || [])]),
+          queryParams: queryParams,
+          pathParams: pathParams,
+          headerParams: headerParams,
+          bodyParams: bodyParams,
+          allParams: request.parameters || [],
+          body: bodyContent,
+          requestBody: requestBodyData,
+          tests: request.tests || '',
+          preRequestScript: request.preRequestScript || '',
+          isSaved: request.saved !== false,
+          collectionId: request.collectionId || collection.id,
+          folderId: request.folderId || folder.id,
+          apiCode: request.apiCode || null,
+          apiName: request.apiName || null
         };
       });
-
-      const totalRequests = processedFolders.reduce((sum, folder) => sum + (folder.requests?.length || 0), 0);
-
+      
       return {
-        id: collection.id || `col-${Date.now()}-${Math.random()}-${collectionIndex}`,
-        name: collection.name || `Collection ${collectionIndex + 1}`,
-        description: collection.description || '',
-        isExpanded: collectionIndex === 0,
-        isFavorite: collection.favorite || false,
+        id: folder.id || `folder-${Date.now()}-${Math.random()}-${folderIndex}`,
+        name: folder.name || 'New Folder',
+        description: folder.description || '',
+        isExpanded: false,
         isEditing: false,
-        createdAt: collection.createdAt || new Date().toISOString(),
-        requestsCount: totalRequests,
-        folderCount: processedFolders.length,
-        variables: (collection.variables || []).map((v, varIndex) => ({
-          id: v.id || `var-${Date.now()}-${Math.random()}-${varIndex}`,
-          key: v.key,
-          value: v.value,
-          type: v.type || 'text',
-          enabled: v.enabled !== false
-        })),
-        folders: processedFolders
+        requestCount: folder.requestCount || processedRequests.length,
+        requests: processedRequests
       };
     });
-  };
+    
+    const totalRequests = processedFolders.reduce((sum, folder) => sum + (folder.requests?.length || 0), 0);
+    
+    return {
+      id: collection.id || `col-${Date.now()}-${Math.random()}-${collectionIndex}`,
+      name: collection.name || `Collection ${collectionIndex + 1}`,
+      description: collection.description || '',
+      isExpanded: collectionIndex === 0,
+      isFavorite: collection.favorite || false,
+      isEditing: false,
+      createdAt: collection.createdAt || new Date().toISOString(),
+      requestsCount: totalRequests,
+      folderCount: processedFolders.length,
+      variables: (collection.variables || []).map((v, varIndex) => ({
+        id: v.id || `var-${Date.now()}-${Math.random()}-${varIndex}`,
+        key: v.key,
+        value: v.value,
+        type: v.type || 'text',
+        enabled: v.enabled !== false
+      })),
+      folders: processedFolders
+    };
+  });
+};
 
   // Update the renderCollectionsTree function to ensure it displays sorted data
   const renderCollectionsTree = () => {
-    if (loading.collections || loading.initialLoad) {
-      return (
-        <div className="flex items-center justify-center h-32">
-          <RefreshCw className="animate-spin" size={16} style={{ color: colors.textSecondary }} />
-        </div>
-      );
-    }
-
-    if (error) {
-      return (
-        <div className="p-4 text-center">
-          <AlertCircle size={24} className="mx-auto mb-2" style={{ color: colors.error }} />
-          <div className="text-sm" style={{ color: colors.text }}>{error}</div>
-          <button 
-            type="button"
-            onClick={fetchCollections}
-            className="mt-3 px-4 py-2 rounded text-sm font-medium transition-colors hover-lift"
-            style={{ 
-              backgroundColor: colors.hover,
-              color: colors.text
-            }}
-            disabled={loading.collections}
-          >
-            {loading.collections ? (
-              <div className="flex items-center gap-2">
-                <RefreshCw size={12} className="animate-spin" />
-                Retrying...
-              </div>
-            ) : (
-              'Retry'
-            )}
-          </button>
-        </div>
-      );
-    }
-
-    if (collections.length === 0) {
-      return (
-        <div className="p-4 text-center">
-          <Folder size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-          <p className="text-sm" style={{ color: colors.text }}>No collections found</p>
-          <button 
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="mt-3 px-4 py-2 rounded text-sm font-medium transition-colors hover-lift"
-            style={{ 
-              backgroundColor: colors.primaryDark,
-              color: colors.white
-            }}
-          >
-            Create your first collection
-          </button>
-        </div>
-      );
-    }
-
-    // Ensure collections are sorted before rendering
-    const sortedCollections = sortAlphabetically(filteredCollections);
-    
+  if (loading.collections || loading.initialLoad) {
     return (
-      <div className="flex-1 overflow-auto p-2">
-        {sortedCollections.map(collection => (
-          <div key={collection.id} className="mb-3">
-            <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
-              onClick={() => toggleCollection(collection.id)}
-              style={{ backgroundColor: colors.hover }}>
-              {collection.isExpanded ? (
-                <ChevronDown size={12} style={{ color: colors.textSecondary }} />
-              ) : (
-                <ChevronRight size={12} style={{ color: colors.textSecondary }} />
-              )}
-              <button type="button" onClick={(e) => {
-                e.stopPropagation();
-                toggleFavorite(collection.id);
-              }}>
-                {collection.isFavorite ? (
-                  <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
-                ) : (
-                  <Star size={12} style={{ color: colors.textSecondary }} />
-                )}
-              </button>
-              
-              {collection.isEditing ? (
-                <input
-                  type="text"
-                  defaultValue={collection.name}
-                  onBlur={(e) => updateCollectionName(collection.id, e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      updateCollectionName(collection.id, e.target.value);
-                    } else if (e.key === 'Escape') {
-                      setCollections(cols => cols.map(col => 
-                        col.id === collection.id ? { ...col, isEditing: false } : col
-                      ));
-                    }
-                  }}
-                  className="flex-1 text-sm font-medium bg-transparent border-none outline-none"
-                  style={{ color: colors.text }}
-                  autoFocus
-                />
-              ) : (
-                <span className="text-sm font-medium flex-1" style={{ color: colors.text }}>
-                  {collection.name}
-                </span>
-              )}
-              
-              {collection.requestsCount > 0 && (
-                <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
-                  backgroundColor: colors.border,
-                  color: colors.textSecondary
-                }}>
-                  {collection.requestsCount}
-                </span>
-              )}
-            </div>
-
-            {collection.isExpanded && collection.folders && collection.folders.length > 0 && (
-              <>
-                {/* Ensure folders are sorted before rendering */}
-                {sortAlphabetically(collection.folders).map(folder => (
-                  <div key={folder.id} className="ml-4 mb-2">
-                    <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
-                      onClick={() => toggleFolder(collection.id, folder.id)}
-                      style={{ backgroundColor: colors.hover }}>
-                      {folder.isExpanded ? (
-                        <ChevronDown size={11} style={{ color: colors.textSecondary }} />
-                      ) : (
-                        <ChevronRight size={11} style={{ color: colors.textSecondary }} />
-                      )}
-                      <FolderOpen size={11} style={{ color: colors.textSecondary }} />
-                      
-                      {folder.isEditing ? (
-                        <input
-                          type="text"
-                          defaultValue={folder.name}
-                          onBlur={(e) => updateFolderName(collection.id, folder.id, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              updateFolderName(collection.id, folder.id, e.target.value);
-                            } else if (e.key === 'Escape') {
-                              setCollections(cols => cols.map(col => ({
-                                ...col,
-                                folders: col.folders.map(f => 
-                                  f.id === folder.id ? { ...f, isEditing: false } : f
-                                )
-                              })));
-                            }
-                          }}
-                          className="flex-1 text-sm bg-transparent border-none outline-none"
-                          style={{ color: colors.text }}
-                          autoFocus
-                        />
-                      ) : (
-                        <span className="text-sm flex-1" style={{ color: colors.text }}>
-                          {folder.name}
-                        </span>
-                      )}
-                      
-                      <button 
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCollections(cols => cols.map(col => ({
-                            ...col,
-                            folders: col.folders.map(f => 
-                              f.id === folder.id ? { ...f, isEditing: true } : f
-                            )
-                          })));
-                        }}
-                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all hover-lift"
-                        style={{ backgroundColor: colors.card }}>
-                        <Edit2 size={10} style={{ color: colors.textSecondary }} />
-                      </button>
-                    </div>
-
-                    {folder.isExpanded && folder.requests && folder.requests.length > 0 && (
-                      <>
-                        {/* Ensure requests are sorted before rendering */}
-                        {sortAlphabetically(folder.requests).map(request => (
-                          <div key={request.id} className="flex items-center gap-2 ml-6 mb-1.5 group">
-                            <button
-                              type="button"
-                              onClick={() => handleSelectRequest(request, collection.id, folder.id)}
-                              className="flex items-center gap-2 text-sm text-left transition-colors hover:text-opacity-80 flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
-                              style={{ 
-                                color: selectedRequest?.id === request.id ? colors.primary : colors.text,
-                                backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
-                              }}
-                              disabled={loading.request}
-                            >
-                              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
-                                backgroundColor: getMethodColor(request.method)
-                              }} />
-                              
-                              {request.isEditing ? (
-                                <input
-                                  type="text"
-                                  defaultValue={request.name}
-                                  onBlur={(e) => updateRequestName(collection.id, folder.id, request.id, e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      updateRequestName(collection.id, folder.id, request.id, e.target.value);
-                                    } else if (e.key === 'Escape') {
-                                      setCollections(cols => cols.map(col => ({
-                                        ...col,
-                                        folders: col.folders.map(f => 
-                                          f.id === folder.id ? {
-                                            ...f,
-                                            requests: f.requests.map(r => 
-                                              r.id === request.id ? { ...r, isEditing: false } : r
-                                            )
-                                          } : f
-                                        )
-                                      })));
-                                    }
-                                  }}
-                                  className="flex-1 bg-transparent border-none outline-none"
-                                  style={{ color: selectedRequest?.id === request.id ? colors.primary : colors.text }}
-                                  autoFocus
-                                />
-                              ) : (
-                                <span className="truncate">{request.name}</span>
-                              )}
-                            </button>
-                            
-                            {!request.isEditing && (
-                              <button 
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCollections(cols => cols.map(col => ({
-                                    ...col,
-                                    folders: col.folders.map(f => 
-                                      f.id === folder.id ? {
-                                        ...f,
-                                        requests: f.requests.map(r => 
-                                          r.id === request.id ? { ...r, isEditing: true } : r
-                                        )
-                                      } : f
-                                    )
-                                  })));
-                                }}
-                                className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all mr-2 hover-lift"
-                                style={{ backgroundColor: colors.card }}>
-                                <Edit2 size={10} style={{ color: colors.textSecondary }} />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => addNewRequest(collection.id, folder.id)}
-                          className="ml-6 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
-                          style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
-                          disabled={loading.request}
-                        >
-                          <Plus size={10} />
-                          Add Request
-                        </button>
-                      </>
-                    )}
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => addNewFolder(collection.id)}
-                  className="ml-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
-                  style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
-                  disabled={loading.request}
-                >
-                  <Plus size={10} />
-                  Add Folder
-                </button>
-              </>
-            )}
-          </div>
-        ))}
-        
-        {sortedCollections.length === 0 && searchQuery && (
-          <div className="text-center p-4" style={{ color: colors.textSecondary }}>
-            <Search size={20} className="mx-auto mb-2 opacity-50" />
-            <p className="text-sm">No collections found for "{searchQuery}"</p>
-          </div>
-        )}
+      <div className="flex items-center justify-center h-32">
+        <RefreshCw className="animate-spin" size={16} style={{ color: colors.textSecondary }} />
       </div>
     );
-  };
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 text-center">
+        <AlertCircle size={24} className="mx-auto mb-2" style={{ color: colors.error }} />
+        <div className="text-sm" style={{ color: colors.text }}>{error}</div>
+        <button 
+          type="button"
+          onClick={fetchCollections}
+          className="mt-3 px-4 py-2 rounded text-sm font-medium transition-colors hover-lift"
+          style={{ 
+            backgroundColor: colors.hover,
+            color: colors.text
+          }}
+          disabled={loading.collections}
+        >
+          {loading.collections ? (
+            <div className="flex items-center gap-2">
+              <RefreshCw size={12} className="animate-spin" />
+              Retrying...
+            </div>
+          ) : (
+            'Retry'
+          )}
+        </button>
+      </div>
+    );
+  }
+
+  if (collections.length === 0) {
+    return (
+      <div className="p-4 text-center">
+        <Folder size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
+        <p className="text-sm" style={{ color: colors.text }}>No collections found</p>
+        <button 
+          type="button"
+          onClick={() => setShowCreateModal(true)}
+          className="mt-3 px-4 py-2 rounded text-sm font-medium transition-colors hover-lift"
+          style={{ 
+            backgroundColor: colors.primaryDark,
+            color: colors.white
+          }}
+        >
+          Create your first collection
+        </button>
+      </div>
+    );
+  }
+
+  // Ensure collections are sorted before rendering
+  const sortedCollections = sortAlphabetically(filteredCollections);
+  
+  return (
+    <div className="flex-1 overflow-auto p-2">
+      {sortedCollections.map(collection => (
+        <div key={collection.id} className="mb-3">
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
+            onClick={() => toggleCollection(collection.id)}
+            style={{ backgroundColor: colors.hover }}>
+            {collection.isExpanded ? (
+              <ChevronDown size={12} style={{ color: colors.textSecondary }} />
+            ) : (
+              <ChevronRight size={12} style={{ color: colors.textSecondary }} />
+            )}
+            <button type="button" onClick={(e) => {
+              e.stopPropagation();
+              toggleFavorite(collection.id);
+            }}>
+              {collection.isFavorite ? (
+                <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
+              ) : (
+                <Star size={12} style={{ color: colors.textSecondary }} />
+              )}
+            </button>
+            
+            {collection.isEditing ? (
+              <input
+                type="text"
+                defaultValue={collection.name}
+                onBlur={(e) => updateCollectionName(collection.id, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    updateCollectionName(collection.id, e.target.value);
+                  } else if (e.key === 'Escape') {
+                    setCollections(cols => cols.map(col => 
+                      col.id === collection.id ? { ...col, isEditing: false } : col
+                    ));
+                  }
+                }}
+                className="flex-1 text-sm font-medium bg-transparent border-none outline-none"
+                style={{ color: colors.text }}
+                autoFocus
+              />
+            ) : (
+              <span className="text-sm font-medium flex-1" style={{ color: colors.text }}>
+                {collection.name}
+              </span>
+            )}
+            
+            {/* Collection count badge - show total requests in collection */}
+            {collection.requestsCount > 0 && (
+              <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                backgroundColor: colors.primaryDark,
+                color: 'white'
+              }}>
+                {collection.requestsCount}
+              </span>
+            )}
+          </div>
+
+          {collection.isExpanded && collection.folders && collection.folders.length > 0 && (
+            <>
+              {/* Ensure folders are sorted before rendering */}
+              {sortAlphabetically(collection.folders).map(folder => (
+                <div key={folder.id} className="ml-4 mb-2">
+                  <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
+                    onClick={() => toggleFolder(collection.id, folder.id)}
+                    style={{ backgroundColor: colors.hover }}>
+                    {folder.isExpanded ? (
+                      <ChevronDown size={11} style={{ color: colors.textSecondary }} />
+                    ) : (
+                      <ChevronRight size={11} style={{ color: colors.textSecondary }} />
+                    )}
+                    <FolderOpen size={11} style={{ color: colors.textSecondary }} />
+                    
+                    {folder.isEditing ? (
+                      <input
+                        type="text"
+                        defaultValue={folder.name}
+                        onBlur={(e) => updateFolderName(collection.id, folder.id, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            updateFolderName(collection.id, folder.id, e.target.value);
+                          } else if (e.key === 'Escape') {
+                            setCollections(cols => cols.map(col => ({
+                              ...col,
+                              folders: col.folders.map(f => 
+                                f.id === folder.id ? { ...f, isEditing: false } : f
+                              )
+                            })));
+                          }
+                        }}
+                        className="flex-1 text-sm bg-transparent border-none outline-none"
+                        style={{ color: colors.text }}
+                        autoFocus
+                      />
+                    ) : (
+                      <span className="text-sm flex-1" style={{ color: colors.text }}>
+                        {folder.name}
+                      </span>
+                    )}
+                    
+                    {/* Folder count badge - show number of requests in this folder */}
+                    {folder.requests && folder.requests.length > 0 && (
+                      <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                        backgroundColor: colors.primaryDark,
+                        color: 'white'
+                      }}>
+                        {folder.requests.length}
+                      </span>
+                    )}
+                    
+                    <button 
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCollections(cols => cols.map(col => ({
+                          ...col,
+                          folders: col.folders.map(f => 
+                            f.id === folder.id ? { ...f, isEditing: true } : f
+                          )
+                        })));
+                      }}
+                      className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all hover-lift"
+                      style={{ backgroundColor: colors.card }}>
+                      <Edit2 size={10} style={{ color: colors.textSecondary }} />
+                    </button>
+                  </div>
+
+                  {folder.isExpanded && folder.requests && folder.requests.length > 0 && (
+                    <>
+                      {/* Ensure requests are sorted before rendering */}
+                      {sortAlphabetically(folder.requests).map(request => (
+                        <div key={request.id} className="flex items-center gap-2 ml-6 mb-1.5 group">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectRequest(request, collection.id, folder.id)}
+                            className="flex items-center gap-2 text-sm text-left transition-colors hover:text-opacity-80 flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
+                            style={{ 
+                              color: selectedRequest?.id === request.id ? colors.primary : colors.text,
+                              backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
+                            }}
+                            disabled={loading.request}
+                          >
+                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
+                              backgroundColor: getMethodColor(request.method)
+                            }} />
+                            
+                            {request.isEditing ? (
+                              <input
+                                type="text"
+                                defaultValue={request.name}
+                                onBlur={(e) => updateRequestName(collection.id, folder.id, request.id, e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    updateRequestName(collection.id, folder.id, request.id, e.target.value);
+                                  } else if (e.key === 'Escape') {
+                                    setCollections(cols => cols.map(col => ({
+                                      ...col,
+                                      folders: col.folders.map(f => 
+                                        f.id === folder.id ? {
+                                          ...f,
+                                          requests: f.requests.map(r => 
+                                            r.id === request.id ? { ...r, isEditing: false } : r
+                                          )
+                                        } : f
+                                      )
+                                    })));
+                                  }
+                                }}
+                                className="flex-1 bg-transparent border-none outline-none"
+                                style={{ color: selectedRequest?.id === request.id ? colors.primary : colors.text }}
+                                autoFocus
+                              />
+                            ) : (
+                              <span className="truncate">{request.name}</span>
+                            )}
+                          </button>
+                          
+                          {!request.isEditing && (
+                            <button 
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCollections(cols => cols.map(col => ({
+                                  ...col,
+                                  folders: col.folders.map(f => 
+                                    f.id === folder.id ? {
+                                      ...f,
+                                      requests: f.requests.map(r => 
+                                        r.id === request.id ? { ...r, isEditing: true } : r
+                                      )
+                                    } : f
+                                  )
+                                })));
+                              }}
+                              className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all mr-2 hover-lift"
+                              style={{ backgroundColor: colors.card }}>
+                              <Edit2 size={10} style={{ color: colors.textSecondary }} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => addNewRequest(collection.id, folder.id)}
+                        className="ml-6 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
+                        style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+                        disabled={loading.request}
+                      >
+                        <Plus size={10} />
+                        Add Request
+                      </button>
+                    </>
+                  )}
+                  
+                  {/* Show "No requests" message when folder is expanded but has no requests */}
+                  {folder.isExpanded && (!folder.requests || folder.requests.length === 0) && (
+                    <div className="ml-6 py-2 text-center">
+                      <p className="text-xs" style={{ color: colors.textTertiary }}>No requests in this folder</p>
+                      <button
+                        type="button"
+                        onClick={() => addNewRequest(collection.id, folder.id)}
+                        className="mt-1 px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 hover-lift"
+                        style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+                        disabled={loading.request}
+                      >
+                        <Plus size={10} />
+                        Add your first request
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => addNewFolder(collection.id)}
+                className="ml-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
+                style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+                disabled={loading.request}
+              >
+                <Plus size={10} />
+                Add Folder
+              </button>
+            </>
+          )}
+          
+          {/* Show "No folders" message when collection is expanded but has no folders */}
+          {collection.isExpanded && (!collection.folders || collection.folders.length === 0) && (
+            <div className="ml-4 py-2 text-center">
+              <p className="text-xs" style={{ color: colors.textTertiary }}>No folders in this collection</p>
+              <button
+                type="button"
+                onClick={() => addNewFolder(collection.id)}
+                className="mt-1 px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 hover-lift"
+                style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+                disabled={loading.request}
+              >
+                <Plus size={10} />
+                Add your first folder
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+      
+      {sortedCollections.length === 0 && searchQuery && (
+        <div className="text-center p-4" style={{ color: colors.textSecondary }}>
+          <Search size={20} className="mx-auto mb-2 opacity-50" />
+          <p className="text-sm">No collections found for "{searchQuery}"</p>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
   console.log('🎯 [handleSelectRequest] Selected request:', {

@@ -37,8 +37,7 @@ public class CodeLanguageGeneratorUtil {
         StringBuilder js = new StringBuilder();
         js.append("// Auto-generated functional JavaScript code for ").append(escapeJavaScriptString(api.getApiName())).append("\n\n");
 
-        String serverUrl = "{{baseUrl}}/plx/api/gen/" + api.getId();
-        String baseUrl = serverUrl + fullUrl;
+        String baseUrl = fullUrl;
 
         js.append("// Base URL\n");
         js.append("const baseUrl = '").append(escapeJavaScriptString(baseUrl)).append("';\n\n");
@@ -203,8 +202,7 @@ public class CodeLanguageGeneratorUtil {
         py.append("import json\n");
         py.append("from urllib.parse import urlencode\n\n");
 
-        String serverUrl = "{{baseUrl}}/plx/api/gen/" + api.getId();
-        String baseUrl = serverUrl + fullUrl;
+        String baseUrl = fullUrl;
 
         py.append("# Base URL\n");
         py.append("base_url = \"").append(baseUrl).append("\"\n\n");
@@ -370,8 +368,7 @@ public class CodeLanguageGeneratorUtil {
         java.append("import java.util.Map;\n");
         java.append("import com.fasterxml.jackson.databind.ObjectMapper;\n\n");
 
-        String serverUrl = "{{baseUrl}}/plx/api/gen/" + api.getId();
-        String baseUrl = serverUrl + fullUrl;
+        String baseUrl = fullUrl;
 
         java.append("public class ").append(toClassName(api.getApiName())).append("ApiClient {\n\n");
         java.append("    private static final String BASE_URL = \"").append(baseUrl).append("\";\n");
@@ -571,8 +568,7 @@ public class CodeLanguageGeneratorUtil {
         cs.append("using System.Collections.Generic;\n");
         cs.append("using Newtonsoft.Json;\n\n");
 
-        String serverUrl = "{{baseUrl}}/plx/api/gen/" + api.getId();
-        String baseUrl = serverUrl + fullUrl;
+        String baseUrl = fullUrl;
 
         cs.append("public class ").append(toClassName(api.getApiName())).append("ApiClient\n");
         cs.append("{\n");
@@ -776,8 +772,7 @@ public class CodeLanguageGeneratorUtil {
         php.append("<?php\n");
         php.append("// Auto-generated functional PHP code for ").append(api.getApiName()).append("\n\n");
 
-        String serverUrl = "{{baseUrl}}/plx/api/gen/" + api.getId();
-        String baseUrl = serverUrl + fullUrl;
+        String baseUrl = fullUrl;
 
         php.append("// Base URL\n");
         php.append("define('BASE_URL', '").append(escapePhpString(baseUrl)).append("');\n\n");
@@ -960,8 +955,7 @@ public class CodeLanguageGeneratorUtil {
         ruby.append("require 'uri'\n");
         ruby.append("require 'json'\n\n");
 
-        String serverUrl = "{{baseUrl}}/plx/api/gen/" + api.getId();
-        String baseUrl = serverUrl + fullUrl;
+        String baseUrl = fullUrl;
 
         ruby.append("# Base URL\n");
         ruby.append("BASE_URL = '").append(baseUrl).append("'.freeze\n\n");
@@ -1157,8 +1151,7 @@ public class CodeLanguageGeneratorUtil {
         go.append("    \"os\"\n");
         go.append(")\n\n");
 
-        String serverUrl = "{{baseUrl}}/plx/api/gen/" + api.getId();
-        String baseUrl = serverUrl + fullUrl;
+        String baseUrl = fullUrl;
 
         go.append("const (\n");
         go.append("    baseURL = \"").append(baseUrl).append("\"\n");
