@@ -313,7 +313,7 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
 
             long oidValue = Long.parseLong(objectOid);
 
-            String sql = "SELECT * FROM ( " +
+            String sql = "WITH dependencies AS ( " +
                     "  SELECT " +
                     "      n.nspname as dependent_owner, " +
                     "      c.relname as dependent_name, " +
@@ -332,8 +332,7 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
                     "      'VALID' as dependent_status, " +
                     "      c.relowner as dependent_created, " +
                     "      c.relowner as dependent_modified, " +
-                    "      (SELECT COUNT(*) FROM pg_proc p WHERE p.proname = c.relname) as parameter_count, " +
-                    "      ROW_NUMBER() OVER (ORDER BY dependent_type, dependent_name) as rnum " +
+                    "      (SELECT COUNT(*) FROM pg_proc p WHERE p.proname = c.relname) as parameter_count " +
                     "  FROM pg_depend dep " +
                     "  JOIN pg_class c ON dep.objid = c.oid " +
                     "  JOIN pg_namespace n ON c.relnamespace = n.oid " +
@@ -341,15 +340,21 @@ public class PostgreSQLDependencyRepository extends PostgreSQLRepository {
                     "  AND dep.deptype IN ('n', 'a') " +
                     "  AND dep.objid != dep.refobjid " +
                     "  AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
-                    ") t WHERE rnum > ? AND rnum <= ?";
+                    ") " +
+                    "SELECT *, ROW_NUMBER() OVER (ORDER BY dependent_type, dependent_name) as rnum " +
+                    "FROM dependencies " +
+                    "LIMIT ? OFFSET ?";
 
-            return getJdbcTemplate().queryForList(sql, owner, objectName, objectType, oidValue, offset, offset + pageSize);
+            return getJdbcTemplate().queryForList(sql, owner, objectName, objectType, oidValue, pageSize, offset);
 
         } catch (Exception e) {
             log.debug("Error getting paginated PostgreSQL dependencies: {}", e.getMessage());
             return new ArrayList<>();
         }
     }
+
+
+
 
     private List<Map<String, Object>> getObjectsThisDependsOn(String objectName, String objectType, String owner) {
         try {
