@@ -52,11 +52,7 @@ public class CodeBaseService {
 
             List<CollectionEntity> collectionEntities;
 
-            if (performedBy != null && !performedBy.isEmpty()) {
-                collectionEntities = collectionRepository.findByOwnerOrderByUpdatedAtDesc(performedBy);
-            } else {
-                collectionEntities = collectionRepository.findAll();
-            }
+            collectionEntities = collectionRepository.findAll();
 
             List<CollectionItem> collections = collectionEntities.stream()
                     .map(entity -> {
@@ -81,8 +77,6 @@ public class CodeBaseService {
             CollectionsListResponse response = new CollectionsListResponse();
             response.setCollections(collections);
             response.setTotal(collections.size());
-            response.setPage(0);
-            response.setPageSize(collections.size());
 
             return response;
 
