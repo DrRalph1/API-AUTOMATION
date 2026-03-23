@@ -5291,18 +5291,18 @@ const renderColumnsTab = () => {
     
     let constraintsArray = [];
     
+    // Handle both array and object responses
     if (Array.isArray(data)) {
       constraintsArray = data;
     } else if (data.constraints && Array.isArray(data.constraints)) {
       constraintsArray = data.constraints;
+    } else if (data.data && Array.isArray(data.data)) {
+      constraintsArray = data.data;
     } else {
-      return (
-        <div className="flex-1 overflow-auto p-4">
-          <div className="text-center" style={{ color: colors.textSecondary }}>
-            Unexpected constraints data format
-          </div>
-        </div>
-      );
+      // Try to convert object to array if it looks like constraints data
+      if (typeof data === 'object' && data !== null) {
+        constraintsArray = [data];
+      }
     }
     
     if (constraintsArray.length === 0) {
@@ -5332,21 +5332,20 @@ const renderColumnsTab = () => {
                   <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Status</th>
                   <th className="text-left p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>Columns</th>
                   <th className="text-left p-2 text-xs hidden lg:table-cell" style={{ color: colors.textSecondary }}>Validated</th>
+                  <th className="text-left p-2 text-xs hidden lg:table-cell" style={{ color: colors.textSecondary }}>Deferrable</th>
                 </tr>
               </thead>
               <tbody>
                 {constraintsArray.map((con, i) => {
                   const constraintName = con.name || '-';
-                  const constraintType = con.type || '-';
+                  const constraintType = con.type || con.typeFormatted || '-';
                   const constraintStatus = con.status || '-';
                   const columns = con.columnsString || (Array.isArray(con.columns) ? con.columns.join(', ') : con.columns) || '-';
                   const validated = con.validated || '-';
+                  const deferrable = con.deferrable || '-';
                   
-                  let typeDisplay = constraintType;
-                  if (constraintType === 'C') typeDisplay = 'Check';
-                  else if (constraintType === 'P') typeDisplay = 'Primary Key';
-                  else if (constraintType === 'R') typeDisplay = 'Foreign Key';
-                  else if (constraintType === 'U') typeDisplay = 'Unique';
+                  // Determine if constraint is enabled/disabled
+                  const isEnabled = constraintStatus === 'ENABLED' || constraintStatus === 'VALIDATED';
                   
                   return (
                     <tr key={con.id || constraintName + i} style={{ 
@@ -5356,17 +5355,18 @@ const renderColumnsTab = () => {
                       <td className="p-2 text-xs" style={{ color: colors.text }}>{constraintName}</td>
                       <td className="p-2 text-xs">
                         <span className={`px-2 py-0.5 rounded text-xs ${
-                          constraintType === 'P' ? 'bg-blue-500/10 text-blue-400' :
-                          constraintType === 'R' ? 'bg-purple-500/10 text-purple-400' :
-                          constraintType === 'U' ? 'bg-green-500/10 text-green-400' :
-                          'bg-yellow-500/10 text-yellow-400'
+                          constraintType === 'PRIMARY KEY' ? 'bg-blue-500/10 text-blue-400' :
+                          constraintType === 'FOREIGN KEY' ? 'bg-purple-500/10 text-purple-400' :
+                          constraintType === 'UNIQUE' ? 'bg-green-500/10 text-green-400' :
+                          constraintType === 'CHECK' ? 'bg-yellow-500/10 text-yellow-400' :
+                          'bg-gray-500/10 text-gray-400'
                         }`}>
-                          {typeDisplay}
+                          {constraintType}
                         </span>
                       </td>
                       <td className="p-2 text-xs">
                         <span className={`px-2 py-0.5 rounded text-xs ${
-                          constraintStatus === 'ENABLED' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                          isEnabled ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
                         }`}>
                           {constraintStatus}
                         </span>
@@ -5376,6 +5376,9 @@ const renderColumnsTab = () => {
                       </td>
                       <td className="p-2 text-xs hidden lg:table-cell" style={{ color: colors.textSecondary }}>
                         {validated}
+                      </td>
+                      <td className="p-2 text-xs hidden lg:table-cell" style={{ color: colors.textSecondary }}>
+                        {deferrable}
                       </td>
                     </tr>
                   );

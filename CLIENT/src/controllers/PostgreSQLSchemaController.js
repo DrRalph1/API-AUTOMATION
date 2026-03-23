@@ -2872,16 +2872,25 @@ const transformTableConstraintsResponse = (response) => {
     
     const transformedData = constraintsArray.map((con, index) => ({
         id: `constraint-${index + 1}`,
-        name: con.name || con.CONSTRAINT_NAME || '-',
-        type: con.type || con.CONSTRAINT_TYPE || '-',
-        typeFormatted: formatConstraintType(con.type || con.CONSTRAINT_TYPE || '-'),
-        columns: con.columns ? (Array.isArray(con.columns) ? con.columns : [con.columns]) : (con.COLUMNS || []),
-        columnsString: con.columnsString || con.COLUMNS || '-',
-        status: con.status || con.CONSTRAINT_STATUS || '-',
+        // Handle both camelCase and snake_case field names
+        name: con.name || con.CONSTRAINT_NAME || con.constraint_name || '-',
+        type: con.type || con.CONSTRAINT_TYPE || con.constraint_type || '-',
+        typeFormatted: formatConstraintType(con.type || con.CONSTRAINT_TYPE || con.constraint_type || '-'),
+        columns: con.columns ? (Array.isArray(con.columns) ? con.columns : [con.columns]) : (con.COLUMNS || con.columnsString || []),
+        columnsString: con.columnsString || con.COLUMNS_STRING || (con.columns ? (Array.isArray(con.columns) ? con.columns.join(', ') : con.columns) : '-'),
+        status: con.status || con.CONSTRAINT_STATUS || con.constraint_status || '-',
         validated: con.validated || con.VALIDATED || '-',
-        deferrable: con.deferrable || con.DEFERRABLE,
-        deferred: con.deferred || con.DEFERRED,
-        columnCount: con.columnCount || con.COLUMN_COUNT
+        deferrable: con.deferrable || con.DEFERRABLE || '-',
+        deferred: con.deferred || con.DEFERRED || '-',
+        columnCount: con.columnCount || con.COLUMN_COUNT || (con.columns ? (Array.isArray(con.columns) ? con.columns.length : 1) : 0),
+        // Additional fields that might be in your response
+        deleteRule: con.delete_rule || con.DELETE_RULE,
+        indexOwner: con.index_owner || con.INDEX_OWNER,
+        indexName: con.index_name || con.INDEX_NAME,
+        invalid: con.invalid || con.INVALID || false,
+        viewRelated: con.view_related || con.VIEW_RELATED || false,
+        referencesOwner: con.references_owner || con.REFERENCES_OWNER,
+        referencesConstraint: con.references_constraint || con.REFERENCES_CONSTRAINT
     }));
 
     return {
@@ -3054,11 +3063,17 @@ const transformUsedBySummaryResponse = (response) => {
 const formatConstraintType = (type) => {
     const types = {
         'P': 'PRIMARY KEY',
+        'PRIMARY KEY': 'PRIMARY KEY',
         'R': 'FOREIGN KEY',
+        'FOREIGN KEY': 'FOREIGN KEY',
         'U': 'UNIQUE',
+        'UNIQUE': 'UNIQUE',
         'C': 'CHECK',
+        'CHECK': 'CHECK',
         'V': 'VIEW CHECK',
-        'O': 'READ ONLY VIEW'
+        'O': 'READ ONLY VIEW',
+        'n': 'NOT NULL',
+        'NOT NULL': 'NOT NULL'
     };
     return types[type] || type || 'UNKNOWN';
 };

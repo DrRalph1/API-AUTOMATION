@@ -399,7 +399,7 @@ public class PostgreSQLTableRepository extends PostgreSQLRepository {
                     "    tc.constraint_type, " +
                     "    'ENABLED' as constraint_status, " +
                     "    CASE WHEN tc.is_deferrable = 'YES' THEN 'DEFERRABLE' ELSE 'NOT DEFERRABLE' END as deferrable, " +
-                    "    CASE WHEN tc.is_deferred = 'YES' THEN 'DEFERRED' ELSE 'IMMEDIATE' END as deferred, " +
+                    "    'IMMEDIATE' as deferred, " +  // PostgreSQL doesn't have is_deferred column in information_schema
                     "    'VALIDATED' as validated, " +
                     "    NULL as references_owner, " +
                     "    NULL as references_constraint, " +
@@ -408,23 +408,28 @@ public class PostgreSQLTableRepository extends PostgreSQLRepository {
                     "    NULL as index_name, " +
                     "    false as invalid, " +
                     "    false as view_related, " +
-                    "    (SELECT string_agg(column_name, ', ' ORDER BY position) " +
-                    "     FROM information_schema.key_column_usage " +
-                    "     WHERE constraint_name = tc.constraint_name) as columns, " +
-                    "    (SELECT COUNT(*) FROM information_schema.key_column_usage " +
-                    "     WHERE constraint_name = tc.constraint_name) as column_count " +
+                    "    (SELECT string_agg(column_name, ', ') " +
+                    "     FROM information_schema.key_column_usage kcu " +
+                    "     WHERE kcu.constraint_name = tc.constraint_name " +
+                    "       AND kcu.constraint_schema = tc.constraint_schema) as columns, " +
+                    "    (SELECT COUNT(*) FROM information_schema.key_column_usage kcu " +
+                    "     WHERE kcu.constraint_name = tc.constraint_name " +
+                    "       AND kcu.constraint_schema = tc.constraint_schema) as column_count " +
                     "FROM information_schema.table_constraints tc " +
                     "LEFT JOIN information_schema.referential_constraints fk " +
                     "    ON tc.constraint_name = fk.constraint_name " +
+                    "    AND tc.constraint_schema = fk.constraint_schema " +
                     "WHERE tc.table_schema = ? AND tc.table_name = ? " +
                     "ORDER BY tc.constraint_type, tc.constraint_name";
 
             return getJdbcTemplate().queryForList(sql, owner, tableName);
         } catch (Exception e) {
-            log.warn("Error getting constraints for {}.{}: {}", owner, tableName, e.getMessage());
+            log.warn("Error getting constraints for {}.{}: {}", owner, tableName, e.getMessage(), e);
             return new ArrayList<>();
         }
     }
+
+
 
     public List<Map<String, Object>> getTableIndexes(String owner, String tableName) {
         try {
