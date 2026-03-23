@@ -213,8 +213,26 @@ const CollectionCard = React.memo(({ collection, colors, onClick }) => {
 });
 
 // API Endpoint Item - With duplicate prevention via ID (added mobile touch optimization)
+// ApiEndpointItem Component - With created at date added
 const ApiEndpointItem = React.memo(({ api, colors, isDark, onClick }) => {
   const methodColorClass = getMethodColor(api?.method, isDark);
+  
+  // Format date function for display
+  const formatDate = (dateString) => {
+  if (!dateString) return 'N/A';
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (e) {
+    return 'Invalid date';
+  }
+};
   
   return (
     <div 
@@ -227,11 +245,11 @@ const ApiEndpointItem = React.memo(({ api, colors, isDark, onClick }) => {
           {api.method || 'GET'}
         </span>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <h4 className="text-sm font-medium truncate" style={{ color: colors.text }}>
               {api.name}
             </h4>
-            <span className="text-xs ml-2" style={{ color: colors.textTertiary }}>
+            <span className="text-xs" style={{ color: colors.textTertiary }}>
               {api.folderName}
             </span>
           </div>
@@ -240,8 +258,15 @@ const ApiEndpointItem = React.memo(({ api, colors, isDark, onClick }) => {
             {api.description || api.url}
           </p>
           
-          <div className="text-xs mt-1.5" style={{ color: colors.textTertiary }}>
-            {api.collectionName}
+          <div className="flex items-center justify-between mt-1.5">
+            <div className="text-xs" style={{ color: colors.textTertiary }}>
+              {api.collectionName}
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <span style={{ color: colors.textTertiary }}>
+                Created: {formatDate(api.createdAt)}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -704,6 +729,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
               collectionName: endpoint.collectionName,
               folderName: endpoint.folderName,
               lastUpdated: endpoint.lastUpdated,
+              createdAt: endpoint.createdAt,  // ADD THIS LINE
               parameters: endpoint.parameters || [],
               responseMappings: endpoint.responseMappings || [],
               tags: endpoint.tags || [],
