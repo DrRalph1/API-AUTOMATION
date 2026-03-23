@@ -2619,18 +2619,26 @@ public class OracleSchemaService implements DatabaseSchemaService {
                 case ANONYMOUS_BLOCK:
                     Map<String, Object> plsqlResult = executePLSQLBlock(query, timeoutSeconds);
 
-                    result.put("success", plsqlResult.get("success"));
-                    result.put("message", plsqlResult.get("message"));
+                    // Get the output from the procedure
+                    String output = (String) plsqlResult.getOrDefault("output", "");
+                    boolean success = (boolean) plsqlResult.getOrDefault("success", false);
+                    String responseCode = (String) plsqlResult.getOrDefault("responseCode", "");
+
+                    // Don't add extra generic messages - use the actual output as the message
+                    String finalMessage = output.trim();
+                    if (finalMessage.isEmpty()) {
+                        finalMessage = success ? "PL/SQL block executed successfully" : "Execution failed";
+                    }
+
+                    result.put("success", success);
+                    result.put("message", finalMessage);
                     result.put("data", Map.of(
-                            "output", plsqlResult.getOrDefault("output", ""),
+                            "output", output,
                             "rows", plsqlResult.getOrDefault("rows", new ArrayList<>()),
                             "rowCount", plsqlResult.getOrDefault("rowCount", 0),
-                            "responseCode", plsqlResult.getOrDefault("responseCode", ""),
+                            "responseCode", responseCode,
                             "batchNumber", plsqlResult.getOrDefault("batchNumber", "")
                     ));
-
-                    log.info("RequestEntity ID: {}, PL/SQL block executed: {}",
-                            requestId, plsqlResult.get("message"));
                     break;
 
                 case CALL:
