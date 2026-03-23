@@ -1,4 +1,4 @@
-// QueryEditorModal.js (With Fully Resizable Modal)
+// QueryEditorModal.js (With Try It Out Feature and View Source)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { 
@@ -7,7 +7,7 @@ import {
   FileText, Code, Database, Layers, Eye, EyeOff, ChevronRight, Info,
   Check, Zap, Sparkles, Folder, FolderOpen, Settings, Wrench, Table,
   View, Wrench as FunctionIcon, Package, Link as LinkIcon, GitBranch,
-  GripHorizontal, GripVertical, Maximize
+  GripHorizontal, GripVertical, Maximize, Beaker, ArrowLeft
 } from 'lucide-react';
 
 // Database type configurations (same as before)
@@ -104,7 +104,7 @@ const DATABASE_CONFIGS = {
       const { executeSQL } = await import('../../controllers/OracleSchemaController.js');
       return executeSQL(authToken, params);
     }
-  }
+  },
 };
 
 // Object type templates (same as before)
@@ -260,6 +260,625 @@ END ${name};
   },
 };
 
+// Extract parameter names from procedure DDL
+const extractProcedureParams = (ddl, procedureName) => {
+  // This is a simple extraction - you may want to enhance this
+  const params = {
+    input: [],
+    output: []
+  };
+  
+  // Try to extract from the DDL
+  try {
+    // Find the procedure signature
+    const procPattern = new RegExp(`PROCEDURE\\s+${procedureName}\\s*\\(([^)]+)\\)`, 'i');
+    const match = ddl.match(procPattern);
+    
+    if (match && match[1]) {
+      const paramStr = match[1];
+      const lines = paramStr.split('\n');
+      
+      for (let line of lines) {
+        // Match parameter patterns like "acct_link_vvv IN VARCHAR2" or "mess OUT VARCHAR2"
+        const inParamMatch = line.match(/(\w+)\s+IN\s+(\w+)/i);
+        const outParamMatch = line.match(/(\w+)\s+OUT\s+(\w+)/i);
+        const inOutParamMatch = line.match(/(\w+)\s+IN\s+OUT\s+(\w+)/i);
+        
+        if (inParamMatch) {
+          params.input.push({ name: inParamMatch[1], type: inParamMatch[2] });
+        } else if (outParamMatch) {
+          params.output.push({ name: outParamMatch[1], type: outParamMatch[2] });
+        } else if (inOutParamMatch) {
+          params.input.push({ name: inOutParamMatch[1], type: inOutParamMatch[2] });
+          params.output.push({ name: inOutParamMatch[1], type: inOutParamMatch[2] });
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Could not parse procedure parameters', e);
+  }
+  
+  return params;
+};
+
+const generateProcedureTestCode = (objectName, schema, databaseType, currentDate, originalDDL = '') => {
+  // Extract parameters from original DDL if available
+  const params = extractProcedureParams(originalDDL, objectName);
+  
+  // Create input parameter declarations based on actual parameter names
+  let inputDeclarations = '';
+  let inputValues = '';
+  let outputDeclarations = '';
+  let outputVariables = '';
+  let callParams = '';
+  
+  if (databaseType === 'oracle') {
+    // Use parameter names from the original procedure if available
+    const inputParams = params.input.length > 0 ? params.input : [
+      { name: 'acct_link_vvv', type: 'VARCHAR2(20)' },
+      { name: 'amt', type: 'NUMBER' },
+      { name: 'narration', type: 'VARCHAR2(200)' },
+      { name: 'doc_ref', type: 'VARCHAR2(50)' },
+      { name: 'batch_no', type: 'VARCHAR2(20)' },
+      { name: 'post_by', type: 'VARCHAR2(30)' },
+      { name: 'app_by', type: 'VARCHAR2(30)' },
+      { name: 'post_terminal', type: 'VARCHAR2(30)' },
+      { name: 'cust_tel', type: 'VARCHAR2(20)' },
+      { name: 'trans_by', type: 'VARCHAR2(30)' },
+      { name: 'trans_type', type: 'VARCHAR2(10)' },
+      { name: 'db_acct_link_vvv', type: 'VARCHAR2(20)' },
+      { name: 'channel_code_v', type: 'VARCHAR2(20)' },
+      { name: 'api_secret_v', type: 'VARCHAR2(50)' }
+    ];
+    
+    const outputParams = params.output.length > 0 ? params.output : [
+      { name: 'mess', type: 'VARCHAR2(4000)' },
+      { name: 'response_code', type: 'VARCHAR2(10)' },
+      { name: 'batchNumber', type: 'VARCHAR2(20)' }
+    ];
+    
+    // Build declarations
+    inputDeclarations = inputParams.map(p => 
+      `    v_${p.name.padEnd(25)} ${p.type} := ${p.name.includes('amt') ? '1000.00' : p.name.includes('doc_ref') ? "'DOC_' || TO_CHAR(SYSDATE, 'YYYYMMDDHH24MISS')" : p.name.includes('link') ? "'000221059466'" : p.name.includes('post_by') ? "'UNIONADMIN'" : p.name.includes('trans_type') ? "'FTR'" : p.name.includes('channel') ? "'MOB'" : p.name.includes('api_secret') ? "'testPC'" : p.name.includes('tel') ? "'233123456789'" : p.name.includes('trans_by') ? "'CUSTOMER001'" : p.name.includes('batch') ? 'NULL' : p.name.includes('terminal') ? "'API'" : `'TEST_VALUE'`};`
+    ).join('\n');
+    
+    outputDeclarations = outputParams.map(p => 
+      `    v_${p.name.padEnd(25)} ${p.type};`
+    ).join('\n');
+    
+    callParams = inputParams.map(p => `        v_${p.name}`).join(',\n        ');
+    callParams = callParams + (callParams ? ',\n        ' : '') + outputParams.map(p => `v_${p.name}`).join(',\n        ');
+    
+    return `DECLARE
+    -- Input parameters - REPLACE with actual values from your database
+${inputDeclarations}
+    
+    -- Output parameters
+${outputDeclarations}
+BEGIN
+    -- Log what we're using (for debugging)
+    DBMS_OUTPUT.PUT_LINE('=== INPUT PARAMETERS ===');
+${inputParams.map(p => `    DBMS_OUTPUT.PUT_LINE('${p.name}: ' || v_${p.name});`).join('\n')}
+    DBMS_OUTPUT.PUT_LINE('========================');
+    
+    ${schema}.${objectName}(
+${callParams}
+    );
+    
+    DBMS_OUTPUT.PUT_LINE('=== OUTPUT RESULTS ===');
+${outputParams.map(p => `    DBMS_OUTPUT.PUT_LINE('${p.name}: ' || v_${p.name});`).join('\n')}
+    
+    IF v_response_code = '000' THEN
+        DBMS_OUTPUT.PUT_LINE('✓ Transaction posted successfully!');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('✗ Transaction failed with code: ' || v_response_code);
+    END IF;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM);
+        DBMS_OUTPUT.PUT_LINE('Error Code: ' || SQLCODE);
+END;`;
+  } else if (databaseType === 'postgresql') {
+    return `DO $$
+DECLARE
+    -- Input parameters - REPLACE with actual values
+    v_param1 VARCHAR(50) := 'TEST_VALUE_1';
+    v_param2 INTEGER := 100;
+    v_param3 DATE := CURRENT_DATE;
+    
+    -- Output parameters
+    v_result VARCHAR(4000);
+    v_status VARCHAR(10);
+BEGIN
+    -- Call the procedure
+    CALL ${schema}.${objectName}(v_param1, v_param2, v_param3, v_result, v_status);
+    
+    -- Display results
+    RAISE NOTICE '=== OUTPUT RESULTS ===';
+    RAISE NOTICE 'Status: %', v_status;
+    RAISE NOTICE 'Result: %', v_result;
+    
+    IF v_status = '000' THEN
+        RAISE NOTICE '✓ Procedure executed successfully!';
+    ELSE
+        RAISE NOTICE '✗ Procedure failed with status: %', v_status;
+    END IF;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE NOTICE 'Error: %', SQLERRM;
+END $$;`;
+  }
+  return `-- Test code for ${objectName} procedure`;
+};
+
+const generateFunctionTestCode = (objectName, schema, databaseType, currentDate) => {
+  if (databaseType === 'oracle') {
+    return `DECLARE
+    -- Input parameters - REPLACE with actual values
+    v_param1     VARCHAR2(50) := 'TEST_VALUE_1';
+    v_param2     NUMBER := 100;
+    
+    -- Return value
+    v_result     VARCHAR2(4000);
+BEGIN
+    -- Call the function
+    v_result := ${schema}.${objectName}(
+        p_param1 => v_param1,
+        p_param2 => v_param2
+    );
+    
+    -- Display result
+    DBMS_OUTPUT.PUT_LINE('=== FUNCTION RESULT ===');
+    DBMS_OUTPUT.PUT_LINE('Result: ' || v_result);
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM);
+        DBMS_OUTPUT.PUT_LINE('Error Code: ' || SQLCODE);
+END;`;
+  } else if (databaseType === 'postgresql') {
+    return `DO $$
+DECLARE
+    -- Input parameters - REPLACE with actual values
+    v_param1 VARCHAR(50) := 'TEST_VALUE_1';
+    v_param2 INTEGER := 100;
+    
+    -- Return value
+    v_result VARCHAR(4000);
+BEGIN
+    -- Call the function
+    v_result := ${schema}.${objectName}(v_param1, v_param2);
+    
+    -- Display result
+    RAISE NOTICE '=== FUNCTION RESULT ===';
+    RAISE NOTICE 'Result: %', v_result;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE NOTICE 'Error: %', SQLERRM;
+END $$;`;
+  }
+  return `-- Test code for ${objectName} function`;
+};
+
+// Add this helper function to extract column names from CREATE TABLE DDL
+const extractTableColumns = (ddl) => {
+  const columns = [];
+  
+  try {
+    // Match the column definitions between CREATE TABLE ... ( and );
+    const createTableMatch = ddl.match(/CREATE\s+TABLE\s+[\w.]+[\s\S]*?\(([\s\S]*?)\)\s*;/i);
+    
+    if (createTableMatch && createTableMatch[1]) {
+      const columnDefinitions = createTableMatch[1].split(',');
+      
+      for (let colDef of columnDefinitions) {
+        // Clean up the column definition
+        colDef = colDef.trim();
+        
+        // Skip constraint definitions (PRIMARY KEY, FOREIGN KEY, etc.)
+        if (colDef.toUpperCase().startsWith('PRIMARY KEY') ||
+            colDef.toUpperCase().startsWith('FOREIGN KEY') ||
+            colDef.toUpperCase().startsWith('CONSTRAINT') ||
+            colDef.toUpperCase().startsWith('UNIQUE') ||
+            colDef.toUpperCase().startsWith('CHECK')) {
+          continue;
+        }
+        
+        // Extract column name (first word, but handle quoted identifiers)
+        let columnName = '';
+        const quotedMatch = colDef.match(/^"([^"]+)"/);
+        const unquotedMatch = colDef.match(/^([a-zA-Z_][a-zA-Z0-9_]*)/);
+        
+        if (quotedMatch) {
+          columnName = quotedMatch[1];
+        } else if (unquotedMatch) {
+          columnName = unquotedMatch[1];
+        }
+        
+        if (columnName) {
+          // Try to detect data type for generating appropriate test values
+          let dataType = 'unknown';
+          const typeMatch = colDef.match(/(?:VARCHAR|CHAR|TEXT|INTEGER|BIGINT|BOOLEAN|TIMESTAMP|DATE|JSONB|DOUBLE PRECISION)/i);
+          if (typeMatch) {
+            dataType = typeMatch[0].toUpperCase();
+          }
+          
+          columns.push({
+            name: columnName,
+            dataType: dataType,
+            isNullable: !colDef.toUpperCase().includes('NOT NULL'),
+            hasDefault: colDef.toUpperCase().includes('DEFAULT')
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Could not extract table columns from DDL', e);
+  }
+  
+  return columns;
+};
+
+// Helper to generate appropriate test values based on column data type
+const generateTestValue = (column, index) => {
+  const dataType = column.dataType;
+  const name = column.name.toLowerCase();
+  
+  // Generate meaningful test values based on column name patterns
+  if (name.includes('id') && !name.includes('_at')) {
+    return `'TEST_${Math.random().toString(36).substring(7).toUpperCase()}'`;
+  }
+  if (name.includes('name') || name.includes('title') || name.includes('description')) {
+    return `'Test ${column.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}'`;
+  }
+  if (name.includes('email')) {
+    return `'test@example.com'`;
+  }
+  if (name.includes('status')) {
+    return `'ACTIVE'`;
+  }
+  if (name.includes('type')) {
+    return `'STANDARD'`;
+  }
+  if (name.includes('date') || name.includes('created_at') || name.includes('updated_at')) {
+    if (column.hasDefault) {
+      return `DEFAULT`; // Use DEFAULT if column has default
+    }
+    return `CURRENT_TIMESTAMP`;
+  }
+  if (name.includes('count') || name.includes('version') || name.includes('score')) {
+    return `1`;
+  }
+  if (dataType.includes('BOOLEAN')) {
+    return `false`;
+  }
+  if (dataType.includes('JSON')) {
+    return `'{"test": "data"}'::jsonb`;
+  }
+  if (dataType.includes('DOUBLE') || dataType.includes('FLOAT')) {
+    return `0.0`;
+  }
+  if (dataType.includes('INT')) {
+    return `0`;
+  }
+  if (dataType.includes('TIMESTAMP')) {
+    if (column.hasDefault) {
+      return `DEFAULT`;
+    }
+    return `CURRENT_TIMESTAMP`;
+  }
+  if (dataType.includes('VARCHAR') || dataType.includes('CHAR') || dataType.includes('TEXT')) {
+    return `'Test value for ${column.name}'`;
+  }
+  
+  // Default test value
+  return `'test_value_${index + 1}'`;
+};
+
+// Updated generateTableTestCode with actual column extraction
+const generateTableTestCode = (objectName, schema, databaseType, currentDate, originalDDL = '') => {
+  const columns = extractTableColumns(originalDDL);
+  const hasColumns = columns.length > 0;
+  
+  // Generate column list for SELECT
+  const columnList = hasColumns 
+    ? columns.map(col => col.name).join(', ')
+    : '*';
+  
+  // Generate INSERT statement with actual column names
+  let insertColumns = '';
+  let insertValues = '';
+  
+  if (hasColumns) {
+    // Filter out columns with defaults or auto-generated ones
+    const insertableColumns = columns.filter(col => {
+      // Skip columns that are auto-generated or have defaults for insert examples
+      const nameLower = col.name.toLowerCase();
+      return !col.hasDefault && 
+             !nameLower.includes('id') && 
+             !nameLower.includes('created_at') && 
+             !nameLower.includes('updated_at') &&
+             !nameLower.includes('version');
+    });
+    
+    if (insertableColumns.length > 0) {
+      // Use first few columns (max 5) for the example
+      const sampleColumns = insertableColumns.slice(0, 5);
+      insertColumns = sampleColumns.map(col => col.name).join(', ');
+      insertValues = sampleColumns.map((col, idx) => generateTestValue(col, idx)).join(', ');
+    } else {
+      // Fallback to first 3 columns if all have defaults
+      const sampleColumns = columns.slice(0, 3);
+      insertColumns = sampleColumns.map(col => col.name).join(', ');
+      insertValues = sampleColumns.map((col, idx) => generateTestValue(col, idx)).join(', ');
+    }
+  }
+  
+  // Generate UPDATE statement with actual column names
+  let updateColumn = '';
+  let updateValue = '';
+  
+  if (hasColumns) {
+    // Find a non-ID, non-timestamp column for update example
+    const updateableColumn = columns.find(col => {
+      const nameLower = col.name.toLowerCase();
+      return !nameLower.includes('id') && 
+             !nameLower.includes('created_at') && 
+             !nameLower.includes('updated_at') &&
+             !nameLower.includes('version');
+    });
+    
+    if (updateableColumn) {
+      updateColumn = updateableColumn.name;
+      updateValue = generateTestValue(updateableColumn, 0);
+    } else if (columns.length > 0) {
+      updateColumn = columns[0].name;
+      updateValue = generateTestValue(columns[0], 0);
+    }
+  }
+  
+  // Find a good WHERE condition column
+  let whereColumn = 'id';
+  let whereValue = "'some_id'";
+  
+  if (hasColumns) {
+    const idColumn = columns.find(col => col.name.toLowerCase() === 'id');
+    if (idColumn) {
+      whereColumn = idColumn.name;
+      whereValue = "'TEST_ID_001'";
+    } else {
+      const firstColumn = columns[0];
+      if (firstColumn) {
+        whereColumn = firstColumn.name;
+        whereValue = generateTestValue(firstColumn, 0);
+      }
+    }
+  }
+  
+  // Generate the test code based on database type
+  if (databaseType === 'oracle') {
+    return `-- Test queries for table ${schema}.${objectName}
+
+-- 1. View all records (first 10 rows)
+SELECT ${columnList}
+FROM ${schema}.${objectName}
+WHERE ROWNUM <= 10;
+
+-- 2. Get record count
+SELECT COUNT(*) AS total_records 
+FROM ${schema}.${objectName};
+
+-- 3. View table structure
+DESC ${schema}.${objectName};
+
+-- 4. Insert test record (modify as needed)
+-- INSERT INTO ${schema}.${objectName} (${insertColumns}) 
+-- VALUES (${insertValues});
+
+-- 5. Update test record
+-- UPDATE ${schema}.${objectName} 
+-- SET ${updateColumn} = ${updateValue}
+-- WHERE ${whereColumn} = ${whereValue};
+
+-- 6. Delete test record
+-- DELETE FROM ${schema}.${objectName} 
+-- WHERE ${whereColumn} = ${whereValue};
+
+-- 7. Sample queries based on actual table structure:
+${hasColumns ? `-- Available columns: ${columns.map(c => c.name).join(', ')}` : '-- Use DESCRIBE to see table structure'}
+
+-- Example: Select specific columns
+-- SELECT ${hasColumns ? columns.slice(0, 3).map(c => c.name).join(', ') : 'column1, column2'} 
+-- FROM ${schema}.${objectName};
+
+-- Example: Filter by condition
+-- SELECT * FROM ${schema}.${objectName} 
+-- WHERE ${hasColumns ? columns.find(c => c.name.toLowerCase().includes('status'))?.name || columns[0]?.name || 'column_name' : 'column_name'} = 'VALUE';`;
+  } else {
+    // PostgreSQL and others
+    return `-- Test queries for table ${schema}.${objectName}
+
+-- 1. View all records (first 10 rows)
+SELECT ${columnList}
+FROM ${schema}.${objectName}
+LIMIT 10;
+
+-- 2. Get record count
+SELECT COUNT(*) AS total_records 
+FROM ${schema}.${objectName};
+
+-- 3. View table structure
+\\d ${schema}.${objectName}
+
+-- 4. Insert test record (modify as needed)
+-- INSERT INTO ${schema}.${objectName} (${insertColumns}) 
+-- VALUES (${insertValues});
+
+-- 5. Update test record
+-- UPDATE ${schema}.${objectName} 
+-- SET ${updateColumn} = ${updateValue}
+-- WHERE ${whereColumn} = ${whereValue};
+
+-- 6. Delete test record
+-- DELETE FROM ${schema}.${objectName} 
+-- WHERE ${whereColumn} = ${whereValue};
+
+-- 7. Sample queries based on actual table structure:
+${hasColumns ? `-- Available columns: ${columns.map(c => c.name).join(', ')}` : '-- Use \\d to see table structure'}
+
+-- Example: Select specific columns
+-- SELECT ${hasColumns ? columns.slice(0, 3).map(c => c.name).join(', ') : 'column1, column2'} 
+-- FROM ${schema}.${objectName};
+
+-- Example: Filter by condition
+-- SELECT * FROM ${schema}.${objectName} 
+-- WHERE ${hasColumns ? columns.find(c => c.name.toLowerCase().includes('status'))?.name || columns[0]?.name || 'column_name' : 'column_name'} = 'VALUE';
+
+-- Example: Order by date
+-- SELECT * FROM ${schema}.${objectName} 
+-- ORDER BY ${hasColumns ? columns.find(c => c.name.toLowerCase().includes('created_at'))?.name || columns.find(c => c.name.toLowerCase().includes('date'))?.name || 'created_at' : 'created_at'} DESC
+-- LIMIT 10;`;
+  }
+};
+
+// Update the main generateTestCode function to pass the original DDL
+const generateTestCode = (objectType, objectName, schema, databaseType, originalDDL = '') => {
+  const dbConfig = DATABASE_CONFIGS[databaseType] || DATABASE_CONFIGS.postgresql;
+  const schemaName = schema || dbConfig.defaultSchema;
+  const currentDate = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '');
+  
+  switch(objectType?.toUpperCase()) {
+    case 'PROCEDURE':
+      return generateProcedureTestCode(objectName, schemaName, databaseType, currentDate, originalDDL);
+    case 'FUNCTION':
+      return generateFunctionTestCode(objectName, schemaName, databaseType, currentDate);
+    case 'TABLE':
+      return generateTableTestCode(objectName, schemaName, databaseType, currentDate, originalDDL);
+    case 'VIEW':
+      return generateViewTestCode(objectName, schemaName, databaseType, currentDate);
+    case 'PACKAGE':
+      return generatePackageTestCode(objectName, schemaName, databaseType, currentDate);
+    case 'TRIGGER':
+      return generateTriggerTestCode(objectName, schemaName, databaseType, currentDate);
+    default:
+      return generateGenericTestCode(objectName, schemaName, databaseType, currentDate);
+  }
+};
+
+// Update the handleTryItOut function to pass the DDL
+const handleTryItOut = () => {
+  if (!selectedObject) return;
+  
+  const testCode = generateTestCode(
+    selectedObject.type,
+    selectedObject.name,
+    selectedObject.schema || selectedObject.owner,
+    databaseType,
+    objectInfo?.ddl || ''  // Pass the original DDL
+  );
+  
+  // Save current selection before replacing
+  saveSelection();
+  setEditorContent(testCode);
+  addToHistory(testCode);
+  setIsTestMode(true);
+  
+  // Show a temporary notification with column count for tables
+  let notificationMessage = `✓ Test code generated for ${selectedObject.type}: ${selectedObject.name}`;
+  if (selectedObject.type?.toUpperCase() === 'TABLE') {
+    const columns = extractTableColumns(objectInfo?.ddl || '');
+    if (columns.length > 0) {
+      notificationMessage += ` (${columns.length} columns detected)`;
+    }
+  }
+  
+  setCompilationResult({
+    success: true,
+    message: notificationMessage,
+    output: 'You can now edit the parameters and execute the code. Click "View Source" to go back.',
+    error: null
+  });
+  
+  setTimeout(() => {
+    setCompilationResult(null);
+  }, 3000);
+};
+
+const generateViewTestCode = (objectName, schema, databaseType, currentDate) => {
+  return `-- Test queries for view ${schema}.${objectName}
+
+-- View all data
+SELECT * FROM ${schema}.${objectName} WHERE ROWNUM <= 10;
+
+-- Get record count
+SELECT COUNT(*) AS total_records FROM ${schema}.${objectName};
+
+-- View view definition
+${databaseType === 'oracle' ? `SELECT TEXT FROM ALL_VIEWS WHERE VIEW_NAME = '${objectName}' AND OWNER = '${schema}';` : 
+databaseType === 'postgresql' ? `\\d+ ${schema}.${objectName}` : 
+`SHOW CREATE VIEW ${schema}.${objectName};`}`;
+};
+
+const generatePackageTestCode = (objectName, schema, databaseType, currentDate) => {
+  if (databaseType === 'oracle') {
+    return `-- Test package ${schema}.${objectName}
+
+-- Initialize package
+BEGIN
+    ${schema}.${objectName}.init;
+END;
+/
+
+-- Call package function
+DECLARE
+    v_result VARCHAR2(4000);
+BEGIN
+    v_result := ${schema}.${objectName}.get_data(1);
+    DBMS_OUTPUT.PUT_LINE('Result: ' || v_result);
+END;
+/
+
+-- View package specification
+SELECT TEXT FROM ALL_SOURCE WHERE NAME = '${objectName}' AND TYPE = 'PACKAGE' ORDER BY LINE;`;
+  } else {
+    return `-- Package test for ${objectName}
+-- Note: ${databaseType} doesn't support packages directly
+-- Use schemas to organize related objects: ${schema}.${objectName}`;
+  }
+};
+
+const generateTriggerTestCode = (objectName, schema, databaseType, currentDate) => {
+  return `-- Test trigger ${schema}.${objectName}
+
+-- View trigger information
+${databaseType === 'oracle' ? `SELECT TRIGGER_NAME, TRIGGER_TYPE, TRIGGERING_EVENT, STATUS 
+FROM ALL_TRIGGERS WHERE TRIGGER_NAME = '${objectName}' AND OWNER = '${schema}';` : 
+databaseType === 'postgresql' ? `\\d ${objectName}` : 
+`SHOW TRIGGERS FROM ${schema};`}
+
+-- To test the trigger, perform an operation on the associated table
+-- For example, if the trigger is on UPDATE:
+-- UPDATE associated_table SET column = 'test' WHERE id = 1;
+
+-- Check trigger execution
+-- SELECT * FROM audit_table WHERE operation = 'UPDATE';`;
+};
+
+const generateGenericTestCode = (objectName, schema, databaseType, currentDate) => {
+  return `-- Test for ${objectName} (${schema})
+
+-- View object information
+${databaseType === 'oracle' ? `SELECT OBJECT_NAME, OBJECT_TYPE, STATUS, CREATED, LAST_DDL_TIME
+FROM ALL_OBJECTS WHERE OBJECT_NAME = '${objectName}' AND OWNER = '${schema}';` : 
+databaseType === 'postgresql' ? `\\d+ ${schema}.${objectName}` : 
+`SELECT * FROM information_schema.tables WHERE table_name = '${objectName}';`}
+
+-- Write your test queries here`;
+};
+
 // Get object type icon
 const getObjectIcon = (type, size = 16) => {
   switch(type?.toUpperCase()) {
@@ -299,6 +918,7 @@ const QueryEditorModal = ({
   const [showLineNumbers, setShowLineNumbers] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [objectInfo, setObjectInfo] = useState(null);
+  const [isTestMode, setIsTestMode] = useState(false);
   
   // Modal resize state
   const [modalSize, setModalSize] = useState({
@@ -333,125 +953,6 @@ const QueryEditorModal = ({
   
   // Get object templates for current database
   const objectTemplates = OBJECT_TEMPLATES[databaseType] || OBJECT_TEMPLATES.postgresql;
-  
-  // Sample SQL snippets
-  const getSqlSnippets = () => {
-    const baseSnippets = {
-      'SELECT': 'SELECT * FROM table_name WHERE condition;',
-      'INSERT': 'INSERT INTO table_name (column1, column2) VALUES (value1, value2);',
-      'UPDATE': 'UPDATE table_name SET column1 = value1 WHERE condition;',
-      'DELETE': 'DELETE FROM table_name WHERE condition;',
-    };
-    
-    const dbSpecificSnippets = {
-      postgresql: {
-        'CREATE TABLE': `CREATE TABLE table_name (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
-);`,
-        'CREATE FUNCTION': `CREATE OR REPLACE FUNCTION function_name(param1 INTEGER)
-RETURNS INTEGER AS $$
-BEGIN
-  RETURN param1 * 2;
-END;
-$$ LANGUAGE plpgsql;`,
-        'CREATE PROCEDURE': `CREATE OR REPLACE PROCEDURE procedure_name(param1 INTEGER)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  RAISE NOTICE 'Parameter: %', param1;
-END;
-$$;`,
-        'CREATE VIEW': 'CREATE VIEW view_name AS\nSELECT column1, column2\nFROM table_name\nWHERE condition;'
-      },
-      oracle: {
-        'CREATE TABLE': `CREATE TABLE table_name (
-  id NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-  name VARCHAR2(255) NOT NULL,
-  created_at DATE DEFAULT SYSDATE
-);`,
-        'CREATE FUNCTION': `CREATE OR REPLACE FUNCTION function_name(p_param1 IN NUMBER)
-RETURN VARCHAR2
-IS
-  v_result VARCHAR2(100);
-BEGIN
-  v_result := 'Result: ' || TO_CHAR(p_param1);
-  RETURN v_result;
-END;`,
-        'CREATE PROCEDURE': `CREATE OR REPLACE PROCEDURE procedure_name(p_param1 IN NUMBER)
-IS
-BEGIN
-  DBMS_OUTPUT.PUT_LINE('Parameter: ' || TO_CHAR(p_param1));
-END;`,
-        'CREATE PACKAGE': `CREATE OR REPLACE PACKAGE package_name IS
-  PROCEDURE init;
-  FUNCTION get_data RETURN VARCHAR2;
-END package_name;
-/
-CREATE OR REPLACE PACKAGE BODY package_name IS
-  PROCEDURE init IS
-  BEGIN
-    DBMS_OUTPUT.PUT_LINE('Initialized');
-  END init;
-  
-  FUNCTION get_data RETURN VARCHAR2 IS
-  BEGIN
-    RETURN 'Data';
-  END get_data;
-END package_name;
-/`
-      },
-      mysql: {
-        'CREATE TABLE': `CREATE TABLE table_name (
-  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB;`,
-        'CREATE FUNCTION': `DELIMITER $$
-CREATE FUNCTION function_name(p_param1 INT)
-RETURNS VARCHAR(100)
-DETERMINISTIC
-BEGIN
-  DECLARE v_result VARCHAR(100);
-  SET v_result = CONCAT('Result: ', CAST(p_param1 AS CHAR));
-  RETURN v_result;
-END$$
-DELIMITER ;`,
-        'CREATE PROCEDURE': `DELIMITER $$
-CREATE PROCEDURE procedure_name(IN p_param1 INT)
-BEGIN
-  SELECT CONCAT('Parameter: ', CAST(p_param1 AS CHAR)) AS result;
-END$$
-DELIMITER ;`
-      },
-      sqlserver: {
-        'CREATE TABLE': `CREATE TABLE table_name (
-  id INT IDENTITY(1,1) PRIMARY KEY,
-  name NVARCHAR(255) NOT NULL,
-  created_at DATETIME2 DEFAULT GETDATE()
-);`,
-        'CREATE FUNCTION': `CREATE FUNCTION function_name(@p_param1 INT)
-RETURNS NVARCHAR(100)
-AS
-BEGIN
-  DECLARE @v_result NVARCHAR(100);
-  SET @v_result = 'Result: ' + CAST(@p_param1 AS NVARCHAR(10));
-  RETURN @v_result;
-END;`,
-        'CREATE PROCEDURE': `CREATE PROCEDURE procedure_name
-  @p_param1 INT
-AS
-BEGIN
-  PRINT 'Parameter: ' + CAST(@p_param1 AS NVARCHAR(10));
-END;`
-      }
-    };
-    
-    return { ...baseSnippets, ...(dbSpecificSnippets[databaseType] || {}) };
-  };
-  
-  const sqlSnippets = getSqlSnippets();
   
   // Theme colors
   const themeColors = colors || {
@@ -866,6 +1367,7 @@ END;`
     
     setIsLoading(true);
     setObjectInfo(null);
+    setIsTestMode(false);
     
     try {
       const controller = dbConfig.getObjectDDL;
@@ -895,20 +1397,6 @@ END;`
         } else if (response?.data && typeof response.data === 'string') {
           ddl = response.data;
         }
-      } else if (databaseType === 'mysql') {
-        if (response?.data && response.data[0] && response.data[0]['Create Table']) {
-          ddl = response.data[0]['Create Table'];
-        } else if (response?.data && typeof response.data === 'string') {
-          ddl = response.data;
-        } else if (typeof response === 'string') {
-          ddl = response;
-        }
-      } else if (databaseType === 'sqlserver') {
-        if (response?.data?.ddl) {
-          ddl = response.data.ddl;
-        } else if (typeof response === 'string') {
-          ddl = response;
-        }
       }
       
       if (!ddl || ddl.trim() === '') {
@@ -932,7 +1420,8 @@ END;`
         owner: selectedObject.owner,
         schema: selectedObject.schema || selectedObject.owner,
         databaseType: databaseType,
-        databaseName: dbConfig.name
+        databaseName: dbConfig.name,
+        ddl: ddl
       });
       
       setEditorContent(ddl);
@@ -956,173 +1445,265 @@ END;`
     }
   };
   
+  // View Source - switch back to original DDL
+  const handleViewSource = () => {
+    if (objectInfo?.ddl) {
+      setEditorContent(objectInfo.ddl);
+      addToHistory(objectInfo.ddl);
+      setIsTestMode(false);
+      
+      setCompilationResult({
+        success: true,
+        message: `✓ Switched back to source code for ${selectedObject?.type}: ${selectedObject?.name}`,
+        output: 'You can now edit the source code.',
+        error: null
+      });
+      
+      setTimeout(() => {
+        setCompilationResult(null);
+      }, 2000);
+    }
+  };
+  
+  // Try It Out feature - generate test code for the current object
+  const handleTryItOut = () => {
+    if (!selectedObject) return;
+    
+    const testCode = generateTestCode(
+      selectedObject.type,
+      selectedObject.name,
+      selectedObject.schema || selectedObject.owner,
+      databaseType,
+      objectInfo?.ddl || ''
+    );
+    
+    // Save current selection before replacing
+    saveSelection();
+    setEditorContent(testCode);
+    addToHistory(testCode);
+    setIsTestMode(true);
+    
+    // Show a temporary notification
+    setCompilationResult({
+      success: true,
+      message: `✓ Test code generated for ${selectedObject.type}: ${selectedObject.name}`,
+      output: 'You can now edit the parameters and execute the code. Click "View Source" to go back.',
+      error: null
+    });
+    
+    setTimeout(() => {
+      setCompilationResult(null);
+    }, 3000);
+  };
+  
+  // NEW: Get the SQL to execute based on selection
+  const getSQLToExecute = () => {
+    // Check if there's a selection in the textarea
+    if (textareaRef.current && 
+        textareaRef.current.selectionStart !== textareaRef.current.selectionEnd) {
+      
+      const start = textareaRef.current.selectionStart;
+      const end = textareaRef.current.selectionEnd;
+      const selectedText = editorContent.substring(start, end);
+      
+      // If the selected text is not empty and has meaningful content
+      if (selectedText && selectedText.trim()) {
+        // Show a temporary notification that we're executing selected text
+        setCompilationResult({
+          success: true,
+          message: `ℹ️ Executing selected text (${selectedText.split('\n').length} line(s))`,
+          output: '',
+          error: null
+        });
+        
+        setTimeout(() => {
+          setCompilationResult(prev => prev?.message?.includes('Executing selected') ? null : prev);
+        }, 1500);
+        
+        return selectedText;
+      }
+    }
+    
+    // No selection or empty selection, execute entire editor content
+    return editorContent;
+  };
+  
   const handleCompile = async () => {
-  if (!authToken || !editorContent.trim()) return;
-  
-  setIsCompiling(true);
-  setCompilationResult(null);
-  
-  try {
-    const executeSQL = dbConfig.executeSQL;
-    let sqlToExecute = editorContent;
-    let trimmedSql = editorContent.trim();
+    if (!authToken) return;
     
-    // Check if this is a procedure/function definition (CREATE OR REPLACE)
-    const isObjectDefinition = /^\s*CREATE\s+(OR\s+REPLACE\s+)?(PROCEDURE|FUNCTION|PACKAGE|TYPE|TRIGGER|VIEW|MATERIALIZED\s+VIEW)/i.test(trimmedSql);
+    const sqlToExecute = getSQLToExecute();
     
-    // Check if this is a PL/SQL block (starts with DECLARE or BEGIN)
-    const isPLSQLBlock = /^\s*(DECLARE|BEGIN)/i.test(trimmedSql);
-    
-    // Check if this is a DDL statement
-    const isDDL = /^\s*(CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)/i.test(trimmedSql);
-    
-    // Check if this is a procedure/function without CREATE (just the body)
-    const isProcedureBody = /^\s*PROCEDURE\s+\w+/i.test(trimmedSql) && 
-                            !/^\s*CREATE/i.test(trimmedSql);
-    
-    // For procedure/function definitions without CREATE, add CREATE OR REPLACE
-    if (isProcedureBody && selectedObject?.type === 'PROCEDURE') {
-      sqlToExecute = `CREATE OR REPLACE ${editorContent}`;
+    if (!sqlToExecute.trim()) {
+      setCompilationResult({
+        success: false,
+        message: 'Execution failed',
+        error: 'No SQL statement to execute. Please select text or ensure the editor has content.',
+        output: ''
+      });
+      return;
     }
     
-    // For PL/SQL blocks, ensure they are properly terminated
-    if (isPLSQLBlock && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
-      sqlToExecute = editorContent + ';\n/';
-    }
+    setIsCompiling(true);
+    setCompilationResult(null);
     
-    console.log('Executing SQL type:', {
-      isObjectDefinition,
-      isPLSQLBlock,
-      isDDL,
-      isProcedureBody,
-      sqlPreview: sqlToExecute.substring(0, 200)
-    });
-    
-    const response = await executeSQL(authToken, {
-      sql: sqlToExecute,
-      objectType: selectedObject?.type,
-      objectName: selectedObject?.name,
-      owner: selectedObject?.owner,
-      schema: selectedObject?.schema || selectedObject?.owner,
-      databaseType: databaseType,
-      readOnly: false  // Always false for compilations
-    });
-    
-    // Process response for ALL database types
-    let success = false;
-    let message = '';
-    let output = '';
-    let error = null;
-    
-    console.log('Response received:', response);
-    
-    // Check if the response indicates an error structure
-    if (response && typeof response === 'object') {
-      // Check for success field directly in response (PostgreSQL style)
-      if (response.hasOwnProperty('success')) {
-        success = response.success === true;
-        message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
-        output = response.output || response.data?.output || '';
-        error = response.error || response.message || null;
+    try {
+      const executeSQL = dbConfig.executeSQL;
+      let trimmedSql = sqlToExecute.trim();
+      
+      // Check if this is a procedure/function definition (CREATE OR REPLACE)
+      const isObjectDefinition = /^\s*CREATE\s+(OR\s+REPLACE\s+)?(PROCEDURE|FUNCTION|PACKAGE|TYPE|TRIGGER|VIEW|MATERIALIZED\s+VIEW)/i.test(trimmedSql);
+      
+      // Check if this is a PL/SQL block (starts with DECLARE or BEGIN)
+      const isPLSQLBlock = /^\s*(DECLARE|BEGIN)/i.test(trimmedSql);
+      
+      // Check if this is a DDL statement
+      const isDDL = /^\s*(CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)/i.test(trimmedSql);
+      
+      // Check if this is a procedure/function without CREATE (just the body)
+      const isProcedureBody = /^\s*PROCEDURE\s+\w+/i.test(trimmedSql) && 
+                              !/^\s*CREATE/i.test(trimmedSql);
+      
+      let finalSql = sqlToExecute;
+      
+      // For procedure/function definitions without CREATE, add CREATE OR REPLACE
+      if (isProcedureBody && selectedObject?.type === 'PROCEDURE') {
+        finalSql = `CREATE OR REPLACE ${sqlToExecute}`;
       }
-      // Check for responseCode field (Oracle style)
-      else if (response.hasOwnProperty('responseCode')) {
-        success = response.responseCode === 200;
-        message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
-        
-        // Extract data based on structure
-        if (response.data) {
-          if (typeof response.data === 'string') {
-            output = response.data;
-          } else if (response.data.ddl) {
-            output = response.data.ddl;
-          } else if (response.data.rows) {
-            output = JSON.stringify(response.data.rows, null, 2);
-          } else if (response.data.output) {
-            output = response.data.output;
-          } else {
-            output = JSON.stringify(response.data, null, 2);
+      
+      // For PL/SQL blocks, ensure they are properly terminated
+      if (isPLSQLBlock && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
+        finalSql = sqlToExecute + ';\n/';
+      }
+      
+      console.log('Executing SQL:', {
+        hasSelection: textareaRef.current && textareaRef.current.selectionStart !== textareaRef.current.selectionEnd,
+        isObjectDefinition,
+        isPLSQLBlock,
+        isDDL,
+        isProcedureBody,
+        sqlPreview: finalSql.substring(0, 200)
+      });
+      
+      const response = await executeSQL(authToken, {
+        sql: finalSql,
+        objectType: selectedObject?.type,
+        objectName: selectedObject?.name,
+        owner: selectedObject?.owner,
+        schema: selectedObject?.schema || selectedObject?.owner,
+        databaseType: databaseType,
+        readOnly: false
+      });
+      
+      // Process response for ALL database types
+      let success = false;
+      let message = '';
+      let output = '';
+      let error = null;
+      
+      console.log('Response received:', response);
+      
+      // Check if the response indicates an error structure
+      if (response && typeof response === 'object') {
+        // Check for success field directly in response (PostgreSQL style)
+        if (response.hasOwnProperty('success')) {
+          success = response.success === true;
+          message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
+          output = response.output || response.data?.output || '';
+          error = response.error || response.message || null;
+        }
+        // Check for responseCode field (Oracle style)
+        else if (response.hasOwnProperty('responseCode')) {
+          success = response.responseCode === 200;
+          message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
+          
+          // Extract data based on structure
+          if (response.data) {
+            if (typeof response.data === 'string') {
+              output = response.data;
+            } else if (response.data.ddl) {
+              output = response.data.ddl;
+            } else if (response.data.rows) {
+              output = JSON.stringify(response.data.rows, null, 2);
+            } else if (response.data.output) {
+              output = response.data.output;
+            } else {
+              output = JSON.stringify(response.data, null, 2);
+            }
           }
+          error = response.error || null;
         }
-        error = response.error || null;
-      }
-      // Check for data object directly with rows/columns
-      else if (response.hasOwnProperty('data') && (response.data.hasOwnProperty('rows') || response.data.hasOwnProperty('rowCount'))) {
-        // This is a successful response with data
-        success = true;
-        message = 'Query executed successfully';
-        
-        if (response.data.rows && response.data.rows.length > 0) {
-          output = JSON.stringify(response.data.rows, null, 2);
-        } else if (response.data.rowCount !== undefined) {
-          output = `${response.data.rowCount} row(s) returned`;
-        } else {
-          output = 'Query executed successfully';
+        // Check for data object directly with rows/columns
+        else if (response.hasOwnProperty('data') && response.data && (response.data.hasOwnProperty('rows') || response.data.hasOwnProperty('rowCount'))) {
+          success = true;
+          message = 'Query executed successfully';
+          
+          if (response.data.rows && response.data.rows.length > 0) {
+            output = JSON.stringify(response.data.rows, null, 2);
+          } else if (response.data.rowCount !== undefined) {
+            output = `${response.data.rowCount} row(s) returned`;
+          } else {
+            output = 'Query executed successfully';
+          }
+          error = null;
         }
-        error = null;
-      }
-      // Check for error message in response
-      else if (response.hasOwnProperty('error') || response.hasOwnProperty('message')) {
-        success = false;
-        message = response.message || 'Execution failed';
-        error = response.error || response.message;
-        output = response.output || '';
-      }
-      // Default - try to treat as successful
-      else {
+        // Check for error message in response
+        else if (response.hasOwnProperty('error') || response.hasOwnProperty('message')) {
+          success = false;
+          message = response.message || 'Execution failed';
+          error = response.error || response.message;
+          output = response.output || '';
+        }
+        // Default - try to treat as successful
+        else {
+          success = true;
+          message = 'Execution completed successfully';
+          output = JSON.stringify(response, null, 2);
+          error = null;
+        }
+      } else if (typeof response === 'string') {
         success = true;
         message = 'Execution completed successfully';
-        output = JSON.stringify(response, null, 2);
+        output = response;
+        error = null;
+      } else {
+        success = true;
+        message = 'Execution completed successfully';
+        output = String(response);
         error = null;
       }
-    } else if (typeof response === 'string') {
-      // Response is a string
-      success = true;
-      message = 'Execution completed successfully';
-      output = response;
-      error = null;
-    } else {
-      // Unknown response format
-      success = true;
-      message = 'Execution completed successfully';
-      output = String(response);
-      error = null;
-    }
-    
-    setCompilationResult({
-      success: success,
-      message: message,
-      output: output || (success ? 'Statement executed successfully' : ''),
-      error: error
-    });
-    
-  } catch (error) {
-    console.error('Execution error:', error);
-    
-    // Extract error message from the error object
-    let errorMessage = error.message || String(error);
-    let errorDetail = null;
-    
-    // Try to parse error response if it's an object
-    if (error.response && error.response.data) {
-      if (error.response.data.message) {
-        errorMessage = error.response.data.message;
-        errorDetail = error.response.data.error || error.response.data.detail;
-      } else if (error.response.data.error) {
-        errorMessage = error.response.data.error;
+      
+      setCompilationResult({
+        success: success,
+        message: message,
+        output: output || (success ? 'Statement executed successfully' : ''),
+        error: error
+      });
+      
+    } catch (error) {
+      console.error('Execution error:', error);
+      
+      let errorMessage = error.message || String(error);
+      let errorDetail = null;
+      
+      if (error.response && error.response.data) {
+        if (error.response.data.message) {
+          errorMessage = error.response.data.message;
+          errorDetail = error.response.data.error || error.response.data.detail;
+        } else if (error.response.data.error) {
+          errorMessage = error.response.data.error;
+        }
       }
+      
+      setCompilationResult({
+        success: false,
+        message: 'Execution failed',
+        error: errorMessage,
+        output: errorDetail || ''
+      });
+    } finally {
+      setIsCompiling(false);
     }
-    
-    setCompilationResult({
-      success: false,
-      message: 'Execution failed',
-      error: errorMessage,
-      output: errorDetail || ''
-    });
-  } finally {
-    setIsCompiling(false);
-  }
-};
+  };
   
   const handleSave = async () => {
     if (!authToken || !selectedObject) {
@@ -1165,6 +1746,9 @@ END;`
         
         if (response.success) {
           setOriginalContent(editorContent);
+          if (objectInfo) {
+            setObjectInfo({ ...objectInfo, ddl: editorContent });
+          }
         }
       } else {
         setTimeout(() => {
@@ -1175,6 +1759,9 @@ END;`
             error: null
           });
           setOriginalContent(editorContent);
+          if (objectInfo) {
+            setObjectInfo({ ...objectInfo, ddl: editorContent });
+          }
         }, 500);
       }
       
@@ -1231,35 +1818,6 @@ END;`
     }
   };
   
-  const insertSnippet = (snippet) => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      
-      const newContent = editorContent.substring(0, start) + snippet + editorContent.substring(end);
-      setEditorContent(newContent);
-      addToHistory(newContent);
-      
-      setTimeout(() => {
-        if (textareaRef.current) {
-          textareaRef.current.focus();
-          const newCursorPosition = start + snippet.length;
-          textareaRef.current.setSelectionRange(newCursorPosition, newCursorPosition);
-          
-          const lines = newContent.substring(0, newCursorPosition).split('\n');
-          const lineNumber = lines.length;
-          const lineHeight = editorFontSize * 1.5;
-          textareaRef.current.scrollTop = Math.max(0, (lineNumber - 5) * lineHeight);
-        }
-      }, 0);
-    } else {
-      const newContent = editorContent + '\n' + snippet;
-      setEditorContent(newContent);
-      addToHistory(newContent);
-    }
-  };
-  
   const formatSQL = () => {
     saveSelection();
     let formatted = editorContent;
@@ -1285,14 +1843,6 @@ END;`
         .replace(/\bFROM DUAL\b/gi, '\nFROM DUAL')
         .replace(/\bCONNECT BY\b/gi, '\nCONNECT BY')
         .replace(/\bSTART WITH\b/gi, '\nSTART WITH');
-    } else if (databaseType === 'mysql') {
-      formatted = formatted
-        .replace(/\bLIMIT\b/gi, '\nLIMIT')
-        .replace(/\bOFFSET\b/gi, '\nOFFSET');
-    } else if (databaseType === 'sqlserver') {
-      formatted = formatted
-        .replace(/\bTOP\b/gi, '\nTOP')
-        .replace(/\bWITH\b/gi, '\nWITH');
     }
     
     setEditorContent(formatted);
@@ -1385,6 +1935,14 @@ END;`
                   }}>
                     {selectedObject.type}
                   </span>
+                  {isTestMode && (
+                    <span className="ml-2 px-1.5 py-0.5 rounded text-xs" style={{ 
+                      backgroundColor: themeColors.warning + '20',
+                      color: themeColors.warning
+                    }}>
+                      TEST MODE
+                    </span>
+                  )}
                 </p>
               )}
             </div>
@@ -1533,22 +2091,71 @@ END;`
           </div>
         )}
         
-        {/* SQL Snippets Bar */}
+        {/* Try It Out Button Bar - Replaces Snippets */}
         <div 
-          className="flex items-center gap-2 px-6 py-3 border-b overflow-x-auto shrink-0"
+          className="flex items-center justify-between px-6 py-3 border-b overflow-x-auto shrink-0"
           style={{ borderColor: themeColors.border, backgroundColor: themeColors.hover }}
         >
-          <span className="text-xs font-medium" style={{ color: themeColors.textSecondary }}>Snippets:</span>
-          {Object.keys(sqlSnippets).map(snippet => (
+          <div className="flex items-center gap-2">
+            {!isTestMode && (
+              <>
+                <Beaker size={16} style={{ color: themeColors.info }} />
+                <span className="text-xs font-medium" style={{ color: themeColors.textSecondary }}>Try It Out:</span>
+                <button
+                  onClick={handleTryItOut}
+                  className="px-4 py-1.5 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
+                  style={{ 
+                    backgroundColor: themeColors.info + '20',
+                    color: themeColors.info,
+                    border: `1px solid ${themeColors.info}40`
+                  }}
+                >
+                  <Zap size={14} />
+                  Generate Test Code
+                </button>
+              </>
+            )}
+            {isTestMode && (
+              <button
+                onClick={handleViewSource}
+                className="px-4 py-1.5 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
+                style={{ 
+                  backgroundColor: themeColors.primary + '20',
+                  color: themeColors.primary,
+                  border: `1px solid ${themeColors.primary}40`
+                }}
+              >
+                <ArrowLeft size={14} />
+                View Source
+              </button>
+            )}
+            <span className="text-xs ml-2" style={{ color: themeColors.textSecondary }}>
+              {isTestMode 
+                ? `Currently viewing test code for this ${selectedObject?.type?.toLowerCase()}`
+                : `Generate a ready-to-run test block for this ${selectedObject?.type?.toLowerCase()}`
+              }
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
             <button
-              key={snippet}
-              onClick={() => insertSnippet(sqlSnippets[snippet])}
-              className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors whitespace-nowrap"
+              onClick={formatSQL}
+              className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-1"
               style={{ backgroundColor: themeColors.card, color: themeColors.text, border: `1px solid ${themeColors.border}` }}
             >
-              {snippet}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 4h16v2H4V4zm0 4h16v2H4V8zm0 4h10v2H4v-2zm12 0h4v2h-4v-2zm-12 4h16v2H4v-2z" fill="currentColor"/>
+              </svg>
+              Format
             </button>
-          ))}
+            <button
+              onClick={handleCopy}
+              className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-1"
+              style={{ backgroundColor: themeColors.card, color: themeColors.text, border: `1px solid ${themeColors.border}` }}
+            >
+              <Copy size={12} />
+              Copy
+            </button>
+          </div>
         </div>
         
         {/* Editor Area */}
@@ -1705,14 +2312,19 @@ END;`
             </button>
             <div className="w-px h-6 mx-1" style={{ backgroundColor: themeColors.border }} />
             <button
-              onClick={formatSQL}
+              onClick={handleUpload}
               className="p-2 rounded-lg hover-lift transition-colors"
               style={{ backgroundColor: themeColors.hover }}
-              title="Format SQL"
+              title="Upload SQL file"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M4 4h16v2H4V4zm0 4h16v2H4V8zm0 4h10v2H4v-2zm12 0h4v2h-4v-2zm-12 4h16v2H4v-2z" fill="currentColor"/>
-              </svg>
+              <Upload size={16} style={{ color: themeColors.textSecondary }} />
+              <input
+                type="file"
+                accept=".sql,.txt"
+                onChange={handleUpload}
+                className="hidden"
+                id="upload-sql"
+              />
             </button>
           </div>
           
@@ -1733,6 +2345,15 @@ END;`
             >
               {isCompiling ? <Loader size={14} className="animate-spin" /> : <Play size={14} />}
               Execute
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isCompiling}
+              className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
+              style={{ backgroundColor: themeColors.success, color: themeColors.white }}
+            >
+              <Save size={14} />
+              Save
             </button>
             <button
               onClick={onClose}
