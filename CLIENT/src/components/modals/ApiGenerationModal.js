@@ -30,6 +30,9 @@ import {
   updateApi
 } from "../../controllers/APIGenerationEngineController.js";
 
+import * as OracleSchemaController from '../../controllers/OracleSchemaController.js';
+import * as PostgreSQLSchemaController from '../../controllers/PostgreSQLSchemaController.js';
+
 // Mock collections data for banking system
 const MOCK_COLLECTIONS = [
   {
@@ -248,124 +251,147 @@ const REQUIRED_FIELDS = {
 
 // ==================== OBJECT SELECTOR MODAL ====================
 // In ApiGenerationModal.jsx, update the ObjectSelectorModal component
-
 const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken, databaseType }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState(null);
 
+  // Database type configurations with direct controller references
+  const databaseConfigs = {
+    oracle: {
+      name: 'Oracle',
+      color: '#ef4444',
+      bgColor: '#ef444420',
+      controller: OracleSchemaController,
+      processResult: (item) => {
+        const objectType = (item.object_type || item.type || item.OBJECT_TYPE || '').toUpperCase();
+        const objectName = item.name || item.OBJECT_NAME || item.TABLE_NAME || item.PROCEDURE_NAME || '';
+        const owner = item.owner || item.OWNER;
+        
+        return objectName ? {
+          id: `oracle_${owner || 'PUBLIC'}_${objectName}`,
+          name: objectName,
+          owner: owner || 'PUBLIC',
+          type: objectType,
+          databaseType: 'Oracle',
+          isSynonym: objectType === 'SYNONYM',
+          targetType: item.targetType || item.TARGET_TYPE,
+          targetName: item.targetName || item.TARGET_NAME,
+          status: item.status || item.STATUS || 'VALID'
+        } : null;
+      }
+    },
+    postgresql: {
+      name: 'PostgreSQL',
+      color: '#3b82f6',
+      bgColor: '#3b82f620',
+      controller: PostgreSQLSchemaController,
+      processResult: (item) => {
+        const objectType = (item.object_type || item.type || item.OBJECT_TYPE || '').toUpperCase();
+        const objectName = item.name || item.OBJECT_NAME || item.TABLE_NAME || item.PROCEDURE_NAME || '';
+        const owner = item.schema || item.owner || item.OWNER || 'public';
+        
+        return objectName ? {
+          id: `postgres_${owner}_${objectName}`,
+          name: objectName,
+          owner: owner,
+          type: objectType,
+          databaseType: 'PostgreSQL',
+          isSynonym: false,
+          targetType: null,
+          targetName: null,
+          status: item.status || 'VALID',
+          schema: item.schema || owner,
+          tableSpace: item.tableSpace,
+          rowCount: item.rowCount
+        } : null;
+      }
+    },
+  };
+
+  // List of databases to search (can be made configurable via props)
+  const activeDatabases = ['oracle', 'postgresql']; // Add more as needed: 'mysql', 'sqlserver', 'mongodb'
+
+  // Perform search across all active databases
+  const performSearch = async () => {
+    if (!authToken || searchTerm.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    setSearching(true);
+    setError(null);
+
+    try {
+      const searchPromises = activeDatabases.map(async (dbKey) => {
+        const config = databaseConfigs[dbKey];
+        if (!config || !config.controller) {
+          console.warn(`No configuration or controller found for database: ${dbKey}`);
+          return { items: [], count: 0 };
+        }
+        
+        try {
+          // Use the controller directly (no dynamic import needed)
+          const response = await config.controller.searchObjectsPaginated(authToken, {
+            query: searchTerm,
+            page: 1,
+            pageSize: 50
+          });
+          
+          const data = response?.data || {};
+          const items = data.items || data.results || [];
+          
+          // Process results for this database
+          const processedItems = items
+            .map(item => config.processResult(item))
+            .filter(item => item !== null);
+          
+          console.log(`${config.name}: Found ${processedItems.length} items`);
+          
+          return {
+            databaseType: dbKey,
+            items: processedItems,
+            count: processedItems.length
+          };
+        } catch (err) {
+          console.warn(`${config.name} search failed:`, err.message);
+          return {
+            databaseType: dbKey,
+            items: [],
+            count: 0,
+            error: err.message
+          };
+        }
+      });
+
+      const results = await Promise.all(searchPromises);
+      
+      // Combine all results
+      const allResults = results.flatMap(result => result.items);
+      
+      // Sort results by name
+      allResults.sort((a, b) => a.name.localeCompare(b.name));
+      
+      // Log statistics
+      const stats = results.map(r => {
+        const config = databaseConfigs[r.databaseType];
+        return `${config?.name || r.databaseType}: ${r.count}`;
+      }).join(', ');
+      console.log(`Search results: ${allResults.length} total (${stats})`);
+      
+      setSearchResults(allResults);
+    } catch (err) {
+      console.error('Error searching objects:', err);
+      setError(err.message);
+    } finally {
+      setSearching(false);
+    }
+  };
+
   // Debounced search
   useEffect(() => {
     let timeoutId;
-    
-    const performSearch = async () => {
-      if (!authToken || searchTerm.length < 2) {
-        setSearchResults([]);
-        return;
-      }
-
-      setSearching(true);
-      setError(null);
-
-      try {
-        // Search across ALL database types simultaneously
-        const searchPromises = [];
-        
-        // Always search Oracle
-        const oracleSearch = import('../../controllers/OracleSchemaController.js')
-          .then(module => module.searchObjectsPaginated(authToken, {
-            query: searchTerm,
-            page: 1,
-            pageSize: 50
-          }))
-          .catch(err => {
-            console.warn('Oracle search failed:', err);
-            return { data: { items: [] } };
-          });
-        searchPromises.push(oracleSearch);
-        
-        // Always search PostgreSQL
-        const postgresSearch = import('../../controllers/PostgreSQLSchemaController.js')
-          .then(module => module.searchObjectsPaginated(authToken, {
-            query: searchTerm,
-            page: 1,
-            pageSize: 50
-          }))
-          .catch(err => {
-            console.warn('PostgreSQL search failed:', err);
-            return { data: { items: [] } };
-          });
-        searchPromises.push(postgresSearch);
-        
-        // Wait for both searches to complete
-        const [oracleResponse, postgresResponse] = await Promise.all(searchPromises);
-        
-        const results = [];
-        
-        // Process Oracle results
-        const oracleData = oracleResponse?.data || {};
-        const oracleItems = oracleData.items || oracleData.results || [];
-        oracleItems.forEach(item => {
-          const objectType = (item.object_type || item.type || item.OBJECT_TYPE || '').toUpperCase();
-          const objectName = item.name || item.OBJECT_NAME || item.TABLE_NAME || item.PROCEDURE_NAME || '';
-          const owner = item.owner || item.OWNER;
-          
-          if (objectName) {
-            results.push({
-              id: `oracle_${owner || 'PUBLIC'}_${objectName}`,
-              name: objectName,
-              owner: owner || 'PUBLIC',
-              type: objectType,
-              databaseType: 'Oracle',
-              isSynonym: objectType === 'SYNONYM',
-              targetType: item.targetType || item.TARGET_TYPE,
-              targetName: item.targetName || item.TARGET_NAME,
-              status: item.status || item.STATUS || 'VALID'
-            });
-          }
-        });
-        
-        // Process PostgreSQL results
-        const postgresData = postgresResponse?.data || {};
-        const postgresItems = postgresData.items || postgresData.results || [];
-        postgresItems.forEach(item => {
-          const objectType = (item.object_type || item.type || item.OBJECT_TYPE || '').toUpperCase();
-          const objectName = item.name || item.OBJECT_NAME || item.TABLE_NAME || item.PROCEDURE_NAME || '';
-          const owner = item.schema || item.owner || item.OWNER || 'public';
-          
-          if (objectName) {
-            results.push({
-              id: `postgres_${owner}_${objectName}`,
-              name: objectName,
-              owner: owner,
-              type: objectType,
-              databaseType: 'PostgreSQL',
-              isSynonym: false,
-              targetType: null,
-              targetName: null,
-              status: item.status || 'VALID',
-              // PostgreSQL-specific fields
-              schema: item.schema || owner,
-              tableSpace: item.tableSpace,
-              rowCount: item.rowCount
-            });
-          }
-        });
-        
-        // Sort results by name
-        results.sort((a, b) => a.name.localeCompare(b.name));
-        
-        console.log(`Search results: ${results.length} total (Oracle: ${oracleItems.length}, PostgreSQL: ${postgresItems.length})`);
-        
-        setSearchResults(results);
-      } catch (err) {
-        console.error('Error searching objects:', err);
-        setError(err.message);
-      } finally {
-        setSearching(false);
-      }
-    };
 
     if (searchTerm.length >= 2) {
       timeoutId = setTimeout(performSearch, 500);
@@ -389,30 +415,33 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken, dat
       case 'SYNONYM': return <Link size={16} style={{ color: colors.objectType?.synonym || colors.accentCyan }} />;
       case 'SEQUENCE': return <Hash size={16} style={{ color: colors.objectType?.sequence || colors.textTertiary }} />;
       case 'TRIGGER': return <Zap size={16} style={{ color: colors.objectType?.trigger || colors.error }} />;
+      case 'COLLECTION': return <Database size={16} style={{ color: colors.objectType?.collection || colors.primary }} />;
       default: return <Database size={16} style={{ color: colors.textSecondary }} />;
     }
   };
 
   const getDatabaseBadge = (databaseType) => {
-    if (databaseType === 'Oracle') {
-      return (
-        <span className="text-xs px-2 py-0.5 rounded-full ml-2" style={{ 
-          backgroundColor: '#ef444420',
-          color: '#ef4444'
-        }}>
-          Oracle
-        </span>
-      );
-    } else {
-      return (
-        <span className="text-xs px-2 py-0.5 rounded-full ml-2" style={{ 
-          backgroundColor: '#3b82f620',
-          color: '#3b82f6'
-        }}>
-          PostgreSQL
-        </span>
-      );
-    }
+    // Find the database config by name (case-insensitive)
+    const dbConfig = Object.values(databaseConfigs).find(
+      config => config.name.toLowerCase() === databaseType?.toLowerCase()
+    );
+    
+    const bgColor = dbConfig?.bgColor || '#6b728020';
+    const textColor = dbConfig?.color || '#6b7280';
+    
+    return (
+      <span className="text-xs px-2 py-0.5 rounded-full ml-2" style={{ 
+        backgroundColor: bgColor,
+        color: textColor
+      }}>
+        {databaseType}
+      </span>
+    );
+  };
+
+  // Get the list of database names for the placeholder
+  const getDatabaseNames = () => {
+    return activeDatabases.map(db => databaseConfigs[db]?.name).filter(Boolean).join(', ');
   };
 
   return (
@@ -433,10 +462,10 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken, dat
             </div>
             <div>
               <h2 className="text-lg font-bold" style={{ color: colors.text }}>
-                Select Database Object (All Databases)
+                Select Database Object
               </h2>
               <p className="text-xs" style={{ color: colors.textSecondary }}>
-                Search across Oracle and PostgreSQL databases
+                Search across {getDatabaseNames()} databases
               </p>
             </div>
           </div>
@@ -462,7 +491,7 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken, dat
                 backgroundColor: colors.inputBg,
                 color: colors.text
               }}
-              placeholder="Search across Oracle and PostgreSQL databases (tables, views, procedures, functions)..."
+              placeholder={`Search across ${getDatabaseNames()} databases (tables, views, procedures, functions)...`}
               autoFocus
             />
             {searching && (
@@ -487,13 +516,15 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken, dat
           {searching ? (
             <div className="flex flex-col items-center justify-center py-12">
               <Loader className="animate-spin mb-4" size={32} style={{ color: colors.primary }} />
-              <p className="text-sm" style={{ color: colors.text }}>Searching across Oracle and PostgreSQL databases...</p>
+              <p className="text-sm" style={{ color: colors.text }}>
+                Searching across {getDatabaseNames()} databases...
+              </p>
             </div>
           ) : searchResults.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12">
               <Database size={48} style={{ color: colors.textTertiary, opacity: 0.5 }} />
               <p className="text-sm mt-4" style={{ color: colors.textSecondary }}>
-                {searchTerm.length >= 2 ? 'No objects found across any database' : 'Type to search across Oracle and PostgreSQL'}
+                {searchTerm.length >= 2 ? 'No objects found across any database' : 'Type to search across databases'}
               </p>
             </div>
           ) : (
@@ -2606,13 +2637,6 @@ const populateFormFromObject = useCallback((object) => {
   const newParameters = [];
   const newMappings = [];
 
-  // FIX: Check for parameters in object.details.parameters (from validation response)
-  console.log('📦 Looking for parameters in object:', {
-    hasParameters: object.parameters,
-    hasDetailsParameters: object.details?.parameters,
-    details: object.details
-  });
-
   // Handle parameters - look in both object.parameters and object.details.parameters
   let parameters = [];
   if (object.parameters && Array.isArray(object.parameters)) {
@@ -2644,8 +2668,12 @@ const populateFormFromObject = useCallback((object) => {
       // IMPORTANT: Use in_out as the key for parameter mode (from your sample data)
       const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 'IN';
       
-      // Normalize the mode to handle different formats
-      const normalizedMode = paramMode?.toString().toUpperCase().replace(/\s+/g, '_') || 'IN';
+      // Normalize the mode to handle different formats (IN, OUT, INOUT, IN/OUT)
+      let normalizedMode = paramMode?.toString().toUpperCase().replace(/\s+/g, '_') || 'IN';
+      // Convert INOUT to IN/OUT for consistency
+      if (normalizedMode === 'INOUT') {
+        normalizedMode = 'IN/OUT';
+      }
       
       console.log(`🔍 Processing param ${index}:`, { 
         paramName, 
@@ -2666,9 +2694,9 @@ const populateFormFromObject = useCallback((object) => {
       let parameterLocation = 'query';
       
       // Check if this is an IN or IN/OUT parameter for parameters tab
-      const isInParam = normalizedMode === 'IN' || normalizedMode === 'IN_OUT' || normalizedMode === 'INOUT' || normalizedMode === 'IN/OUT';
+      const isInParam = normalizedMode === 'IN' || normalizedMode === 'IN/OUT';
       // Check if this is an OUT or IN/OUT parameter for mappings tab
-      const isOutParam = normalizedMode === 'OUT' || normalizedMode === 'IN_OUT' || normalizedMode === 'INOUT' || normalizedMode === 'IN/OUT';
+      const isOutParam = normalizedMode === 'OUT' || normalizedMode === 'IN/OUT';
       
       if (isInParam && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
         parameterLocation = 'body';
@@ -2726,7 +2754,7 @@ const populateFormFromObject = useCallback((object) => {
         }
       }
 
-      // FIX: Only add to parameters array for IN and IN/OUT parameters
+      // CRITICAL FIX: Only add to parameters array for IN and IN/OUT parameters
       if (isInParam) {
         newParameters.push({
           id: `proc-param-${Date.now()}-${index}`,
@@ -2735,8 +2763,8 @@ const populateFormFromObject = useCallback((object) => {
           oracleType: oracleType,
           apiType: apiType,
           parameterLocation: parameterLocation,
-          required: normalizedMode === 'IN' || normalizedMode === 'IN_OUT' || normalizedMode === 'INOUT' || normalizedMode === 'IN/OUT',
-          description: `${paramName} (${paramMode})`,
+          required: isInParam, // IN/IN OUT parameters are typically required
+          description: `${paramName} (${normalizedMode})`,
           example: oracleType === 'NUMBER' ? '1000' : 
                   oracleType === 'DATE' ? '2024-01-01' : 
                   oracleType === 'CLOB' ? '{...}' : 'sample',
@@ -2746,10 +2774,10 @@ const populateFormFromObject = useCallback((object) => {
           isPrimaryKey: false,
           paramMode: normalizedMode
         });
-        console.log(`✅ Added parameter: ${cleanKey} (${normalizedMode})`);
+        console.log(`✅ Added to PARAMETERS tab: ${cleanKey} (${normalizedMode})`);
       }
 
-      // FIX: Only add to response mappings for OUT and IN/OUT parameters
+      // CRITICAL FIX: Only add to response mappings for OUT and IN/OUT parameters
       if (isOutParam) {
         newMappings.push({
           id: `mapping-out-${Date.now()}-${index}`,
@@ -2764,7 +2792,7 @@ const populateFormFromObject = useCallback((object) => {
           inResponse: true,
           paramMode: normalizedMode
         });
-        console.log(`✅ Added response mapping: ${cleanKey} (${normalizedMode})`);
+        console.log(`✅ Added to MAPPINGS tab: ${cleanKey} (${normalizedMode})`);
       }
     });
 
@@ -2924,7 +2952,7 @@ const populateFormFromObject = useCallback((object) => {
   console.log('📊 Final results:', {
     parametersCount: newParameters.length,
     mappingsCount: newMappings.length,
-    inCount: newParameters.filter(p => p.paramMode === 'IN' || p.paramMode === 'IN_OUT' || p.paramMode === 'INOUT' || p.paramMode === 'IN/OUT' || p.paramMode === null).length,
+    inCount: newParameters.filter(p => p.paramMode === 'IN' || p.paramMode === 'IN/OUT' || p.paramMode === null).length,
     outCount: newMappings.length
   });
 
@@ -2979,7 +3007,7 @@ const populateFormFromObject = useCallback((object) => {
   }
 
   console.log(`✅ Form populated for ${objectType} with operation: ${operation} (HTTP ${httpMethod})`);
-  console.log(`📊 Parameters: ${newParameters.length}, Mappings: ${newMappings.length}`);
+  console.log(`📊 Parameters (IN/IN OUT): ${newParameters.length}, Mappings (OUT/IN OUT): ${newMappings.length}`);
   console.log(`📊 Database type: ${object.databaseType}`);
 }, [apiDetails.version, setApiDetails, setSchemaConfig, setParameters, setResponseMappings, setRequestBody, setResponseBody]);
 

@@ -105,6 +105,15 @@ public interface ApiRequestRepository extends JpaRepository<ApiRequestEntity, St
             @Param("searchTerm") String searchTerm,
             Pageable pageable);
 
+
+    @Query("SELECT r FROM ApiRequestEntity r WHERE " +
+            "r.generatedApi.id = :apiId AND " +
+            "r.requestTimestamp BETWEEN :startDate AND :endDate")
+    List<ApiRequestEntity> findApiRequestsByApiIdAndDateRange(
+            @Param("apiId") String apiId,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
     // =====================================================
     // Statistics and Aggregations
     // =====================================================

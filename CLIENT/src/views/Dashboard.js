@@ -1135,16 +1135,17 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
               <div className="flex items-center gap-3">
                 <button 
                   onClick={handleRefresh} 
-                  className="p-2 rounded-lg transition-colors hover:bg-opacity-50"
-                  style={{ backgroundColor: colors.hover }} 
+                  className="px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded text-sm font-medium text-white hover:translate-y-[-2px] transition-transform flex items-center gap-2"
                   disabled={loading.refresh}
                 >
-                  <RefreshCw size={16} className={loading.refresh ? 'animate-spin' : ''} style={{ color: colors.text }} />
+                  <RefreshCw size={16} className={loading.refresh ? 'animate-spin' : ''} />
+                  Refresh
                 </button>
                 <button 
                   onClick={() => handleNavigate('schema-browser')} 
-                  className="px-3 py-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded text-sm font-medium text-white hover:translate-y-[-2px] transition-transform"
+                  className="px-3 py-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded text-sm font-medium text-white hover:translate-y-[-2px] transition-transform flex items-center gap-2"
                 >
+                  <Database size={16} />
                   Schema Browser
                 </button>
               </div>

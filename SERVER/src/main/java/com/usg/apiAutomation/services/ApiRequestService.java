@@ -378,9 +378,8 @@ public class ApiRequestService {
             if (filter.getApiId() != null && !filter.getApiId().isEmpty()) {
                 if (filter.getFromDate() != null && filter.getToDate() != null) {
                     // Complex query with date range
-                    List<ApiRequestEntity> requests = apiRequestRepository.findApiRequestsByStatusAndDateRange(
+                    List<ApiRequestEntity> requests = apiRequestRepository.findApiRequestsByApiIdAndDateRange(
                             filter.getApiId(),
-                            filter.getRequestStatus() != null ? filter.getRequestStatus() : "",
                             filter.getFromDate(),
                             filter.getToDate()
                     );

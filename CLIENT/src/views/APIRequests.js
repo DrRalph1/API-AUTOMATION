@@ -119,26 +119,21 @@ import {
   buildFilterFromQuery
 } from "../controllers/APIRequestController.js";
 
-// Enhanced SyntaxHighlighter Component (reusing from CodeBase)
+// ============ SYNTAX HIGHLIGHTER COMPONENT ============
 const SyntaxHighlighter = ({ language, code }) => {
   if (!code) return <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">// No code available</pre>;
   
-  // Simple syntax highlighting using spans
   const highlightCode = (code, lang) => {
     const lines = String(code).split('\n');
     
     return lines.map((line, lineIndex) => {
-      // First escape HTML entities to prevent injection
       let highlightedLine = line
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
       
       if (lang === 'java') {
-        // Handle multi-line comment boundaries
         if (highlightedLine.includes('/*') || highlightedLine.includes('*/')) {
-          // For lines with comment markers, highlight the whole line as comment
-          // to avoid breaking the HTML structure
           return (
             <div key={lineIndex} className="text-gray-500">
               {highlightedLine}
@@ -146,26 +141,20 @@ const SyntaxHighlighter = ({ language, code }) => {
           );
         }
         
-        // Highlight strings (double quotes) - do this first
         highlightedLine = highlightedLine.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, 
           '<span class="text-green-400">"$1"</span>');
         
-        // Highlight characters (single quotes)
         highlightedLine = highlightedLine.replace(/'([^'\\]*(\\.[^'\\]*)*)'/g, 
           '<span class="text-green-400">\'$1\'</span>');
         
-        // Highlight single-line comments (but not inside strings)
-        // Only apply if the line doesn't contain a string that might have //
         if (!highlightedLine.includes('class="text-green-400"')) {
           highlightedLine = highlightedLine.replace(/(\/\/.*)/g, 
             '<span class="text-gray-500">$1</span>');
         }
         
-        // Highlight annotations
         highlightedLine = highlightedLine.replace(/(@\w+)/g, 
           '<span class="text-blue-400">$1</span>');
         
-        // Highlight keywords - expanded list
         const keywords = [
           'public', 'private', 'protected', 'class', 'interface', 
           'extends', 'implements', 'static', 'final', 'void', 
@@ -179,38 +168,28 @@ const SyntaxHighlighter = ({ language, code }) => {
         ];
         
         keywords.forEach(keyword => {
-          // Use negative lookbehind to avoid matching inside existing spans
-          // But since not all browsers support lookbehind, we'll use a simpler approach
-          // Only replace if not inside an HTML tag
           const keywordRegex = new RegExp('\\b(' + keyword + ')\\b(?!([^<]*>|[^>]*<\\/))', 'g');
           highlightedLine = highlightedLine.replace(keywordRegex, 
             '<span class="text-purple-400">$1</span>');
         });
         
-        // Highlight numbers - FIXED: Don't apply to numbers that are part of class names like "400"
         if (!highlightedLine.includes('class="text-green-400"') && 
             !highlightedLine.includes('class="text-gray-500"')) {
-          // Only highlight numbers that are standalone and not part of a class attribute
           highlightedLine = highlightedLine.replace(/\b(\d+[lLfFdD]?)\b(?![^<]*>|[^>]*<\/)/g, 
             '<span class="text-blue-400">$1</span>');
         }
         
-        // Fix any malformed spans - CRITICAL FIX
-        // This cleans up any incorrectly formatted span tags
         highlightedLine = highlightedLine.replace(/class="([^"]*)"([^>]*?)>/g, 'class="$1"$2>');
         
       } else if (lang === 'javascript' || lang === 'nodejs') {
-        // JavaScript highlighting
         highlightedLine = highlightedLine.replace(/("([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)')/g, 
           '<span class="text-green-400">$1</span>');
         
-        // Comments
         if (!highlightedLine.includes('class="text-green-400"')) {
           highlightedLine = highlightedLine.replace(/(\/\/.*)/g, 
             '<span class="text-gray-500">$1</span>');
         }
         
-        // Keywords
         const jsKeywords = [
           'function', 'const', 'let', 'var', 'if', 'else', 
           'for', 'while', 'return', 'class', 'import', 
@@ -226,7 +205,6 @@ const SyntaxHighlighter = ({ language, code }) => {
             '<span class="text-purple-400">$1</span>');
         });
       } else if (lang === 'python') {
-        // Python highlighting
         highlightedLine = highlightedLine.replace(/("([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)')/g, 
           '<span class="text-green-400">$1</span>');
         
@@ -268,13 +246,12 @@ const SyntaxHighlighter = ({ language, code }) => {
   );
 };
 
-// Request Details Modal Component
+// ============ REQUEST DETAILS MODAL COMPONENT ============
 const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) => {
   if (!isOpen || !request) return null;
 
   const [activeTab, setActiveTab] = useState('request');
 
-  // Helper function for status code color
   const getStatusCodeColorHelper = (code, colors) => {
     if (!code) return colors.textSecondary;
     if (code >= 200 && code < 300) return colors.success;
@@ -284,7 +261,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
     return colors.textSecondary;
   };
 
-  // Helper function for request status color
   const getRequestStatusColorHelper = (status, colors) => {
     const statusMap = {
       'SUCCESS': colors.success,
@@ -298,12 +274,10 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
     return statusMap[status] || colors.textSecondary;
   };
 
-  // Helper function to check if request was successful
   const isRequestSuccessfulHelper = (request) => {
     return request?.responseStatusCode >= 200 && request?.responseStatusCode < 300;
   };
 
-  // Helper function to format request timestamp
   const formatRequestTimestampHelper = (timestamp) => {
     if (!timestamp) return 'N/A';
     try {
@@ -313,7 +287,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
     }
   };
 
-  // Helper function to format execution time
   const formatExecutionTimeHelper = (ms) => {
     if (!ms) return 'N/A';
     if (ms < 1000) return `${ms}ms`;
@@ -321,14 +294,12 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
     return `${(ms / 60000).toFixed(2)}m`;
   };
 
-  // Helper function to copy to clipboard
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
   };
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50">
-      {/* Blurred Backdrop */}
       <div 
         className="absolute inset-0 backdrop-blur-2xl bg-black/70"
         onClick={onClose} 
@@ -337,7 +308,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
         backgroundColor: colors.bg,
         border: `1px solid ${colors.border}`
       }}>
-        {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: colors.border }}>
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold" style={{ color: colors.text }}>
@@ -363,7 +333,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
           </button>
         </div>
 
-        {/* Modal Tabs */}
         <div className="flex items-center px-6 border-b" style={{ borderColor: colors.border }}>
           {['request', 'response', 'headers', 'timeline', 'summary'].map(tab => (
             <button
@@ -380,11 +349,9 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
           ))}
         </div>
 
-        {/* Modal Content */}
         <div className="p-6 overflow-auto max-h-[calc(80vh-120px)]">
           {activeTab === 'request' && (
             <div className="space-y-4">
-              {/* Request Info */}
               <div>
                 <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Request Information</h3>
                 <div className="grid grid-cols-2 gap-4">
@@ -404,48 +371,9 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>URL</div>
                     <div className="text-xs font-mono break-all" style={{ color: colors.text }}>{request.url || 'N/A'}</div>
                   </div>
-                  <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>API Name</div>
-                    <div className="text-sm" style={{ color: colors.text }}>{request.apiName || 'N/A'}</div>
-                  </div>
-                  <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>API Code</div>
-                    <div className="text-sm font-mono" style={{ color: colors.text }}>{request.apiCode || 'N/A'}</div>
-                  </div>
                 </div>
               </div>
 
-              {/* Path Parameters */}
-              {request.pathParameters && Object.keys(request.pathParameters).length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Path Parameters</h3>
-                  <div className="space-y-2">
-                    {Object.entries(request.pathParameters).map(([key, value]) => (
-                      <div key={key} className="flex items-start gap-2 p-2 rounded" style={{ backgroundColor: colors.hover }}>
-                        <span className="text-xs font-medium min-w-[120px]" style={{ color: colors.textSecondary }}>{key}:</span>
-                        <span className="text-xs font-mono" style={{ color: colors.text }}>{String(value)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Query Parameters */}
-              {request.queryParameters && Object.keys(request.queryParameters).length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Query Parameters</h3>
-                  <div className="space-y-2">
-                    {Object.entries(request.queryParameters).map(([key, value]) => (
-                      <div key={key} className="flex items-start gap-2 p-2 rounded" style={{ backgroundColor: colors.hover }}>
-                        <span className="text-xs font-medium min-w-[120px]" style={{ color: colors.textSecondary }}>{key}:</span>
-                        <span className="text-xs font-mono" style={{ color: colors.text }}>{String(value)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Request Body */}
               {request.requestBody && (
                 <div>
                   <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Request Body</h3>
@@ -462,7 +390,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
 
           {activeTab === 'response' && (
             <div className="space-y-4">
-              {/* Response Info */}
               <div className="grid grid-cols-3 gap-4">
                 <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                   <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Status Code</div>
@@ -480,7 +407,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                 </div>
               </div>
 
-              {/* Response Body */}
               {request.responseBody && (
                 <div>
                   <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Response Body</h3>
@@ -492,23 +418,11 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                   </div>
                 </div>
               )}
-
-              {/* Error Message */}
-              {request.errorMessage && (
-                <div className="p-3 rounded" style={{ backgroundColor: `${colors.error}20` }}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertCircle size={14} style={{ color: colors.error }} />
-                    <span className="text-sm font-medium" style={{ color: colors.error }}>Error</span>
-                  </div>
-                  <p className="text-sm" style={{ color: colors.text }}>{request.errorMessage}</p>
-                </div>
-              )}
             </div>
           )}
 
           {activeTab === 'headers' && (
             <div className="space-y-4">
-              {/* Request Headers */}
               {request.headers && Object.keys(request.headers).length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Request Headers</h3>
@@ -522,56 +436,18 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                   </div>
                 </div>
               )}
-
-              {/* Response Headers */}
-              {request.responseHeaders && Object.keys(request.responseHeaders).length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Response Headers</h3>
-                  <div className="space-y-2 max-h-60 overflow-auto">
-                    {Object.entries(request.responseHeaders).map(([key, value]) => (
-                      <div key={key} className="flex items-start gap-2 p-2 rounded" style={{ backgroundColor: colors.hover }}>
-                        <span className="text-xs font-medium min-w-[150px]" style={{ color: colors.textSecondary }}>{key}:</span>
-                        <span className="text-xs font-mono break-all" style={{ color: colors.text }}>{String(value)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Auth Type */}
-              {request.authType && (
-                <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Authentication Type</div>
-                  <div className="text-sm font-medium" style={{ color: colors.text }}>{request.authType}</div>
-                </div>
-              )}
-
-              {/* Curl Command */}
-              {request.curlCommand && (
-                <div>
-                  <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>CURL Command</h3>
-                  <div className="p-3 rounded max-h-40 overflow-auto" style={{ backgroundColor: colors.codeBg }}>
-                    <pre className="text-xs font-mono whitespace-pre-wrap break-all" style={{ color: colors.text }}>
-                      {request.curlCommand}
-                    </pre>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
           {activeTab === 'timeline' && (
             <div className="space-y-4">
-              {/* Timeline */}
               <div className="relative pl-8 space-y-6">
-                {/* Request Created */}
                 <div className="relative">
                   <div className="absolute left-[-24px] top-0 w-3 h-3 rounded-full" style={{ backgroundColor: colors.info }} />
                   <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Request Created</div>
                   <div className="text-sm" style={{ color: colors.text }}>{formatRequestTimestampHelper(request.createdAt)}</div>
                 </div>
 
-                {/* Request Sent */}
                 {request.requestTimestamp && (
                   <div className="relative">
                     <div className="absolute left-[-24px] top-0 w-3 h-3 rounded-full" style={{ backgroundColor: colors.primary }} />
@@ -580,7 +456,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                   </div>
                 )}
 
-                {/* Response Received */}
                 {request.responseTimestamp && (
                   <div className="relative">
                     <div className="absolute left-[-24px] top-0 w-3 h-3 rounded-full" style={{ 
@@ -592,7 +467,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                 )}
               </div>
 
-              {/* Duration */}
               {request.executionDurationMs && (
                 <div className="p-4 rounded" style={{ backgroundColor: colors.hover }}>
                   <div className="flex items-center justify-between">
@@ -603,34 +477,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                   </div>
                 </div>
               )}
-
-              {/* Retry Count */}
-              {request.retryCount > 0 && (
-                <div className="p-3 rounded" style={{ backgroundColor: `${colors.warning}20` }}>
-                  <div className="flex items-center gap-2">
-                    <RotateCcw size={14} style={{ color: colors.warning }} />
-                    <span className="text-sm" style={{ color: colors.text }}>
-                      Retried {request.retryCount} {request.retryCount === 1 ? 'time' : 'times'}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Client Info */}
-              <div className="grid grid-cols-2 gap-4">
-                {request.clientIpAddress && (
-                  <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Client IP</div>
-                    <div className="text-sm font-mono" style={{ color: colors.text }}>{request.clientIpAddress}</div>
-                  </div>
-                )}
-                {request.userAgent && (
-                  <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>User Agent</div>
-                    <div className="text-xs break-all" style={{ color: colors.text }}>{request.userAgent}</div>
-                  </div>
-                )}
-              </div>
             </div>
           )}
 
@@ -652,28 +498,9 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                   <div className="text-2xl font-semibold" style={{ color: colors.error }}>{request.summary.failedRequests || 0}</div>
                 </div>
                 <div className="p-4 rounded" style={{ backgroundColor: colors.hover }}>
-                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Today's Count</div>
-                  <div className="text-2xl font-semibold" style={{ color: colors.text }}>{request.summary.requestCountToday || 0}</div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                   <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Response Time</div>
-                  <div className="text-lg font-semibold" style={{ color: colors.text }}>
+                  <div className="text-2xl font-semibold" style={{ color: colors.text }}>
                     {formatExecutionTimeHelper(request.summary.averageResponseTime || 0)}
-                  </div>
-                </div>
-                <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Min Response Time</div>
-                  <div className="text-lg font-semibold" style={{ color: colors.text }}>
-                    {formatExecutionTimeHelper(request.summary.minResponseTime || 0)}
-                  </div>
-                </div>
-                <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Max Response Time</div>
-                  <div className="text-lg font-semibold" style={{ color: colors.text }}>
-                    {formatExecutionTimeHelper(request.summary.maxResponseTime || 0)}
                   </div>
                 </div>
               </div>
@@ -681,7 +508,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
           )}
         </div>
 
-        {/* Modal Footer */}
         <div className="flex items-center justify-end gap-2 px-6 py-3 border-t" style={{ borderColor: colors.border }}>
           <button
             onClick={() => {
@@ -706,11 +532,10 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
   );
 };
 
-// Filter Modal Component
-const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
+// ============ FILTER MODAL COMPONENT ============
+const FilterModal = ({ filters, colors, isOpen, onClose, onApply, onExpandDateRange }) => {
   const [localFilters, setLocalFilters] = useState(filters || {});
 
-  // Update local filters when prop changes
   useEffect(() => {
     setLocalFilters(filters || {});
   }, [filters]);
@@ -720,15 +545,10 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50">
       <div className="absolute inset-0 bg-black bg-opacity-50" onClick={onClose} />
-      <div 
-        className="absolute inset-0 backdrop-blur-sm bg-black/30" 
-        onClick={onClose} 
-      />
       <div className="relative w-96 rounded-lg overflow-hidden" style={{ 
         backgroundColor: colors.bg,
         border: `1px solid ${colors.border}`
       }}>
-        {/* Modal Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
           <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Filter Requests</h3>
           <button onClick={onClose} className="p-1 rounded hover:bg-opacity-50 transition-colors">
@@ -736,9 +556,7 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
           </button>
         </div>
 
-        {/* Modal Content */}
         <div className="p-4 space-y-4 max-h-96 overflow-auto">
-          {/* Status Filter */}
           <div>
             <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>Status</label>
             <select
@@ -755,7 +573,6 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
             </select>
           </div>
 
-          {/* HTTP Method Filter */}
           <div>
             <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>HTTP Method</label>
             <select
@@ -770,12 +587,9 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
               <option value="PUT">PUT</option>
               <option value="DELETE">DELETE</option>
               <option value="PATCH">PATCH</option>
-              <option value="HEAD">HEAD</option>
-              <option value="OPTIONS">OPTIONS</option>
             </select>
           </div>
 
-          {/* Status Code Filter */}
           <div>
             <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>Status Code</label>
             <input
@@ -788,7 +602,6 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
             />
           </div>
 
-          {/* API ID Filter */}
           <div>
             <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>API ID</label>
             <input
@@ -801,20 +614,6 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
             />
           </div>
 
-          {/* Correlation ID Filter */}
-          <div>
-            <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>Correlation ID</label>
-            <input
-              type="text"
-              value={localFilters.correlationId || ''}
-              onChange={(e) => setLocalFilters({ ...localFilters, correlationId: e.target.value || undefined })}
-              placeholder="Filter by Correlation ID"
-              className="w-full px-3 py-2 rounded text-sm"
-              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-            />
-          </div>
-
-          {/* Date Range */}
           <div>
             <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>Date Range</label>
             <div className="grid grid-cols-2 gap-2">
@@ -835,67 +634,6 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
             </div>
           </div>
 
-          {/* Duration Range */}
-          <div>
-            <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>Duration (ms)</label>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="number"
-                value={localFilters.minDuration || ''}
-                onChange={(e) => setLocalFilters({ ...localFilters, minDuration: e.target.value ? parseInt(e.target.value) : undefined })}
-                placeholder="Min"
-                className="px-3 py-2 rounded text-sm"
-                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-              />
-              <input
-                type="number"
-                value={localFilters.maxDuration || ''}
-                onChange={(e) => setLocalFilters({ ...localFilters, maxDuration: e.target.value ? parseInt(e.target.value) : undefined })}
-                placeholder="Max"
-                className="px-3 py-2 rounded text-sm"
-                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-              />
-            </div>
-          </div>
-
-          {/* Client Info */}
-          <div>
-            <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>Client IP</label>
-            <input
-              type="text"
-              value={localFilters.clientIpAddress || ''}
-              onChange={(e) => setLocalFilters({ ...localFilters, clientIpAddress: e.target.value || undefined })}
-              placeholder="e.g., 192.168.1.1"
-              className="w-full px-3 py-2 rounded text-sm"
-              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-            />
-          </div>
-
-          <div>
-            <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>Source Application</label>
-            <input
-              type="text"
-              value={localFilters.sourceApplication || ''}
-              onChange={(e) => setLocalFilters({ ...localFilters, sourceApplication: e.target.value || undefined })}
-              placeholder="e.g., web, mobile, api"
-              className="w-full px-3 py-2 rounded text-sm"
-              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-            />
-          </div>
-
-          <div>
-            <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>Requested By</label>
-            <input
-              type="text"
-              value={localFilters.requestedBy || ''}
-              onChange={(e) => setLocalFilters({ ...localFilters, requestedBy: e.target.value || undefined })}
-              placeholder="Username"
-              className="w-full px-3 py-2 rounded text-sm"
-              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-            />
-          </div>
-
-          {/* Checkboxes */}
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -905,18 +643,37 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
               />
               <span style={{ color: colors.text }}>Has Error</span>
             </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={localFilters.isMockRequest || false}
-                onChange={(e) => setLocalFilters({ ...localFilters, isMockRequest: e.target.checked })}
-              />
-              <span style={{ color: colors.text }}>Mock Request</span>
-            </label>
+          </div>
+
+          {/* Quick Date Range Buttons */}
+          <div>
+            <label className="text-xs mb-2 block" style={{ color: colors.textSecondary }}>Quick Date Ranges</label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => onExpandDateRange(7)}
+                className="flex-1 px-2 py-1 rounded text-xs font-medium hover:bg-opacity-50 transition-colors"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                Last 7 days
+              </button>
+              <button
+                onClick={() => onExpandDateRange(30)}
+                className="flex-1 px-2 py-1 rounded text-xs font-medium hover:bg-opacity-50 transition-colors"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                Last 30 days
+              </button>
+              <button
+                onClick={() => onExpandDateRange(365)}
+                className="flex-1 px-2 py-1 rounded text-xs font-medium hover:bg-opacity-50 transition-colors"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                Last year
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Modal Footer */}
         <div className="flex items-center justify-between gap-2 px-4 py-3 border-t" style={{ borderColor: colors.border }}>
           <button
             onClick={() => {
@@ -953,7 +710,7 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
   );
 };
 
-// Export Modal Component
+// ============ EXPORT MODAL COMPONENT ============
 const ExportModal = ({ colors, isOpen, onClose, onExport }) => {
   const [exportConfig, setExportConfig] = useState({
     format: 'JSON',
@@ -974,15 +731,10 @@ const ExportModal = ({ colors, isOpen, onClose, onExport }) => {
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50">
       <div className="absolute inset-0 bg-black bg-opacity-50" onClick={onClose} />
-      <div 
-        className="absolute inset-0 backdrop-blur-sm bg-black/30" 
-        onClick={onClose} 
-      />
       <div className="relative w-96 rounded-lg overflow-hidden" style={{ 
         backgroundColor: colors.bg,
         border: `1px solid ${colors.border}`
       }}>
-        {/* Modal Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
           <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Export Requests</h3>
           <button onClick={onClose} className="p-1 rounded hover:bg-opacity-50 transition-colors">
@@ -990,9 +742,7 @@ const ExportModal = ({ colors, isOpen, onClose, onExport }) => {
           </button>
         </div>
 
-        {/* Modal Content */}
         <div className="p-4 space-y-4 max-h-96 overflow-auto">
-          {/* Format Selection */}
           <div>
             <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>Export Format</label>
             <div className="grid grid-cols-2 gap-2">
@@ -1013,7 +763,6 @@ const ExportModal = ({ colors, isOpen, onClose, onExport }) => {
             </div>
           </div>
 
-          {/* Include Options */}
           <div>
             <h4 className="text-xs font-semibold mb-2" style={{ color: colors.text }}>Include in Export</h4>
             <div className="space-y-2">
@@ -1049,68 +798,10 @@ const ExportModal = ({ colors, isOpen, onClose, onExport }) => {
                 />
                 <span style={{ color: colors.text }}>Response Body</span>
               </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={exportConfig.includeMetadata}
-                  onChange={(e) => setExportConfig({ ...exportConfig, includeMetadata: e.target.checked })}
-                />
-                <span style={{ color: colors.text }}>Metadata</span>
-              </label>
             </div>
           </div>
-
-          {/* Additional Options */}
-          <div>
-            <h4 className="text-xs font-semibold mb-2" style={{ color: colors.text }}>Additional Options</h4>
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={exportConfig.maskSensitiveData}
-                  onChange={(e) => setExportConfig({ ...exportConfig, maskSensitiveData: e.target.checked })}
-                />
-                <span style={{ color: colors.text }}>Mask Sensitive Data</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={exportConfig.flattenNestedObjects}
-                  onChange={(e) => setExportConfig({ ...exportConfig, flattenNestedObjects: e.target.checked })}
-                />
-                <span style={{ color: colors.text }}>Flatten Nested Objects (CSV only)</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={exportConfig.prettyPrint}
-                  onChange={(e) => setExportConfig({ ...exportConfig, prettyPrint: e.target.checked })}
-                />
-                <span style={{ color: colors.text }}>Pretty Print (JSON/XML only)</span>
-              </label>
-            </div>
-          </div>
-
-          {/* CSV Delimiter (if CSV selected) */}
-          {exportConfig.format === 'CSV' && (
-            <div>
-              <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>CSV Delimiter</label>
-              <select
-                value={exportConfig.delimiter}
-                onChange={(e) => setExportConfig({ ...exportConfig, delimiter: e.target.value })}
-                className="w-full px-3 py-2 rounded text-sm"
-                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-              >
-                <option value=",">Comma (,)</option>
-                <option value=";">Semicolon (;)</option>
-                <option value="\t">Tab</option>
-                <option value="|">Pipe (|)</option>
-              </select>
-            </div>
-          )}
         </div>
 
-        {/* Modal Footer */}
         <div className="flex items-center justify-end gap-2 px-4 py-3 border-t" style={{ borderColor: colors.border }}>
           <button
             onClick={onClose}
@@ -1135,11 +826,10 @@ const ExportModal = ({ colors, isOpen, onClose, onExport }) => {
   );
 };
 
-// Stats Cards Component
+// ============ STATS CARDS COMPONENT ============
 const StatsCards = ({ statistics, systemStats, colors, onRefresh }) => {
   const stats = systemStats || statistics || {};
 
-  // Helper function to format execution time
   const formatExecutionTimeHelper = (ms) => {
     if (!ms) return 'N/A';
     if (ms < 1000) return `${ms}ms`;
@@ -1177,17 +867,6 @@ const StatsCards = ({ statistics, systemStats, colors, onRefresh }) => {
           {stats.successRate ? stats.successRate.toFixed(1) : 0}%
         </div>
         <div className="text-xs mt-1 flex items-center gap-1">
-          {stats.successRateChange > 0 ? (
-            <>
-              <TrendingUp size={12} style={{ color: colors.success }} />
-              <span style={{ color: colors.success }}>+{stats.successRateChange}%</span>
-            </>
-          ) : stats.successRateChange < 0 ? (
-            <>
-              <TrendingDown size={12} style={{ color: colors.error }} />
-              <span style={{ color: colors.error }}>{stats.successRateChange}%</span>
-            </>
-          ) : null}
           <span style={{ color: colors.textSecondary }}>vs last period</span>
         </div>
       </div>
@@ -1203,19 +882,8 @@ const StatsCards = ({ statistics, systemStats, colors, onRefresh }) => {
         <div className="text-2xl font-bold" style={{ color: colors.text }}>
           {formatExecutionTimeHelper(stats.averageResponseTime || 0)}
         </div>
-        <div className="text-xs mt-1 flex items-center gap-1">
-          {stats.avgResponseChange < 0 ? (
-            <>
-              <TrendingDown size={12} style={{ color: colors.success }} />
-              <span style={{ color: colors.success }}>{Math.abs(stats.avgResponseChange)}ms</span>
-            </>
-          ) : stats.avgResponseChange > 0 ? (
-            <>
-              <TrendingUp size={12} style={{ color: colors.error }} />
-              <span style={{ color: colors.error }}>+{stats.avgResponseChange}ms</span>
-            </>
-          ) : null}
-          <span style={{ color: colors.textSecondary }}>change</span>
+        <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+          Average response time
         </div>
       </div>
 
@@ -1230,126 +898,9 @@ const StatsCards = ({ statistics, systemStats, colors, onRefresh }) => {
         <div className="text-2xl font-bold" style={{ color: colors.text }}>
           {stats.failedRequests?.toLocaleString() || 0}
         </div>
-        <div className="text-xs mt-1 flex items-center gap-1">
-          {stats.failedPercentage ? (
-            <span style={{ color: colors.error }}>{stats.failedPercentage.toFixed(1)}%</span>
-          ) : null}
-          <span style={{ color: colors.textSecondary }}>of total</span>
+        <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+          Failed requests
         </div>
-      </div>
-    </div>
-  );
-};
-
-// Method Distribution Chart
-const MethodDistribution = ({ stats, colors }) => {
-  const methods = stats.methodDistribution || {};
-  const total = Object.values(methods).reduce((a, b) => a + b, 0);
-
-  return (
-    <div className="p-4 rounded-lg border" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
-      <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Request Methods</h3>
-      <div className="space-y-3">
-        {Object.entries(methods).map(([method, count]) => {
-          const percentage = total > 0 ? (count / total * 100).toFixed(1) : 0;
-          return (
-            <div key={method} className="space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-medium" style={{ color: colors.text }}>{method}</span>
-                <span style={{ color: colors.textSecondary }}>{count} ({percentage}%)</span>
-              </div>
-              <div className="w-full h-2 rounded-full" style={{ backgroundColor: colors.hover }}>
-                <div 
-                  className="h-2 rounded-full transition-all"
-                  style={{ 
-                    width: `${percentage}%`,
-                    backgroundColor: colors.method[method] || colors.primary
-                  }}
-                />
-              </div>
-            </div>
-          );
-        })}
-        {Object.keys(methods).length === 0 && (
-          <div className="text-center py-4 text-sm" style={{ color: colors.textSecondary }}>
-            No method data available
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// Status Code Distribution
-const StatusCodeDistribution = ({ stats, colors }) => {
-  const codes = stats.statusCodeDistribution || {};
-  
-  const getCodeCategory = (code) => {
-    if (code >= 200 && code < 300) return 'success';
-    if (code >= 300 && code < 400) return 'info';
-    if (code >= 400 && code < 500) return 'warning';
-    if (code >= 500) return 'error';
-    return 'textSecondary';
-  };
-
-  return (
-    <div className="p-4 rounded-lg border" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
-      <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Status Codes</h3>
-      <div className="space-y-2 max-h-60 overflow-auto pr-2">
-        {Object.entries(codes)
-          .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
-          .map(([code, count]) => (
-            <div key={code} className="flex items-center justify-between text-sm py-1">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors[getCodeCategory(parseInt(code))] }} />
-                <span style={{ color: colors.text }}>{code}</span>
-              </div>
-              <span style={{ color: colors.textSecondary }}>{count.toLocaleString()}</span>
-            </div>
-          ))}
-        {Object.keys(codes).length === 0 && (
-          <div className="text-center py-4 text-sm" style={{ color: colors.textSecondary }}>
-            No status code data available
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// Time Series Chart (simplified)
-const TimeSeriesChart = ({ stats, colors }) => {
-  const timeSeries = stats.timeSeriesData || [];
-  const maxCount = Math.max(...timeSeries.map(d => d.requestCount), 1);
-
-  return (
-    <div className="p-4 rounded-lg border" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
-      <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Requests Over Time</h3>
-      <div className="space-y-2 max-h-60 overflow-auto">
-        {timeSeries.map((point, index) => (
-          <div key={index} className="space-y-1">
-            <div className="flex items-center justify-between text-xs">
-              <span style={{ color: colors.textSecondary }}>
-                {point.timestamp ? new Date(point.timestamp).toLocaleString() : 'N/A'}
-              </span>
-              <span style={{ color: colors.text }}>{point.requestCount || 0}</span>
-            </div>
-            <div className="w-full h-1.5 rounded-full" style={{ backgroundColor: colors.hover }}>
-              <div 
-                className="h-1.5 rounded-full transition-all"
-                style={{ 
-                  width: `${((point.requestCount || 0) / maxCount) * 100}%`,
-                  backgroundColor: colors.primary
-                }}
-              />
-            </div>
-          </div>
-        ))}
-        {timeSeries.length === 0 && (
-          <div className="text-center py-4 text-sm" style={{ color: colors.textSecondary }}>
-            No time series data available
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1395,6 +946,7 @@ const LoadingOverlay = ({ isLoading, loadingType, colors }) => {
   );
 };
 
+// ============ MAIN API REQUEST COMPONENT ============
 const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [activeTab, setActiveTab] = useState('all');
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -1405,15 +957,14 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [filters, setFilters] = useState({});
   const [requests, setRequests] = useState([]);
   const [apiSummaries, setApiSummaries] = useState([]);
+  const [filteredApiSummaries, setFilteredApiSummaries] = useState([]);
   const [statistics, setStatistics] = useState(null);
   const [systemStats, setSystemStats] = useState(null);
   
-  // ============ SIDEBAR PAGINATION STATE ============
   const [sidebarPage, setSidebarPage] = useState(0);
-  const [sidebarItemsPerPage, setSidebarItemsPerPage] = useState(5);
+  const [sidebarItemsPerPage, setSidebarItemsPerPage] = useState(6); // Changed to 6 items per page
   const [sidebarTotalItems, setSidebarTotalItems] = useState(0);
   
-  // ============ UPDATED LOADING STATE ============
   const [loading, setLoading] = useState({ 
     initialLoad: true, 
     refresh: false, 
@@ -1436,10 +987,12 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedApiId, setSelectedApiId] = useState(null);
   const [selectedApiSummary, setSelectedApiSummary] = useState(null);
+  const [selectedApiData, setSelectedApiData] = useState(null);
+  const [fullApiListLoaded, setFullApiListLoaded] = useState(false);
 
   const searchTimer = useRef(null);
+  const isInitialMount = useRef(true);
 
-  // Color scheme (same as CodeBase)
   const colors = isDark ? {
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
@@ -1515,13 +1068,12 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
   };
 
-  // Show toast message
+  // Helper functions
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Copy to clipboard
   const copyToClipboard = (text) => {
     if (!text) {
       showToast('No data to copy', 'warning');
@@ -1531,7 +1083,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     showToast('Copied to clipboard!', 'success');
   };
 
-  // Get status color and text
   const getStatusColor = (status) => {
     const colors_map = {
       'SUCCESS': colors.success,
@@ -1547,16 +1098,13 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
 
   const getStatusText = (status) => {
     if (!status) return 'UNKNOWN';
-    // Convert to proper case (e.g., 'SUCCESS' -> 'Success', 'TIMEOUT' -> 'Timeout')
     return status.charAt(0) + status.slice(1).toLowerCase();
   };
 
-  // Get method color
   const getMethodColor = (method) => {
     return colors.method[method] || colors.textSecondary;
   };
 
-  // Format timestamp
   const formatTimestamp = (timestamp) => {
     if (!timestamp) return '';
     try {
@@ -1567,12 +1115,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
   };
 
-  // Check if request was successful
-  const isRequestSuccessfulHelper = (request) => {
-    return request?.responseStatusCode >= 200 && request?.responseStatusCode < 300;
-  };
-
-  // Format execution time
   const formatExecutionTimeHelper = (ms) => {
     if (!ms) return 'N/A';
     if (ms < 1000) return `${ms}ms`;
@@ -1580,13 +1122,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     return `${(ms / 60000).toFixed(2)}m`;
   };
 
-  // Format formatted duration
-  const getFormattedDuration = (request) => {
-    if (request.formattedDuration) return request.formattedDuration;
-    return formatExecutionTimeHelper(request.executionDurationMs);
-  };
-
-  // Get status code color
   const getStatusCodeColorHelper = (code) => {
     if (!code) return colors.textSecondary;
     if (code >= 200 && code < 300) return colors.success;
@@ -1596,7 +1131,62 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     return colors.textSecondary;
   };
 
-  // Load requests with filters
+  // Expand date range function
+  const expandDateRange = (days) => {
+    const newFromDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+    const newToDate = new Date().toISOString().slice(0, 16);
+    setDateRange({
+      fromDate: newFromDate,
+      toDate: newToDate
+    });
+    setPagination(prev => ({ ...prev, page: 0 }));
+    // Load requests after date range is updated
+    setTimeout(() => loadRequests(), 100);
+  };
+
+  // Sort API summaries by most recent data first (based on lastRequestTime)
+  const sortApiSummariesByRecency = (summaries) => {
+    return [...summaries].sort((a, b) => {
+      // Sort by lastRequestTime - most recent first
+      if (a.lastRequestTime && b.lastRequestTime) {
+        return new Date(b.lastRequestTime) - new Date(a.lastRequestTime);
+      }
+      if (a.lastRequestTime) return -1;
+      if (b.lastRequestTime) return 1;
+      // If no lastRequestTime, sort by totalRequests
+      return (b.totalRequests || 0) - (a.totalRequests || 0);
+    });
+  };
+
+  // Load full API list from the server
+  const loadFullApiList = useCallback(async () => {
+    if (!authToken) return;
+
+    try {
+      const filter = {
+        page: 0,
+        size: 100,
+        fromDate: dateRange.fromDate,
+        toDate: dateRange.toDate
+      };
+
+      const response = await searchRequests(authToken, filter);
+      
+      if (response?.responseCode === 200) {
+        let apiList = response.data?.apiSummaries || [];
+        // Sort by most recent first
+        apiList = sortApiSummariesByRecency(apiList);
+        setApiSummaries(apiList);
+        setSidebarTotalItems(apiList.length);
+        setFullApiListLoaded(true);
+        console.log('Full API list loaded:', apiList.length, 'APIs');
+      }
+    } catch (error) {
+      console.error('Error loading full API list:', error);
+    }
+  }, [authToken, dateRange.fromDate, dateRange.toDate]);
+
+  // Load requests with filters - FIXED to properly use date range
   const loadRequests = useCallback(async (isRefresh = false) => {
     if (!authToken) {
       showToast('Authentication required', 'error');
@@ -1608,40 +1198,80 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
 
     try {
+      // Build the filter object - MAKE SURE to include date range
       const filter = {
-        ...filters,
         page: pagination.page,
         size: pagination.size,
-        fromDate: dateRange.fromDate,
-        toDate: dateRange.toDate,
-        search: searchQuery || undefined,
-        apiId: selectedApiId || undefined
+        sortBy: 'requestTimestamp',
+        sortDirection: 'DESC'
       };
 
-      // Remove undefined values
-      Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
+      // CRITICAL FIX: Always include date range if set
+      if (dateRange.fromDate && dateRange.fromDate.trim() !== '') {
+        filter.fromDate = dateRange.fromDate + ':00'; // Add seconds if needed
+      }
+      if (dateRange.toDate && dateRange.toDate.trim() !== '') {
+        filter.toDate = dateRange.toDate + ':59'; // Add seconds if needed
+      }
+
+      // Add search query
+      if (searchQuery && searchQuery.trim() !== '') {
+        filter.search = searchQuery.trim();
+      }
+
+      // Add selected API ID if set
+      if (selectedApiId && selectedApiId !== '') {
+        filter.apiId = selectedApiId;
+      }
+
+      // Add other filters
+      if (filters.requestStatus) {
+        filter.requestStatus = filters.requestStatus;
+      }
+      if (filters.httpMethod) {
+        filter.httpMethod = filters.httpMethod;
+      }
+      if (filters.responseStatusCode) {
+        filter.responseStatusCode = filters.responseStatusCode;
+      }
+
+      console.log('Loading requests with filter:', filter);
 
       const response = await searchRequests(authToken, filter);
+      
+      console.log('Response from server:', response);
       
       if (response?.responseCode === 200) {
         const responseData = response.data;
         
-        // Log to debug
-        console.log('API Response:', responseData);
+        console.log('Response data structure:', {
+          hasContent: !!responseData.content,
+          contentLength: responseData.content?.length,
+          totalElements: responseData.totalElements,
+          currentPage: responseData.currentPage,
+          totalPages: responseData.totalPages
+        });
         
-        // Extract data correctly from the response structure
+        if (responseData.content && responseData.content.length > 0) {
+          console.log('First request sample:', responseData.content[0]);
+          console.log('Requests count:', responseData.content.length);
+        } else {
+          console.log('No requests found in response');
+          if (selectedApiId) {
+            const selectedApi = apiSummaries.find(api => api.apiId === selectedApiId);
+            if (selectedApi && selectedApi.totalRequests > 0) {
+              showToast(`No requests found for ${selectedApi.apiName} in the selected date range. Try expanding the date range.`, 'info');
+            }
+          }
+        }
+        
         setRequests(responseData.content || []);
         
-        // IMPORTANT: apiSummaries is directly in responseData, not in data.data
-        const apiList = responseData.apiSummaries || [];
+        // Update API summaries from response and sort by recency
+        let apiList = responseData.apiSummaries || [];
+        apiList = sortApiSummariesByRecency(apiList);
         setApiSummaries(apiList);
         setSidebarTotalItems(apiList.length);
-        
-        // Reset sidebar page when API summaries change
-        setSidebarPage(0);
-        
-        // console.log("responseData::::" + JSON.stringify(responseData));
-        // console.log("apiSummaries::::" + JSON.stringify(responseData.apiSummaries));
         
         setPagination({
           page: responseData.currentPage || 0,
@@ -1650,12 +1280,16 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           totalPages: responseData.totalPages || 0
         });
 
-        // If an API is selected, update its summary
-        if (selectedApiId && apiList) {
-          const summary = apiList.find(api => api.apiId === selectedApiId);
-          setSelectedApiSummary(summary);
+        if (selectedApiId && apiSummaries.length > 0) {
+          const summary = apiSummaries.find(api => api.apiId === selectedApiId || api.apiCode === selectedApiId);
+          if (summary) {
+            setSelectedApiSummary(summary);
+            setSelectedApiData(summary);
+            console.log('Found summary for selected API:', summary);
+          }
         }
       } else {
+        console.error('Failed to load requests:', response?.message);
         showToast(response?.message || 'Failed to load requests', 'error');
       }
     } catch (error) {
@@ -1666,7 +1300,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         setLoading(prev => ({ ...prev, refresh: false }));
       }
     }
-  }, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
+  }, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, apiSummaries]);
 
   // Load statistics
   const loadStatistics = useCallback(async () => {
@@ -1675,18 +1309,20 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     setLoading(prev => ({ ...prev, statistics: true }));
 
     try {
-      // Load system statistics
+      // Use the date range from state
+      const fromDateParam = dateRange.fromDate ? dateRange.fromDate + ':00' : null;
+      const toDateParam = dateRange.toDate ? dateRange.toDate + ':59' : null;
+      
       const systemResponse = await getSystemStatistics(
         authToken,
-        dateRange.fromDate,
-        dateRange.toDate
+        fromDateParam,
+        toDateParam
       );
       
       if (systemResponse?.responseCode === 200) {
         setSystemStats(systemResponse.data);
       }
 
-      // Load dashboard stats
       const dashboardResponse = await getRequestDashboardStats(authToken);
       
       if (dashboardResponse?.responseCode === 200) {
@@ -1723,9 +1359,11 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     setLoading(prev => ({ ...prev, export: true }));
 
     try {
+      const apiIdForExport = selectedApiId || 'all';
+      
       const response = await exportRequests(
         authToken,
-        filters.apiId || selectedApiId || 'all',
+        apiIdForExport,
         dateRange.fromDate,
         dateRange.toDate,
         config.format,
@@ -1766,39 +1404,13 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
       
       if (response?.responseCode === 200) {
         showToast('Request deleted successfully', 'success');
-        loadRequests();
+        loadRequests(true);
       } else {
         showToast(response?.message || 'Failed to delete request', 'error');
       }
     } catch (error) {
       console.error('Error deleting request:', error);
       showToast(error.message || 'Failed to delete request', 'error');
-    } finally {
-      setLoading(prev => ({ ...prev, delete: false }));
-    }
-  };
-
-  // Handle cleanup old requests
-  const handleCleanup = async () => {
-    if (!authToken) return;
-
-    const date = prompt('Enter date to delete requests older than (YYYY-MM-DD):');
-    if (!date) return;
-
-    setLoading(prev => ({ ...prev, delete: true }));
-
-    try {
-      const response = await cleanupOldRequests(authToken, date);
-      
-      if (response?.responseCode === 200) {
-        showToast(`Deleted ${response.data?.deletedCount || 0} old requests`, 'success');
-        loadRequests();
-      } else {
-        showToast(response?.message || 'Failed to cleanup requests', 'error');
-      }
-    } catch (error) {
-      console.error('Error cleaning up requests:', error);
-      showToast(error.message || 'Failed to cleanup requests', 'error');
     } finally {
       setLoading(prev => ({ ...prev, delete: false }));
     }
@@ -1825,19 +1437,31 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
 
   // Handle API selection from sidebar
   const handleApiSelect = (apiId) => {
+    console.log('Selecting API:', apiId);
+    
+    if (apiId !== selectedApiId) {
+      setRequests([]);
+    }
+    
     setSelectedApiId(apiId);
     setPagination(prev => ({ ...prev, page: 0 }));
     
-    // Find and set the API summary for the selected API
     if (apiId && apiSummaries.length > 0) {
-      const summary = apiSummaries.find(api => api.apiId === apiId);
+      const summary = apiSummaries.find(api => api.apiId === apiId || api.apiCode === apiId);
       setSelectedApiSummary(summary || null);
-    } else {
+      setSelectedApiData(summary || null);
+      console.log('Found summary for selected API:', summary);
+      
+      if (summary && summary.totalRequests === 0) {
+        showToast(`No requests found for ${summary.apiName} at all.`, 'warning');
+      } else if (summary && summary.totalRequests > 0) {
+        showToast(`Loading ${summary.totalRequests} requests for ${summary.apiName}...`, 'info');
+      }
+    } else if (!apiId) {
       setSelectedApiSummary(null);
+      setSelectedApiData(null);
+      showToast('Loading all requests...', 'info');
     }
-    
-    // Reload requests with the selected API filter
-    loadRequests();
   };
 
   // Handle sidebar pagination navigation
@@ -1848,17 +1472,19 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   };
 
   const handleSidebarNextPage = () => {
-    const maxPage = Math.ceil(sidebarTotalItems / sidebarItemsPerPage) - 1;
+    const maxPage = Math.max(0, Math.ceil(sidebarTotalItems / sidebarItemsPerPage) - 1);
     if (sidebarPage < maxPage) {
       setSidebarPage(sidebarPage + 1);
     }
   };
 
-  // Get paginated API summaries for sidebar
+  // Get paginated API summaries for sidebar - sorted by most recent first
   const getPaginatedApiSummaries = () => {
+    // First sort the summaries by recency
+    const sortedSummaries = sortApiSummariesByRecency(apiSummaries);
     const startIndex = sidebarPage * sidebarItemsPerPage;
     const endIndex = startIndex + sidebarItemsPerPage;
-    return apiSummaries.slice(startIndex, endIndex);
+    return sortedSummaries.slice(startIndex, endIndex);
   };
 
   // Handle search with debounce
@@ -1881,27 +1507,38 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     if (activeTab === 'statistics') {
       loadStatistics();
     } else if (activeTab === 'all') {
-      loadRequests(true); // Pass true for refresh
+      loadRequests(true);
     } else if (activeTab === 'recent') {
       loadRecentRequests();
     }
   }, [activeTab, loadStatistics, loadRequests, loadRecentRequests]);
 
+  // Handle date range apply
+  const handleDateRangeApply = () => {
+    setPagination(prev => ({ ...prev, page: 0 }));
+    loadRequests();
+    loadStatistics(); // Also refresh statistics with new date range
+  };
+
   // Initial load
   useEffect(() => {
-    if (authToken) {
-      // Load statistics on initial page load
+    if (authToken && isInitialMount.current) {
+      isInitialMount.current = false;
+      console.log('Initial load with date range:', dateRange);
       loadStatistics();
+      loadFullApiList();
       
-      if (activeTab === 'all' || activeTab === 'recent') {
+      if (activeTab === 'all') {
         loadRequests().finally(() => {
+          setLoading(prev => ({ ...prev, initialLoad: false }));
+        });
+      } else if (activeTab === 'recent') {
+        loadRecentRequests().finally(() => {
           setLoading(prev => ({ ...prev, initialLoad: false }));
         });
       } else {
         setLoading(prev => ({ ...prev, initialLoad: false }));
       }
-    } else {
-      setLoading(prev => ({ ...prev, initialLoad: false }));
     }
 
     return () => {
@@ -1909,12 +1546,14 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         clearTimeout(searchTimer.current);
       }
     };
-  }, [authToken]); // Only run once on mount
+  }, []);
 
   // Handle tab changes
   useEffect(() => {
-    if (!authToken) return;
+    if (!authToken || isInitialMount.current) return;
 
+    console.log('Tab changed to:', activeTab);
+    
     if (activeTab === 'statistics') {
       loadStatistics();
     } else if (activeTab === 'all') {
@@ -1922,35 +1561,39 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     } else if (activeTab === 'recent') {
       loadRecentRequests();
     }
-  }, [activeTab, authToken, loadStatistics, loadRequests, loadRecentRequests]);
+  }, [activeTab]);
 
   // Handle filter changes
   useEffect(() => {
-    if (authToken && activeTab === 'all' && !loading.initialLoad) {
-      loadRequests();
-    }
-  }, [filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, authToken, activeTab]);
+    if (!authToken || isInitialMount.current || activeTab !== 'all') return;
+    
+    console.log('Filters changed, reloading...', { 
+      selectedApiId, 
+      paginationPage: pagination.page,
+      dateRange 
+    });
+    
+    loadRequests();
+  }, [filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
 
   // Update selected API summary when apiSummaries change
   useEffect(() => {
     if (selectedApiId && apiSummaries.length > 0) {
-      const summary = apiSummaries.find(api => api.apiId === selectedApiId);
-      setSelectedApiSummary(summary || null);
-    } else if (!selectedApiId) {
-      setSelectedApiSummary(null);
+      const summary = apiSummaries.find(api => api.apiId === selectedApiId || api.apiCode === selectedApiId);
+      if (summary && (!selectedApiData || selectedApiData.apiId !== summary.apiId)) {
+        console.log('Updating selected API data from apiSummaries:', summary);
+        setSelectedApiSummary(summary);
+        setSelectedApiData(summary);
+      }
     }
   }, [selectedApiId, apiSummaries]);
 
   // Render sidebar
   const renderSidebar = () => {
-    // Calculate totals from apiSummaries
-    const totalRequests = apiSummaries.reduce((sum, api) => sum + api.totalRequests, 0);
-    const totalSuccess = apiSummaries.reduce((sum, api) => sum + api.successCount, 0);
-    const totalFailed = apiSummaries.reduce((sum, api) => sum + api.failedCount, 0);
+    const totalRequests = apiSummaries.reduce((sum, api) => sum + (api.totalRequests || 0), 0);
     
-    // Get paginated APIs
     const paginatedApis = getPaginatedApiSummaries();
-    const totalPages = Math.ceil(sidebarTotalItems / sidebarItemsPerPage);
+    const totalPages = Math.max(1, Math.ceil(sidebarTotalItems / sidebarItemsPerPage));
     const startIndex = sidebarPage * sidebarItemsPerPage;
     const endIndex = Math.min(startIndex + sidebarItemsPerPage, sidebarTotalItems);
 
@@ -1963,7 +1606,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           borderColor: colors.border
         }}
       >
-        {/* Sidebar Header */}
         <div className="flex items-center justify-between p-3 border-b" style={{ borderColor: colors.border }}>
           {!sidebarCollapsed && (
             <span className="text-xs font-semibold uppercase" style={{ color: colors.textSecondary }}>API Request Monitor</span>
@@ -1977,9 +1619,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           </button>
         </div>
 
-        {/* Sidebar Content */}
         <div className="flex-1 overflow-auto p-2">
-          {/* All Requests Option */}
           <div
             onClick={() => handleApiSelect(null)}
             className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors mb-2 ${
@@ -2002,7 +1642,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
             )}
           </div>
 
-          {/* API List from apiSummaries with Pagination */}
           {apiSummaries.length > 0 ? (
             <>
               <div className="mt-4 mb-2">
@@ -2021,18 +1660,18 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                 
                 {paginatedApis.map(api => (
                   <div
-                    key={api.apiId}
-                    onClick={() => handleApiSelect(api.apiId)}
+                    key={api.apiId || api.apiCode}
+                    onClick={() => handleApiSelect(api.apiId || api.apiCode)}
                     className={`flex items-start gap-2 p-2 rounded cursor-pointer transition-colors mb-2 ${
-                      selectedApiId === api.apiId ? 'ring-1' : ''
+                      selectedApiId === (api.apiId || api.apiCode) ? 'ring-1' : ''
                     }`}
                     style={{ 
-                      backgroundColor: selectedApiId === api.apiId ? colors.selected : 'transparent',
-                      color: selectedApiId === api.apiId ? colors.primary : colors.text,
-                      borderColor: selectedApiId === api.apiId ? colors.primary : 'transparent'
+                      backgroundColor: selectedApiId === (api.apiId || api.apiCode) ? colors.selected : 'transparent',
+                      color: selectedApiId === (api.apiId || api.apiCode) ? colors.primary : colors.text,
+                      borderColor: selectedApiId === (api.apiId || api.apiCode) ? colors.primary : 'transparent'
                     }}
                   >
-                    <DatabaseIcon size={14} style={{ color: selectedApiId === api.apiId ? colors.primary : colors.textSecondary }} className="mt-1" />
+                    <DatabaseIcon size={14} style={{ color: selectedApiId === (api.apiId || api.apiCode) ? colors.primary : colors.textSecondary }} className="mt-1" />
                     {!sidebarCollapsed && (
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
@@ -2040,43 +1679,26 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                             {api.apiName}
                           </span>
                           <span className="text-xs px-1.5 py-0.5 rounded ml-2" style={{ backgroundColor: colors.hover }}>
-                            {api.totalRequests}
+                            {api.totalRequests || 0}
                           </span>
                         </div>
                         
-                        {/* API Code */}
                         <div className="text-xs mt-1 font-mono" style={{ color: colors.textTertiary }}>
                           {api.apiCode}
                         </div>
                         
-                        {/* Success/Failed counts */}
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs" style={{ color: colors.success }}>✓ {api.successCount}</span>
-                          <span className="text-xs" style={{ color: colors.error }}>✗ {api.failedCount}</span>
+                          <span className="text-xs" style={{ color: colors.success }}>✓ {api.successCount || 0}</span>
+                          <span className="text-xs" style={{ color: colors.error }}>✗ {api.failedCount || 0}</span>
                           <span className="text-xs" style={{ color: colors.warning }}>
-                            {api.successRate.toFixed(1)}%
+                            {(api.successRate || 0).toFixed(1)}%
                           </span>
                         </div>
                         
-                        {/* Last request info */}
                         {api.lastRequestTime && (
                           <div className="flex items-center gap-1 mt-1 text-xs" style={{ color: colors.textTertiary }}>
                             <Clock size={10} />
                             <span className="truncate">{new Date(api.lastRequestTime).toLocaleString()}</span>
-                            <span className="ml-1 px-1 rounded text-[10px]" style={{ 
-                              backgroundColor: api.lastRequestStatus === 'SUCCESS' ? `${colors.success}20` : `${colors.error}20`,
-                              color: api.lastRequestStatus === 'SUCCESS' ? colors.success : colors.error
-                            }}>
-                              {api.lastRequestStatus}
-                            </span>
-                          </div>
-                        )}
-                        
-                        {/* Average response time */}
-                        {api.averageResponseTimeMs && (
-                          <div className="flex items-center gap-1 mt-1 text-xs" style={{ color: colors.textTertiary }}>
-                            <ClockIcon size={10} />
-                            <span>Avg: {formatExecutionTimeHelper(api.averageResponseTimeMs)}</span>
                           </div>
                         )}
                       </div>
@@ -2085,7 +1707,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                 ))}
               </div>
               
-              {/* Sidebar Pagination Controls */}
               {!sidebarCollapsed && totalPages > 1 && (
                 <div className="flex items-center justify-between px-2 py-2 mt-2 border-t" style={{ borderColor: colors.border }}>
                   <button
@@ -2113,13 +1734,12 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           ) : (
             !sidebarCollapsed && (
               <div className="text-center p-4" style={{ color: colors.textSecondary }}>
-                <DatabaseIcon size={20} className="mx-auto mb-2 opacity-50" />
-                <p className="text-xs">No APIs found</p>
+                <Loader size={20} className="animate-spin mx-auto mb-2" />
+                <p className="text-xs">Loading APIs...</p>
               </div>
             )
           )}
         </div>
-        
       </div>
     );
   };
@@ -2128,7 +1748,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const renderRequestsTable = () => {
     return (
       <div className="flex-1 flex flex-col overflow-hidden pl-2 pr-2">
-        {/* Table container with scroll */}
         <div className="flex-1 overflow-auto p-4">
           <table className="w-full" style={{ borderCollapse: 'collapse' }}>
             <thead className="sticky top-0" style={{ backgroundColor: colors.card, zIndex: 10 }}>
@@ -2143,7 +1762,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                 <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
                 <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
                 <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
-               </tr>
+              </tr>
             </thead>
             <tbody>
               {requests.map((request, index) => {
@@ -2243,7 +1862,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                 );
               })}
               
-              {/* Pagination row - only shown when not on statistics tab */}
               {activeTab !== 'statistics' && pagination.totalPages > 0 && (
                 <tr style={{ backgroundColor: colors.card }}>
                   <td colSpan="10" className="py-3 px-4">
@@ -2254,7 +1872,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => {
-                            setPagination(prev => ({ ...prev, page: prev.page - 1 }));
+                            setPagination(prev => ({ ...prev, page: Math.max(0, prev.page - 1) }));
                           }}
                           disabled={pagination.page === 0}
                           className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
@@ -2273,7 +1891,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                         </div>
                         <button
                           onClick={() => {
-                            setPagination(prev => ({ ...prev, page: prev.page + 1 }));
+                            setPagination(prev => ({ ...prev, page: Math.min(prev.totalPages - 1, prev.page + 1) }));
                           }}
                           disabled={pagination.page >= pagination.totalPages - 1}
                           className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
@@ -2288,7 +1906,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                 </tr>
               )}
 
-              {/* Empty state row */}
               {requests.length === 0 && !loading.initialLoad && !loading.refresh && (
                 <tr>
                   <td colSpan="10" className="text-center py-12">
@@ -2301,7 +1918,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                 </tr>
               )}
 
-              {/* Loading state row - only shown when not in full overlay mode */}
               {loading.refresh && requests.length === 0 && (
                 <tr>
                   <td colSpan="10" className="text-center py-12">
@@ -2317,7 +1933,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     );
   };
 
-  // Determine which loading overlay to show
   const showFullOverlay = loading.initialLoad || loading.export || loading.delete;
   const loadingType = loading.initialLoad ? 'initialLoad' : 
                      loading.export ? 'export' : 
@@ -2356,7 +1971,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
         
-        /* Custom scrollbar */
         ::-webkit-scrollbar {
           width: 8px;
           height: 8px;
@@ -2377,20 +1991,16 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         }
       `}</style>
 
-      {/* ============ LOADING OVERLAY ============ */}
       <LoadingOverlay 
         isLoading={showFullOverlay} 
         loadingType={loadingType} 
         colors={colors} 
       />
 
-      {/* Sidebar */}
       {renderSidebar()}
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         
-        {/* TOP NAVIGATION */}
         <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
           backgroundColor: colors.header,
           borderColor: colors.border
@@ -2404,20 +2014,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Search Input */}
-            <div className="relative">
-              <Search size={14} className="absolute left-2 top-1/2 transform -translate-y-1/2" style={{ color: colors.textSecondary }} />
-              <input
-                type="text"
-                placeholder="Search requests..."
-                value={searchQuery}
-                onChange={handleSearchChange}
-                className="pl-8 pr-3 py-1.5 rounded text-sm w-64"
-                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-              />
-            </div>
-
-            {/* Filter Button */}
             <button 
               onClick={() => setShowFilterModal(true)}
               className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
@@ -2427,7 +2023,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
               <Filter size={14} style={{ color: colors.textSecondary }} />
             </button>
 
-            {/* Export Button */}
             <button 
               onClick={() => setShowExportModal(true)}
               className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
@@ -2437,7 +2032,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
               <DownloadCloud size={14} style={{ color: colors.textSecondary }} />
             </button>
 
-            {/* Refresh Button */}
             <button 
               className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
               onClick={handleRefresh}
@@ -2450,7 +2044,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         </div>
 
         <div className="w-full p-4 mt-2 -mb-2 space-y-6">
-          {/* Stats Cards */}
           <StatsCards 
             statistics={statistics}
             systemStats={systemStats}
@@ -2459,85 +2052,62 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           />
         </div>
 
-        {/* API Summary Bar (if API selected) */}
-        {selectedApiId && selectedApiSummary && (
-          <div className="flex items-center gap-4 px-4 py-2 border-b" style={{ 
-            borderColor: colors.border, 
-            backgroundColor: colors.hover
-          }}>
-            <span className="text-xs font-medium" style={{ color: colors.textSecondary }}>API Summary:</span>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1">
-                <CheckCircle size={12} style={{ color: colors.success }} />
-                <span className="text-xs" style={{ color: colors.text }}>Success: {selectedApiSummary.successCount || 0}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <XCircle size={12} style={{ color: colors.error }} />
-                <span className="text-xs" style={{ color: colors.text }}>Failed: {selectedApiSummary.failedCount || 0}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <ClockIcon size={12} style={{ color: colors.warning }} />
-                <span className="text-xs" style={{ color: colors.text }}>Avg: {formatExecutionTimeHelper(selectedApiSummary.averageResponseTimeMs)}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Activity size={12} style={{ color: colors.info }} />
-                <span className="text-xs" style={{ color: colors.text }}>Total: {selectedApiSummary.totalRequests || 0}</span>
-              </div>
-              {selectedApiSummary.successRate !== undefined && (
-                <div className="flex items-center gap-1">
-                  <PieChart size={12} style={{ color: colors.primary }} />
-                  <span className="text-xs" style={{ color: colors.text }}>Success Rate: {selectedApiSummary.successRate.toFixed(1)}%</span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Date Range Bar */}
-        <div className="flex items-center gap-4 px-4 py-2 border-b pl-2 pr-2" style={{ 
+        {/* NEW LAYOUT: Search box on left, date range on right with proper padding */}
+        <div className="flex items-center justify-between gap-4 px-4 py-3 border-b" style={{ 
           borderColor: colors.border, 
           backgroundColor: colors.card
         }}>
-          <div className="flex items-center gap-2">
+          {/* Left side: Search box */}
+          <div className="flex-1 max-w-md">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2" style={{ color: colors.textSecondary }} />
+              <input
+                type="text"
+                placeholder="Search requests by name, URL, correlation ID..."
+                value={searchQuery}
+                onChange={handleSearchChange}
+                className="pl-9 pr-3 py-2 rounded text-sm w-full"
+                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+              />
+            </div>
+          </div>
+
+          {/* Right side: Date range controls */}
+          <div className="flex items-center gap-3">
             <Calendar size={14} style={{ color: colors.textSecondary }} />
             <span className="text-sm" style={{ color: colors.textSecondary }}>Date Range:</span>
+            <input
+              type="datetime-local"
+              value={dateRange.fromDate}
+              onChange={(e) => setDateRange({ ...dateRange, fromDate: e.target.value })}
+              className="px-2 py-1.5 rounded text-sm"
+              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+              disabled={loading.initialLoad || loading.refresh}
+            />
+            <span style={{ color: colors.textSecondary }}>to</span>
+            <input
+              type="datetime-local"
+              value={dateRange.toDate}
+              onChange={(e) => setDateRange({ ...dateRange, toDate: e.target.value })}
+              className="px-2 py-1.5 rounded text-sm"
+              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+              disabled={loading.initialLoad || loading.refresh}
+            />
+            <button
+              onClick={handleDateRangeApply}
+              className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
+              style={{ backgroundColor: colors.primaryDark, color: 'white' }}
+              disabled={loading.initialLoad || loading.refresh}
+            >
+              Apply
+            </button>
           </div>
-          <input
-            type="datetime-local"
-            value={dateRange.fromDate}
-            onChange={(e) => setDateRange({ ...dateRange, fromDate: e.target.value })}
-            className="px-2 py-1 rounded text-sm"
-            style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-            disabled={loading.initialLoad || loading.refresh}
-          />
-          <span style={{ color: colors.textSecondary }}>to</span>
-          <input
-            type="datetime-local"
-            value={dateRange.toDate}
-            onChange={(e) => setDateRange({ ...dateRange, toDate: e.target.value })}
-            className="px-2 py-1 rounded text-sm"
-            style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-            disabled={loading.initialLoad || loading.refresh}
-          />
-          <button
-            onClick={() => {
-              setPagination(prev => ({ ...prev, page: 0 }));
-              loadRequests();
-            }}
-            className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
-            style={{ backgroundColor: colors.primaryDark, color: 'white' }}
-            disabled={loading.initialLoad || loading.refresh}
-          >
-            Apply
-          </button>
         </div>
 
-        {/* MAIN CONTENT */}
         {renderRequestsTable()}
 
       </div>
 
-      {/* Modals */}
       <RequestDetailsModal
         request={selectedRequest}
         colors={colors}
@@ -2555,6 +2125,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           setFilters(newFilters);
           setPagination(prev => ({ ...prev, page: 0 }));
         }}
+        onExpandDateRange={expandDateRange}
       />
 
       <ExportModal
@@ -2564,7 +2135,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         onExport={handleExport}
       />
 
-      {/* TOAST */}
       {toast && (
         <div className="fixed bottom-4 right-4 px-4 py-2 rounded text-sm font-medium z-50 animate-fade-in-up"
           style={{ 
