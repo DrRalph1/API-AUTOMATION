@@ -23,6 +23,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -2616,9 +2618,19 @@ public class OracleSchemaService implements DatabaseSchemaService {
                 case PLSQL_BLOCK:
                 case ANONYMOUS_BLOCK:
                     Map<String, Object> plsqlResult = executePLSQLBlock(query, timeoutSeconds);
-                    result.put("success", true);
-                    result.put("message", "PL/SQL block executed successfully");
-                    result.put("data", plsqlResult);
+
+                    result.put("success", plsqlResult.get("success"));
+                    result.put("message", plsqlResult.get("message"));
+                    result.put("data", Map.of(
+                            "output", plsqlResult.getOrDefault("output", ""),
+                            "rows", plsqlResult.getOrDefault("rows", new ArrayList<>()),
+                            "rowCount", plsqlResult.getOrDefault("rowCount", 0),
+                            "responseCode", plsqlResult.getOrDefault("responseCode", ""),
+                            "batchNumber", plsqlResult.getOrDefault("batchNumber", "")
+                    ));
+
+                    log.info("RequestEntity ID: {}, PL/SQL block executed: {}",
+                            requestId, plsqlResult.get("message"));
                     break;
 
                 case CALL:
@@ -2836,26 +2848,29 @@ public class OracleSchemaService implements DatabaseSchemaService {
     }
 
     /**
-     * Execute PL/SQL block with DBMS_OUTPUT capture
+     * Execute PL/SQL block with DBMS_OUTPUT capture - Generic approach for any PL/SQL block
      */
     private Map<String, Object> executePLSQLBlock(String query, int timeoutSeconds) {
         Map<String, Object> result = new HashMap<>();
         List<Map<String, Object>> rows = new ArrayList<>();
         StringBuilder output = new StringBuilder();
+        Map<String, Object> outParams = new HashMap<>();
 
         try {
-            // Use the oracleJdbcTemplate to get a connection
             Connection conn = oracleJdbcTemplate.getDataSource().getConnection();
             conn.setAutoCommit(false);
 
             try {
-                // First, enable DBMS_OUTPUT
+                // Enable DBMS_OUTPUT
                 try (CallableStatement enableOutput = conn.prepareCall("BEGIN DBMS_OUTPUT.ENABLE(1000000); END;")) {
                     enableOutput.execute();
                 }
 
-                // Execute the PL/SQL block
-                try (CallableStatement cs = conn.prepareCall(query)) {
+                // Create a wrapper PL/SQL block that captures all OUT parameters
+                // This is the key - we wrap the user's PL/SQL block to capture everything
+                String wrappedQuery = wrapPlSqlBlockWithCapture(query);
+
+                try (CallableStatement cs = conn.prepareCall(wrappedQuery)) {
                     boolean hadResults = cs.execute();
 
                     // Get any result sets
@@ -2875,35 +2890,67 @@ public class OracleSchemaService implements DatabaseSchemaService {
                             rs.close();
                         }
                     }
+                }
 
-                    // Get DBMS_OUTPUT content
-                    try (CallableStatement getOutput = conn.prepareCall(
-                            "BEGIN DBMS_OUTPUT.GET_LINE(:line, :status); END;")) {
-                        getOutput.registerOutParameter("line", Types.VARCHAR);
-                        getOutput.registerOutParameter("status", Types.INTEGER);
+                // Get DBMS_OUTPUT content
+                try (CallableStatement getOutput = conn.prepareCall(
+                        "BEGIN DBMS_OUTPUT.GET_LINE(?, ?); END;")) {
+                    getOutput.registerOutParameter(1, Types.VARCHAR);
+                    getOutput.registerOutParameter(2, Types.INTEGER);
 
-                        int status = 0;
-                        while (status == 0) {
-                            getOutput.execute();
-                            String line = getOutput.getString("line");
-                            status = getOutput.getInt("status");
-                            if (line != null && status == 0) {
-                                output.append(line).append("\n");
-                            }
+                    int status = 0;
+                    while (status == 0) {
+                        getOutput.execute();
+                        String line = getOutput.getString(1);
+                        status = getOutput.getInt(2);
+                        if (line != null && status == 0) {
+                            output.append(line).append("\n");
                         }
                     }
                 }
 
                 conn.commit();
 
+                // Parse the output to extract meaningful information
+                Map<String, String> parsedOutput = parseProcedureOutput(output.toString());
+
                 // Build result
                 result.put("rows", rows);
                 result.put("rowCount", rows.size());
                 result.put("output", output.toString());
+                result.put("dbmsOutput", output.toString());
+                result.put("outParams", outParams);
+
+                // Extract response code and message from output
+                String responseCode = parsedOutput.getOrDefault("responseCode", "");
+                String message = parsedOutput.getOrDefault("message", output.toString().trim());
+                String batchNumber = parsedOutput.getOrDefault("batchNumber", "");
+
+                // Create user-friendly message based on response code
+                if ("000".equals(responseCode) || message.toLowerCase().contains("successfully") ||
+                        (responseCode.isEmpty() && !output.toString().toLowerCase().contains("error"))) {
+                    result.put("success", true);
+                    result.put("message", message.isEmpty() ? "PL/SQL block executed successfully" : message);
+                    result.put("responseCode", responseCode.isEmpty() ? "000" : responseCode);
+                } else if (!responseCode.isEmpty()) {
+                    result.put("success", false);
+                    result.put("message", message + " (Response Code: " + responseCode + ")");
+                    result.put("responseCode", responseCode);
+                } else if (output.toString().toLowerCase().contains("error") ||
+                        output.toString().toLowerCase().contains("ora-")) {
+                    result.put("success", false);
+                    result.put("message", output.toString().trim());
+                } else {
+                    result.put("success", true);
+                    result.put("message", output.toString().trim().isEmpty() ?
+                            "PL/SQL block executed successfully" : output.toString().trim());
+                }
+
+                result.put("batchNumber", batchNumber);
+
                 if (!rows.isEmpty()) {
                     result.put("columns", new ArrayList<>(rows.get(0).keySet()));
                 }
-                result.put("success", true);
 
                 return result;
 
@@ -2916,8 +2963,213 @@ public class OracleSchemaService implements DatabaseSchemaService {
 
         } catch (Exception e) {
             log.error("Error executing PL/SQL block", e);
-            throw new RuntimeException("Failed to execute PL/SQL block: " + e.getMessage(), e);
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("success", false);
+            errorResult.put("message", "Failed to execute PL/SQL block: " + e.getMessage());
+            errorResult.put("error", e.getMessage());
+            errorResult.put("output", e.getMessage());
+            errorResult.put("rows", new ArrayList<>());
+            errorResult.put("rowCount", 0);
+
+            return errorResult;
         }
+    }
+
+    /**
+     * Wrap the user's PL/SQL block to capture DBMS_OUTPUT properly
+     * This wrapper ensures we capture all output regardless of how the block is structured
+     */
+    private String wrapPlSqlBlockWithCapture(String originalQuery) {
+        // Remove any trailing semicolons and clean up
+        String cleanedQuery = originalQuery.trim();
+        if (cleanedQuery.endsWith(";")) {
+            cleanedQuery = cleanedQuery.substring(0, cleanedQuery.length() - 1);
+        }
+
+        // Check if it's already a complete block
+        boolean isCompleteBlock = cleanedQuery.toUpperCase().startsWith("BEGIN") ||
+                cleanedQuery.toUpperCase().startsWith("DECLARE");
+
+        // Use a larger buffer and better output collection
+        if (isCompleteBlock) {
+            // Already has BEGIN/DECLARE, wrap it with better output capture
+            return "DECLARE\n" +
+                    "    TYPE output_array IS TABLE OF VARCHAR2(32767) INDEX BY BINARY_INTEGER;\n" +
+                    "    v_output_lines output_array;\n" +
+                    "    v_line_count NUMBER;\n" +
+                    "    v_idx NUMBER := 1;\n" +
+                    "    v_line VARCHAR2(32767);\n" +
+                    "    v_status NUMBER;\n" +
+                    "BEGIN\n" +
+                    "    -- Enable DBMS_OUTPUT with maximum buffer\n" +
+                    "    DBMS_OUTPUT.ENABLE(1000000);\n" +
+                    "    \n" +
+                    "    -- Execute the user's block\n" +
+                    "    " + cleanedQuery + ";\n" +
+                    "    \n" +
+                    "    -- Collect all DBMS_OUTPUT lines\n" +
+                    "    LOOP\n" +
+                    "        DBMS_OUTPUT.GET_LINE(v_line, v_status);\n" +
+                    "        EXIT WHEN v_status != 0;\n" +
+                    "        v_output_lines(v_idx) := v_line;\n" +
+                    "        v_idx := v_idx + 1;\n" +
+                    "    END LOOP;\n" +
+                    "    v_line_count := v_idx - 1;\n" +
+                    "    \n" +
+                    "    -- Output collected lines\n" +
+                    "    FOR i IN 1..v_line_count LOOP\n" +
+                    "        DBMS_OUTPUT.PUT_LINE(v_output_lines(i));\n" +
+                    "    END LOOP;\n" +
+                    "EXCEPTION\n" +
+                    "    WHEN OTHERS THEN\n" +
+                    "        DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM);\n" +
+                    "        DBMS_OUTPUT.PUT_LINE('Error Code: ' || SQLCODE);\n" +
+                    "        RAISE;\n" +
+                    "END;";
+        } else {
+            // It's a simple statement or procedure call, wrap it
+            return "DECLARE\n" +
+                    "    TYPE output_array IS TABLE OF VARCHAR2(32767) INDEX BY BINARY_INTEGER;\n" +
+                    "    v_output_lines output_array;\n" +
+                    "    v_line_count NUMBER;\n" +
+                    "    v_idx NUMBER := 1;\n" +
+                    "    v_line VARCHAR2(32767);\n" +
+                    "    v_status NUMBER;\n" +
+                    "BEGIN\n" +
+                    "    DBMS_OUTPUT.ENABLE(1000000);\n" +
+                    "    " + cleanedQuery + ";\n" +
+                    "    \n" +
+                    "    LOOP\n" +
+                    "        DBMS_OUTPUT.GET_LINE(v_line, v_status);\n" +
+                    "        EXIT WHEN v_status != 0;\n" +
+                    "        v_output_lines(v_idx) := v_line;\n" +
+                    "        v_idx := v_idx + 1;\n" +
+                    "    END LOOP;\n" +
+                    "    v_line_count := v_idx - 1;\n" +
+                    "    \n" +
+                    "    FOR i IN 1..v_line_count LOOP\n" +
+                    "        DBMS_OUTPUT.PUT_LINE(v_output_lines(i));\n" +
+                    "    END LOOP;\n" +
+                    "EXCEPTION\n" +
+                    "    WHEN OTHERS THEN\n" +
+                    "        DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM);\n" +
+                    "        DBMS_OUTPUT.PUT_LINE('Error Code: ' || SQLCODE);\n" +
+                    "        RAISE;\n" +
+                    "END;";
+        }
+    }
+
+    /**
+     * Parse procedure output to extract response code, message, and batch number
+     * This works with any procedure that outputs formatted messages
+     */
+    private Map<String, String> parseProcedureOutput(String output) {
+        Map<String, String> parsed = new HashMap<>();
+
+        if (output == null || output.isEmpty()) {
+            return parsed;
+        }
+
+        String[] lines = output.split("\n");
+        for (String line : lines) {
+            // Match patterns like "Response Code: 000" or "Response Code: 000"
+            if (line.matches(".*[Rr]esponse\\s+[Cc]ode\\s*:?\\s*\\w+.*")) {
+                String code = extractValue(line, "[Rr]esponse\\s+[Cc]ode");
+                if (code != null) {
+                    parsed.put("responseCode", code.trim());
+                }
+            }
+
+            // Match patterns like "Message: Transaction posted successfully"
+            if (line.matches(".*[Mm]essage\\s*:?\\s*.+")) {
+                String message = extractValue(line, "[Mm]essage");
+                if (message != null) {
+                    parsed.put("message", message.trim());
+                }
+            }
+
+            // Match patterns like "Batch Number: BATCH123"
+            if (line.matches(".*[Bb]atch\\s+[Nn]umber\\s*:?\\s*\\w+.*")) {
+                String batchNo = extractValue(line, "[Bb]atch\\s+[Nn]umber");
+                if (batchNo != null) {
+                    parsed.put("batchNumber", batchNo.trim());
+                }
+            }
+
+            // Match patterns like "Batch No: BATCH123"
+            if (line.matches(".*[Bb]atch\\s+[Nn]o\\s*:?\\s*\\w+.*")) {
+                String batchNo = extractValue(line, "[Bb]atch\\s+[Nn]o");
+                if (batchNo != null) {
+                    parsed.put("batchNumber", batchNo.trim());
+                }
+            }
+
+            // Match patterns like "Transaction posted successfully with a batch reference number: BATCH123"
+            if (line.matches(".*batch reference number:.*")) {
+                String[] parts = line.split("batch reference number:");
+                if (parts.length > 1) {
+                    String batchNo = parts[1].trim();
+                    if (!batchNo.isEmpty()) {
+                        parsed.put("batchNumber", batchNo);
+                    }
+                }
+            }
+
+            // If line contains "successfully" and no message found yet, use it as message
+            if (!parsed.containsKey("message") &&
+                    (line.toLowerCase().contains("successfully") ||
+                            line.toLowerCase().contains("completed"))) {
+                parsed.put("message", line.trim());
+            }
+
+            // Capture error messages
+            if (line.toLowerCase().contains("error") ||
+                    line.toUpperCase().contains("ORA-") ||
+                    line.toLowerCase().contains("exception")) {
+                if (!parsed.containsKey("error")) {
+                    parsed.put("error", line.trim());
+                }
+            }
+        }
+
+        // If we have a message that contains both code and message, try to parse it
+        String message = parsed.get("message");
+        if (message != null && message.contains("Response Code:")) {
+            // Message contains embedded response code, extract it
+            Pattern pattern = Pattern.compile("Response Code:\\s*(\\d+)");
+            Matcher matcher = pattern.matcher(message);
+            if (matcher.find()) {
+                parsed.put("responseCode", matcher.group(1));
+                // Clean the message by removing the response code part
+                String cleanMessage = message.replaceAll("Response Code:\\s*\\d+", "").trim();
+                if (!cleanMessage.isEmpty()) {
+                    parsed.put("message", cleanMessage);
+                }
+            }
+        }
+
+        return parsed;
+    }
+
+    /**
+     * Helper to extract value after a label
+     */
+    private String extractValue(String line, String labelPattern) {
+        try {
+            Pattern pattern = Pattern.compile(labelPattern + "\\s*:?\\s*(.*)", Pattern.CASE_INSENSITIVE);
+            Matcher matcher = pattern.matcher(line);
+            if (matcher.find()) {
+                return matcher.group(1).trim();
+            }
+        } catch (Exception e) {
+            // Fallback to simple split
+            String[] parts = line.split(":");
+            if (parts.length > 1) {
+                return parts[1].trim();
+            }
+        }
+        return null;
     }
 
     /**

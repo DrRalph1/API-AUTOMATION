@@ -48,7 +48,7 @@ public class DatabaseConfig {
         config.setConnectionTimeout(30000);
         config.setPoolName("PostgreSQL-Hikari-Pool");
         config.setConnectionTestQuery("SELECT 1");
-        config.setAutoCommit(false);
+        config.setAutoCommit(true);
 
         return new HikariDataSource(config);
     }

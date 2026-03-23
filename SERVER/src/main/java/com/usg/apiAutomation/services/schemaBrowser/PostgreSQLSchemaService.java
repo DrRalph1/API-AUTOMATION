@@ -1904,6 +1904,7 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
                     queryResults = postgreSQLExecuteRepository.executePlPgSqlBlock(query, timeoutSeconds, readOnly);
                     break;
 
+                // Inside your executeQuery method, when handling DDL operations
                 case CREATE_VIEW:
                 case CREATE_TABLE:
                 case CREATE_INDEX:
@@ -1915,7 +1916,18 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
                     if (readOnly) {
                         throw new IllegalArgumentException("DDL operations are not allowed in read-only mode");
                     }
+
+                    // Parse the DDL statement to extract object name and type
+                    Map<String, String> ddlInfo = parseDDLStatement(query, statementType);
+
                     queryResults = postgreSQLExecuteRepository.executeDdl(query);
+
+                    // Add DDL metadata to results for better messaging
+                    if (queryResults != null) {
+                        queryResults.put("objectName", ddlInfo.getOrDefault("objectName", ""));
+                        queryResults.put("operationType", ddlInfo.getOrDefault("operationType", ""));
+                        queryResults.put("schemaName", ddlInfo.getOrDefault("schemaName", ""));
+                    }
                     break;
 
                 case INSERT:
@@ -2121,7 +2133,7 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
     }
 
     /**
-     * Get appropriate success message based on statement type
+     * Get appropriate success message based on statement type and results
      */
     private String getSuccessMessage(PostgreSQLSqlStatementTypeEnum statementType, Map<String, Object> results) {
         switch (statementType) {
@@ -2153,12 +2165,204 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
             case CREATE_SEQUENCE:
             case CREATE_TYPE:
             case DDL:
-                return "DDL statement executed successfully";
+                // Enhanced DDL success messages with more detail
+                return getDetailedDDLMessage(results, statementType);
 
             default:
                 return "Statement executed successfully";
         }
     }
+
+    /**
+     * Generate detailed success message for DDL operations
+     */
+    private String getDetailedDDLMessage(Map<String, Object> results, PostgreSQLSqlStatementTypeEnum statementType) {
+        String objectName = (String) results.getOrDefault("objectName", "");
+        String operationType = (String) results.getOrDefault("operationType", "");
+        String schemaName = (String) results.getOrDefault("schemaName", "");
+
+        // If we have detailed information from the execution
+        if (objectName != null && !objectName.isEmpty()) {
+            switch (statementType) {
+                case CREATE_TABLE:
+                    if (schemaName != null && !schemaName.isEmpty()) {
+                        return String.format("Table '%s.%s' created successfully", schemaName, objectName);
+                    }
+                    return String.format("Table '%s' created successfully", objectName);
+
+                case CREATE_VIEW:
+                    if (schemaName != null && !schemaName.isEmpty()) {
+                        return String.format("View '%s.%s' created successfully", schemaName, objectName);
+                    }
+                    return String.format("View '%s' created successfully", objectName);
+
+                case CREATE_INDEX:
+                    if (schemaName != null && !schemaName.isEmpty()) {
+                        return String.format("Index '%s.%s' created successfully", schemaName, objectName);
+                    }
+                    return String.format("Index '%s' created successfully", objectName);
+
+                case CREATE_TRIGGER:
+                    if (schemaName != null && !schemaName.isEmpty()) {
+                        return String.format("Trigger '%s.%s' created successfully", schemaName, objectName);
+                    }
+                    return String.format("Trigger '%s' created successfully", objectName);
+
+                case CREATE_SEQUENCE:
+                    if (schemaName != null && !schemaName.isEmpty()) {
+                        return String.format("Sequence '%s.%s' created successfully", schemaName, objectName);
+                    }
+                    return String.format("Sequence '%s' created successfully", objectName);
+
+                case CREATE_TYPE:
+                    if (schemaName != null && !schemaName.isEmpty()) {
+                        return String.format("Type '%s.%s' created successfully", schemaName, objectName);
+                    }
+                    return String.format("Type '%s' created successfully", objectName);
+
+                default:
+                    if (operationType != null && !operationType.isEmpty()) {
+                        return String.format("DDL statement '%s' executed successfully: %s",
+                                operationType,
+                                objectName.isEmpty() ? "" : objectName);
+                    }
+                    if (!objectName.isEmpty()) {
+                        return String.format("DDL statement executed successfully: %s", objectName);
+                    }
+                    return "DDL statement executed successfully";
+            }
+        }
+
+        // Default messages for specific DDL operations when we don't have object name
+        switch (statementType) {
+            case CREATE_TABLE:
+                return "CREATE TABLE statement executed successfully";
+            case CREATE_VIEW:
+                return "CREATE VIEW statement executed successfully";
+            case CREATE_INDEX:
+                return "CREATE INDEX statement executed successfully";
+            case CREATE_TRIGGER:
+                return "CREATE TRIGGER statement executed successfully";
+            case CREATE_SEQUENCE:
+                return "CREATE SEQUENCE statement executed successfully";
+            case CREATE_TYPE:
+                return "CREATE TYPE statement executed successfully";
+            default:
+                return "DDL statement executed successfully";
+        }
+    }
+
+
+    /**
+     * Parse DDL statement to extract object name and type for better messaging
+     */
+    private Map<String, String> parseDDLStatement(String query, PostgreSQLSqlStatementTypeEnum statementType) {
+        Map<String, String> result = new HashMap<>();
+        result.put("operationType", statementType.toString());
+
+        try {
+            String upperQuery = query.toUpperCase();
+
+            // Extract object name based on statement type
+            switch (statementType) {
+                case CREATE_TABLE:
+                    extractObjectName(upperQuery, "CREATE TABLE", result);
+                    break;
+                case CREATE_VIEW:
+                    extractObjectName(upperQuery, "CREATE VIEW", result);
+                    break;
+                case CREATE_INDEX:
+                    extractObjectName(upperQuery, "CREATE INDEX", result);
+                    break;
+                case CREATE_TRIGGER:
+                    extractObjectName(upperQuery, "CREATE TRIGGER", result);
+                    break;
+                case CREATE_SEQUENCE:
+                    extractObjectName(upperQuery, "CREATE SEQUENCE", result);
+                    break;
+                case CREATE_TYPE:
+                    extractObjectName(upperQuery, "CREATE TYPE", result);
+                    break;
+                case DDL:
+                    // Try to detect if it's ALTER, DROP, or TRUNCATE
+                    if (upperQuery.startsWith("ALTER")) {
+                        extractObjectName(upperQuery, "ALTER", result);
+                        result.put("operationType", "ALTER");
+                    } else if (upperQuery.startsWith("DROP")) {
+                        extractObjectName(upperQuery, "DROP", result);
+                        result.put("operationType", "DROP");
+                    } else if (upperQuery.startsWith("TRUNCATE")) {
+                        extractObjectName(upperQuery, "TRUNCATE", result);
+                        result.put("operationType", "TRUNCATE");
+                    } else if (upperQuery.startsWith("RENAME")) {
+                        extractObjectName(upperQuery, "RENAME", result);
+                        result.put("operationType", "RENAME");
+                    }
+                    break;
+            }
+
+            // Extract schema if present (format: schema.table or schema.object)
+            String objectName = result.get("objectName");
+            if (objectName != null && objectName.contains(".")) {
+                String[] parts = objectName.split("\\.");
+                if (parts.length == 2) {
+                    result.put("schemaName", parts[0]);
+                    result.put("objectName", parts[1]);
+                }
+            }
+
+        } catch (Exception e) {
+            log.debug("Could not parse DDL statement: {}", e.getMessage());
+        }
+
+        return result;
+    }
+
+    /**
+     * Extract object name from DDL statement
+     */
+    private void extractObjectName(String upperQuery, String keyword, Map<String, String> result) {
+        try {
+            int keywordIndex = upperQuery.indexOf(keyword);
+            if (keywordIndex >= 0) {
+                String afterKeyword = upperQuery.substring(keywordIndex + keyword.length()).trim();
+                // Find the first space or newline after the object name
+                int spaceIndex = afterKeyword.indexOf(' ');
+                int newlineIndex = afterKeyword.indexOf('\n');
+                int endIndex = spaceIndex;
+
+                if (newlineIndex >= 0 && (endIndex < 0 || newlineIndex < endIndex)) {
+                    endIndex = newlineIndex;
+                }
+
+                if (endIndex > 0) {
+                    String objectPart = afterKeyword.substring(0, endIndex).trim();
+                    // Remove any quotes and IF NOT EXISTS, OR REPLACE, etc.
+                    objectPart = objectPart.replaceAll("^[\"']|[\"']$", "");
+
+                    // Handle IF NOT EXISTS or OR REPLACE
+                    if (objectPart.toUpperCase().startsWith("IF NOT EXISTS")) {
+                        objectPart = objectPart.substring("IF NOT EXISTS".length()).trim();
+                        int objEndIndex = objectPart.indexOf(' ');
+                        if (objEndIndex > 0) {
+                            objectPart = objectPart.substring(0, objEndIndex);
+                        }
+                    } else if (objectPart.toUpperCase().startsWith("OR REPLACE")) {
+                        objectPart = objectPart.substring("OR REPLACE".length()).trim();
+                        int objEndIndex = objectPart.indexOf(' ');
+                        if (objEndIndex > 0) {
+                            objectPart = objectPart.substring(0, objEndIndex);
+                        }
+                    }
+
+                    result.put("objectName", objectPart);
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Could not extract object name from {}: {}", keyword, e.getMessage());
+        }
+    }
+
 
     // ============================================================
     // 29. PAGINATED METHODS FOR LARGE DATASETS

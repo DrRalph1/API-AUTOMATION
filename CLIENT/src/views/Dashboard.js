@@ -1,4 +1,4 @@
-// Dashboard.jsx - FIXED VERSION WITH DUPLICATE REMOVAL
+// Dashboard.jsx - MOBILE RESPONSIVE (Fixed duplicate navigation)
 import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense, useRef } from 'react';
 import {
   Database, FileCode, Activity, Zap, Settings,
@@ -123,17 +123,18 @@ const TableLoader = ({ colors }) => (
   </div>
 );
 
-// Stat Card - Memoized
+// Stat Card - Memoized (added mobile touch optimization)
 const StatCard = React.memo(({ title, value, icon: Icon, change, color, onClick, colors }) => {
   const formattedValue = typeof value === 'number' ? value.toLocaleString() : value || '0';
   
  return (
       <div 
-        className="border rounded-xl p-3 md:p-4 hover-lift cursor-pointer transition-all duration-200"
+        className="border rounded-xl p-3 md:p-4 hover-lift cursor-pointer transition-all duration-200 active:scale-[0.98] md:active:scale-100"
         onClick={onClick}
         style={{ 
           borderColor: colors.border,
           backgroundColor: colors.card,
+          WebkitTapHighlightColor: 'transparent'
         }}
       >
         <div className="flex items-center justify-between mb-2">
@@ -169,13 +170,17 @@ const StatCard = React.memo(({ title, value, icon: Icon, change, color, onClick,
     );
 });
 
-// Collection Card - For top collections by endpoints
+// Collection Card - For top collections by endpoints (added mobile touch optimization)
 const CollectionCard = React.memo(({ collection, colors, onClick }) => {
   return (
     <div 
-      className="border rounded-xl p-3 hover:translate-y-[-2px] transition-transform duration-200 cursor-pointer"
+      className="border rounded-xl p-3 hover:translate-y-[-2px] transition-transform duration-200 cursor-pointer active:scale-[0.98] md:active:scale-100"
       onClick={onClick}
-      style={{ borderColor: colors.border, backgroundColor: colors.card }}
+      style={{ 
+        borderColor: colors.border, 
+        backgroundColor: colors.card,
+        WebkitTapHighlightColor: 'transparent'
+      }}
     >
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -207,14 +212,15 @@ const CollectionCard = React.memo(({ collection, colors, onClick }) => {
   );
 });
 
-// API Endpoint Item - With duplicate prevention via ID
+// API Endpoint Item - With duplicate prevention via ID (added mobile touch optimization)
 const ApiEndpointItem = React.memo(({ api, colors, isDark, onClick }) => {
   const methodColorClass = getMethodColor(api?.method, isDark);
   
   return (
     <div 
-      className="group p-3 cursor-pointer transition-all hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg"
+      className="group p-3 cursor-pointer transition-all hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg active:bg-gray-100 dark:active:bg-gray-800"
       onClick={() => onClick(api)}
+      style={{ WebkitTapHighlightColor: 'transparent' }}
     >
       <div className="flex items-start gap-3">
         <span className={`px-2 py-1 rounded text-xs font-medium ${methodColorClass}`}>
@@ -243,13 +249,17 @@ const ApiEndpointItem = React.memo(({ api, colors, isDark, onClick }) => {
   );
 });
 
-// API Generation Card
+// API Generation Card (added mobile touch optimization)
 const ApiGenerationCard = React.memo(({ colors, onGenerate }) => (
   <div className="mb-2 w-full lg:w-full">
     <div 
-      className="relative overflow-hidden border rounded-xl cursor-pointer group transition-all duration-200 hover:translate-y-[-2px]"
+      className="relative overflow-hidden border rounded-xl cursor-pointer group transition-all duration-200 hover:translate-y-[-2px] active:scale-[0.99] md:active:scale-100"
       onClick={onGenerate}
-      style={{ borderColor: colors.border, backgroundColor: colors.bg }}
+      style={{ 
+        borderColor: colors.border, 
+        backgroundColor: colors.bg,
+        WebkitTapHighlightColor: 'transparent'
+      }}
     >
       <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-purple-500/5 dark:from-blue-500/10 dark:to-purple-500/10" />
       
@@ -270,22 +280,22 @@ const ApiGenerationCard = React.memo(({ colors, onGenerate }) => (
         
         <button
           onClick={(e) => { e.stopPropagation(); onGenerate(); }}
-          className="bg-gradient-to-r from-blue-500 to-purple-600 text-sm font-medium text-white px-4 py-2 rounded-lg transition-all hover:scale-105"
+          className="bg-gradient-to-r from-blue-500 to-purple-600 text-sm font-medium text-white px-4 py-2 rounded-lg transition-all hover:scale-105 active:scale-95"
         >
           Generate
         </button>
       </div>
       
-      <div className="px-4 py-2 border-t flex gap-4 text-xs" style={{ borderColor: colors.border }}>
-        <span style={{ color: colors.textSecondary }}>✓ REST & GraphQL</span>
-        <span style={{ color: colors.textSecondary }}>✓ Auto-documentation</span>
-        <span style={{ color: colors.textSecondary }}>✓ Built-in security</span>
+      <div className="px-4 py-2 border-t flex gap-4 text-xs overflow-x-auto" style={{ borderColor: colors.border }}>
+        <span className="whitespace-nowrap" style={{ color: colors.textSecondary }}>✓ REST & GraphQL</span>
+        <span className="whitespace-nowrap" style={{ color: colors.textSecondary }}>✓ Auto-documentation</span>
+        <span className="whitespace-nowrap" style={{ color: colors.textSecondary }}>✓ Built-in security</span>
       </div>
     </div>
   </div>
 ));
 
-// Search Input Component
+// Search Input Component (added mobile optimization)
 const SearchInput = React.memo(({ value, onChange, onClear, colors, placeholder = "Search..." }) => (
   <div className="flex items-center gap-2 px-3 py-2 rounded-lg border" style={{ borderColor: colors.border, backgroundColor: colors.inputBg }}>
     <SearchIcon size={14} style={{ color: colors.textSecondary }} />
@@ -298,14 +308,14 @@ const SearchInput = React.memo(({ value, onChange, onClear, colors, placeholder 
       onChange={onChange}
     />
     {value && (
-      <button onClick={onClear} className="p-1 rounded" style={{ backgroundColor: colors.hover }}>
+      <button onClick={onClear} className="p-1 rounded hover:bg-opacity-50 active:scale-90 transition-all" style={{ backgroundColor: colors.hover }}>
         <X size={12} style={{ color: colors.textSecondary }} />
       </button>
     )}
   </div>
 ));
 
-// Right Sidebar Component
+// Right Sidebar Component (added mobile overlay)
 const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigate, onGenerate, statsData }) => {
   const navigationItems = useMemo(() => [
     { label: 'Schema Browser', icon: FileCode, onClick: () => onNavigate('schema-browser'), color: colors.primary },
@@ -339,149 +349,156 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
   }, [stats?.lastUpdated]);
 
   return (
-    <div className={`w-full md:w-80 border-l flex flex-col fixed md:relative inset-y-0 right-0 z-40 transform transition-transform duration-300 ease-in-out ${
-      isVisible ? 'translate-x-0' : 'translate-x-full md:translate-x-0'
-    }`} style={{ 
-      backgroundColor: colors.sidebar,
-      borderColor: colors.border,
-      height: '100vh',
-      top: 0,
-      backdropFilter: isDark ? 'blur(10px)' : 'none',
-      boxShadow: isDark ? '-4px 0 20px rgba(0, 0, 0, 0.3)' : '-4px 0 20px rgba(0, 0, 0, 0.05)'
-    }}>
-      <div className="p-4 border-b flex items-center justify-between" style={{ 
+    <>
+      {/* Mobile backdrop */}
+      {isVisible && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden transition-opacity duration-300"
+          onClick={onClose}
+        />
+      )}
+      
+      <div className={`w-full md:w-80 border-l flex flex-col fixed md:relative inset-y-0 right-0 z-40 transform transition-transform duration-300 ease-in-out ${
+        isVisible ? 'translate-x-0' : 'translate-x-full md:translate-x-0'
+      }`} style={{ 
+        backgroundColor: colors.sidebar,
         borderColor: colors.border,
-        background: `linear-gradient(90deg, ${colors.primary}10, transparent)`
+        height: '100vh',
+        top: 0,
+        backdropFilter: isDark ? 'blur(10px)' : 'none',
+        boxShadow: isDark ? '-4px 0 20px rgba(0, 0, 0, 0.3)' : '-4px 0 20px rgba(0, 0, 0, 0.05)'
       }}>
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg" style={{ backgroundColor: `${colors.primary}20` }}>
-            <Sliders size={14} style={{ color: colors.primary }} />
+        <div className="p-4 border-b flex items-center justify-between" style={{ 
+          borderColor: colors.border,
+          background: `linear-gradient(90deg, ${colors.primary}10, transparent)`
+        }}>
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg" style={{ backgroundColor: `${colors.primary}20` }}>
+              <Sliders size={14} style={{ color: colors.primary }} />
+            </div>
+            <h3 className="text-sm font-semibold uppercase" style={{ color: colors.text }}>Quick Actions</h3>
           </div>
-          <h3 className="text-sm font-semibold uppercase" style={{ color: colors.text }}>Quick Actions</h3>
+          <button onClick={onClose} className="md:hidden p-1.5 rounded-lg hover:bg-opacity-50 transition-colors active:scale-90" style={{ backgroundColor: colors.hover }}>
+            <X size={16} style={{ color: colors.text }} />
+          </button>
         </div>
-        <button onClick={onClose} className="md:hidden p-1.5 rounded-lg hover:bg-opacity-50 transition-colors" style={{ backgroundColor: colors.hover }}>
-          <X size={16} style={{ color: colors.text }} />
-        </button>
-      </div>
 
-      <div className="flex-1 overflow-auto">
-        <div className="p-4">
-          <div className="space-y-3">
-            {/* Navigation Items */}
-            {navigationItems.map((item, index) => (
-              <button 
-                key={index}
-                onClick={item.onClick} 
-                className="w-full px-3 py-2.5 rounded-lg text-sm flex items-center gap-3 transition-all duration-200 hover:translate-x-1 group"
-                style={{ color: colors.text, backgroundColor: colors.hover }}
-              >
-                <div className="p-1.5 rounded-md" style={{ backgroundColor: `${item.color}20` }}>
-                  <item.icon size={14} style={{ color: item.color }} />
-                </div>
-                <span className="flex-1 text-left">{item.label}</span>
-                <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }} />
-              </button>
-            ))}
-
-            <br />
-
-            {/* Stats Card - appears right after navigation items */}
-            {stats && (
-              <div className="mt-6 border-t">
-                {/* Simple header */}
-                <div className="pb-4 pt-4 pr-4 border-b flex items-center justify-between" style={{ 
-                  borderColor: colors.border,
-                  background: `linear-gradient(90deg, ${colors.primary}10, transparent)`
-                }}>
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg" style={{ backgroundColor: `${colors.primary}20` }}>
-                      <Sliders size={14} style={{ color: colors.primary }} />
-                    </div>
-                    <h3 className="text-sm font-semibold uppercase" style={{ color: colors.text }}>System Statistics</h3>
-                  </div>
-                  <button onClick={onClose} className="md:hidden p-1.5 rounded-lg hover:bg-opacity-50 transition-colors" style={{ backgroundColor: colors.hover }}>
-                    <X size={16} style={{ color: colors.text }} />
-                  </button>
-                </div>
-                
-                {/* Stats Card */}
-                <div 
-                  className="border rounded-xl overflow-hidden"
-                  style={{ borderColor: colors.border, backgroundColor: colors.card }}
+        <div className="flex-1 overflow-auto">
+          <div className="p-4">
+            <div className="space-y-3">
+              {/* Navigation Items */}
+              {navigationItems.map((item, index) => (
+                <button 
+                  key={index}
+                  onClick={item.onClick} 
+                  className="w-full px-3 py-2.5 rounded-lg text-sm flex items-center gap-3 transition-all duration-200 hover:translate-x-1 group active:translate-x-0"
+                  style={{ color: colors.text, backgroundColor: colors.hover }}
                 >
-                  <div className="p-4 space-y-4">
-                    {/* Stats rows - each on its own line */}
-                    <div className="space-y-2">
-                      {/* Security */}
-                      <div className="flex items-center justify-between py-1.5">
-                        <div className="flex items-center gap-2">
-                          <Shield size={14} style={{ color: colors.warning }} />
-                          <span className="text-xs" style={{ color: colors.textSecondary }}>Security Rules</span>
-                        </div>
-                        <span className="text-xs" style={{ color: colors.text }}>
-                            <span style={{ color: colors.success }}>{stats.totalIpWhitelistEntries || 0}</span> IP Whitelisted
-                          </span>
-                      </div>
+                  <div className="p-1.5 rounded-md" style={{ backgroundColor: `${item.color}20` }}>
+                    <item.icon size={14} style={{ color: item.color }} />
+                  </div>
+                  <span className="flex-1 text-left text-nowrap">{item.label}</span>
+                  <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }} />
+                </button>
+              ))}
 
-                      {/* Security Alert - only if needed */}
-                      {stats.unreadSecurityAlerts > 0 && (
-                        <div className="flex items-center gap-2 py-1.5 px-2 rounded-lg" style={{ backgroundColor: `${colors.error}15` }}>
-                          <AlertCircle size={12} style={{ color: colors.error }} />
-                          <span className="text-xs" style={{ color: colors.error }}>
-                            {stats.unreadSecurityAlerts} unread alert{stats.unreadSecurityAlerts > 1 ? 's' : ''}
-                          </span>
-                        </div>
-                      )}
+              <br />
 
-                      {/* Code Base */}
-                      <div className="flex items-center justify-between py-1.5">
-                        <div className="flex items-center gap-2">
-                          <Code size={14} style={{ color: colors.info }} />
-                          <span className="text-xs" style={{ color: colors.textSecondary }}>Code Base</span>
-                        </div>
-                        <span className="text-xs" style={{ color: colors.text }}>
-                          <span style={{ color: colors.success }}>{stats.totalCodeImplementations?.toLocaleString() || 0}</span> Implementations
-                        </span>
+              {/* Stats Card - appears right after navigation items */}
+              {stats && (
+                <div className="mt-6 border-t">
+                  {/* Simple header */}
+                  <div className="pb-4 pt-4 pr-4 border-b flex items-center justify-between" style={{ 
+                    borderColor: colors.border,
+                    background: `linear-gradient(90deg, ${colors.primary}10, transparent)`
+                  }}>
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg" style={{ backgroundColor: `${colors.primary}20` }}>
+                        <Sliders size={14} style={{ color: colors.primary }} />
                       </div>
-
-                      {/* Users */}
-                      <div className="flex items-center justify-between py-1.5">
-                        <div className="flex items-center gap-2">
-                          <Users size={14} style={{ color: colors.text }} />
-                          <span className="text-xs" style={{ color: colors.textSecondary }}>Users</span>
-                        </div>
-                        <span className="text-xs" style={{ color: colors.text }}>
-                          <span style={{ color: colors.success }}>{stats.activeUsers || 0}</span> Active Users
-                        </span>
-                      </div>
-
-                      {/* Documentation */}
-                      <div className="flex items-center justify-between py-1.5">
-                        <div className="flex items-center gap-2">
-                          <BookOpen size={14} style={{ color: colors.info }} />
-                          <span className="text-xs" style={{ color: colors.textSecondary }}>Documentation</span>
-                        </div>
-                        <span className="text-xs" style={{ color: colors.text }}>
-                          <span style={{ color: colors.success }}>{stats.publishedDocumentation || 0}</span> Published
-                        </span>
-                      </div>
+                      <h3 className="text-sm font-semibold uppercase" style={{ color: colors.text }}>System Statistics</h3>
                     </div>
+                  </div>
+                  
+                  {/* Stats Card */}
+                  <div 
+                    className="border rounded-xl overflow-hidden"
+                    style={{ borderColor: colors.border, backgroundColor: colors.card }}
+                  >
+                    <div className="p-4 space-y-4">
+                      {/* Stats rows - each on its own line */}
+                      <div className="space-y-2">
+                        {/* Security */}
+                        <div className="flex items-center justify-between py-1.5">
+                          <div className="flex items-center gap-2">
+                            <Shield size={14} style={{ color: colors.warning }} />
+                            <span className="text-xs" style={{ color: colors.textSecondary }}>Security Rules</span>
+                          </div>
+                          <span className="text-xs" style={{ color: colors.text }}>
+                              <span style={{ color: colors.success }}>{stats.totalIpWhitelistEntries || 0}</span> IP Whitelisted
+                            </span>
+                        </div>
 
-                    {/* Last Updated - subtle separator */}
-                    <div className="pt-2 mt-1 border-t" style={{ borderColor: colors.border }}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs" style={{ color: colors.textTertiary }}>Last updated</span>
-                        <span className="text-xs" style={{ color: colors.textSecondary }}>{formattedDate}</span>
+                        {/* Security Alert - only if needed */}
+                        {stats.unreadSecurityAlerts > 0 && (
+                          <div className="flex items-center gap-2 py-1.5 px-2 rounded-lg" style={{ backgroundColor: `${colors.error}15` }}>
+                            <AlertCircle size={12} style={{ color: colors.error }} />
+                            <span className="text-xs" style={{ color: colors.error }}>
+                              {stats.unreadSecurityAlerts} unread alert{stats.unreadSecurityAlerts > 1 ? 's' : ''}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Code Base */}
+                        <div className="flex items-center justify-between py-1.5">
+                          <div className="flex items-center gap-2">
+                            <Code size={14} style={{ color: colors.info }} />
+                            <span className="text-xs" style={{ color: colors.textSecondary }}>Code Base</span>
+                          </div>
+                          <span className="text-xs" style={{ color: colors.text }}>
+                            <span style={{ color: colors.success }}>{stats.totalCodeImplementations?.toLocaleString() || 0}</span> Implementations
+                          </span>
+                        </div>
+
+                        {/* Users */}
+                        <div className="flex items-center justify-between py-1.5">
+                          <div className="flex items-center gap-2">
+                            <Users size={14} style={{ color: colors.text }} />
+                            <span className="text-xs" style={{ color: colors.textSecondary }}>Users</span>
+                          </div>
+                          <span className="text-xs" style={{ color: colors.text }}>
+                            <span style={{ color: colors.success }}>{stats.activeUsers || 0}</span> Active Users
+                          </span>
+                        </div>
+
+                        {/* Documentation */}
+                        <div className="flex items-center justify-between py-1.5">
+                          <div className="flex items-center gap-2">
+                            <BookOpen size={14} style={{ color: colors.info }} />
+                            <span className="text-xs" style={{ color: colors.textSecondary }}>Documentation</span>
+                          </div>
+                          <span className="text-xs" style={{ color: colors.text }}>
+                            <span style={{ color: colors.success }}>{stats.publishedDocumentation || 0}</span> Published
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Last Updated - subtle separator */}
+                      <div className="pt-2 mt-1 border-t" style={{ borderColor: colors.border }}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs" style={{ color: colors.textTertiary }}>Last updated</span>
+                          <span className="text-xs" style={{ color: colors.textSecondary }}>{formattedDate}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 });
 
@@ -1025,6 +1042,11 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     setIsRightSidebarVisible(false);
   }, [setActiveTab]);
 
+  // Toggle mobile menu
+  const toggleMobileMenu = useCallback(() => {
+    setIsRightSidebarVisible(prev => !prev);
+  }, []);
+
   // ============ MEMOIZED VALUES ============
   const currentPageApis = useMemo(() => endpointData.content || [], [endpointData.content]);
 
@@ -1084,6 +1106,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
       ::-webkit-scrollbar { width: 6px; height: 6px; }
       ::-webkit-scrollbar-track { background: ${isDark ? 'rgb(51 65 85)' : '#e2e8f0'}; }
       ::-webkit-scrollbar-thumb { background: ${isDark ? 'rgb(100 116 139)' : '#94a3b8'}; border-radius: 4px; }
+      * { -webkit-tap-highlight-color: transparent; }
     `;
     document.head.appendChild(style);
     return () => style.remove();
@@ -1110,10 +1133,6 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
       <LoadingOverlay />
 
       <div className="flex-1 overflow-hidden flex z-20 relative">
-        {isRightSidebarVisible && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden" onClick={() => setIsRightSidebarVisible(false)} />
-        )}
-
         <RightSidebar 
           colors={colors}
           isDark={isDark}
@@ -1125,17 +1144,27 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
         />
 
         <div className="flex-1 overflow-auto p-4 h-full relative z-10">
-          <div className="max-w-9xl mx-auto px-4">
-            {/* Header */}
+          <div className="max-w-9xl mx-auto px-2 sm:px-4">
+            {/* Header with mobile menu button */}
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h1 className="text-xl font-bold" style={{ color: colors.text }}>Dashboard</h1>
                 <p className="text-sm" style={{ color: colors.textSecondary }}>Overview of your API platform</p>
               </div>
               <div className="flex items-center gap-3">
+                {/* Mobile menu button */}
+                <button 
+                  onClick={toggleMobileMenu}
+                  className="md:hidden p-2 rounded-lg transition-colors active:scale-95"
+                  style={{ backgroundColor: colors.hover }}
+                >
+                  <Settings size={20} style={{ color: colors.text }} />
+                </button>
+                
+                {/* Desktop buttons */}
                 <button 
                   onClick={handleRefresh} 
-                  className="px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded text-sm font-medium text-white hover:translate-y-[-2px] transition-transform flex items-center gap-2"
+                  className="hidden md:flex px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded text-sm font-medium text-white hover:translate-y-[-2px] transition-transform flex items-center gap-2"
                   disabled={loading.refresh}
                 >
                   <RefreshCw size={16} className={loading.refresh ? 'animate-spin' : ''} />
@@ -1143,16 +1172,26 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                 </button>
                 <button 
                   onClick={() => handleNavigate('schema-browser')} 
-                  className="px-3 py-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded text-sm font-medium text-white hover:translate-y-[-2px] transition-transform flex items-center gap-2"
+                  className="hidden md:flex px-3 py-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded text-sm font-medium text-white hover:translate-y-[-2px] transition-transform flex items-center gap-2"
                 >
                   <Database size={16} />
                   Schema Browser
                 </button>
+                
+                {/* Mobile refresh button */}
+                <button 
+                  onClick={handleRefresh} 
+                  className="md:hidden p-2 rounded-lg transition-colors active:scale-95"
+                  style={{ backgroundColor: colors.hover }}
+                  disabled={loading.refresh}
+                >
+                  <RefreshCw size={20} className={loading.refresh ? 'animate-spin' : ''} style={{ color: colors.text }} />
+                </button>
               </div>
             </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {/* Stats Cards - Responsive grid */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
               {STAT_CARDS.map(({ key, icon, label, colorKey }) => (
                 <StatCard
                   key={key}
@@ -1274,7 +1313,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                     </div>
                     
                     {endpointData.totalElements > 0 && (
-                      <div className="flex items-center justify-between p-3 border-t" style={{ borderColor: colors.border }}>
+                      <div className="flex items-center justify-between p-3 border-t flex-wrap gap-2" style={{ borderColor: colors.border }}>
                         <div className="text-xs" style={{ color: colors.textSecondary }}>
                           Showing {startItem} - {endItem} of {endpointData.totalElements}
                         </div>
@@ -1282,7 +1321,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                           <button
                             onClick={handlePreviousPage}
                             disabled={endpointPage === 0 || tableLoading}
-                            className="px-3 py-1.5 rounded text-sm font-medium disabled:opacity-30 hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                            className="px-3 py-1.5 rounded text-sm font-medium disabled:opacity-30 hover:bg-opacity-50 transition-colors flex items-center gap-1 active:scale-95"
                             style={{ 
                               backgroundColor: endpointPage === 0 || tableLoading ? 'transparent' : colors.hover, 
                               color: colors.text,
@@ -1300,7 +1339,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                           <button
                             onClick={handleNextPage}
                             disabled={endpointData.last || tableLoading}
-                            className="px-3 py-1.5 rounded text-sm font-medium disabled:opacity-30 hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                            className="px-3 py-1.5 rounded text-sm font-medium disabled:opacity-30 hover:bg-opacity-50 transition-colors flex items-center gap-1 active:scale-95"
                             style={{ 
                               backgroundColor: endpointData.last || tableLoading ? 'transparent' : colors.hover, 
                               color: colors.text,
@@ -1315,6 +1354,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                     )}
                   </div>
                 </div>
+                <div className='md:hidden mb-10'>&nbsp;</div>
               </div>
             ) : (
               <div className="text-center p-8 border rounded-xl" style={{ borderColor: colors.border }}>
@@ -1326,24 +1366,18 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
         </div>
       </div>
 
-      {/* Mobile Bottom Nav */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 border-t p-2" style={{ borderColor: colors.border, backgroundColor: colors.header, zIndex: 40 }}>
-        <div className="grid grid-cols-4">
-          <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="flex flex-col items-center p-1" style={{ color: colors.textSecondary }}>
-            <Home size={16} /><span className="text-xs mt-0.5">Home</span>
-          </button>
-          <button onClick={() => handleNavigate('schema-browser')} className="flex flex-col items-center p-1" style={{ color: colors.textSecondary }}>
-            <Database size={16} /><span className="text-xs mt-0.5">Schema</span>
-          </button>
-          <button onClick={handleApiGeneration} className="flex flex-col items-center p-1" style={{ color: colors.textSecondary }}>
-            <FileCode size={16} /><span className="text-xs mt-0.5">APIs</span>
-          </button>
-          <button onClick={() => setIsRightSidebarVisible(true)} className="flex flex-col items-center p-1" style={{ color: colors.textSecondary }}>
-            <Settings size={16} /><span className="text-xs mt-0.5">More</span>
-          </button>
-        </div>
-      </div>
-      <div className="md:hidden h-16"></div>
+      {/* Floating Action Button - Only visible on mobile */}
+      <button
+        onClick={handleApiGeneration}
+        className="md:hidden fixed bottom-6 right-6 p-4 rounded-full shadow-lg active:scale-95 transition-all z-30"
+        style={{ 
+          backgroundColor: colors.primary,
+          color: 'white',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+        }}
+      >
+        <Zap size={24} />
+      </button>
 
       {/* API Generation Modal */}
       {showApiModal && (

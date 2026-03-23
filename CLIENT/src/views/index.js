@@ -1074,7 +1074,7 @@ export default function EntryPage() {
                     }`}
                   >
                     <Icon className="h-5 w-5" />
-                    <span>{item.label}</span>
+                    <span className="text-nowrap">{item.label}</span>
                   </button>
                 );
               })}

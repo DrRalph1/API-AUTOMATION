@@ -1,4 +1,4 @@
-// SchemaBrowserIndex.js - Enhanced UI with modern design
+// SchemaBrowserIndex.js - Mobile Responsive ONLY (Desktop preserved)
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -796,8 +796,8 @@ const SchemaBrowserIndex = ({
           </div>
         )}
         
-        {/* Enhanced Database Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+        {/* Enhanced Database Grid - MODIFIED: 2 columns on all screens, 4 on xl desktop */}
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
           {filteredDatabases.map(db => (
             <DatabaseCard
               key={db.id}
