@@ -32,25 +32,25 @@ public class DashboardEndpointDTO {
     private String createdAt;
     private String updatedAt;
     private String createdBy;
-
-    // Performance metrics
-    private int calls;
-    private String latency;
-    private String successRate;
-    private int errors;
-    private String avgResponseTime;
-
-    // Complex objects with their own IDs
-    private List<Map<String, Object>> tags;
-    private List<Map<String, Object>> parameters; // Each has ID
-    private List<Map<String, Object>> responseMappings; // Each has ID
-    private List<Map<String, Object>> headers; // Each has ID
-    private Map<String, Object> authConfig; // Has its own ID
-    private Map<String, Object> requestBody; // Has its own ID
-    private Map<String, Object> responseBody; // Has its own ID
-    private Map<String, Object> schemaConfig; // Has its own ID
-    private Map<String, Object> testConfig; // Has its own ID
-    private Map<String, Object> settings; // Has its own ID
-    private Map<String, Object> collectionInfo; // Collection metadata
-    private Map<String, Object> requestDetails; // Full request details
+//
+//    // Performance metrics
+//    private int calls;
+//    private String latency;
+//    private String successRate;
+//    private int errors;
+//    private String avgResponseTime;
+//
+//    // Complex objects with their own IDs
+//    private List<Map<String, Object>> tags;
+//    private List<Map<String, Object>> parameters; // Each has ID
+//    private List<Map<String, Object>> responseMappings; // Each has ID
+//    private List<Map<String, Object>> headers; // Each has ID
+//    private Map<String, Object> authConfig; // Has its own ID
+//    private Map<String, Object> requestBody; // Has its own ID
+//    private Map<String, Object> responseBody; // Has its own ID
+//    private Map<String, Object> schemaConfig; // Has its own ID
+//    private Map<String, Object> testConfig; // Has its own ID
+//    private Map<String, Object> settings; // Has its own ID
+//    private Map<String, Object> collectionInfo; // Collection metadata
+//    private Map<String, Object> requestDetails; // Full request details
 }

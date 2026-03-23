@@ -210,9 +210,9 @@ public class DashboardService {
                                     paramMap.put("schema", Map.of("type", mapOracleTypeToApiType(param.getOracleType())));
                                     parameters.add(paramMap);
                                 }
-                                dto.setParameters(parameters);
+//                                dto.setParameters(parameters);
                             } else {
-                                dto.setParameters(new ArrayList<>());
+//                                dto.setParameters(new ArrayList<>());
                             }
 
                             // Set response mappings
@@ -229,9 +229,9 @@ public class DashboardService {
                                     mappingMap.put("isPrimaryKey", mapping.getIsPrimaryKey());
                                     responseMappings.add(mappingMap);
                                 }
-                                dto.setResponseMappings(responseMappings);
+//                                dto.setResponseMappings(responseMappings);
                             } else {
-                                dto.setResponseMappings(new ArrayList<>());
+//                                dto.setResponseMappings(new ArrayList<>());
                             }
 
                             // Set tags
@@ -277,9 +277,9 @@ public class DashboardService {
                                     tagsList.add(tagMap);
                                 }
 
-                                dto.setTags(tagsList);
+//                                dto.setTags(tagsList);
                             } else {
-                                dto.setTags(new ArrayList<>());
+//                                dto.setTags(new ArrayList<>());
                             }
 
                             // Set status (default to "active" if not specified)
@@ -297,27 +297,27 @@ public class DashboardService {
                             }
 
                             // Set mock data for calls, latency, success rate, errors, avgResponseTime
-                            dto.setCalls(generateRandomCalls(request.getId()));
-                            dto.setLatency("42ms");
-                            dto.setSuccessRate("98.5%");
-                            dto.setErrors(generateRandomErrors(request.getId()));
-                            dto.setAvgResponseTime("42ms");
+//                            dto.setCalls(generateRandomCalls(request.getId()));
+//                            dto.setLatency("42ms");
+//                            dto.setSuccessRate("98.5%");
+//                            dto.setErrors(generateRandomErrors(request.getId()));
+//                            dto.setAvgResponseTime("42ms");
 
                         } catch (Exception e) {
                             log.warn("Could not get detailed request info for endpoint {}: {}", request.getId(), e.getMessage());
 
                             // Set fallback values
-                            dto.setParameters(new ArrayList<>());
-                            dto.setResponseMappings(new ArrayList<>());
-                            dto.setTags(convertToTagsList(request.getTags()));
+//                            dto.setParameters(new ArrayList<>());
+//                            dto.setResponseMappings(new ArrayList<>());
+//                            dto.setTags(convertToTagsList(request.getTags()));
                             dto.setStatus("active");
                             dto.setVersion(collection.getVersion() != null ? collection.getVersion() : "v1");
                             dto.setOwner(collection.getOwner() != null ? collection.getOwner() : "System");
-                            dto.setCalls(generateRandomCalls(request.getId()));
-                            dto.setLatency("42ms");
-                            dto.setSuccessRate("98.5%");
-                            dto.setErrors(generateRandomErrors(request.getId()));
-                            dto.setAvgResponseTime("42ms");
+//                            dto.setCalls(generateRandomCalls(request.getId()));
+//                            dto.setLatency("42ms");
+//                            dto.setSuccessRate("98.5%");
+//                            dto.setErrors(generateRandomErrors(request.getId()));
+//                            dto.setAvgResponseTime("42ms");
                         }
 
                         endpoints.add(dto);
@@ -931,7 +931,7 @@ public class DashboardService {
                     defaultConfig.put("rateLimiting", Map.of("enabled", false, "requests", null, "period", null));
                     defaultConfig.put("cors", Map.of("origins", null, "credentials", false));
                     defaultConfig.put("error", e.getMessage());
-                    endpoint.setAuthConfig(defaultConfig);
+//                    endpoint.setAuthConfig(defaultConfig);
                 }
             }
         }
@@ -945,31 +945,31 @@ public class DashboardService {
                 }
 
                 // Ensure parameters have IDs
-                if (endpoint.getParameters() != null) {
-                    for (Map<String, Object> param : endpoint.getParameters()) {
-                        if (!param.containsKey("id") || param.get("id") == null) {
-                            param.put("id", UUID.randomUUID().toString());
-                        }
-                    }
-                }
+//                if (endpoint.getParameters() != null) {
+//                    for (Map<String, Object> param : endpoint.getParameters()) {
+//                        if (!param.containsKey("id") || param.get("id") == null) {
+//                            param.put("id", UUID.randomUUID().toString());
+//                        }
+//                    }
+//                }
 
                 // Ensure response mappings have IDs
-                if (endpoint.getResponseMappings() != null) {
-                    for (Map<String, Object> mapping : endpoint.getResponseMappings()) {
-                        if (!mapping.containsKey("id") || mapping.get("id") == null) {
-                            mapping.put("id", UUID.randomUUID().toString());
-                        }
-                    }
-                }
+//                if (endpoint.getResponseMappings() != null) {
+//                    for (Map<String, Object> mapping : endpoint.getResponseMappings()) {
+//                        if (!mapping.containsKey("id") || mapping.get("id") == null) {
+//                            mapping.put("id", UUID.randomUUID().toString());
+//                        }
+//                    }
+//                }
 
                 // Ensure tags have IDs
-                if (endpoint.getTags() != null) {
-                    for (Map<String, Object> tag : endpoint.getTags()) {
-                        if (!tag.containsKey("id") || tag.get("id") == null) {
-                            tag.put("id", UUID.randomUUID().toString());
-                        }
-                    }
-                }
+//                if (endpoint.getTags() != null) {
+//                    for (Map<String, Object> tag : endpoint.getTags()) {
+//                        if (!tag.containsKey("id") || tag.get("id") == null) {
+//                            tag.put("id", UUID.randomUUID().toString());
+//                        }
+//                    }
+//                }
             }
         }
 
@@ -1654,15 +1654,15 @@ public class DashboardService {
                 );
                 break;
 
-            case "calls":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getCalls,
-                        Comparator.nullsLast(Integer::compareTo));
-                break;
-
-            case "errors":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getErrors,
-                        Comparator.nullsLast(Integer::compareTo));
-                break;
+//            case "calls":
+//                comparator = Comparator.comparing(DashboardEndpointDTO::getCalls,
+//                        Comparator.nullsLast(Integer::compareTo));
+//                break;
+//
+//            case "errors":
+//                comparator = Comparator.comparing(DashboardEndpointDTO::getErrors,
+//                        Comparator.nullsLast(Integer::compareTo));
+//                break;
 
             case "name":
                 comparator = Comparator.comparing(DashboardEndpointDTO::getName,
@@ -2034,11 +2034,11 @@ public class DashboardService {
                         dto.setOwner(collection.getOwner() != null ? collection.getOwner() : "System");
 
                         // Mock performance data
-                        dto.setCalls(generateRandomCalls(request.getId()));
-                        dto.setLatency("42ms");
-                        dto.setSuccessRate("98.5%");
-                        dto.setErrors(generateRandomErrors(request.getId()));
-                        dto.setAvgResponseTime("42ms");
+//                        dto.setCalls(generateRandomCalls(request.getId()));
+//                        dto.setLatency("42ms");
+//                        dto.setSuccessRate("98.5%");
+//                        dto.setErrors(generateRandomErrors(request.getId()));
+//                        dto.setAvgResponseTime("42ms");
 
                         endpoints.add(dto);
                     }
