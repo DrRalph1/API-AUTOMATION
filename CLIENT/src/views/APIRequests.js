@@ -962,7 +962,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [systemStats, setSystemStats] = useState(null);
   
   const [sidebarPage, setSidebarPage] = useState(0);
-  const [sidebarItemsPerPage, setSidebarItemsPerPage] = useState(5);
+  const [sidebarItemsPerPage, setSidebarItemsPerPage] = useState(6);
   const [sidebarTotalItems, setSidebarTotalItems] = useState(0);
   
   const [loading, setLoading] = useState({ 
@@ -1157,11 +1157,19 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
       const response = await searchRequests(authToken, filter);
       
       if (response?.responseCode === 200) {
-        const apiList = response.data?.apiSummaries || [];
+        let apiList = response.data?.apiSummaries || [];
+        
+        // Sort APIs by lastRequestTime in descending order (most recent first)
+        apiList = apiList.sort((a, b) => {
+          const timeA = a.lastRequestTime ? new Date(a.lastRequestTime).getTime() : 0;
+          const timeB = b.lastRequestTime ? new Date(b.lastRequestTime).getTime() : 0;
+          return timeB - timeA;
+        });
+        
         setApiSummaries(apiList);
         setSidebarTotalItems(apiList.length);
         setFullApiListLoaded(true);
-        console.log('Full API list loaded:', apiList.length, 'APIs');
+        console.log('Full API list loaded and sorted by last request time:', apiList.length, 'APIs');
       }
     } catch (error) {
       console.error('Error loading full API list:', error);
@@ -1180,16 +1188,23 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
 
     try {
+      // Build filter object including search query
       const filter = {
         page: pagination.page,
         size: pagination.size,
         fromDate: dateRange.fromDate,
         toDate: dateRange.toDate,
-        search: searchQuery || undefined,
         ...(selectedApiId && { apiId: selectedApiId }),
         ...filters
       };
 
+      // Add search query to filter if present
+      if (searchQuery && searchQuery.trim()) {
+        filter.search = searchQuery.trim();
+        console.log('Searching with query:', searchQuery);
+      }
+
+      // Remove undefined values
       Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
 
       console.log('Loading requests with filter:', filter);
@@ -1219,6 +1234,8 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
             if (selectedApi && selectedApi.totalRequests > 0) {
               showToast(`No requests found for ${selectedApi.apiName} in the selected date range. Try expanding the date range.`, 'info');
             }
+          } else if (searchQuery && searchQuery.trim()) {
+            showToast(`No requests found matching "${searchQuery}"`, 'info');
           }
         }
         
@@ -1441,12 +1458,17 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     setSearchQuery(query);
     setPagination(prev => ({ ...prev, page: 0 }));
     
+    // Clear previous timer
     if (searchTimer.current) {
       clearTimeout(searchTimer.current);
     }
     
+    // Set new timer to trigger search after user stops typing
     searchTimer.current = setTimeout(() => {
-      loadRequests();
+      // Reload requests with the new search query
+      if (activeTab === 'all') {
+        loadRequests(true);
+      }
     }, 500);
   };
 
@@ -1511,7 +1533,8 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     console.log('Filters changed, reloading...', { 
       selectedApiId, 
       paginationPage: pagination.page,
-      dateRange 
+      dateRange,
+      searchQuery
     });
     
     loadRequests();
@@ -1703,7 +1726,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                 <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
                 <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
                 <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
-               </tr>
+              </tr>
             </thead>
             <tbody>
               {requests.map((request, index) => {
@@ -1853,7 +1876,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                     <FileText size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
                     <p className="text-lg mb-2" style={{ color: colors.text }}>No Requests Found</p>
                     <p className="text-sm" style={{ color: colors.textSecondary }}>
-                      Try adjusting your filters or date range
+                      {searchQuery ? `No requests matching "${searchQuery}"` : 'Try adjusting your filters or date range'}
                     </p>
                   </td>
                 </tr>
@@ -2004,33 +2027,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
             onRefresh={loadStatistics}
           />
         </div>
-
-        {/* {selectedApiId && selectedApiData && (
-          <div className="flex items-center gap-4 px-4 py-2 border-b" style={{ 
-            borderColor: colors.border, 
-            backgroundColor: colors.hover
-          }}>
-            <span className="text-xs font-medium" style={{ color: colors.textSecondary }}>API Summary:</span>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1">
-                <CheckCircle size={12} style={{ color: colors.success }} />
-                <span className="text-xs" style={{ color: colors.text }}>Success: {selectedApiData.successCount || 0}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <XCircle size={12} style={{ color: colors.error }} />
-                <span className="text-xs" style={{ color: colors.text }}>Failed: {selectedApiData.failedCount || 0}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <ClockIcon size={12} style={{ color: colors.warning }} />
-                <span className="text-xs" style={{ color: colors.text }}>Avg: {formatExecutionTimeHelper(selectedApiData.averageResponseTimeMs)}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Activity size={12} style={{ color: colors.info }} />
-                <span className="text-xs" style={{ color: colors.text }}>Total: {selectedApiData.totalRequests || 0}</span>
-              </div>
-            </div>
-          </div>
-        )} */}
 
         <div className="flex items-center gap-4 px-4 py-2 border-b pl-2 pr-2" style={{ 
           borderColor: colors.border, 
