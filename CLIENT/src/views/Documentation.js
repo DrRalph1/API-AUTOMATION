@@ -354,6 +354,18 @@ const LoadingOverlay = ({ isLoading, colors, loadingText }) => {
   );
 };
 
+// Helper function for alphabetical sorting
+const sortAlphabetically = (items, key = 'name') => {
+  if (!items || !Array.isArray(items)) return [];
+  return [...items].sort((a, b) => {
+    const nameA = (a[key] || '').toLowerCase();
+    const nameB = (b[key] || '').toLowerCase();
+    if (nameA < nameB) return -1;
+    if (nameA > nameB) return 1;
+    return 0;
+  });
+};
+
 // Main component - Updated to match CodeBase style
 const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [activeTab, setActiveTab] = useState('documentation');
@@ -590,15 +602,17 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
         return formatted;
       });
       
-      setCollections(formattedCollections);
-      console.log('📊 [Documentation] Formatted collections:', formattedCollections);
+      // Sort collections alphabetically by name
+      const sortedCollections = sortAlphabetically(formattedCollections, 'name');
+      setCollections(sortedCollections);
+      console.log('📊 [Documentation] Sorted collections:', sortedCollections);
       
       const userId = extractUserIdFromToken(authToken);
       if (userId) {
-        cacheDocumentationData(userId, 'collections', formattedCollections);
+        cacheDocumentationData(userId, 'collections', sortedCollections);
       }
       
-      await loadAllCollectionDetails(formattedCollections);
+      await loadAllCollectionDetails(sortedCollections);
       
       showToast('Collections loaded successfully', 'success');
       
@@ -627,7 +641,7 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
             const collectionDetails = extractCollectionDetailsWithEndpoints(handledResponse);
             
             if (collectionDetails) {
-              const processedFolders = (collectionDetails.folders || []).map(folder => ({
+              let processedFolders = (collectionDetails.folders || []).map(folder => ({
                 id: folder.id,
                 name: folder.name,
                 description: folder.description || '',
@@ -637,6 +651,15 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                 hasRequests: (folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0)) > 0,
                 isLoading: false,
                 error: null
+              }));
+              
+              // Sort folders alphabetically by name
+              processedFolders = sortAlphabetically(processedFolders, 'name');
+              
+              // Sort endpoints within each folder alphabetically by name
+              processedFolders = processedFolders.map(folder => ({
+                ...folder,
+                requests: sortAlphabetically(folder.requests || [], 'name')
               }));
               
               const folderEndpointsMap = {};
@@ -671,12 +694,14 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
         })
       );
       
-      console.log('📊 [Documentation] Collections with details:', collectionsWithDetails);
-      setCollections(collectionsWithDetails);
+      // Sort collections again after adding details (ensuring they remain sorted)
+      const sortedCollections = sortAlphabetically(collectionsWithDetails, 'name');
+      console.log('📊 [Documentation] Collections with details (sorted):', sortedCollections);
+      setCollections(sortedCollections);
       
       // Auto-select first collection and its first folder/request
-      if (collectionsWithDetails.length > 0) {
-        const firstCollection = collectionsWithDetails[0];
+      if (sortedCollections.length > 0) {
+        const firstCollection = sortedCollections[0];
         setSelectedCollection(firstCollection);
         setExpandedCollections([firstCollection.id]);
         

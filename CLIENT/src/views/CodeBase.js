@@ -89,6 +89,18 @@ import {
   extractQuickStartGuide
 } from "../controllers/CodeBaseController.js";
 
+// Helper function for alphabetical sorting
+const sortAlphabetically = (items, key = 'name') => {
+  if (!items || !Array.isArray(items)) return [];
+  return [...items].sort((a, b) => {
+    const nameA = (a[key] || '').toLowerCase();
+    const nameB = (b[key] || '').toLowerCase();
+    if (nameA < nameB) return -1;
+    if (nameA > nameB) return 1;
+    return 0;
+  });
+};
+
 // Enhanced SyntaxHighlighter Component with safe handling
 const SyntaxHighlighter = ({ language, code }) => {
   if (!code) return <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">// No code available</pre>;
@@ -426,7 +438,7 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
       
       console.log('📊 [CodeBase] Extracted collections data:', collectionsData);
       
-      // Format collections
+      // Format and sort collections alphabetically
       const formattedCollections = collectionsData.map(collection => ({
         ...collection,
         folders: [],
@@ -435,17 +447,20 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         isFavorite: collection.isFavorite || false
       }));
       
-      setCollections(formattedCollections);
+      // Sort collections alphabetically by name
+      const sortedCollections = sortAlphabetically(formattedCollections, 'name');
+      
+      setCollections(sortedCollections);
       
       // Cache the data if we have userId
       const userId = extractUserIdFromToken(authToken);
       if (userId) {
-        cacheCodebaseData(userId, 'collections', formattedCollections);
+        cacheCodebaseData(userId, 'collections', sortedCollections);
       }
       
       // In fetchCollectionsList, when auto-selecting first collection:
-      if (formattedCollections.length > 0) {
-        const firstCollection = formattedCollections[0];
+      if (sortedCollections.length > 0) {
+        const firstCollection = sortedCollections[0];
         setSelectedCollection(firstCollection);
         
         // IMPORTANT: Clear any existing expanded folders first
@@ -524,7 +539,7 @@ const fetchCollectionDetails = useCallback(async (collectionId) => {
     console.log('📊 [CodeBase] Extracted collection details:', details);
     
     if (details) {
-      // Process folders and their requests
+      // Process folders and sort them alphabetically
       const foldersWithRequests = (details.folders || []).map(folder => ({
         id: folder.id || folder.folderId,
         name: folder.name || folder.folderName,
@@ -534,21 +549,24 @@ const fetchCollectionDetails = useCallback(async (collectionId) => {
         subfolders: folder.subfolders || []
       }));
       
-      console.log('📁 [CodeBase] Creating folders with requests:', 
-        foldersWithRequests.map(f => ({ 
+      // Sort folders alphabetically by name
+      const sortedFolders = sortAlphabetically(foldersWithRequests, 'name');
+      
+      console.log('📁 [CodeBase] Creating sorted folders with requests:', 
+        sortedFolders.map(f => ({ 
           name: f.name, 
           requestCount: f.requestCount,
           hasRequests: f.hasRequests 
         })));
       
-      // Update collections state
+      // Update collections state with sorted folders
       setCollections(prevCollections => {
         const updated = prevCollections.map(collection => {
           if (collection.id === collectionId) {
             return { 
               ...collection, 
               ...details,
-              folders: foldersWithRequests
+              folders: sortedFolders
             };
           }
           return collection;
@@ -561,8 +579,10 @@ const fetchCollectionDetails = useCallback(async (collectionId) => {
         const folderRequestsMap = {};
         details.folders.forEach(folder => {
           if (folder.requests && folder.requests.length > 0) {
-            folderRequestsMap[folder.id] = folder.requests;
-            console.log(`📦 [CodeBase] Storing ${folder.requests.length} requests for folder ${folder.id}`);
+            // Sort requests within each folder alphabetically by name
+            const sortedRequests = sortAlphabetically(folder.requests, 'name');
+            folderRequestsMap[folder.id] = sortedRequests;
+            console.log(`📦 [CodeBase] Storing ${sortedRequests.length} sorted requests for folder ${folder.id}`);
           }
         });
         
@@ -576,7 +596,7 @@ const fetchCollectionDetails = useCallback(async (collectionId) => {
       
       // CRITICAL: Update selectedCollection using the ref to get the latest value
       if (selectedCollectionRef.current?.id === collectionId) {
-        console.log('🔄 [CodeBase] Scheduling selectedCollection update with folders');
+        console.log('🔄 [CodeBase] Scheduling selectedCollection update with sorted folders');
         
         // Use setTimeout to ensure this runs after the current render cycle
         setTimeout(() => {
@@ -589,10 +609,10 @@ const fetchCollectionDetails = useCallback(async (collectionId) => {
             const updatedCollection = {
               ...currentSelected,
               ...details,
-              folders: [...foldersWithRequests] // New array reference
+              folders: [...sortedFolders] // New array reference with sorted folders
             };
             
-            console.log('📁 [CodeBase] Setting selectedCollection with folders:', 
+            console.log('📁 [CodeBase] Setting selectedCollection with sorted folders:', 
               updatedCollection.folders.map(f => ({ 
                 name: f.name, 
                 requestCount: f.requestCount 
@@ -629,12 +649,13 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
   if (selectedCollection?.folders) {
     const folder = selectedCollection.folders.find(f => f.id === folderId);
     if (folder && folder.requests && folder.requests.length > 0) {
-      console.log(`✅ [CodeBase] Using requests from collection for folder ${folderId}: ${folder.requests.length} requests`);
+      const sortedRequests = sortAlphabetically(folder.requests, 'name');
+      console.log(`✅ [CodeBase] Using sorted requests from collection for folder ${folderId}: ${sortedRequests.length} requests`);
       setFolderRequests(prev => ({
         ...prev,
-        [folderId]: folder.requests
+        [folderId]: sortedRequests
       }));
-      return folder.requests;
+      return sortedRequests;
     }
   }
 
@@ -657,16 +678,18 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
     
     if (folderDetails) {
       requests = folderDetails.requests || [];
+      // Sort requests alphabetically by name
+      const sortedRequests = sortAlphabetically(requests, 'name');
       
       // Update folder requests in state
       setFolderRequests(prev => ({
         ...prev,
-        [folderId]: requests
+        [folderId]: sortedRequests
       }));
       
-      console.log(`📊 [CodeBase] Loaded ${requests.length} requests for folder ${folderId}`);
+      console.log(`📊 [CodeBase] Loaded ${sortedRequests.length} sorted requests for folder ${folderId}`);
       
-      // Update the folder with actual count
+      // Update the folder with actual count and sorted requests
       setCollections(prevCollections => 
         prevCollections.map(collection => {
           if (collection.id === collectionId) {
@@ -676,9 +699,9 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
                 folder.id === folderId 
                   ? { 
                       ...folder, 
-                      requestCount: requests.length,
-                      hasRequests: requests.length > 0,
-                      requests: requests // Store requests directly in folder
+                      requestCount: sortedRequests.length,
+                      hasRequests: sortedRequests.length > 0,
+                      requests: sortedRequests // Store sorted requests directly in folder
                     }
                   : folder
               ) || []
@@ -696,9 +719,9 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
             folder.id === folderId 
               ? { 
                   ...folder, 
-                  requestCount: requests.length,
-                  hasRequests: requests.length > 0,
-                  requests: requests // Store requests directly in folder
+                  requestCount: sortedRequests.length,
+                  hasRequests: sortedRequests.length > 0,
+                  requests: sortedRequests // Store sorted requests directly in folder
                 }
               : folder
           ) || []
@@ -1046,19 +1069,22 @@ const getDefaultSupportedProgrammingLanguages = () => {
           command: lang.command || lang.runCommand
         }));
         
-        setAvailableLanguages(formattedLanguages);
-        console.log('📊 [CodeBase] Loaded languages:', formattedLanguages.length);
+        // Sort languages alphabetically by name
+        const sortedLanguages = sortAlphabetically(formattedLanguages, 'name');
+        setAvailableLanguages(sortedLanguages);
+        console.log('📊 [CodeBase] Loaded and sorted languages:', sortedLanguages.length);
         
         // Set default language if not set
-        if (!selectedLanguage && formattedLanguages.length > 0) {
-          setSelectedLanguage(formattedLanguages[0].id);
+        if (!selectedLanguage && sortedLanguages.length > 0) {
+          setSelectedLanguage(sortedLanguages[0].id);
         }
       } else {
         // Fallback to default languages
         const defaultLanguages = getDefaultSupportedProgrammingLanguages();
-        setAvailableLanguages(defaultLanguages);
-        if (!selectedLanguage && defaultLanguages.length > 0) {
-          setSelectedLanguage(defaultLanguages[0].value);
+        const sortedDefaultLanguages = sortAlphabetically(defaultLanguages, 'label');
+        setAvailableLanguages(sortedDefaultLanguages);
+        if (!selectedLanguage && sortedDefaultLanguages.length > 0) {
+          setSelectedLanguage(sortedDefaultLanguages[0].value);
         }
       }
       
@@ -1066,9 +1092,10 @@ const getDefaultSupportedProgrammingLanguages = () => {
       console.error('❌ [CodeBase] Error loading languages:', error);
       // Fallback to default languages
       const defaultLanguages = getDefaultSupportedProgrammingLanguages();
-      setAvailableLanguages(defaultLanguages);
-      if (!selectedLanguage && defaultLanguages.length > 0) {
-        setSelectedLanguage(defaultLanguages[0].value);
+      const sortedDefaultLanguages = sortAlphabetically(defaultLanguages, 'label');
+      setAvailableLanguages(sortedDefaultLanguages);
+      if (!selectedLanguage && sortedDefaultLanguages.length > 0) {
+        setSelectedLanguage(sortedDefaultLanguages[0].value);
       }
     }
   }, [authToken]);
@@ -1260,9 +1287,11 @@ const handleSelectRequest = async (request, collection, folder) => {
     return icons[language] || <Code size={14} />;
   };
 
-  // Get requests for a specific folder
+  // Get requests for a specific folder - now returns sorted requests
   const getFolderRequests = (folderId) => {
-    return folderRequests[folderId] || [];
+    const requests = folderRequests[folderId] || [];
+    // Ensure requests are sorted (just in case)
+    return sortAlphabetically(requests, 'name');
   };
 
   // Filter collections based on search
