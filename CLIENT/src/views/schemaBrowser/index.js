@@ -771,8 +771,7 @@ const SchemaBrowserIndex = ({
       </div>
       
       <div 
-        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10" 
-        style={{ zoom: 0.9 }}
+        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10 [zoom:0.88]"
       >
         {/* Welcome Header */}
         <WelcomeHeader colors={colors} />

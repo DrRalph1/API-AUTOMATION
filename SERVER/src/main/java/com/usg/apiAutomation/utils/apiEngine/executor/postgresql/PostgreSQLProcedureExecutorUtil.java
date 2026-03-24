@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 
 import java.sql.CallableStatement;
 import java.sql.ResultSet;
+import java.sql.SQLWarning;
 import java.sql.Types;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -310,6 +311,10 @@ public class PostgreSQLProcedureExecutorUtil {
             log.info("Executing PostgreSQL procedure with CALL syntax: {}", callSql);
             log.info("Parameters: {}", dbParams);
 
+            // Store captured notices and result
+            List<String> capturedNotices = new ArrayList<>();
+            Map<String, Object> finalResult = new HashMap<>();
+
             // Create CallableStatementCreator
             CallableStatementCreator csc = connection -> {
                 CallableStatement cs = connection.prepareCall(callSql);
@@ -363,6 +368,17 @@ public class PostgreSQLProcedureExecutorUtil {
                 callableStatement.execute();
                 log.info("Procedure executed successfully using CALL syntax");
 
+                // Check for SQLWarnings (which contain RAISE NOTICE messages)
+                SQLWarning warning = callableStatement.getWarnings();
+                while (warning != null) {
+                    String warningMessage = warning.getMessage();
+                    if (warningMessage != null) {
+                        capturedNotices.add(warningMessage);
+                        log.debug("Captured warning/notice: {}", warningMessage);
+                    }
+                    warning = warning.getNextWarning();
+                }
+
                 // Process results
                 Map<String, Object> responseData = new HashMap<>();
 
@@ -379,6 +395,37 @@ public class PostgreSQLProcedureExecutorUtil {
                     }
                 }
 
+                // Process captured notices (these contain your JSON results)
+                if (!capturedNotices.isEmpty()) {
+                    log.info("Captured {} NOTICE messages from procedure", capturedNotices.size());
+
+                    for (String notice : capturedNotices) {
+                        log.debug("Processing notice: {}", notice);
+
+                        // Look for the "Result: " prefix in your RAISE NOTICE
+                        if (notice != null && notice.contains("Result: ")) {
+                            // Extract JSON from the notice
+                            String jsonPart = extractJsonFromNotice(notice);
+                            if (jsonPart != null) {
+                                try {
+                                    Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                            new TypeReference<Map<String, Object>>() {});
+                                    responseData.putAll(jsonResult);
+                                    log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
+                                } catch (Exception e) {
+                                    log.warn("Failed to parse JSON from notice: {} - {}", jsonPart, e.getMessage());
+                                    responseData.put("notice", notice);
+                                }
+                            } else {
+                                responseData.put("notice", notice);
+                            }
+                        } else if (notice != null) {
+                            responseData.put("notice", notice);
+                            log.info("Captured notice: {}", notice);
+                        }
+                    }
+                }
+
                 // Process OUT parameters from response mappings
                 if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
                     int outParamIndex = inParamCount + 1; // OUT parameters start after IN parameters
@@ -391,10 +438,12 @@ public class PostgreSQLProcedureExecutorUtil {
 
                             try {
                                 Object value = callableStatement.getObject(outParamIndex);
-                                responseData.put(mapping.getApiField(), value);
-                                log.debug("Mapped OUT parameter {} to {} with value: {}",
-                                        outParamName, mapping.getApiField(), value);
-                                mappedCount++;
+                                if (value != null) {
+                                    responseData.put(mapping.getApiField(), value);
+                                    log.debug("Mapped OUT parameter {} to {} with value: {}",
+                                            outParamName, mapping.getApiField(), value);
+                                    mappedCount++;
+                                }
                             } catch (Exception e) {
                                 log.warn("Failed to get OUT parameter {}: {}", outParamName, e.getMessage());
                             }
@@ -425,14 +474,21 @@ public class PostgreSQLProcedureExecutorUtil {
                     }
                 }
 
-                return responseData.isEmpty() ? new HashMap<>() : responseData;
+                // If no response data, add default success
+                if (responseData.isEmpty()) {
+                    responseData.put("success", true);
+                    responseData.put("message", "Procedure executed successfully");
+                }
+
+                finalResult.putAll(responseData);
+                return responseData;
             };
 
             // Execute with explicit type parameters to resolve ambiguity
             Map<String, Object> result = postgresqlJdbcTemplate.execute(csc, callback);
 
             log.info("============ PROCEDURE EXECUTION COMPLETE ============");
-            return result != null ? result : new HashMap<>();
+            return !result.isEmpty() ? result : finalResult;
 
         } catch (ValidationException e) {
             throw e;
@@ -440,7 +496,22 @@ public class PostgreSQLProcedureExecutorUtil {
             log.error("Error executing procedure {}.{}: {}",
                     actualSchema, actualProcedureName, e.getMessage(), e);
 
+            // Check if the exception contains the result JSON
             String errorMessage = e.getMessage();
+            if (errorMessage != null && errorMessage.contains("Result: ")) {
+                String jsonPart = extractJsonFromNotice(errorMessage);
+                if (jsonPart != null) {
+                    try {
+                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                new TypeReference<Map<String, Object>>() {});
+                        log.info("Parsed JSON from exception: {}", jsonResult);
+                        return jsonResult;
+                    } catch (Exception parseEx) {
+                        log.warn("Failed to parse JSON from exception: {}", jsonPart);
+                    }
+                }
+            }
+
             if (errorMessage != null) {
                 if (errorMessage.contains("ERROR: procedure") && errorMessage.contains("does not exist")) {
                     throw new ValidationException(
@@ -473,6 +544,34 @@ public class PostgreSQLProcedureExecutorUtil {
 
             throw new RuntimeException("Failed to execute the requested operation: " + extractPostgreSQLError(errorMessage), e);
         }
+    }
+
+    /**
+     * Extract JSON from RAISE NOTICE message
+     */
+    private String extractJsonFromNotice(String notice) {
+        if (notice == null) return null;
+
+        // Look for "Result: " prefix
+        int resultIndex = notice.indexOf("Result: ");
+        if (resultIndex >= 0) {
+            String afterResult = notice.substring(resultIndex + 8);
+            // Find the JSON object
+            int start = afterResult.indexOf('{');
+            int end = afterResult.lastIndexOf('}');
+            if (start >= 0 && end > start) {
+                return afterResult.substring(start, end + 1);
+            }
+        }
+
+        // Try to find any JSON object
+        int start = notice.indexOf('{');
+        int end = notice.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return notice.substring(start, end + 1);
+        }
+
+        return null;
     }
 
     /**

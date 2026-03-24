@@ -3744,8 +3744,25 @@ if (isProcedure) {
           {data.view_definition && (
             <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
               <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>View Definition</h4>
-              <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
-                <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+              <div 
+                className="border rounded p-3 overflow-auto" 
+                style={{ 
+                  borderColor: colors.border, 
+                  backgroundColor: colors.codeBg,
+                  maxHeight: '400px',
+                  overflowX: 'auto',
+                  overflowY: 'auto'
+                }}
+              >
+                <pre 
+                  className="text-xs font-mono" 
+                  style={{ 
+                    color: colors.text,
+                    margin: 0,
+                    whiteSpace: 'pre-wrap',
+                    wordWrap: 'break-word'
+                  }}
+                >
                   {data.view_definition}
                 </pre>
               </div>
@@ -4392,8 +4409,25 @@ if (isProcedure) {
         {(effectiveType === 'VIEW' || data.objectType === 'VIEW') && data.viewInfo && (
           <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
             <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>View Definition</h4>
-            <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
-              <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+            <div 
+              className="border rounded p-3 overflow-auto" 
+              style={{ 
+                borderColor: colors.border, 
+                backgroundColor: colors.codeBg,
+                maxHeight: '400px',
+                overflowX: 'auto',
+                overflowY: 'auto'
+              }}
+            >
+              <pre 
+                className="text-xs font-mono" 
+                style={{ 
+                  color: colors.text,
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  wordWrap: 'break-word'
+                }}
+              >
                 {data.viewInfo.TEXT || 'No view definition available'}
               </pre>
             </div>
