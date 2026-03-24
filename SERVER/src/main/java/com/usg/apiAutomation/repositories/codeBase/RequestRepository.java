@@ -59,7 +59,8 @@ public interface RequestRepository extends JpaRepository<RequestEntity, String> 
 
     long countByCollectionId(String collectionId);
 
-    long countByFolderId(String folderId);
+    @Query("SELECT COUNT(r) FROM RequestEntityCodeBase r WHERE r.folder.id = :folderId")
+    long countByFolderId(@Param("folderId") String folderId);
 
     List<RequestEntity> findByUpdatedAtAfterOrderByUpdatedAtDesc(LocalDateTime since);
 
@@ -115,5 +116,8 @@ public interface RequestRepository extends JpaRepository<RequestEntity, String> 
     @Query("select r from RequestEntityCodeBase r where r.id = :id")
     Optional<RequestEntity> findByIdWithLock(@Param("id") String id);
 
-    Optional<RequestEntity> findByGeneratedApiId(String generatedApiId);
+    List<RequestEntity> findByGeneratedApiId(String generatedApiId);
+
+    @Query("SELECT COUNT(r) FROM RequestEntityCodeBase r WHERE r.folder.id = :folderId AND r.id != :excludeRequestId")
+    long countByFolderIdExcludingRequestId(@Param("folderId") String folderId, @Param("excludeRequestId") String excludeRequestId);
 }

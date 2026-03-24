@@ -21,4 +21,14 @@ public interface ChangelogRepository extends JpaRepository<ChangelogEntryEntity,
 
     @Query("SELECT DISTINCT c.version FROM ChangelogEntryEntity c WHERE c.collection.id = :collectionId")
     List<String> findDistinctVersionsByCollectionId(@Param("collectionId") String collectionId);
+
+    // Add this method to find changelog entries by endpoint ID
+    List<ChangelogEntryEntity> findByEndpointId(String endpointId);
+
+    // You might also want this method to find by collection ID
+    List<ChangelogEntryEntity> findByCollectionId(String collectionId);
+
+
+    // Optional: delete all changelog entries for an endpoint
+    void deleteByEndpointId(String endpointId);
 }

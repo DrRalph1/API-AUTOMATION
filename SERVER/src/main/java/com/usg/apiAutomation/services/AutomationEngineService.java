@@ -3,6 +3,7 @@ package com.usg.apiAutomation.services;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
+import com.usg.apiAutomation.entities.postgres.codeBase.ImplementationEntity;
 import com.usg.apiAutomation.entities.postgres.collections.*;
 import com.usg.apiAutomation.factories.ApiExecutionHelperFactory;
 import com.usg.apiAutomation.factories.ApiMetadataHelperFactory;
@@ -307,7 +308,7 @@ public class AutomationEngineService {
 
 
 
-        // Helper method to convert and validate source object based on database type
+    // Helper method to convert and validate source object based on database type
     private ApiSourceObjectDTO convertAndValidateSourceObject(GenerateApiRequestDTO request, String databaseType) {
         if ("postgresql".equalsIgnoreCase(databaseType)) {
             // For PostgreSQL, use PostgreSQL-specific conversion if needed
@@ -394,7 +395,7 @@ public class AutomationEngineService {
                 if (existingRequestOpt.isPresent()) {
                     var existingRequest = existingRequestOpt.get();
 
-                    // CRITICAL FIX: Check if collection or folder has changed
+                    // Store current IDs BEFORE any changes
                     String currentCollectionId = existingRequest.getCollection() != null ?
                             existingRequest.getCollection().getId() : null;
                     String currentFolderId = existingRequest.getFolder() != null ?
@@ -410,33 +411,31 @@ public class AutomationEngineService {
                             currentCollectionId, newCollectionId, currentFolderId, newFolderId);
 
                     if (collectionChanged || folderChanged) {
-                        log.info("Collection or folder changed, need to recreate the request with new parent structure");
-
-                        // FIRST: Completely clear all relationships from the existing request
-                        // This is critical to avoid constraint violations
-                        clearAllRequestRelationships(existingRequest);
+                        log.info("Collection or folder changed, moving request to new location");
 
                         // Get or create the new collection
                         CollectionEntity newCollection;
                         if (newCollectionId != null) {
-                            newCollection = collectionsCollectionRepository.findById(newCollectionId)
-                                    .orElseGet(() -> {
-                                        // Create new collection if it doesn't exist
-                                        CollectionEntity newColl = new CollectionEntity();
-                                        newColl.setId(newCollectionId);
-                                        newColl.setGeneratedApiId(api.getId());
-                                        newColl.setName(collectionInfo.getCollectionName());
-                                        newColl.setDescription("Collection for " + collectionInfo.getCollectionName());
-                                        newColl.setOwner(performedBy);
-                                        newColl.setExpanded(false);
-                                        newColl.setEditing(false);
-                                        newColl.setFavorite(false);
-                                        newColl.setLastActivity(LocalDateTime.now());
-                                        newColl.setColor(getRandomColor());
-                                        newColl.setCreatedAt(LocalDateTime.now());
-                                        newColl.setUpdatedAt(LocalDateTime.now());
-                                        return collectionsCollectionRepository.save(newColl);
-                                    });
+                            Optional<CollectionEntity> existingCollectionOpt = collectionsCollectionRepository.findById(newCollectionId);
+                            if (existingCollectionOpt.isPresent()) {
+                                newCollection = existingCollectionOpt.get();
+                            } else {
+                                // Create new collection
+                                CollectionEntity newColl = new CollectionEntity();
+                                newColl.setId(newCollectionId);
+                                newColl.setGeneratedApiId(api.getId());
+                                newColl.setName(collectionInfo.getCollectionName());
+                                newColl.setDescription("Collection for " + collectionInfo.getCollectionName());
+                                newColl.setOwner(performedBy);
+                                newColl.setExpanded(false);
+                                newColl.setEditing(false);
+                                newColl.setFavorite(false);
+                                newColl.setLastActivity(LocalDateTime.now());
+                                newColl.setColor(getRandomColor());
+                                newColl.setCreatedAt(LocalDateTime.now());
+                                newColl.setUpdatedAt(LocalDateTime.now());
+                                newCollection = collectionsCollectionRepository.save(newColl);
+                            }
                         } else {
                             newCollection = existingRequest.getCollection();
                         }
@@ -444,25 +443,30 @@ public class AutomationEngineService {
                         // Get or create the new folder
                         FolderEntity newFolder;
                         if (newFolderId != null) {
-                            newFolder = collectionsFolderRepository.findById(newFolderId)
-                                    .orElseGet(() -> {
-                                        // Create new folder if it doesn't exist
-                                        FolderEntity newFldr = new FolderEntity();
-                                        newFldr.setId(newFolderId);
-                                        newFldr.setGeneratedApiId(api.getId());
-                                        newFldr.setName(collectionInfo.getFolderName());
-                                        newFldr.setDescription("Folder for " + collectionInfo.getFolderName());
-                                        newFldr.setExpanded(false);
-                                        newFldr.setEditing(false);
-                                        newFldr.setRequestCount(0);
-                                        newFldr.setCollection(newCollection);
-                                        newFldr.setCreatedAt(LocalDateTime.now());
-                                        newFldr.setUpdatedAt(LocalDateTime.now());
-                                        return collectionsFolderRepository.save(newFldr);
-                                    });
+                            Optional<FolderEntity> existingFolderOpt = collectionsFolderRepository.findById(newFolderId);
+                            if (existingFolderOpt.isPresent()) {
+                                newFolder = existingFolderOpt.get();
+                            } else {
+                                // Create new folder
+                                FolderEntity newFldr = new FolderEntity();
+                                newFldr.setId(newFolderId);
+                                newFldr.setGeneratedApiId(api.getId());
+                                newFldr.setName(collectionInfo.getFolderName());
+                                newFldr.setDescription("Folder for " + collectionInfo.getFolderName());
+                                newFldr.setExpanded(false);
+                                newFldr.setEditing(false);
+                                newFldr.setRequestCount(0);
+                                newFldr.setCollection(newCollection);
+                                newFldr.setCreatedAt(LocalDateTime.now());
+                                newFldr.setUpdatedAt(LocalDateTime.now());
+                                newFolder = collectionsFolderRepository.save(newFldr);
+                            }
                         } else {
                             newFolder = existingRequest.getFolder();
                         }
+
+                        // CRITICAL: Clear all relationships from the existing request
+                        clearAllRequestRelationships(existingRequest);
 
                         // Update the request with new collection and folder
                         existingRequest.setCollection(newCollection);
@@ -474,15 +478,16 @@ public class AutomationEngineService {
                         // Save the updated request
                         collectionsRequestRepository.save(existingRequest);
 
-                        // Update folder request counts
-                        updateFolderRequestCounts(currentFolderId, newFolderId);
+                        // CRITICAL: Flush and clear the EntityManager to ensure all changes are persisted
+                        entityManager.flush();
+                        entityManager.clear();
 
-                        log.info("Successfully updated request with new collection/folder structure");
+                        log.info("Successfully moved request to new collection/folder");
                         return;
                     }
 
                     // If collection/folder hasn't changed, just update the content
-                    // First clear relationships to avoid duplicates
+                    log.info("No collection/folder change, just updating content");
                     clearAllRequestRelationships(existingRequest);
                     updateRequestContent(existingRequest, api, performedBy, request);
                     log.info("Successfully updated existing collections request: {}", originalSourceRequestId);
@@ -786,14 +791,288 @@ public class AutomationEngineService {
     }
 
 
-    // Keep the original updateDocumentation method as is
+    /**
+     * Update documentation for an API
+     * Handles moving endpoints between collections and folders WITHOUT deleting endpoints
+     */
     private void updateDocumentation(GeneratedApiEntity api, String performedBy,
                                      GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo,
                                      String codeBaseRequestId, String collectionsCollectionId) {
-        // Your existing implementation
-        componentHelper.updateDocumentation(api, performedBy, request, collectionInfo,
-                codeBaseRequestId, collectionsCollectionId, documentationGeneratorUtil,
-                docCollectionRepository, docFolderRepository, endpointRepository, entityManager);
+        try {
+            log.info("Updating documentation for API: {} with codeBaseRequestId: {} and collectionId: {}",
+                    api.getId(), codeBaseRequestId, collectionsCollectionId);
+
+            // Call the new update method instead of generate
+            documentationGeneratorUtil.update(api, performedBy, request,
+                    codeBaseRequestId, collectionsCollectionId, collectionInfo);
+
+        } catch (Exception e) {
+            log.error("Error updating documentation: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update documentation: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Helper method to build endpoint URL
+     */
+    private String buildEndpointUrl(GeneratedApiEntity api) {
+        GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
+        return genUrlInfo.getFullUrl();
+    }
+
+    /**
+     * Helper method to update documentation collection
+     */
+    private void updateDocumentationCollection(
+            com.usg.apiAutomation.entities.postgres.documentation.APICollectionEntity collection,
+            GeneratedApiEntity api, String performedBy,
+            GenerateApiRequestDTO request,
+            CollectionInfoDTO collectionInfo) {
+        try {
+            if (collection == null) return;
+
+            if (collectionInfo != null && collectionInfo.getCollectionName() != null) {
+                collection.setName(collectionInfo.getCollectionName());
+            } else if (api.getApiName() != null) {
+                collection.setName(api.getApiName() + " Documentation");
+            }
+
+            collection.setDescription("Documentation for " + api.getApiName());
+            collection.setUpdatedAt(LocalDateTime.now());
+            collection.setUpdatedBy(performedBy);
+
+            // Update version
+            if (api.getVersion() != null) {
+                collection.setVersion(api.getVersion());
+            }
+
+            // Update metadata
+            if (collection.getMetadata() == null) {
+                collection.setMetadata(new java.util.HashMap<>());
+            }
+            collection.getMetadata().put("apiCode", api.getApiCode());
+            collection.getMetadata().put("apiVersion", api.getVersion() != null ? api.getVersion() : "1.0");
+            collection.getMetadata().put("lastUpdated", LocalDateTime.now().toString());
+            collection.getMetadata().put("updatedBy", performedBy);
+
+            // Update total endpoints count if endpoints list exists
+            if (collection.getEndpoints() != null) {
+                collection.setTotalEndpoints(collection.getEndpoints().size());
+            }
+
+            // Update total folders count
+            if (collection.getFolders() != null) {
+                collection.setTotalFolders(collection.getFolders().size());
+            }
+
+            docCollectionRepository.save(collection);
+
+        } catch (Exception e) {
+            log.error("Error updating documentation collection: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update documentation collection", e);
+        }
+    }
+
+    /**
+     * Helper method to clear endpoint relationships
+     */
+    private void clearEndpointRelationships(
+            com.usg.apiAutomation.entities.postgres.documentation.APIEndpointEntity endpoint) {
+        try {
+            if (endpoint.getHeaders() != null && !endpoint.getHeaders().isEmpty()) {
+                docHeaderRepository.deleteAll(endpoint.getHeaders());
+                endpoint.getHeaders().clear();
+            }
+
+            if (endpoint.getParameters() != null && !endpoint.getParameters().isEmpty()) {
+                docParameterRepository.deleteAll(endpoint.getParameters());
+                endpoint.getParameters().clear();
+            }
+
+            if (endpoint.getResponseExamples() != null && !endpoint.getResponseExamples().isEmpty()) {
+                responseExampleRepository.deleteAll(endpoint.getResponseExamples());
+                endpoint.getResponseExamples().clear();
+            }
+
+            docHeaderRepository.flush();
+            docParameterRepository.flush();
+            responseExampleRepository.flush();
+
+        } catch (Exception e) {
+            log.error("Error clearing endpoint relationships: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to clear endpoint relationships", e);
+        }
+    }
+
+    /**
+     * Helper method to create documentation headers
+     */
+    private List<com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity> createDocumentationHeaders(
+            GeneratedApiEntity api,
+            com.usg.apiAutomation.entities.postgres.documentation.APIEndpointEntity endpoint) {
+
+        List<com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity> headers = new ArrayList<>();
+
+        if (api.getHeaders() != null) {
+            for (ApiHeaderEntity apiHeader : api.getHeaders()) {
+                com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity header =
+                        new com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity();
+                header.setId(UUID.randomUUID().toString());
+                header.setGeneratedApiId(api.getId());
+                header.setKey(apiHeader.getKey());
+                header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
+                header.setDescription(apiHeader.getDescription());
+                header.setRequired(apiHeader.getRequired() != null ? apiHeader.getRequired() : false);
+                header.setEndpoint(endpoint);
+                headers.add(header);
+            }
+        }
+
+        return headers;
+    }
+
+    /**
+     * Helper method to create documentation parameters
+     */
+    private List<com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity> createDocumentationParameters(
+            GeneratedApiEntity api,
+            com.usg.apiAutomation.entities.postgres.documentation.APIEndpointEntity endpoint) {
+
+        List<com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity> parameters = new ArrayList<>();
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity apiParam : api.getParameters()) {
+                com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity param =
+                        new com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity();
+                param.setId(UUID.randomUUID().toString());
+                param.setGeneratedApiId(api.getId());
+                param.setName(apiParam.getKey());
+                param.setKey(apiParam.getKey());
+                param.setDbColumn(apiParam.getDbColumn());
+                param.setDbParameter(apiParam.getDbParameter());
+                param.setParameterType(apiParam.getParameterType());
+                param.setOracleType(apiParam.getOracleType());
+                param.setApiType(apiParam.getApiType());
+                param.setParameterLocation(apiParam.getParameterLocation());
+                param.setRequired(apiParam.getRequired());
+                param.setDescription(apiParam.getDescription());
+                param.setDefaultValue(apiParam.getDefaultValue());
+                param.setExample(apiParam.getExample());
+                param.setValidationPattern(apiParam.getValidationPattern());
+                param.setInBody(apiParam.getInBody());
+                param.setIsPrimaryKey(apiParam.getIsPrimaryKey());
+                param.setParamMode(apiParam.getParamMode());
+                param.setPosition(apiParam.getPosition());
+                param.setEndpoint(endpoint);
+                parameters.add(param);
+            }
+        }
+
+        return parameters;
+    }
+
+    /**
+     * Helper method to create response examples using ApiResponseConfigEntity
+     */
+    private List<com.usg.apiAutomation.entities.postgres.documentation.ResponseExampleEntity> createResponseExamples(
+            GeneratedApiEntity api,
+            com.usg.apiAutomation.entities.postgres.documentation.APIEndpointEntity endpoint) {
+
+        List<com.usg.apiAutomation.entities.postgres.documentation.ResponseExampleEntity> responses = new ArrayList<>();
+        ApiResponseConfigEntity responseConfig = api.getResponseConfig();
+
+        if (responseConfig != null) {
+            // Create success response example from successSchema
+            if (responseConfig.getSuccessSchema() != null && !responseConfig.getSuccessSchema().isEmpty()) {
+                com.usg.apiAutomation.entities.postgres.documentation.ResponseExampleEntity successResponse =
+                        new com.usg.apiAutomation.entities.postgres.documentation.ResponseExampleEntity();
+                successResponse.setId(UUID.randomUUID().toString());
+                successResponse.setGeneratedApiId(api.getId());
+                successResponse.setStatusCode(200);
+                successResponse.setDescription("Success response");
+                successResponse.setContentType(responseConfig.getContentType() != null ?
+                        responseConfig.getContentType() : "application/json");
+
+                // Parse successSchema to Map if it's JSON
+                try {
+                    String successSchema = responseConfig.getSuccessSchema();
+                    if (successSchema != null) {
+                        Map<String, Object> exampleMap = objectMapper.readValue(successSchema, Map.class);
+                        successResponse.setExample(exampleMap);
+                    }
+                } catch (Exception e) {
+                    log.warn("Could not parse successSchema as JSON: {}", e.getMessage());
+                    Map<String, Object> fallbackMap = new HashMap<>();
+                    fallbackMap.put("response", responseConfig.getSuccessSchema());
+                    successResponse.setExample(fallbackMap);
+                }
+
+                successResponse.setEndpoint(endpoint);
+                responses.add(successResponse);
+            }
+
+            // Create error response example from errorSchema
+            if (responseConfig.getErrorSchema() != null && !responseConfig.getErrorSchema().isEmpty()) {
+                com.usg.apiAutomation.entities.postgres.documentation.ResponseExampleEntity errorResponse =
+                        new com.usg.apiAutomation.entities.postgres.documentation.ResponseExampleEntity();
+                errorResponse.setId(UUID.randomUUID().toString());
+                errorResponse.setGeneratedApiId(api.getId());
+                errorResponse.setStatusCode(400);
+                errorResponse.setDescription("Error response");
+                errorResponse.setContentType(responseConfig.getContentType() != null ?
+                        responseConfig.getContentType() : "application/json");
+
+                // Parse errorSchema to Map if it's JSON
+                try {
+                    String errorSchema = responseConfig.getErrorSchema();
+                    if (errorSchema != null) {
+                        Map<String, Object> exampleMap = objectMapper.readValue(errorSchema, Map.class);
+                        errorResponse.setExample(exampleMap);
+                    }
+                } catch (Exception e) {
+                    log.warn("Could not parse errorSchema as JSON: {}", e.getMessage());
+                    Map<String, Object> fallbackMap = new HashMap<>();
+                    fallbackMap.put("error", "Bad Request");
+                    fallbackMap.put("message", responseConfig.getErrorSchema());
+                    errorResponse.setExample(fallbackMap);
+                }
+
+                errorResponse.setEndpoint(endpoint);
+                responses.add(errorResponse);
+            }
+
+            // If no specific schemas, add default response
+            if (responses.isEmpty()) {
+                com.usg.apiAutomation.entities.postgres.documentation.ResponseExampleEntity defaultResponse =
+                        new com.usg.apiAutomation.entities.postgres.documentation.ResponseExampleEntity();
+                defaultResponse.setId(UUID.randomUUID().toString());
+                defaultResponse.setGeneratedApiId(api.getId());
+                defaultResponse.setStatusCode(200);
+                defaultResponse.setDescription("Response");
+                defaultResponse.setContentType("application/json");
+                Map<String, Object> defaultMap = new HashMap<>();
+                defaultMap.put("message", "API response");
+                defaultResponse.setExample(defaultMap);
+                defaultResponse.setEndpoint(endpoint);
+                responses.add(defaultResponse);
+            }
+        } else {
+            // No response config, add default response
+            com.usg.apiAutomation.entities.postgres.documentation.ResponseExampleEntity defaultResponse =
+                    new com.usg.apiAutomation.entities.postgres.documentation.ResponseExampleEntity();
+            defaultResponse.setId(UUID.randomUUID().toString());
+            defaultResponse.setGeneratedApiId(api.getId());
+            defaultResponse.setStatusCode(200);
+            defaultResponse.setDescription("Response");
+            defaultResponse.setContentType("application/json");
+            Map<String, Object> defaultMap = new HashMap<>();
+            defaultMap.put("message", "API response");
+            defaultResponse.setExample(defaultMap);
+            defaultResponse.setEndpoint(endpoint);
+            responses.add(defaultResponse);
+        }
+
+        return responses;
     }
 
 
@@ -1804,10 +2083,10 @@ public class AutomationEngineService {
     }
 
 
-        /**
-         * Validates source object for API generation
-         * Supports multiple database types: Oracle, PostgreSQL, etc.
-         */
+    /**
+     * Validates source object for API generation
+     * Supports multiple database types: Oracle, PostgreSQL, etc.
+     */
     public Map<String, Object> validateSourceObject(ApiSourceObjectDTO sourceObject) {
         // Get database type from source object
         String databaseType = sourceObject.getDatabaseType();
@@ -1941,6 +2220,34 @@ public class AutomationEngineService {
     }
 
 
+
+    /**
+     * Update codebase components when API is moved between collections/folders
+     * This method delegates to CodeBaseGeneratorUtil.update() for the actual update logic
+     */
+    private void updateCodeBase(GeneratedApiEntity api, String performedBy,
+                                GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo) {
+        try {
+            log.info("Updating codebase for API: {} with collection: {}",
+                    api.getId(), collectionInfo.getCollectionName());
+
+            // Call the new update method in CodeBaseGeneratorUtil instead of handling it here
+            codeBaseGeneratorUtil.update(api, performedBy, request, null, collectionInfo);
+
+            // Note: The sourceRequestId is updated inside CodeBaseGeneratorUtil.update()
+            // to maintain consistency with the new request
+
+            log.info("Codebase update completed for API: {}", api.getId());
+
+        } catch (Exception e) {
+            log.error("Error updating codebase: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update codebase: " + e.getMessage(), e);
+        }
+    }
+
+
+
+
     public GeneratedApiEntity getApiEntity(String apiId) {
         // First get the API entity to know its database type
         GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
@@ -2003,7 +2310,7 @@ public class AutomationEngineService {
 
     private boolean shouldRegenerateComponents(GenerateApiRequestDTO request) {
         return false;
-    // return request.getRegenerateComponents() != null && request.getRegenerateComponents();
+        // return request.getRegenerateComponents() != null && request.getRegenerateComponents();
     }
 
     private String getCodeBaseRequestId(GeneratedApiEntity api) {
@@ -2021,12 +2328,259 @@ public class AutomationEngineService {
         return analyticsHelper.getDocumentationCollectionId(api);
     }
 
-    private void updateCodeBase(GeneratedApiEntity api, String performedBy,
-                                GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo) {
-        componentHelper.updateCodeBase(api, performedBy, request, collectionInfo,
-                codeBaseGeneratorUtil, codeBaseRequestRepository, codeBaseCollectionRepository,
-                codeBaseFolderRepository, entityManager);
+    /**
+     * Helper method to completely clear all relationships from a codebase request
+     * This is critical to avoid constraint violations
+     */
+    private void clearAllCodeBaseRequestRelationships(
+            com.usg.apiAutomation.entities.postgres.codeBase.RequestEntity request) {
+        try {
+            log.debug("Clearing all relationships for codebase request: {}", request.getId());
+
+            // CRITICAL: Clear and delete all implementations
+            if (request.getImplementations() != null && !request.getImplementations().isEmpty()) {
+                List<ImplementationEntity> implsToRemove = new ArrayList<>(request.getImplementations());
+                request.getImplementations().clear();
+                if (!implsToRemove.isEmpty()) {
+                    implementationRepository.deleteAll(implsToRemove);
+                    log.debug("Deleted {} implementations for request: {}", implsToRemove.size(), request.getId());
+                }
+            }
+
+            // Clear collections and lists
+            if (request.getHeaders() != null) {
+                request.getHeaders().clear();
+            }
+            if (request.getPathParameters() != null) {
+                request.getPathParameters().clear();
+            }
+            if (request.getQueryParameters() != null) {
+                request.getQueryParameters().clear();
+            }
+            if (request.getTags() != null) {
+                request.getTags().clear();
+            }
+
+            // Flush to ensure all deletions are processed immediately
+            implementationRepository.flush();
+
+            log.debug("Successfully cleared all relationships for codebase request: {}", request.getId());
+
+        } catch (Exception e) {
+            log.error("Error clearing relationships for codebase request {}: {}",
+                    request.getId(), e.getMessage(), e);
+            throw new RuntimeException("Failed to clear codebase request relationships", e);
+        }
     }
+
+    /**
+     * Helper method to update codebase request content
+     */
+    private void updateCodeBaseRequestContent(
+            com.usg.apiAutomation.entities.postgres.codeBase.RequestEntity request,
+            GeneratedApiEntity api, String performedBy,
+            GenerateApiRequestDTO generateRequest) {
+        try {
+            GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
+
+            // Update basic info
+            request.setName(api.getApiName());
+            request.setMethod(api.getHttpMethod());
+            request.setUrl(genUrlInfo.getFullUrl());
+            request.setDescription(api.getDescription());
+            request.setUpdatedAt(LocalDateTime.now());
+
+            // Set request body from API request config
+            if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+                Map<String, Object> bodyMap = new HashMap<>();
+                bodyMap.put("sample", api.getRequestConfig().getSample());
+                request.setRequestBody(bodyMap);
+            }
+
+            // Set headers
+            if (api.getHeaders() != null && !api.getHeaders().isEmpty()) {
+                List<Map<String, Object>> headers = new ArrayList<>();
+                for (ApiHeaderEntity apiHeader : api.getHeaders()) {
+                    Map<String, Object> header = new HashMap<>();
+                    header.put("key", apiHeader.getKey());
+                    header.put("value", apiHeader.getValue());
+                    header.put("description", apiHeader.getDescription());
+                    header.put("required", apiHeader.getRequired());
+                    headers.add(header);
+                }
+                request.setHeaders(headers);
+            }
+
+            // Set path parameters
+            if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                List<Map<String, Object>> pathParams = new ArrayList<>();
+                List<Map<String, Object>> queryParams = new ArrayList<>();
+
+                for (ApiParameterEntity apiParam : api.getParameters()) {
+                    Map<String, Object> param = new HashMap<>();
+                    param.put("name", apiParam.getKey());
+                    param.put("type", apiParam.getOracleType());
+                    param.put("required", apiParam.getRequired());
+                    param.put("description", apiParam.getDescription());
+                    param.put("example", apiParam.getExample());
+
+                    if ("path".equalsIgnoreCase(apiParam.getParameterLocation())) {
+                        pathParams.add(param);
+                    } else if ("query".equalsIgnoreCase(apiParam.getParameterLocation())) {
+                        queryParams.add(param);
+                    }
+                }
+
+                request.setPathParameters(pathParams);
+                request.setQueryParameters(queryParams);
+            }
+
+            // Set metadata
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put("apiId", api.getId());
+            metadata.put("apiCode", api.getApiCode());
+            metadata.put("databaseType", api.getDatabaseType());
+            metadata.put("status", api.getStatus());
+            metadata.put("version", api.getVersion());
+            metadata.put("updatedBy", performedBy);
+            request.setMetadata(metadata);
+
+            // Set tags
+            if (api.getTags() != null && !api.getTags().isEmpty()) {
+                request.setTags(new ArrayList<>(api.getTags()));
+            }
+
+            // Save the request first
+            request = codeBaseRequestRepository.save(request);
+
+            // Create implementations (this is the critical part for codebase)
+            createImplementationsForRequest(request, api, performedBy);
+
+            log.info("Successfully updated codebase request content for: {}", request.getId());
+
+        } catch (Exception e) {
+            log.error("Error updating codebase request content: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update codebase request content", e);
+        }
+    }
+
+    /**
+     * Helper method to create implementations for a request
+     */
+    private void createImplementationsForRequest(
+            com.usg.apiAutomation.entities.postgres.codeBase.RequestEntity request,
+            GeneratedApiEntity api, String performedBy) {
+        try {
+            log.info("Creating implementations for request: {}", request.getId());
+
+            // Generate code for all languages
+            Map<String, String> generatedCode = generateApiCode(api);
+
+            if (generatedCode != null && !generatedCode.isEmpty()) {
+                List<ImplementationEntity> newImplementations = new ArrayList<>();
+
+                for (Map.Entry<String, String> codeEntry : generatedCode.entrySet()) {
+                    String language = codeEntry.getKey();
+                    String code = codeEntry.getValue();
+
+                    ImplementationEntity impl = new ImplementationEntity();
+                    impl.setId(UUID.randomUUID().toString());
+                    impl.setGeneratedApiId(api.getId());
+                    impl.setLanguage(language);
+                    impl.setComponent("api_" + api.getApiCode().toLowerCase());
+                    impl.setCode(code);
+                    impl.setIsGenerated(true);
+                    impl.setGeneratedBy(performedBy);
+                    impl.setVersion(1);
+                    impl.setIsValidated(false);
+                    impl.setUsageCount(0);
+
+                    // Set metadata
+                    Map<String, Object> metadata = new HashMap<>();
+                    metadata.put("apiName", api.getApiName());
+                    metadata.put("apiCode", api.getApiCode());
+                    metadata.put("httpMethod", api.getHttpMethod());
+                    metadata.put("endpointPath", api.getEndpointPath());
+                    metadata.put("generatedAt", LocalDateTime.now().toString());
+                    impl.setMetadata(metadata);
+
+                    // Update file name and calculate lines
+                    impl.updateFileName();
+                    impl.calculateLinesOfCode();
+
+                    newImplementations.add(impl);
+                }
+
+                // Save all implementations
+                if (!newImplementations.isEmpty()) {
+                    implementationRepository.saveAll(newImplementations);
+
+                    // Add implementations to request
+                    for (ImplementationEntity impl : newImplementations) {
+                        request.addImplementation(impl);
+                    }
+
+                    log.info("Created {} implementations for request: {}",
+                            newImplementations.size(), request.getId());
+                }
+            } else {
+                log.warn("No code generated for API: {}", api.getId());
+            }
+
+        } catch (Exception e) {
+            log.error("Error creating implementations: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to create implementations", e);
+        }
+    }
+
+    /**
+     * Helper method to update folder request flags for codebase
+     * Note: FolderEntity uses hasRequests boolean, not requestCount
+     */
+    private void updateCodeBaseFolderRequestCounts(String oldFolderId, String newFolderId) {
+        try {
+            // Update old folder if it exists and is different from new folder
+            if (oldFolderId != null && !oldFolderId.equals(newFolderId)) {
+                codeBaseFolderRepository.findById(oldFolderId).ifPresent(oldFolder -> {
+                    // Check if this folder still has any other requests
+                    // You might need to count remaining requests in this folder
+                    boolean hasOtherRequests = checkIfFolderHasRequests(oldFolder.getId());
+                    oldFolder.setHasRequests(hasOtherRequests);
+                    codeBaseFolderRepository.save(oldFolder);
+                    log.debug("Updated hasRequests flag for old codebase folder: {} to {}",
+                            oldFolderId, hasOtherRequests);
+                });
+            }
+
+            // Update new folder if it exists and is different from old folder
+            if (newFolderId != null && !newFolderId.equals(oldFolderId)) {
+                codeBaseFolderRepository.findById(newFolderId).ifPresent(newFolder -> {
+                    newFolder.setHasRequests(true);
+                    codeBaseFolderRepository.save(newFolder);
+                    log.debug("Set hasRequests flag to true for new codebase folder: {}", newFolderId);
+                });
+            }
+        } catch (Exception e) {
+            log.warn("Failed to update codebase folder request flags: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Helper method to check if a folder has any requests
+     */
+    private boolean checkIfFolderHasRequests(String folderId) {
+        try {
+            // Query to count requests in this folder
+            // You might need to add this method to your RequestRepository
+            long requestCount = codeBaseRequestRepository.countByFolderId(folderId);
+            return requestCount > 0;
+        } catch (Exception e) {
+            log.error("Error checking if folder has requests: {}", e.getMessage());
+            return true; // Assume true to be safe
+        }
+    }
+
+
 
     private void updateCollections(GeneratedApiEntity api, String performedBy,
                                    GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo) {
@@ -2034,6 +2588,9 @@ public class AutomationEngineService {
                 collectionsGeneratorUtil, collectionsCollectionRepository, collectionsFolderRepository,
                 collectionsRequestRepository, entityManager);
     }
+
+
+
 
     private void regenerateComponents(GeneratedApiEntity api, String performedBy,
                                       GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo) {
@@ -2331,5 +2888,6 @@ public class AutomationEngineService {
 
         return extractedParams;
     }
+
 
 }

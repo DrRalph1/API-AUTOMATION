@@ -755,4 +755,361 @@ public class DocumentationGeneratorUtil {
                 "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1"};
         return colors[new Random().nextInt(colors.length)];
     }
+
+
+
+    /**
+     * Update headers for an endpoint - clears existing and recreates
+     */
+    private void updateHeaders(GeneratedApiEntity api, APIEndpointEntity endpoint, String generatedApiId) {
+        // Delete existing headers
+        if (endpoint.getHeaders() != null && !endpoint.getHeaders().isEmpty()) {
+            docHeaderRepository.deleteAll(endpoint.getHeaders());
+            endpoint.getHeaders().clear();
+            docHeaderRepository.flush();
+        }
+
+        // Recreate headers using existing method
+        createHeaderEntities(api, endpoint, generatedApiId);
+    }
+
+    /**
+     * Update parameters for an endpoint - clears existing and recreates
+     */
+    private void updateParameters(GeneratedApiEntity api, APIEndpointEntity endpoint, String generatedApiId) {
+        // Delete existing parameters
+        if (endpoint.getParameters() != null && !endpoint.getParameters().isEmpty()) {
+            docParameterRepository.deleteAll(endpoint.getParameters());
+            endpoint.getParameters().clear();
+            docParameterRepository.flush();
+        }
+
+        // Recreate parameters using existing method
+        createParameterEntities(api, endpoint, generatedApiId);
+    }
+
+    /**
+     * Update response examples - clears existing and recreates
+     */
+    private void updateResponseExamples(GeneratedApiEntity api, APIEndpointEntity endpoint, String generatedApiId) {
+        // Delete existing response examples
+        if (endpoint.getResponseExamples() != null && !endpoint.getResponseExamples().isEmpty()) {
+            responseExampleRepository.deleteAll(endpoint.getResponseExamples());
+            endpoint.getResponseExamples().clear();
+            responseExampleRepository.flush();
+        }
+
+        // Recreate response examples
+        if (api.getResponseConfig() != null) {
+            createResponseExamples(api, endpoint, generatedApiId);
+        }
+    }
+
+    /**
+     * Update code examples - clears existing and recreates
+     */
+    private void updateCodeExamples(GeneratedApiEntity api, APIEndpointEntity endpoint,
+                                    String codeBaseRequestId, String generatedApiId) {
+        // Delete existing code examples
+        if (endpoint.getCodeExamples() != null && !endpoint.getCodeExamples().isEmpty()) {
+            codeExampleRepository.deleteAll(endpoint.getCodeExamples());
+            endpoint.getCodeExamples().clear();
+            codeExampleRepository.flush();
+        }
+
+        // Recreate code examples
+        generateCodeExamples(api, endpoint, codeBaseRequestId, generatedApiId);
+    }
+
+    /**
+     * Update mock endpoint
+     */
+    private void updateMockEndpoint(GeneratedApiEntity api, APIEndpointEntity endpoint,
+                                    MockServerEntity mockServer, String generatedApiId) {
+        List<MockEndpointEntity> existingMockEndpoints = mockEndpointRepository
+                .findBySourceEndpointId(endpoint.getId());
+
+        MockEndpointEntity mockEndpoint;
+        if (existingMockEndpoints != null && !existingMockEndpoints.isEmpty()) {
+            mockEndpoint = existingMockEndpoints.get(0);
+            mockEndpoint.setMethod(api.getHttpMethod());
+            mockEndpoint.setPath(endpoint.getUrl());
+            mockEndpoint.setDescription("Mock endpoint for " + api.getApiName());
+            mockEndpoint.setEnabled(true);
+
+            // Delete any extra mock endpoints
+            if (existingMockEndpoints.size() > 1) {
+                for (int i = 1; i < existingMockEndpoints.size(); i++) {
+                    mockEndpointRepository.delete(existingMockEndpoints.get(i));
+                }
+            }
+        } else {
+            mockEndpoint = new MockEndpointEntity();
+            mockEndpoint.setId(UUID.randomUUID().toString());
+            mockEndpoint.setGeneratedApiId(generatedApiId);
+            mockEndpoint.setMethod(api.getHttpMethod());
+            mockEndpoint.setPath(endpoint.getUrl());
+            mockEndpoint.setStatusCode(200);
+            mockEndpoint.setResponseDelay(0);
+            mockEndpoint.setDescription("Mock endpoint for " + api.getApiName());
+            mockEndpoint.setEnabled(true);
+            mockEndpoint.setMockServer(mockServer);
+            mockEndpoint.setSourceEndpoint(endpoint);
+        }
+
+        // Set response body
+        if (api.getResponseConfig() != null && api.getResponseConfig().getSuccessSchema() != null) {
+            try {
+                Map<String, Object> responseBody = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
+                        api.getResponseConfig().getSuccessSchema(),
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                mockEndpoint.setResponseBody(responseBody);
+            } catch (Exception e) {
+                log.warn("Failed to parse response body: {}", e.getMessage());
+            }
+        }
+
+        mockEndpointRepository.save(mockEndpoint);
+    }
+
+    /**
+     * Get or create collection
+     */
+    private APICollectionEntity getOrCreateCollection(GeneratedApiEntity api, String performedBy,
+                                                      CollectionInfoDTO collectionInfo, String generatedApiId) {
+        Optional<APICollectionEntity> existing = docCollectionRepository
+                .findById(collectionInfo.getCollectionId());
+
+        if (existing.isPresent()) {
+            APICollectionEntity collection = existing.get();
+            collection.setName(collectionInfo.getCollectionName());
+            collection.setDescription(api.getDescription());
+            collection.setVersion(api.getVersion());
+            collection.setUpdatedBy(performedBy);
+            collection.setUpdatedAt(LocalDateTime.now());
+            return docCollectionRepository.save(collection);
+        }
+
+        // Create new collection
+        APICollectionEntity collection = new APICollectionEntity();
+        collection.setId(collectionInfo.getCollectionId());
+        collection.setGeneratedApiId(generatedApiId);
+        collection.setName(collectionInfo.getCollectionName());
+        collection.setDescription(api.getDescription());
+        collection.setVersion(api.getVersion());
+        collection.setOwner(performedBy);
+        collection.setType("REST");
+        collection.setStatus("published");
+        collection.setCreatedBy(performedBy);
+        collection.setUpdatedBy(performedBy);
+        collection.setCreatedAt(LocalDateTime.now());
+        collection.setUpdatedAt(LocalDateTime.now());
+
+        return docCollectionRepository.save(collection);
+    }
+
+    /**
+     * Get or create folder
+     */
+    private com.usg.apiAutomation.entities.postgres.documentation.FolderEntity getOrCreateFolder(
+            GeneratedApiEntity api, String performedBy, CollectionInfoDTO collectionInfo,
+            APICollectionEntity collection, String generatedApiId) {
+
+        Optional<com.usg.apiAutomation.entities.postgres.documentation.FolderEntity> existing =
+                docFolderRepository.findById(collectionInfo.getFolderId());
+
+        if (existing.isPresent()) {
+            com.usg.apiAutomation.entities.postgres.documentation.FolderEntity folder = existing.get();
+            folder.setName(collectionInfo.getFolderName());
+            folder.setUpdatedBy(performedBy);
+            folder.setUpdatedAt(LocalDateTime.now());
+            return docFolderRepository.save(folder);
+        }
+
+        // Create new folder
+        com.usg.apiAutomation.entities.postgres.documentation.FolderEntity folder =
+                new com.usg.apiAutomation.entities.postgres.documentation.FolderEntity();
+        folder.setId(collectionInfo.getFolderId());
+        folder.setGeneratedApiId(generatedApiId);
+        folder.setName(collectionInfo.getFolderName());
+        folder.setDescription("Folder for " + collectionInfo.getFolderName());
+        folder.setCollection(collection);
+        folder.setDisplayOrder(1);
+        folder.setCreatedBy(performedBy);
+        folder.setUpdatedBy(performedBy);
+        folder.setCreatedAt(LocalDateTime.now());
+        folder.setUpdatedAt(LocalDateTime.now());
+
+        return docFolderRepository.save(folder);
+    }
+
+    /**
+     * Get or create mock server
+     */
+    private MockServerEntity getOrCreateMockServer(GeneratedApiEntity api, String performedBy,
+                                                   String collectionId, String generatedApiId) {
+        List<MockServerEntity> existing = mockServerRepository.findByCollectionIdWithoutCollections(collectionId);
+
+        if (!existing.isEmpty()) {
+            MockServerEntity mockServer = existing.get(0);
+            mockServer.setActive(true);
+            mockServer.setUpdatedAt(LocalDateTime.now());
+            return mockServerRepository.save(mockServer);
+        }
+
+        // Create new mock server
+        MockServerEntity mockServer = new MockServerEntity();
+        mockServer.setId(UUID.randomUUID().toString());
+        mockServer.setGeneratedApiId(generatedApiId);
+
+        APICollectionEntity collection = docCollectionRepository.findById(collectionId).orElseThrow();
+        mockServer.setCollection(collection);
+
+        mockServer.setMockServerUrl("https://mock." + api.getApiCode().toLowerCase() + ".example.com");
+        mockServer.setActive(true);
+        mockServer.setDescription("Mock server for " + api.getApiName());
+        mockServer.setCreatedBy(performedBy);
+        mockServer.setCreatedAt(LocalDateTime.now());
+        mockServer.setExpiresAt(LocalDateTime.now().plusDays(30));
+
+        return mockServerRepository.save(mockServer);
+    }
+
+    /**
+     * Add changelog entry
+     */
+    private void addChangelogEntry(GeneratedApiEntity api, String performedBy,
+                                   APICollectionEntity collection, APIEndpointEntity endpoint,
+                                   String changeDescription, String generatedApiId) {
+        ChangelogEntryEntity changelog = new ChangelogEntryEntity();
+        changelog.setId(UUID.randomUUID().toString());
+        changelog.setGeneratedApiId(generatedApiId);
+        changelog.setVersion(api.getVersion());
+        changelog.setDate(LocalDateTime.now().toString());
+        changelog.setType("UPDATED");
+        changelog.setAuthor(performedBy);
+        changelog.setCollection(collection);
+        changelog.setEndpoint(endpoint);
+
+        List<String> changes = new ArrayList<>();
+        changes.add(changeDescription);
+        changelog.setChanges(changes);
+        changelog.setCreatedAt(LocalDateTime.now());
+
+        changelogRepository.save(changelog);
+    }
+
+
+    /**
+     * Update existing documentation for an API (when moving between collections/folders)
+     * This method updates relationships without deleting the endpoint
+     */
+    @Transactional
+    public void update(GeneratedApiEntity api, String performedBy,
+                       GenerateApiRequestDTO request,
+                       String codeBaseRequestId,
+                       String collectionsCollectionId,
+                       CollectionInfoDTO collectionInfo) {
+        try {
+            log.info("Updating Documentation for API: {} to collection: {}, folder: {}",
+                    api.getApiCode(), collectionInfo.getCollectionName(), collectionInfo.getFolderName());
+
+            String generatedApiId = api.getId();
+
+            // Find existing documentation
+            List<APIEndpointEntity> existingEndpoints = endpointRepository.findByGeneratedApiId(generatedApiId);
+
+            if (existingEndpoints.isEmpty()) {
+                // No existing documentation, generate new one
+                log.info("No existing documentation found, generating new one for API: {}", api.getApiCode());
+                generate(api, performedBy, request, codeBaseRequestId, collectionsCollectionId, collectionInfo);
+                return;
+            }
+
+            // Get the first endpoint (use this one)
+            APIEndpointEntity endpoint = existingEndpoints.get(0);
+            String endpointId = endpoint.getId();
+
+            // Get or create collection
+            APICollectionEntity docCollection = getOrCreateCollection(api, performedBy, collectionInfo, generatedApiId);
+
+            // Get or create folder
+            com.usg.apiAutomation.entities.postgres.documentation.FolderEntity docFolder =
+                    getOrCreateFolder(api, performedBy, collectionInfo, docCollection, generatedApiId);
+
+            // Get or create mock server
+            MockServerEntity mockServer = getOrCreateMockServer(api, performedBy, docCollection.getId(), generatedApiId);
+
+            // Update the endpoint's collection and folder (but don't delete it!)
+            endpoint.setCollection(docCollection);
+            endpoint.setFolder(docFolder);
+            endpoint.setUpdatedAt(LocalDateTime.now());
+            endpoint.setUpdatedBy(performedBy);
+
+            // Update endpoint content if needed (but preserve the ID)
+            GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
+            endpoint.setName(api.getApiName());
+            endpoint.setMethod(api.getHttpMethod());
+            endpoint.setUrl(genUrlInfo.getFullUrl());
+            endpoint.setDescription(api.getDescription());
+            endpoint.setApiVersion(api.getVersion());
+            endpoint.setRequiresAuth(api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType()));
+            endpoint.setCategory(api.getCategory());
+
+            if (api.getTags() != null) {
+                endpoint.setTags(new ArrayList<>(api.getTags()));
+            }
+
+            // Update metadata
+            Map<String, Object> endpointMetadata = endpoint.getMetaData();
+            if (endpointMetadata == null) {
+                endpointMetadata = new HashMap<>();
+            }
+            endpointMetadata.put("genPath", genUrlInfo.getEndpointPath());
+            endpointMetadata.put("apiId", api.getId());
+            endpointMetadata.put("fullGenUrl", genUrlInfo.getFullUrl());
+            endpointMetadata.put("genUrlPattern", genUrlInfo.getUrlPattern());
+            endpointMetadata.put("exampleGenUrl", genUrlInfo.getExampleUrl());
+            endpointMetadata.put("lastUpdated", LocalDateTime.now().toString());
+            endpointMetadata.put("updatedBy", performedBy);
+            endpoint.setMetaData(endpointMetadata);
+
+            // Save the updated endpoint
+            endpointRepository.save(endpoint);
+
+            // Update mock endpoint
+            updateMockEndpoint(api, endpoint, mockServer, generatedApiId);
+
+            // Update headers (clear and recreate)
+            updateHeaders(api, endpoint, generatedApiId);
+
+            // Update parameters (clear and recreate)
+            updateParameters(api, endpoint, generatedApiId);
+
+            // Update response examples (clear and recreate)
+            updateResponseExamples(api, endpoint, generatedApiId);
+
+            // Update code examples (clear and recreate)
+            updateCodeExamples(api, endpoint, codeBaseRequestId, generatedApiId);
+
+            // Update collection counts
+            docCollection.setTotalEndpoints(1);
+            docCollection.setTotalFolders(1);
+            docCollectionRepository.save(docCollection);
+
+            // Add a changelog entry for the move
+            addChangelogEntry(api, performedBy, docCollection, endpoint,
+                    "Moved to collection: " + collectionInfo.getCollectionName() +
+                            ", folder: " + collectionInfo.getFolderName(), generatedApiId);
+
+            log.info("Documentation updated successfully for API: {} to collection: {}",
+                    api.getApiCode(), docCollection.getId());
+
+        } catch (Exception e) {
+            log.error("Error updating Documentation: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update Documentation: " + e.getMessage(), e);
+        }
+    }
+
+
 }
