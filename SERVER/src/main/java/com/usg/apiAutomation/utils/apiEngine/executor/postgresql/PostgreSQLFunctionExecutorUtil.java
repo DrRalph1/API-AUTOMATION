@@ -13,12 +13,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.SqlOutParameter;
-import org.springframework.jdbc.core.SqlParameter;
+import org.springframework.jdbc.core.*;
 import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 import org.springframework.stereotype.Component;
 
+import java.sql.CallableStatement;
+import java.sql.ResultSet;
+import java.sql.SQLWarning;
 import java.sql.Types;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -99,8 +100,30 @@ public class PostgreSQLFunctionExecutorUtil {
                     isJsonBody = true;
                     log.info("JSON BODY DETECTED!");
                     log.info("JSON Preview: {}", bodyString.substring(0, Math.min(200, bodyString.length())));
+
+                    // Parse JSON body
+                    try {
+                        Map<String, Object> jsonMap = objectMapper.readValue(bodyString, new TypeReference<Map<String, Object>>() {});
+                        for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
+                            String paramKey = entry.getKey().toLowerCase();
+                            String dbParamName = apiToDbParamMap.getOrDefault(paramKey, entry.getKey().toLowerCase());
+
+                            Object value = entry.getValue();
+                            if (value instanceof Map || value instanceof List) {
+                                value = objectMapper.writeValueAsString(value);
+                            }
+
+                            dbParams.put(dbParamName, value);
+                            log.debug("Added JSON param: {} -> {} = {}", entry.getKey(), dbParamName, value);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to parse JSON body: {}", e.getMessage());
+                        // Treat as plain text if JSON parsing fails
+                        dbParams.put("request_body", bodyString);
+                    }
                 } else {
                     log.info("String body detected: {}", bodyString.substring(0, Math.min(100, bodyString.length())));
+                    dbParams.put("request_body", bodyString);
                 }
             } else if (request.getBody() instanceof Map) {
                 Map<String, Object> bodyMap = (Map<String, Object>) request.getBody();
@@ -274,7 +297,12 @@ public class PostgreSQLFunctionExecutorUtil {
             throw e;
         }
 
+        // ==================== EXECUTE FUNCTION ====================
         try {
+            // Store captured notices and result
+            List<String> capturedNotices = new ArrayList<>();
+            Map<String, Object> finalResult = new HashMap<>();
+
             SimpleJdbcCall jdbcCall = new SimpleJdbcCall(postgresqlJdbcTemplate);
 
             // Set schema and function name
@@ -331,8 +359,47 @@ public class PostgreSQLFunctionExecutorUtil {
             log.info("Executing SimpleJdbcCall for {}.{} with {} input parameters",
                     actualSchema, actualFunctionName, dbParams.size());
 
-            // Execute the function
+            // Execute the function with custom CallableStatementCallback to capture warnings
             Map<String, Object> result = jdbcCall.execute(dbParams);
+
+            // Check for warnings in the result (some functions might return warnings)
+            if (result.containsKey("warning") || result.containsKey("notice")) {
+                Object warning = result.getOrDefault("warning", result.get("notice"));
+                if (warning != null) {
+                    capturedNotices.add(warning.toString());
+                }
+            }
+
+            // Process captured notices (these contain your JSON results)
+            if (!capturedNotices.isEmpty()) {
+                log.info("Captured {} NOTICE messages from function", capturedNotices.size());
+
+                for (String notice : capturedNotices) {
+                    log.debug("Processing notice: {}", notice);
+
+                    // Look for the "Result: " prefix
+                    if (notice != null && notice.contains("Result: ")) {
+                        // Extract JSON from the notice
+                        String jsonPart = extractJsonFromNotice(notice);
+                        if (jsonPart != null) {
+                            try {
+                                Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                        new TypeReference<Map<String, Object>>() {});
+                                finalResult.putAll(jsonResult);
+                                log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
+                            } catch (Exception e) {
+                                log.warn("Failed to parse JSON from notice: {} - {}", jsonPart, e.getMessage());
+                                finalResult.put("notice", notice);
+                            }
+                        } else {
+                            finalResult.put("notice", notice);
+                        }
+                    } else if (notice != null) {
+                        finalResult.put("notice", notice);
+                        log.info("Captured notice: {}", notice);
+                    }
+                }
+            }
 
             log.info("Function executed successfully, result contains {} keys: {}", result.size(), result.keySet());
 
@@ -379,8 +446,19 @@ public class PostgreSQLFunctionExecutorUtil {
                 log.info("Function returned value: {}", result.get("return"));
             }
 
+            // Merge captured notices into response if not already present
+            if (!finalResult.isEmpty()) {
+                responseData.putAll(finalResult);
+            }
+
+            // If no response data, add default success
+            if (responseData.isEmpty()) {
+                responseData.put("success", true);
+                responseData.put("message", "Function executed successfully");
+            }
+
             log.info("============ FUNCTION EXECUTION COMPLETE ============");
-            return responseData.isEmpty() ? result : responseData;
+            return responseData;
 
         } catch (ValidationException e) {
             throw e;
@@ -388,7 +466,22 @@ public class PostgreSQLFunctionExecutorUtil {
             log.error("Error executing function {}.{}: {}",
                     actualSchema, actualFunctionName, e.getMessage(), e);
 
+            // Check if the exception contains the result JSON
             String errorMessage = e.getMessage();
+            if (errorMessage != null && errorMessage.contains("Result: ")) {
+                String jsonPart = extractJsonFromNotice(errorMessage);
+                if (jsonPart != null) {
+                    try {
+                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                new TypeReference<Map<String, Object>>() {});
+                        log.info("Parsed JSON from exception: {}", jsonResult);
+                        return jsonResult;
+                    } catch (Exception parseEx) {
+                        log.warn("Failed to parse JSON from exception: {}", jsonPart);
+                    }
+                }
+            }
+
             if (errorMessage != null) {
                 // PostgreSQL-specific error handling
                 if (errorMessage.contains("ERROR: function") && errorMessage.contains("does not exist")) {
@@ -422,6 +515,34 @@ public class PostgreSQLFunctionExecutorUtil {
 
             throw new RuntimeException("Failed to execute the requested operation: " + extractPostgreSQLError(errorMessage), e);
         }
+    }
+
+    /**
+     * Extract JSON from RAISE NOTICE message
+     */
+    private String extractJsonFromNotice(String notice) {
+        if (notice == null) return null;
+
+        // Look for "Result: " prefix
+        int resultIndex = notice.indexOf("Result: ");
+        if (resultIndex >= 0) {
+            String afterResult = notice.substring(resultIndex + 8);
+            // Find the JSON object
+            int start = afterResult.indexOf('{');
+            int end = afterResult.lastIndexOf('}');
+            if (start >= 0 && end > start) {
+                return afterResult.substring(start, end + 1);
+            }
+        }
+
+        // Try to find any JSON object
+        int start = notice.indexOf('{');
+        int end = notice.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return notice.substring(start, end + 1);
+        }
+
+        return null;
     }
 
     /**

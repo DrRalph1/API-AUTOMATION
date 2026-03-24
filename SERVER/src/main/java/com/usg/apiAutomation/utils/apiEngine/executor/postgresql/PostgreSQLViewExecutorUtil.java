@@ -14,9 +14,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Component;
 
-import java.sql.Types;
+import java.sql.*;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,6 +36,25 @@ public class PostgreSQLViewExecutorUtil {
     private final PostgreSQLTableExecutorUtil tableExecutorUtil;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // Flag to control whether to capture RAISE NOTICE messages
+    // Set to true to capture notices (useful for views that call functions with notices)
+    // Set to false for cleaner responses (default for views)
+    private boolean captureNotices = false;
+
+    /**
+     * Set whether to capture RAISE NOTICE messages
+     */
+    public void setCaptureNotices(boolean captureNotices) {
+        this.captureNotices = captureNotices;
+    }
+
+    /**
+     * Get whether notices are being captured
+     */
+    public boolean isCaptureNotices() {
+        return captureNotices;
+    }
+
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String viewName, String schema, ExecuteApiRequestDTO request,
                           List<ApiParameterDTO> configuredParamDTOs) {
@@ -47,6 +67,7 @@ public class PostgreSQLViewExecutorUtil {
         log.info("Schema parameter: {}", schema);
         log.info("Request Body Type: {}", request.getBody() != null ? request.getBody().getClass().getName() : "null");
         log.info("Request Body: {}", request.getBody());
+        log.info("Capture notices: {}", captureNotices);
 
         // ============ CREATE PARAMETER MAPPING ============
         Map<String, String> apiToDbColumnMap = new HashMap<>();
@@ -89,6 +110,26 @@ public class PostgreSQLViewExecutorUtil {
                     body = bodyString;
                     log.info("JSON BODY DETECTED!");
                     log.info("JSON Preview: {}", body.substring(0, Math.min(200, body.length())));
+
+                    // Parse JSON body
+                    try {
+                        Map<String, Object> jsonMap = objectMapper.readValue(bodyString, new TypeReference<Map<String, Object>>() {});
+                        for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
+                            String paramKey = entry.getKey().toLowerCase();
+                            String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey, entry.getKey().toLowerCase());
+
+                            Object value = entry.getValue();
+                            if (value instanceof Map || value instanceof List) {
+                                value = objectMapper.writeValueAsString(value);
+                            }
+
+                            dbParams.put(dbColumnName, value);
+                            log.debug("Added JSON param: {} -> {} = {}", entry.getKey(), dbColumnName, value);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to parse JSON body: {}", e.getMessage());
+                        dbParams.put("body_string", bodyString);
+                    }
                 } else {
                     log.info("String body detected (non-XML/JSON): {}", bodyString.substring(0, Math.min(100, bodyString.length())));
                     if (!bodyString.isEmpty() && !bodyString.equals("{}")) {
@@ -230,7 +271,7 @@ public class PostgreSQLViewExecutorUtil {
         log.info("Final resolved schema: {}", resolvedSchema);
         log.info("Final view name: {}", resolvedViewName);
 
-        // ============ RESOLVE VIEW (PostgreSQL doesn't have synonyms) ============
+        // ============ RESOLVE VIEW ============
         String targetSchema = resolvedSchema;
         String targetName = resolvedViewName;
 
@@ -254,7 +295,6 @@ public class PostgreSQLViewExecutorUtil {
                 }
             }
 
-            // Filter parameters for validation
             Set<String> configuredParamKeys = new HashSet<>();
             if (api.getParameters() != null) {
                 for (ApiParameterEntity param : api.getParameters()) {
@@ -295,8 +335,373 @@ public class PostgreSQLViewExecutorUtil {
 
         log.info("============ VIEW EXECUTION COMPLETE ============");
 
-        // Execute the SELECT on the view using TableExecutorUtil
-        return tableExecutorUtil.executeSelect(targetName, targetSchema, dbParams, api, configuredParamDTOs);
+        // Execute the SELECT on the view using TableExecutorUtil with notice capture
+        try {
+            // Store captured notices only if enabled
+            List<String> capturedNotices = captureNotices ? new ArrayList<>() : null;
+            Map<String, Object> noticeResult = new HashMap<>();
+
+            // Execute the query
+            Object result = executeSelectWithNoticeCapture(targetName, targetSchema, dbParams, api, configuredParamDTOs, capturedNotices);
+
+            // Process captured notices only if enabled
+            if (captureNotices && capturedNotices != null && !capturedNotices.isEmpty()) {
+                log.info("Captured {} NOTICE messages from view execution", capturedNotices.size());
+
+                for (String notice : capturedNotices) {
+                    log.debug("Processing notice: {}", notice);
+
+                    if (notice != null && notice.contains("Result: ")) {
+                        String jsonPart = extractJsonFromNotice(notice);
+                        if (jsonPart != null) {
+                            try {
+                                Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                        new TypeReference<Map<String, Object>>() {});
+                                noticeResult.putAll(jsonResult);
+                                log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
+                            } catch (Exception e) {
+                                log.warn("Failed to parse JSON from notice: {} - {}", jsonPart, e.getMessage());
+                                noticeResult.put("notice", notice);
+                            }
+                        } else {
+                            noticeResult.put("notice", notice);
+                        }
+                    } else if (notice != null) {
+                        noticeResult.put("notice", notice);
+                        log.info("Captured notice: {}", notice);
+                    }
+                }
+            }
+
+            // Merge results
+            if (result instanceof Map) {
+                Map<String, Object> resultMap = (Map<String, Object>) result;
+                if (!noticeResult.isEmpty()) {
+                    resultMap.putAll(noticeResult);
+                }
+                return resultMap;
+            } else if (result instanceof List) {
+                Map<String, Object> wrapper = new HashMap<>();
+                wrapper.put("data", result);
+                if (!noticeResult.isEmpty()) {
+                    wrapper.putAll(noticeResult);
+                }
+                return wrapper;
+            } else if (result != null) {
+                Map<String, Object> wrapper = new HashMap<>();
+                wrapper.put("result", result);
+                if (!noticeResult.isEmpty()) {
+                    wrapper.putAll(noticeResult);
+                }
+                return wrapper;
+            }
+
+            return noticeResult.isEmpty() ? result : noticeResult;
+
+        } catch (Exception e) {
+            // Check if the exception contains the result JSON
+            String errorMessage = e.getMessage();
+            if (errorMessage != null && errorMessage.contains("Result: ")) {
+                String jsonPart = extractJsonFromNotice(errorMessage);
+                if (jsonPart != null) {
+                    try {
+                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                new TypeReference<Map<String, Object>>() {});
+                        log.info("Parsed JSON from exception: {}", jsonResult);
+                        return jsonResult;
+                    } catch (Exception parseEx) {
+                        log.warn("Failed to parse JSON from exception: {}", jsonPart);
+                    }
+                }
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Execute SELECT with optional notice capture
+     */
+    private Object executeSelectWithNoticeCapture(String tableName, String schema, Map<String, Object> params,
+                                                  GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs,
+                                                  List<String> capturedNotices) {
+        try {
+            StringBuilder sql = new StringBuilder("SELECT * FROM ");
+            if (schema != null && !schema.isEmpty()) {
+                sql.append(schema).append(".");
+            }
+            sql.append(tableName);
+
+            List<Object> paramValues = new ArrayList<>();
+            List<String> whereClauses = new ArrayList<>();
+
+            log.info("=== TABLE SELECT DEBUG ===");
+            log.info("Table: {}.{}", schema, tableName);
+            log.info("All incoming params: {}", params);
+            log.info("Capture notices: {}", captureNotices);
+
+            // Build a clean parameter map
+            Map<String, Object> cleanParams = new HashMap<>();
+
+            // Build parameter mapping
+            Map<String, String> apiToDbColumnMap = new HashMap<>();
+            if (configuredParamDTOs != null) {
+                for (ApiParameterDTO param : configuredParamDTOs) {
+                    if (param.getKey() != null) {
+                        String dbColumnName = param.getDbColumn();
+                        if (dbColumnName == null || dbColumnName.isEmpty()) {
+                            dbColumnName = param.getDbParameter();
+                        }
+                        if (dbColumnName == null || dbColumnName.isEmpty()) {
+                            dbColumnName = param.getKey();
+                        }
+                        apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toLowerCase());
+                        log.info("Parameter mapping: API '{}' -> Database Column '{}'", param.getKey(), dbColumnName.toLowerCase());
+                    }
+                }
+            }
+
+            // Process body parameters
+            String body = null;
+            boolean isXmlBody = false;
+            boolean isJsonBody = false;
+
+            if (params != null) {
+                if (params.containsKey("_xml")) {
+                    Object xmlObj = params.get("_xml");
+                    if (xmlObj instanceof String) {
+                        String xmlString = (String) xmlObj;
+                        if (xmlString.trim().startsWith("<")) {
+                            isXmlBody = true;
+                            body = xmlString;
+                            log.info("XML BODY DETECTED in TableExecutor!");
+
+                            Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, true);
+                            if (!extractedParams.isEmpty()) {
+                                cleanParams.putAll(extractedParams);
+                            }
+                        }
+                    }
+                }
+
+                if (!isXmlBody && params.containsKey("_json")) {
+                    Object jsonObj = params.get("_json");
+                    if (jsonObj instanceof String) {
+                        String jsonString = (String) jsonObj;
+                        if (jsonString.trim().startsWith("{") || jsonString.trim().startsWith("[")) {
+                            isJsonBody = true;
+                            body = jsonString;
+                            log.info("JSON BODY DETECTED in TableExecutor!");
+
+                            Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, false);
+                            if (!extractedParams.isEmpty()) {
+                                cleanParams.putAll(extractedParams);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Copy all parameters
+            if (params != null) {
+                for (Map.Entry<String, Object> entry : params.entrySet()) {
+                    String key = entry.getKey();
+                    if ("_xml".equals(key) || "_json".equals(key)) {
+                        continue;
+                    }
+
+                    String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
+                    cleanParams.put(dbColumnName, entry.getValue());
+                }
+
+                // Handle numbered parameters from path
+                for (Map.Entry<String, Object> entry : params.entrySet()) {
+                    String key = entry.getKey();
+                    if (key.startsWith("param") && key.length() > 5) {
+                        try {
+                            int position = Integer.parseInt(key.substring(5)) - 1;
+                            cleanParams.put("position_" + position, entry.getValue());
+                        } catch (NumberFormatException e) {
+                            // Ignore
+                        }
+                    }
+                }
+            }
+
+            log.info("Cleaned params after body processing: {}", cleanParams);
+
+            // Build WHERE clause
+            if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                for (ApiParameterEntity configuredParam : api.getParameters()) {
+                    String paramKey = configuredParam.getKey();
+                    String dbColumn = configuredParam.getDbColumn();
+                    String paramType = configuredParam.getParameterType();
+
+                    if (paramType == null) {
+                        paramType = "query";
+                    }
+
+                    if (dbColumn == null || dbColumn.isEmpty()) {
+                        continue;
+                    }
+
+                    boolean isValidForFiltering = "query".equals(paramType) ||
+                            "path".equals(paramType) ||
+                            "body".equals(paramType);
+
+                    if (isValidForFiltering) {
+                        Object value = null;
+
+                        if (cleanParams.containsKey(paramKey)) {
+                            value = cleanParams.get(paramKey);
+                        }
+
+                        if (value == null) {
+                            for (Map.Entry<String, Object> entry : cleanParams.entrySet()) {
+                                if (entry.getKey().equalsIgnoreCase(paramKey)) {
+                                    value = entry.getValue();
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (value == null && "path".equals(paramType)) {
+                            Integer position = configuredParam.getPosition();
+                            if (position != null) {
+                                String positionKey = "position_" + position;
+                                if (cleanParams.containsKey(positionKey)) {
+                                    value = cleanParams.get(positionKey);
+                                }
+                            }
+                        }
+
+                        if (value != null) {
+                            if (value instanceof List || value.getClass().isArray()) {
+                                Collection<?> collection = value instanceof List ?
+                                        (List<?>) value : Arrays.asList((Object[]) value);
+                                if (!collection.isEmpty()) {
+                                    value = collection.iterator().next();
+                                } else {
+                                    value = null;
+                                }
+                            }
+
+                            if (value != null && !value.toString().trim().isEmpty()) {
+                                whereClauses.add(dbColumn + " = ?");
+                                paramValues.add(value);
+                                log.info("ADDED FILTER: {} = ? with value: {}", dbColumn, value);
+                            } else if (Boolean.TRUE.equals(configuredParam.getRequired())) {
+                                throw new ValidationException(
+                                        String.format("Required parameter '%s' cannot be empty", paramKey)
+                                );
+                            }
+                        } else if (Boolean.TRUE.equals(configuredParam.getRequired())) {
+                            throw new ValidationException(
+                                    String.format("Required parameter '%s' is missing. Available params: %s",
+                                            paramKey, cleanParams.keySet())
+                            );
+                        }
+                    }
+                }
+            }
+
+            if (!whereClauses.isEmpty()) {
+                sql.append(" WHERE ").append(String.join(" AND ", whereClauses));
+            }
+
+            // Handle pagination
+            if (api.getSchemaConfig() != null &&
+                    Boolean.TRUE.equals(api.getSchemaConfig().getEnablePagination())) {
+                int pageSize = api.getSchemaConfig().getPageSize() != null ?
+                        api.getSchemaConfig().getPageSize() : 10;
+                int page = 1;
+
+                if (params != null && params.containsKey("page")) {
+                    try {
+                        page = Integer.parseInt(params.get("page").toString());
+                        if (page < 1) page = 1;
+                    } catch (NumberFormatException e) {
+                        log.warn("Invalid page parameter, using default: 1");
+                    }
+                }
+
+                int offset = (page - 1) * pageSize;
+                sql.append(" OFFSET ? LIMIT ?");
+                paramValues.add(offset);
+                paramValues.add(pageSize);
+            }
+
+            log.info("Final SQL: {} with {} parameters", sql.toString(), paramValues.size());
+
+            // Execute with optional notice capture
+            List<Map<String, Object>> results;
+            if (captureNotices && capturedNotices != null) {
+                results = postgresqlJdbcTemplate.query(
+                        sql.toString(),
+                        paramValues.toArray(),
+                        (ResultSetExtractor<List<Map<String, Object>>>) rs -> {
+                            // Check for warnings
+                            SQLWarning warning = rs.getStatement().getWarnings();
+                            while (warning != null) {
+                                String warningMessage = warning.getMessage();
+                                if (warningMessage != null) {
+                                    capturedNotices.add(warningMessage);
+                                    log.debug("Captured warning/notice: {}", warningMessage);
+                                }
+                                warning = warning.getNextWarning();
+                            }
+
+                            List<Map<String, Object>> rows = new ArrayList<>();
+                            ResultSetMetaData metaData = rs.getMetaData();
+                            int columnCount = metaData.getColumnCount();
+
+                            while (rs.next()) {
+                                Map<String, Object> row = new LinkedHashMap<>();
+                                for (int i = 1; i <= columnCount; i++) {
+                                    String columnName = metaData.getColumnName(i);
+                                    Object value = rs.getObject(i);
+                                    row.put(columnName, value);
+                                }
+                                rows.add(row);
+                            }
+                            return rows;
+                        }
+                );
+            } else {
+                results = postgresqlJdbcTemplate.queryForList(sql.toString(), paramValues.toArray());
+            }
+
+            log.info("Query returned {} rows", results.size());
+            return results;
+
+        } catch (Exception e) {
+            log.error("Error executing view select: {}", e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    /**
+     * Extract JSON from RAISE NOTICE message
+     */
+    private String extractJsonFromNotice(String notice) {
+        if (notice == null) return null;
+
+        int resultIndex = notice.indexOf("Result: ");
+        if (resultIndex >= 0) {
+            String afterResult = notice.substring(resultIndex + 8);
+            int start = afterResult.indexOf('{');
+            int end = afterResult.lastIndexOf('}');
+            if (start >= 0 && end > start) {
+                return afterResult.substring(start, end + 1);
+            }
+        }
+
+        int start = notice.indexOf('{');
+        int end = notice.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return notice.substring(start, end + 1);
+        }
+
+        return null;
     }
 
     /**
@@ -559,12 +964,9 @@ public class PostgreSQLViewExecutorUtil {
 
         try {
             if (isXml) {
-                // XML parsing
                 for (ApiParameterDTO param : configuredParamDTOs) {
                     String paramKey = param.getKey();
-                    if (paramKey == null || paramKey.isEmpty()) {
-                        continue;
-                    }
+                    if (paramKey == null || paramKey.isEmpty()) continue;
 
                     Pattern pattern = Pattern.compile("<" + paramKey + ">(.*?)</" + paramKey + ">",
                             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
@@ -572,19 +974,12 @@ public class PostgreSQLViewExecutorUtil {
 
                     if (matcher.find()) {
                         String value = matcher.group(1).trim();
-                        if (!value.isEmpty()) {
-                            String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey.toLowerCase(), paramKey.toLowerCase());
-                            extractedParams.put(dbColumnName, value);
-                            log.info("✅ Extracted XML parameter: {} -> {} = {}", paramKey, dbColumnName, value);
-                        } else {
-                            log.info("⚠️ XML tag <{}> found but empty", paramKey);
-                            String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey.toLowerCase(), paramKey.toLowerCase());
-                            extractedParams.put(dbColumnName, "");
-                        }
+                        String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey.toLowerCase(), paramKey.toLowerCase());
+                        extractedParams.put(dbColumnName, value.isEmpty() ? "" : value);
+                        log.info("✅ Extracted XML parameter: {} -> {} = {}", paramKey, dbColumnName, value);
                     }
                 }
             } else {
-                // JSON parsing
                 Map<String, Object> jsonMap = objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
                 for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
                     String paramKey = entry.getKey().toLowerCase();

@@ -10,8 +10,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Component;
 
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.SQLWarning;
 import java.sql.Types;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -29,9 +34,28 @@ public class PostgreSQLTableExecutorUtil {
     private final PostgreSQLParameterValidatorUtil parameterValidator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // Flag to control whether to capture RAISE NOTICE messages
+    // Set to true to capture notices (useful for procedures/functions called from tables)
+    // Set to false for cleaner responses (default for table operations)
+    private boolean captureNotices = false;
+
     public PostgreSQLTableExecutorUtil(
             PostgreSQLParameterValidatorUtil parameterValidator) {
         this.parameterValidator = parameterValidator;
+    }
+
+    /**
+     * Set whether to capture RAISE NOTICE messages
+     */
+    public void setCaptureNotices(boolean captureNotices) {
+        this.captureNotices = captureNotices;
+    }
+
+    /**
+     * Get whether notices are being captured
+     */
+    public boolean isCaptureNotices() {
+        return captureNotices;
     }
 
     /**
@@ -42,7 +66,6 @@ public class PostgreSQLTableExecutorUtil {
         while (cause != null) {
             String message = cause.getMessage();
             if (message != null && message.contains("ERROR:")) {
-                // Return the complete PostgreSQL error line
                 Pattern pattern = Pattern.compile("ERROR:[^\\n]*");
                 Matcher matcher = pattern.matcher(message);
                 if (matcher.find()) {
@@ -60,17 +83,40 @@ public class PostgreSQLTableExecutorUtil {
      */
     private String extractPostgreSQLError(String errorMessage) {
         if (errorMessage == null) return "Unknown error";
-
         Pattern pattern = Pattern.compile("ERROR:[^\\n]*");
         Matcher matcher = pattern.matcher(errorMessage);
         if (matcher.find()) {
             return matcher.group();
         }
-
         if (errorMessage.length() > 200) {
             return errorMessage.substring(0, 200) + "...";
         }
         return errorMessage;
+    }
+
+    /**
+     * Extract JSON from RAISE NOTICE message
+     */
+    private String extractJsonFromNotice(String notice) {
+        if (notice == null) return null;
+
+        int resultIndex = notice.indexOf("Result: ");
+        if (resultIndex >= 0) {
+            String afterResult = notice.substring(resultIndex + 8);
+            int start = afterResult.indexOf('{');
+            int end = afterResult.lastIndexOf('}');
+            if (start >= 0 && end > start) {
+                return afterResult.substring(start, end + 1);
+            }
+        }
+
+        int start = notice.indexOf('{');
+        int end = notice.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return notice.substring(start, end + 1);
+        }
+
+        return null;
     }
 
     /**
@@ -88,12 +134,9 @@ public class PostgreSQLTableExecutorUtil {
 
         try {
             if (isXml) {
-                // XML parsing
                 for (ApiParameterDTO param : configuredParamDTOs) {
                     String paramKey = param.getKey();
-                    if (paramKey == null || paramKey.isEmpty()) {
-                        continue;
-                    }
+                    if (paramKey == null || paramKey.isEmpty()) continue;
 
                     Pattern pattern = Pattern.compile("<" + paramKey + ">(.*?)</" + paramKey + ">",
                             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
@@ -101,19 +144,12 @@ public class PostgreSQLTableExecutorUtil {
 
                     if (matcher.find()) {
                         String value = matcher.group(1).trim();
-                        if (!value.isEmpty()) {
-                            String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey.toLowerCase(), paramKey.toUpperCase());
-                            extractedParams.put(dbColumnName, value);
-                            log.info("✅ Extracted XML parameter: {} -> {} = {}", paramKey, dbColumnName, value);
-                        } else {
-                            log.info("⚠️ XML tag <{}> found but empty", paramKey);
-                            String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey.toLowerCase(), paramKey.toUpperCase());
-                            extractedParams.put(dbColumnName, "");
-                        }
+                        String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey.toLowerCase(), paramKey.toUpperCase());
+                        extractedParams.put(dbColumnName, value.isEmpty() ? "" : value);
+                        log.info("✅ Extracted XML parameter: {} -> {} = {}", paramKey, dbColumnName, value);
                     }
                 }
             } else {
-                // JSON parsing
                 Map<String, Object> jsonMap = objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
                 for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
                     String paramKey = entry.getKey().toLowerCase();
@@ -140,6 +176,11 @@ public class PostgreSQLTableExecutorUtil {
 
     public Object executeSelect(String tableName, String schema, Map<String, Object> params,
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
+
+        // Store captured notices only if enabled
+        List<String> capturedNotices = captureNotices ? new ArrayList<>() : null;
+        Map<String, Object> noticeResult = new HashMap<>();
+
         try {
             StringBuilder sql = new StringBuilder("SELECT * FROM ");
             if (schema != null && !schema.isEmpty()) {
@@ -153,6 +194,7 @@ public class PostgreSQLTableExecutorUtil {
             log.info("=== TABLE SELECT DEBUG ===");
             log.info("Table: {}.{}", schema, tableName);
             log.info("All incoming params: {}", params);
+            log.info("Capture notices: {}", captureNotices);
 
             // Build a clean parameter map
             Map<String, Object> cleanParams = new HashMap<>();
@@ -181,7 +223,6 @@ public class PostgreSQLTableExecutorUtil {
             boolean isJsonBody = false;
 
             if (params != null) {
-                // Check for XML body
                 if (params.containsKey("_xml")) {
                     Object xmlObj = params.get("_xml");
                     if (xmlObj instanceof String) {
@@ -199,7 +240,6 @@ public class PostgreSQLTableExecutorUtil {
                     }
                 }
 
-                // Check for JSON body (if not XML)
                 if (!isXmlBody && params.containsKey("_json")) {
                     Object jsonObj = params.get("_json");
                     if (jsonObj instanceof String) {
@@ -349,14 +389,103 @@ public class PostgreSQLTableExecutorUtil {
 
             log.info("Final SQL: {} with {} parameters", sql.toString(), paramValues.size());
 
-            List<Map<String, Object>> results = postgresqlJdbcTemplate.queryForList(
-                    sql.toString(), paramValues.toArray());
+            // Execute query with optional notice capture
+            List<Map<String, Object>> results;
+            if (captureNotices) {
+                results = postgresqlJdbcTemplate.query(
+                        sql.toString(),
+                        paramValues.toArray(),
+                        (ResultSetExtractor<List<Map<String, Object>>>) rs -> {
+                            // Check for warnings (RAISE NOTICE messages)
+                            SQLWarning warning = rs.getStatement().getWarnings();
+                            while (warning != null) {
+                                String warningMessage = warning.getMessage();
+                                if (warningMessage != null) {
+                                    capturedNotices.add(warningMessage);
+                                    log.debug("Captured warning/notice: {}", warningMessage);
+                                }
+                                warning = warning.getNextWarning();
+                            }
+
+                            List<Map<String, Object>> rows = new ArrayList<>();
+                            ResultSetMetaData metaData = rs.getMetaData();
+                            int columnCount = metaData.getColumnCount();
+
+                            while (rs.next()) {
+                                Map<String, Object> row = new LinkedHashMap<>();
+                                for (int i = 1; i <= columnCount; i++) {
+                                    String columnName = metaData.getColumnName(i);
+                                    Object value = rs.getObject(i);
+                                    row.put(columnName, value);
+                                }
+                                rows.add(row);
+                            }
+                            return rows;
+                        }
+                );
+
+                // Process captured notices
+                if (!capturedNotices.isEmpty()) {
+                    log.info("Captured {} NOTICE messages from select execution", capturedNotices.size());
+
+                    for (String notice : capturedNotices) {
+                        log.debug("Processing notice: {}", notice);
+
+                        if (notice != null && notice.contains("Result: ")) {
+                            String jsonPart = extractJsonFromNotice(notice);
+                            if (jsonPart != null) {
+                                try {
+                                    Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                            new TypeReference<Map<String, Object>>() {});
+                                    noticeResult.putAll(jsonResult);
+                                    log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
+                                } catch (Exception e) {
+                                    log.warn("Failed to parse JSON from notice: {} - {}", jsonPart, e.getMessage());
+                                    noticeResult.put("notice", notice);
+                                }
+                            } else {
+                                noticeResult.put("notice", notice);
+                            }
+                        } else if (notice != null) {
+                            noticeResult.put("notice", notice);
+                            log.info("Captured notice: {}", notice);
+                        }
+                    }
+                }
+            } else {
+                // No notice capture - just execute
+                results = postgresqlJdbcTemplate.queryForList(sql.toString(), paramValues.toArray());
+            }
+
             log.info("Query returned {} rows", results.size());
 
-            return results;
+            // Build response
+            Map<String, Object> response = new HashMap<>();
+            response.put("data", results);
+            if (!noticeResult.isEmpty()) {
+                response.putAll(noticeResult);
+            }
+
+            return response;
 
         } catch (Exception e) {
             log.error("Error executing table select: {}", e.getMessage(), e);
+
+            // Check if the exception contains the result JSON
+            String errorMessage = e.getMessage();
+            if (errorMessage != null && errorMessage.contains("Result: ")) {
+                String jsonPart = extractJsonFromNotice(errorMessage);
+                if (jsonPart != null) {
+                    try {
+                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                new TypeReference<Map<String, Object>>() {});
+                        log.info("Parsed JSON from exception: {}", jsonResult);
+                        return jsonResult;
+                    } catch (Exception parseEx) {
+                        log.warn("Failed to parse JSON from exception: {}", jsonPart);
+                    }
+                }
+            }
 
             String detailedError = extractFullPostgreSQLError(e);
 
@@ -374,16 +503,17 @@ public class PostgreSQLTableExecutorUtil {
                 throw new ValidationException("Invalid parameter format. Please check the data types of your parameters.");
             }
 
-            // Throw the raw PostgreSQL error
             throw new RuntimeException(detailedError, e);
         }
     }
 
-    /**
-     * UPDATED: Execute INSERT with raw PostgreSQL error propagation
-     */
     public Object executeInsert(String tableName, String schema, Map<String, Object> params,
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
+
+        // Store captured notices only if enabled
+        List<String> capturedNotices = captureNotices ? new ArrayList<>() : null;
+        Map<String, Object> noticeResult = new HashMap<>();
+
         if (params == null || params.isEmpty()) {
             throw new RuntimeException("No parameters provided for INSERT operation");
         }
@@ -391,6 +521,7 @@ public class PostgreSQLTableExecutorUtil {
         log.info("=== TABLE INSERT DEBUG ===");
         log.info("Table: {}.{}", schema, tableName);
         log.info("Original params: {}", params);
+        log.info("Capture notices: {}", captureNotices);
 
         // Build parameter mapping
         Map<String, String> apiToDbColumnMap = new HashMap<>();
@@ -473,7 +604,6 @@ public class PostgreSQLTableExecutorUtil {
             String dbColumnName = entry.getKey();
             Object value = entry.getValue();
 
-            // First, try to find the parameter definition for this column
             ApiParameterEntity paramDef = api.getParameters().stream()
                     .filter(p -> dbColumnName.equalsIgnoreCase(p.getDbColumn()) ||
                             dbColumnName.equalsIgnoreCase(p.getKey()))
@@ -483,14 +613,11 @@ public class PostgreSQLTableExecutorUtil {
             Object convertedValue = null;
 
             if (paramDef != null) {
-                // We have parameter definition, use it for conversion
                 convertedValue = convertParameterValueWithDefinition(value, paramDef);
                 log.debug("Converted param {} using definition: {} -> {}", dbColumnName, value, convertedValue);
             } else {
-                // No parameter definition, try automatic conversion for dates
                 if (value instanceof String) {
                     String strValue = (String) value;
-                    // Check if it looks like a timestamp
                     if (strValue.matches("\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?.*")) {
                         convertedValue = convertToTimestamp(strValue);
                         log.debug("Auto-converted param {} as timestamp: {} -> {}", dbColumnName, value, convertedValue);
@@ -504,10 +631,6 @@ public class PostgreSQLTableExecutorUtil {
 
             if (convertedValue != null) {
                 typedParams.put(dbColumnName, convertedValue);
-                log.debug("Added param: {} = {} (type: {})", dbColumnName, convertedValue,
-                        convertedValue != null ? convertedValue.getClass().getSimpleName() : "null");
-            } else {
-                log.debug("Skipped null/empty param: {}", dbColumnName);
             }
         }
 
@@ -528,7 +651,6 @@ public class PostgreSQLTableExecutorUtil {
 
         log.info("Final typed params for INSERT: {}", typedParams.keySet());
 
-        // Check if we have any parameters to insert
         if (typedParams.isEmpty()) {
             log.error("No valid parameters to insert after type conversion!");
             throw new ValidationException(
@@ -563,12 +685,78 @@ public class PostgreSQLTableExecutorUtil {
         log.info("INSERT parameters: {}", paramValues);
 
         try {
-            List<Map<String, Object>> inserted = postgresqlJdbcTemplate.queryForList(sql, paramValues.toArray());
+            List<Map<String, Object>> inserted;
+
+            if (captureNotices) {
+                inserted = postgresqlJdbcTemplate.query(
+                        sql,
+                        paramValues.toArray(),
+                        (ResultSetExtractor<List<Map<String, Object>>>) rs -> {
+                            SQLWarning warning = rs.getStatement().getWarnings();
+                            while (warning != null) {
+                                String warningMessage = warning.getMessage();
+                                if (warningMessage != null) {
+                                    capturedNotices.add(warningMessage);
+                                    log.debug("Captured warning/notice: {}", warningMessage);
+                                }
+                                warning = warning.getNextWarning();
+                            }
+
+                            List<Map<String, Object>> rows = new ArrayList<>();
+                            ResultSetMetaData metaData = rs.getMetaData();
+                            int columnCount = metaData.getColumnCount();
+
+                            while (rs.next()) {
+                                Map<String, Object> row = new LinkedHashMap<>();
+                                for (int i = 1; i <= columnCount; i++) {
+                                    String columnName = metaData.getColumnName(i);
+                                    Object value = rs.getObject(i);
+                                    row.put(columnName, value);
+                                }
+                                rows.add(row);
+                            }
+                            return rows;
+                        }
+                );
+
+                // Process captured notices
+                if (!capturedNotices.isEmpty()) {
+                    log.info("Captured {} NOTICE messages from insert execution", capturedNotices.size());
+
+                    for (String notice : capturedNotices) {
+                        log.debug("Processing notice: {}", notice);
+
+                        if (notice != null && notice.contains("Result: ")) {
+                            String jsonPart = extractJsonFromNotice(notice);
+                            if (jsonPart != null) {
+                                try {
+                                    Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                            new TypeReference<Map<String, Object>>() {});
+                                    noticeResult.putAll(jsonResult);
+                                    log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
+                                } catch (Exception e) {
+                                    log.warn("Failed to parse JSON from notice: {} - {}", jsonPart, e.getMessage());
+                                    noticeResult.put("notice", notice);
+                                }
+                            } else {
+                                noticeResult.put("notice", notice);
+                            }
+                        } else if (notice != null) {
+                            noticeResult.put("notice", notice);
+                            log.info("Captured notice: {}", notice);
+                        }
+                    }
+                }
+            } else {
+                inserted = postgresqlJdbcTemplate.queryForList(sql, paramValues.toArray());
+            }
 
             Map<String, Object> result = new HashMap<>();
             result.put("rowsAffected", inserted.size());
             result.put("message", inserted.size() > 0 ? "Insert successful" : "No rows inserted");
-
+            if (!noticeResult.isEmpty()) {
+                result.putAll(noticeResult);
+            }
             if (!inserted.isEmpty()) {
                 result.put("data", inserted.get(0));
             }
@@ -577,6 +765,22 @@ public class PostgreSQLTableExecutorUtil {
 
         } catch (Exception e) {
             log.error("Error executing INSERT on {}: {}", tableName, e.getMessage(), e);
+
+            String errorMessage = e.getMessage();
+            if (errorMessage != null && errorMessage.contains("Result: ")) {
+                String jsonPart = extractJsonFromNotice(errorMessage);
+                if (jsonPart != null) {
+                    try {
+                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                new TypeReference<Map<String, Object>>() {});
+                        log.info("Parsed JSON from exception: {}", jsonResult);
+                        return jsonResult;
+                    } catch (Exception parseEx) {
+                        log.warn("Failed to parse JSON from exception: {}", jsonPart);
+                    }
+                }
+            }
+
             String rawError = extractFullPostgreSQLError(e);
             throw new RuntimeException(rawError, e);
         }
@@ -588,11 +792,7 @@ public class PostgreSQLTableExecutorUtil {
         }
 
         String stringValue = value.toString();
-
-        // AUTO-DETECT date/time strings even if type is not explicitly set
         boolean looksLikeDate = stringValue.matches("\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?.*");
-
-        // Check if it looks like a UUID
         boolean looksLikeUUID = stringValue.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 
         String oracleType = paramDef.getOracleType();
@@ -600,7 +800,6 @@ public class PostgreSQLTableExecutorUtil {
             oracleType = paramDef.getApiType();
         }
 
-        // If no type defined but it looks like a UUID, convert it
         if (oracleType == null && looksLikeUUID) {
             try {
                 log.info("Auto-converting param {} as UUID: {}", paramDef.getKey(), stringValue);
@@ -610,7 +809,6 @@ public class PostgreSQLTableExecutorUtil {
             }
         }
 
-        // If no type defined but it looks like a date, convert it
         if (oracleType == null) {
             if (looksLikeDate) {
                 log.info("Auto-converting param {} as date (no type defined): {}", paramDef.getKey(), stringValue);
@@ -654,12 +852,10 @@ public class PostgreSQLTableExecutorUtil {
                 }
             }
             else {
-                // Even if type doesn't contain DATE/TIMESTAMP, check if it looks like a date
                 if (looksLikeDate) {
                     log.info("Auto-converting param {} as date (type {} doesn't match): {}", paramDef.getKey(), type, stringValue);
                     return convertToTimestamp(stringValue);
                 }
-                // Check if it looks like a UUID
                 if (looksLikeUUID) {
                     try {
                         log.info("Auto-converting param {} as UUID: {}", paramDef.getKey(), stringValue);
@@ -678,12 +874,17 @@ public class PostgreSQLTableExecutorUtil {
 
     public Object executeUpdate(String tableName, String schema, Map<String, Object> params,
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
+
+        // Store captured notices only if enabled
+        Map<String, Object> noticeResult = new HashMap<>();
+
         if (params == null || params.isEmpty()) {
             throw new RuntimeException("No parameters provided for UPDATE operation");
         }
 
         log.info("=== TABLE UPDATE DEBUG ===");
         log.info("Table: {}.{}", schema, tableName);
+        log.info("Capture notices: {}", captureNotices);
 
         List<String> pkColumns = api.getResponseMappings().stream()
                 .filter(m -> Boolean.TRUE.equals(m.getIsPrimaryKey()))
@@ -820,28 +1021,48 @@ public class PostgreSQLTableExecutorUtil {
             Map<String, Object> result = new HashMap<>();
             result.put("rowsAffected", rowsAffected);
             result.put("message", rowsAffected > 0 ? "Update successful" : "No rows updated");
+            if (!noticeResult.isEmpty()) {
+                result.putAll(noticeResult);
+            }
 
             return result;
 
         } catch (Exception e) {
             log.error("Error executing UPDATE on {}: {}", tableName, e.getMessage(), e);
 
-            // Get the raw PostgreSQL error
-            String rawError = extractFullPostgreSQLError(e);
+            String errorMessage = e.getMessage();
+            if (errorMessage != null && errorMessage.contains("Result: ")) {
+                String jsonPart = extractJsonFromNotice(errorMessage);
+                if (jsonPart != null) {
+                    try {
+                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                new TypeReference<Map<String, Object>>() {});
+                        log.info("Parsed JSON from exception: {}", jsonResult);
+                        return jsonResult;
+                    } catch (Exception parseEx) {
+                        log.warn("Failed to parse JSON from exception: {}", jsonPart);
+                    }
+                }
+            }
 
-            // Throw raw error
+            String rawError = extractFullPostgreSQLError(e);
             throw new RuntimeException(rawError, e);
         }
     }
 
     public Object executeDelete(String tableName, String schema, Map<String, Object> params,
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
+
+        // Store captured notices only if enabled
+        Map<String, Object> noticeResult = new HashMap<>();
+
         if (params == null || params.isEmpty()) {
             throw new RuntimeException("No parameters provided for DELETE operation");
         }
 
         log.info("=== TABLE DELETE DEBUG ===");
         log.info("Table: {}.{}", schema, tableName);
+        log.info("Capture notices: {}", captureNotices);
 
         // Build parameter mapping
         Map<String, String> apiToDbColumnMap = new HashMap<>();
@@ -948,27 +1169,40 @@ public class PostgreSQLTableExecutorUtil {
             Map<String, Object> result = new HashMap<>();
             result.put("rowsAffected", rowsAffected);
             result.put("message", rowsAffected > 0 ? "Delete successful" : "No rows deleted");
+            if (!noticeResult.isEmpty()) {
+                result.putAll(noticeResult);
+            }
 
             return result;
 
         } catch (Exception e) {
             log.error("Error executing DELETE on {}: {}", tableName, e.getMessage(), e);
 
-            // Get the raw PostgreSQL error
-            String rawError = extractFullPostgreSQLError(e);
+            String errorMessage = e.getMessage();
+            if (errorMessage != null && errorMessage.contains("Result: ")) {
+                String jsonPart = extractJsonFromNotice(errorMessage);
+                if (jsonPart != null) {
+                    try {
+                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                new TypeReference<Map<String, Object>>() {});
+                        log.info("Parsed JSON from exception: {}", jsonResult);
+                        return jsonResult;
+                    } catch (Exception parseEx) {
+                        log.warn("Failed to parse JSON from exception: {}", jsonPart);
+                    }
+                }
+            }
 
-            // Throw raw error
+            String rawError = extractFullPostgreSQLError(e);
             throw new RuntimeException(rawError, e);
         }
     }
-
 
     private Object convertParameterValue(Object value, String dbColumn, GeneratedApiEntity api) {
         if (value == null || value.toString().trim().isEmpty()) {
             return null;
         }
 
-        // Find the parameter definition for this column
         ApiParameterEntity paramDef = api.getParameters().stream()
                 .filter(p -> dbColumn.equalsIgnoreCase(p.getDbColumn()))
                 .findFirst()
@@ -992,7 +1226,6 @@ public class PostgreSQLTableExecutorUtil {
 
         try {
             if (type.contains("BOOL")) {
-                // Handle boolean conversion
                 if ("true".equalsIgnoreCase(stringValue) || "1".equals(stringValue) || "yes".equalsIgnoreCase(stringValue)) {
                     return true;
                 }
@@ -1002,7 +1235,6 @@ public class PostgreSQLTableExecutorUtil {
                 return Boolean.parseBoolean(stringValue);
             }
             else if (type.contains("INT") || type.contains("NUMERIC")) {
-                // Handle numeric conversion
                 if (stringValue.matches("-?\\d+")) {
                     return Long.parseLong(stringValue);
                 }
@@ -1012,7 +1244,6 @@ public class PostgreSQLTableExecutorUtil {
                 return value;
             }
             else if (type.contains("DATE") || type.contains("TIMESTAMP")) {
-                // FIXED: Properly handle ISO 8601 datetime strings
                 return convertToTimestamp(stringValue);
             }
             else {
@@ -1026,10 +1257,6 @@ public class PostgreSQLTableExecutorUtil {
 
     /**
      * Convert various datetime formats to java.sql.Timestamp
-     * Handles ISO 8601 formats like:
-     * - 2026-03-22T19:07:59.830+00:00
-     * - 2026-03-22T19:07:59.830Z
-     * - 2026-03-22 19:07:59.830
      */
     private Object convertToTimestamp(String dateStr) {
         if (dateStr == null || dateStr.trim().isEmpty()) {
@@ -1037,56 +1264,33 @@ public class PostgreSQLTableExecutorUtil {
         }
 
         try {
-            // Remove any leading/trailing whitespace
             dateStr = dateStr.trim();
 
-            // Check if it's already in JDBC format
             try {
                 return java.sql.Timestamp.valueOf(dateStr);
             } catch (IllegalArgumentException e) {
                 // Not in standard format, continue
             }
 
-            // Handle ISO 8601 format: 2026-03-22T19:07:59.830+00:00 or 2026-03-22T19:07:59.830Z
             if (dateStr.contains("T")) {
-                // Remove timezone part (everything after + or - or Z)
                 String dateTimePart = dateStr.split("[+-]")[0];
-                dateTimePart = dateTimePart.replace("Z", "");
-
-                // Replace T with space
-                String jdbcFormat = dateTimePart.replace("T", " ");
-
-                // Handle milliseconds (ensure proper format)
-                if (jdbcFormat.contains(".")) {
-                    // Keep as is
-                } else {
-                    jdbcFormat = jdbcFormat + ".0";
-                }
-
+                dateTimePart = dateTimePart.replace("Z", "").replace("T", " ");
+                if (!dateTimePart.contains(".")) dateTimePart += ".0";
                 try {
-                    return java.sql.Timestamp.valueOf(jdbcFormat);
+                    return java.sql.Timestamp.valueOf(dateTimePart);
                 } catch (IllegalArgumentException e) {
-                    log.debug("Failed to parse as JDBC format after conversion: {}", jdbcFormat);
+                    log.debug("Failed to parse as JDBC format after conversion: {}", dateTimePart);
                 }
             }
 
-            // Try to parse with OffsetDateTime directly and convert to LocalDateTime
             try {
-                // Handle Zulu time
-                String tempStr = dateStr;
-                if (tempStr.endsWith("Z")) {
-                    tempStr = tempStr.substring(0, tempStr.length() - 1) + "+00:00";
-                }
-
+                String tempStr = dateStr.endsWith("Z") ? dateStr.substring(0, dateStr.length() - 1) + "+00:00" : dateStr;
                 java.time.OffsetDateTime odt = java.time.OffsetDateTime.parse(tempStr);
-                // Convert to LocalDateTime (strip timezone) for timestamp without time zone
-                java.time.LocalDateTime ldt = odt.toLocalDateTime();
-                return java.sql.Timestamp.valueOf(ldt);
+                return java.sql.Timestamp.valueOf(odt.toLocalDateTime());
             } catch (Exception e) {
                 log.debug("Failed to parse as OffsetDateTime: {}", e.getMessage());
             }
 
-            // Try to parse with LocalDateTime directly (without timezone)
             try {
                 String noZoneStr = dateStr.split("[+-]")[0].replace("T", " ");
                 java.time.LocalDateTime ldt = java.time.LocalDateTime.parse(noZoneStr, java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"));
@@ -1095,14 +1299,12 @@ public class PostgreSQLTableExecutorUtil {
                 log.debug("Failed to parse as LocalDateTime: {}", e.getMessage());
             }
 
-            // Try date only format
             try {
                 return java.sql.Timestamp.valueOf(dateStr + " 00:00:00.000");
             } catch (Exception e) {
                 // Still can't parse
             }
 
-            // If all else fails, log warning and return the original string
             log.warn("Unable to parse date string: {}, keeping as string", dateStr);
             return dateStr;
 
@@ -1111,7 +1313,6 @@ public class PostgreSQLTableExecutorUtil {
             return dateStr;
         }
     }
-
 
     /**
      * Pre-process parameters to convert ISO 8601 datetime strings to Timestamp
@@ -1123,7 +1324,6 @@ public class PostgreSQLTableExecutorUtil {
             Object value = entry.getValue();
             String key = entry.getKey();
 
-            // Check if this parameter corresponds to a date/timestamp column
             boolean isDateTimeColumn = api.getParameters().stream()
                     .filter(p -> key.equalsIgnoreCase(p.getKey()) || key.equalsIgnoreCase(p.getDbColumn()))
                     .anyMatch(p -> {
@@ -1133,7 +1333,6 @@ public class PostgreSQLTableExecutorUtil {
                     });
 
             if (isDateTimeColumn && value instanceof String) {
-                // Convert ISO 8601 string to Timestamp
                 value = convertToTimestamp((String) value);
             }
 
