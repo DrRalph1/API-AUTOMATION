@@ -7505,14 +7505,38 @@ const renderResponseContent = () => {
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Collections</h3>
               <div className="flex gap-1">
-                <button type="button" onClick={() => setShowCreateModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                {/* Add Refresh Button */}
+                <button 
+                  type="button" 
+                  onClick={async () => {
+                    try {
+                      await fetchCollections();
+                      showToast('Collections refreshed', 'success');
+                    } catch (error) {
+                      showToast('Failed to refresh collections', 'error');
+                    }
+                  }}
+                  className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  style={{ backgroundColor: colors.hover }}
+                  disabled={loading.collections}
+                >
+                  <RefreshCw 
+                    size={12} 
+                    style={{ 
+                      color: colors.textSecondary,
+                      animation: loading.collections ? 'spin 1s linear infinite' : 'none'
+                    }} 
+                  />
+                </button>
+                
+                {/* <button type="button" onClick={() => setShowCreateModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ backgroundColor: colors.hover }}>
                   <Plus size={12} style={{ color: colors.textSecondary }} />
                 </button>
                 <button type="button" onClick={() => setShowImportModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ backgroundColor: colors.hover }}>
                   <Upload size={12} style={{ color: colors.textSecondary }} />
-                </button>
+                </button> */}
               </div>
             </div>
             <div className="relative mb-3">

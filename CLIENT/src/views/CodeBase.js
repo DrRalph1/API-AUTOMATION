@@ -2241,6 +2241,31 @@ const renderImplementationContent = () => {
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Collections</h3>
               <div className="flex gap-1">
+                {/* Add Refresh Button */}
+                <button 
+                  className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  onClick={async () => {
+                    try {
+                      await withGlobalLoading(async () => {
+                        await fetchCollectionsList();
+                      });
+                      showToast('Collections refreshed', 'success');
+                    } catch (error) {
+                      showToast('Failed to refresh collections', 'error');
+                    }
+                  }}
+                  disabled={isLoading.collections}
+                  style={{ backgroundColor: colors.hover }}
+                >
+                  <RefreshCw 
+                    size={12} 
+                    style={{ 
+                      color: colors.textSecondary,
+                      animation: isLoading.collections ? 'spin 1s linear infinite' : 'none'
+                    }} 
+                  />
+                </button>
+                
                 <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                   onClick={() => setShowImportModal(true)}
                   style={{ backgroundColor: colors.hover }}>

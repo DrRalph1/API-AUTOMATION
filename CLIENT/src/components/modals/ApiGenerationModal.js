@@ -142,7 +142,37 @@ const MOCK_COLLECTIONS = [
       { id: 'miscellaneous-document-management', name: 'Document Management', description: 'Document storage and retrieval' },
       { id: 'miscellaneous-other', name: 'Other Services', description: 'Miscellaneous services' }
     ]
-  }
+  },
+  {
+  id: 'internet-banking',
+  name: 'Internet Banking API Collection',
+  description: 'APIs for internet banking portal, user management, and digital banking services',
+  type: 'channel',
+  folders: [
+    { id: 'internet-banking-users', name: 'Users', description: 'User management, profiles, roles, permissions, and access control' },
+    { id: 'internet-banking-authentication', name: 'Authentication', description: 'Login, logout, MFA, password management, session handling' },
+    { id: 'internet-banking-dashboard', name: 'Dashboard', description: 'Account summaries, balances, widgets, and quick actions' },
+    { id: 'internet-banking-accounts', name: 'Accounts', description: 'Account details, statements, and account management' },
+    { id: 'internet-banking-transactions', name: 'Transactions', description: 'Transaction history, search, filters, and export' },
+    { id: 'internet-banking-funds-transfer', name: 'Funds Transfer', description: 'Own account transfers, third-party transfers, IMPS, NEFT, RTGS' },
+    { id: 'internet-banking-beneficiaries', name: 'Beneficiaries', description: 'Add, edit, delete beneficiaries, manage limits, approvals' },
+    { id: 'internet-banking-bill-payments', name: 'Bill Payments', description: 'Utility bills, credit card bills, recurring payments' },
+    { id: 'internet-banking-cards', name: 'Cards', description: 'Card management, block/unblock, limits, PIN generation' },
+    { id: 'internet-banking-loans', name: 'Loans', description: 'Loan details, repayment schedule, part-payment, foreclosure' },
+    { id: 'internet-banking-deposits', name: 'Deposits', description: 'Fixed deposits, recurring deposits, premature withdrawal' },
+    { id: 'internet-banking-cheques', name: 'Cheques', description: 'Cheque book request, stop payment, cheque status tracking' },
+    { id: 'internet-banking-statements', name: 'Statements', description: 'Account statements, tax certificates, interest certificates' },
+    { id: 'internet-banking-service-requests', name: 'Service Requests', description: 'Raise requests, track status, complaint management' },
+    { id: 'internet-banking-notifications', name: 'Notifications', description: 'Alerts, messages, email/SMS preferences' },
+    { id: 'internet-banking-documents', name: 'Documents', description: 'Document upload, download, KYC submission' },
+    { id: 'internet-banking-investments', name: 'Investments', description: 'Mutual funds, insurance, wealth management' },
+    { id: 'internet-banking-forex', name: 'Forex', description: 'Exchange rates, travel cards, forex bookings' },
+    { id: 'internet-banking-tax', name: 'Tax Services', description: 'Tax payments, TDS certificates, Form 16' },
+    { id: 'internet-banking-security', name: 'Security', description: 'Security settings, device management, login history' },
+    { id: 'internet-banking-reports', name: 'Reports', description: 'Custom reports, spending analysis, financial insights' },
+    { id: 'internet-banking-preferences', name: 'Preferences', description: 'Language, theme, dashboard customization' }
+  ]
+}
 ];
 
 // Parameter location types with detailed options

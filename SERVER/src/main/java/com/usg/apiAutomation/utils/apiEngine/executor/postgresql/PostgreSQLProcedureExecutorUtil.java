@@ -13,12 +13,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.SqlOutParameter;
-import org.springframework.jdbc.core.SqlParameter;
+import org.springframework.jdbc.core.*;
 import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 import org.springframework.stereotype.Component;
 
+import java.sql.CallableStatement;
+import java.sql.ResultSet;
 import java.sql.Types;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -303,117 +303,136 @@ public class PostgreSQLProcedureExecutorUtil {
             throw e;
         }
 
-        // ==================== EXECUTE PROCEDURE ====================
+        // ==================== EXECUTE PROCEDURE USING CALL SYNTAX ====================
         try {
-            SimpleJdbcCall jdbcCall = new SimpleJdbcCall(postgresqlJdbcTemplate);
+            // Build the CALL statement
+            String callSql = buildCallStatement(actualSchema, actualProcedureName, dbParams.size());
+            log.info("Executing PostgreSQL procedure with CALL syntax: {}", callSql);
+            log.info("Parameters: {}", dbParams);
 
-            // Set schema and procedure name
-            if (actualSchema != null && !actualSchema.isEmpty()) {
-                jdbcCall = jdbcCall.withSchemaName(actualSchema);
-                log.info("Setting schema name to: {}", actualSchema);
-            }
+            // Create CallableStatementCreator
+            CallableStatementCreator csc = connection -> {
+                CallableStatement cs = connection.prepareCall(callSql);
 
-            jdbcCall = jdbcCall.withProcedureName(actualProcedureName);
-            log.info("Setting procedure name to: {}", actualProcedureName);
+                // Set input parameters
+                int index = 1;
+                List<ApiParameterEntity> inputParams = new ArrayList<>();
 
-            log.info("PostgreSQL will execute: {}.{}", actualSchema, actualProcedureName);
+                // First, collect all IN parameters from API configuration
+                if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                    for (ApiParameterEntity param : api.getParameters()) {
+                        if (param == null || param.getKey() == null) continue;
 
-            // Declare output parameters from response mappings
-            if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-                log.debug("Declaring {} OUT parameters from response mappings", api.getResponseMappings().size());
+                        String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
+                        String dbParamName = getDbParamName(param);
 
-                for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
-                    if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
-                        String outParamName = mapping.getDbColumn() != null && !mapping.getDbColumn().isEmpty() ?
-                                mapping.getDbColumn().toLowerCase() : "out_param_" + mapping.getPosition();
-
-                        int sqlType = mapToSqlType(mapping.getOracleType());
-                        jdbcCall.declareParameters(new SqlOutParameter(outParamName, sqlType));
-
-                        log.debug("Declared OUT parameter: {} of type: {} (SQL type: {})",
-                                outParamName, mapping.getOracleType(), sqlType);
-                    }
-                }
-            }
-
-            // Declare input parameters from API parameters
-            if (api.getParameters() != null && !api.getParameters().isEmpty()) {
-                int inParamCount = 0;
-
-                for (ApiParameterEntity param : api.getParameters()) {
-                    if (param == null || param.getKey() == null) continue;
-
-                    String paramType = param.getParameterType();
-                    String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
-
-                    String dbParamName = getDbParamName(param);
-
-                    boolean isInParameter = paramMode.contains("IN") || paramType == null ||
-                            "query".equals(paramType) || "path".equals(paramType) || "body".equals(paramType);
-
-                    if (dbParams.containsKey(dbParamName) && isInParameter) {
-                        int sqlType = mapToSqlType(param.getOracleType());
-                        jdbcCall.declareParameters(new SqlParameter(dbParamName, sqlType));
-
-                        Object paramValue = dbParams.get(dbParamName);
-                        log.debug("Declared IN parameter: {} of type: {} (SQL type: {}) with value: {}",
-                                dbParamName, param.getOracleType(), sqlType,
-                                paramValue instanceof String && paramValue.toString().length() > 100 ?
-                                        paramValue.toString().substring(0, 100) + "..." : paramValue);
-                        inParamCount++;
-                    }
-                }
-
-                log.debug("Declared {} IN parameters", inParamCount);
-            }
-
-            log.info("Executing SimpleJdbcCall for {}.{} with {} input parameters",
-                    actualSchema, actualProcedureName, dbParams.size());
-
-            // Execute the procedure
-            Map<String, Object> result = jdbcCall.execute(dbParams);
-
-            log.info("Procedure executed successfully, result contains {} keys: {}", result.size(), result.keySet());
-
-            // Map the results to response data
-            Map<String, Object> responseData = new HashMap<>();
-
-            if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-                int mappedCount = 0;
-
-                for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
-                    if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
-                        String dbColumn = mapping.getDbColumn();
-                        if (dbColumn != null && !dbColumn.isEmpty()) {
-                            // PostgreSQL returns lowercase column names
-                            String lowerDbColumn = dbColumn.toLowerCase();
-
-                            if (result.containsKey(lowerDbColumn)) {
-                                responseData.put(mapping.getApiField(), result.get(lowerDbColumn));
-                                log.debug("Mapped output {} to {} with value: {}",
-                                        lowerDbColumn, mapping.getApiField(), result.get(lowerDbColumn));
-                                mappedCount++;
-                            } else if (result.containsKey(dbColumn)) {
-                                responseData.put(mapping.getApiField(), result.get(dbColumn));
-                                log.debug("Mapped output {} to {} with value: {}",
-                                        dbColumn, mapping.getApiField(), result.get(dbColumn));
-                                mappedCount++;
-                            } else {
-                                log.warn("Output parameter {} not found in result set. Available keys: {}",
-                                        dbColumn, result.keySet());
-                            }
+                        // Check if this is an IN parameter and we have a value for it
+                        if ((paramMode.contains("IN") || paramMode.equals("INOUT")) && dbParams.containsKey(dbParamName)) {
+                            Object value = dbParams.get(dbParamName);
+                            int sqlType = mapToSqlType(param.getOracleType());
+                            cs.setObject(index++, value, sqlType);
+                            inputParams.add(param);
+                            log.debug("Set IN parameter {} (index {}): {} = {}",
+                                    dbParamName, index-1, param.getOracleType(), value);
                         }
                     }
                 }
 
-                log.debug("Mapped {} output parameters to response", mappedCount);
-            } else {
-                log.debug("No response mappings found, returning entire result map");
-                responseData.putAll(result);
-            }
+                // Register OUT parameters from response mappings
+                if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+                    for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                        if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                            String outParamName = mapping.getDbColumn() != null && !mapping.getDbColumn().isEmpty() ?
+                                    mapping.getDbColumn().toLowerCase() : "out_param_" + mapping.getPosition();
+
+                            int sqlType = mapToSqlType(mapping.getOracleType());
+                            cs.registerOutParameter(index++, sqlType);
+
+                            log.debug("Registered OUT parameter: {} (index {}) of type: {} (SQL type: {})",
+                                    outParamName, index-1, mapping.getOracleType(), sqlType);
+                        }
+                    }
+                }
+
+                return cs;
+            };
+
+            // Create CallableStatementCallback
+            CallableStatementCallback<Map<String, Object>> callback = callableStatement -> {
+                // Execute the call
+                callableStatement.execute();
+                log.info("Procedure executed successfully using CALL syntax");
+
+                // Process results
+                Map<String, Object> responseData = new HashMap<>();
+
+                // Count how many IN parameters we had
+                int inParamCount = 0;
+                if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                    for (ApiParameterEntity param : api.getParameters()) {
+                        if (param == null || param.getKey() == null) continue;
+                        String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
+                        String dbParamName = getDbParamName(param);
+                        if ((paramMode.contains("IN") || paramMode.equals("INOUT")) && dbParams.containsKey(dbParamName)) {
+                            inParamCount++;
+                        }
+                    }
+                }
+
+                // Process OUT parameters from response mappings
+                if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+                    int outParamIndex = inParamCount + 1; // OUT parameters start after IN parameters
+                    int mappedCount = 0;
+
+                    for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                        if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                            String outParamName = mapping.getDbColumn() != null && !mapping.getDbColumn().isEmpty() ?
+                                    mapping.getDbColumn().toLowerCase() : "out_param_" + mapping.getPosition();
+
+                            try {
+                                Object value = callableStatement.getObject(outParamIndex);
+                                responseData.put(mapping.getApiField(), value);
+                                log.debug("Mapped OUT parameter {} to {} with value: {}",
+                                        outParamName, mapping.getApiField(), value);
+                                mappedCount++;
+                            } catch (Exception e) {
+                                log.warn("Failed to get OUT parameter {}: {}", outParamName, e.getMessage());
+                            }
+                            outParamIndex++;
+                        }
+                    }
+                    log.debug("Mapped {} output parameters to response", mappedCount);
+                }
+
+                // Process any result sets (if the procedure returns data)
+                boolean hasResultSet = callableStatement.getMoreResults();
+                if (hasResultSet) {
+                    ResultSet rs = callableStatement.getResultSet();
+                    if (rs != null) {
+                        List<Map<String, Object>> resultSetData = new ArrayList<>();
+                        while (rs.next()) {
+                            Map<String, Object> row = new HashMap<>();
+                            int columnCount = rs.getMetaData().getColumnCount();
+                            for (int i = 1; i <= columnCount; i++) {
+                                row.put(rs.getMetaData().getColumnName(i).toLowerCase(), rs.getObject(i));
+                            }
+                            resultSetData.add(row);
+                        }
+                        if (!resultSetData.isEmpty()) {
+                            responseData.put("result_set", resultSetData);
+                            log.info("Retrieved {} rows from result set", resultSetData.size());
+                        }
+                    }
+                }
+
+                return responseData.isEmpty() ? new HashMap<>() : responseData;
+            };
+
+            // Execute with explicit type parameters to resolve ambiguity
+            Map<String, Object> result = postgresqlJdbcTemplate.execute(csc, callback);
 
             log.info("============ PROCEDURE EXECUTION COMPLETE ============");
-            return responseData.isEmpty() ? result : responseData;
+            return result != null ? result : new HashMap<>();
 
         } catch (ValidationException e) {
             throw e;
@@ -454,6 +473,30 @@ public class PostgreSQLProcedureExecutorUtil {
 
             throw new RuntimeException("Failed to execute the requested operation: " + extractPostgreSQLError(errorMessage), e);
         }
+    }
+
+    /**
+     * Build the CALL statement for PostgreSQL procedure
+     */
+    private String buildCallStatement(String schema, String procedureName, int paramCount) {
+        StringBuilder callBuilder = new StringBuilder("CALL ");
+
+        if (schema != null && !schema.isEmpty()) {
+            callBuilder.append(schema).append(".");
+        }
+
+        callBuilder.append(procedureName).append("(");
+
+        for (int i = 0; i < paramCount; i++) {
+            if (i > 0) {
+                callBuilder.append(", ");
+            }
+            callBuilder.append("?");
+        }
+
+        callBuilder.append(")");
+
+        return callBuilder.toString();
     }
 
     /**

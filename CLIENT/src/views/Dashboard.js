@@ -263,7 +263,7 @@ const ApiEndpointItem = React.memo(({ api, colors, isDark, onClick }) => {
               {api.collectionName}
             </div>
             <div className="flex items-center gap-2 text-xs">
-              <span style={{ color: colors.textTertiary }}>
+              <span className='font-bold' style={{ color: colors.textTertiary }}>
                 Created: {formatDate(api.createdAt)}
               </span>
             </div>
