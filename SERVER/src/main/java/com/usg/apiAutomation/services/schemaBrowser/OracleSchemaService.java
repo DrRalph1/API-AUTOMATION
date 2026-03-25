@@ -19,10 +19,7 @@ import org.springframework.stereotype.Service;
 import java.sql.*;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -2794,6 +2791,44 @@ public class OracleSchemaService implements DatabaseSchemaService {
         }
     }
 
+
+    /**
+     * Extracts the full Oracle error message from the exception chain
+     */
+    private String extractFullOracleError(Exception e) {
+        Throwable cause = e;
+        Set<String> seenMessages = new HashSet<>();
+        StringBuilder fullError = new StringBuilder();
+
+        while (cause != null) {
+            String message = cause.getMessage();
+            if (message != null && !message.isEmpty()) {
+                // Avoid duplicate messages
+                if (!seenMessages.contains(message)) {
+                    seenMessages.add(message);
+
+                    // Look for ORA-xxxxx pattern
+                    if (message.contains("ORA-")) {
+                        // This is the Oracle error we want
+                        return message;
+                    }
+
+                    // Build chain if needed for debugging
+                    if (fullError.length() > 0) {
+                        fullError.append(" -> ");
+                    }
+                    fullError.append(message);
+                }
+            }
+            cause = cause.getCause();
+        }
+
+        // If we found an ORA error, we would have returned it already
+        // Otherwise return the chain or original message
+        return fullError.length() > 0 ? fullError.toString() : e.getMessage();
+    }
+
+
     /**
      * Execute UPDATE/INSERT/DELETE query
      */
@@ -2804,7 +2839,61 @@ public class OracleSchemaService implements DatabaseSchemaService {
             return oracleJdbcTemplate.update(cleanedQuery);
         } catch (Exception e) {
             log.error("Error executing UPDATE query", e);
-            throw new RuntimeException("Failed to execute UPDATE query: " + e.getMessage(), e);
+
+            // Extract the full Oracle error
+            String detailedError = extractFullOracleError(e);
+
+            // Check for insufficient privileges
+            if (detailedError.contains("ORA-01031")) {
+                throw new RuntimeException("ORA-01031: insufficient privileges");
+            }
+            // Check for table or view does not exist
+            else if (detailedError.contains("ORA-00942")) {
+                throw new RuntimeException("ORA-00942: table or view does not exist");
+            }
+            // Check for invalid identifier
+            else if (detailedError.contains("ORA-00904")) {
+                throw new RuntimeException("ORA-00904: invalid identifier");
+            }
+            // Check for unique constraint violation
+            else if (detailedError.contains("ORA-00001")) {
+                throw new RuntimeException("ORA-00001: unique constraint violated");
+            }
+            // Check for check constraint violation
+            else if (detailedError.contains("ORA-02290")) {
+                throw new RuntimeException("ORA-02290: check constraint violated");
+            }
+            // Check for parent key not found
+            else if (detailedError.contains("ORA-02291")) {
+                throw new RuntimeException("ORA-02291: integrity constraint violated - parent key not found");
+            }
+            // Check for child record found
+            else if (detailedError.contains("ORA-02292")) {
+                throw new RuntimeException("ORA-02292: integrity constraint violated - child record found");
+            }
+            // Check for value too large
+            else if (detailedError.contains("ORA-12899")) {
+                throw new RuntimeException("ORA-12899: value too large for column");
+            }
+            // Check for cannot insert NULL
+            else if (detailedError.contains("ORA-01400")) {
+                throw new RuntimeException("ORA-01400: cannot insert NULL into column");
+            }
+            // Check for invalid number
+            else if (detailedError.contains("ORA-01722")) {
+                throw new RuntimeException("ORA-01722: invalid number");
+            }
+            // Generic Oracle error
+            else if (detailedError.contains("ORA-")) {
+                // Extract just the ORA error without the SQL
+                Pattern pattern = Pattern.compile("ORA-\\d{5}:\\s*[^\\n]*");
+                Matcher matcher = pattern.matcher(detailedError);
+                if (matcher.find()) {
+                    throw new RuntimeException(matcher.group());
+                }
+            }
+
+            throw new RuntimeException("Failed to execute UPDATE query: " + detailedError);
         }
     }
 
