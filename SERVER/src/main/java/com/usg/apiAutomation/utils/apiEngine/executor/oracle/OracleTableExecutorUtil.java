@@ -33,6 +33,34 @@ public class OracleTableExecutorUtil {
     }
 
     /**
+     * Cleans SQL statements by removing trailing semicolons and other common issues
+     * @param sql The SQL statement to clean
+     * @return Cleaned SQL statement safe for JDBC execution
+     */
+    private String cleanSqlStatement(String sql) {
+        if (sql == null || sql.trim().isEmpty()) {
+            return sql;
+        }
+
+        String cleaned = sql.trim();
+
+        // Remove trailing semicolon(s) - JDBC doesn't need them and Oracle rejects them
+        while (cleaned.endsWith(";")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1).trim();
+        }
+
+        // Remove any leading/trailing whitespace
+        cleaned = cleaned.trim();
+
+        // Log the cleaning for debugging
+        if (!cleaned.equals(sql.trim())) {
+            log.info("Cleaned SQL statement - Original: [{}], Cleaned: [{}]", sql, cleaned);
+        }
+
+        return cleaned;
+    }
+
+    /**
      * Extracts the full Oracle error message from the exception chain
      */
     private String extractFullOracleError(Exception e) {
@@ -369,10 +397,16 @@ public class OracleTableExecutorUtil {
                 log.info("Added pagination: offset={}, pageSize={}", offset, pageSize);
             }
 
-            log.info("Final SQL: {} with {} parameters", sql.toString(), paramValues.size());
+            // CLEAN THE SQL BEFORE EXECUTION - THIS IS THE FIX
+            String originalSql = sql.toString();
+            String cleanedSql = cleanSqlStatement(originalSql);
+
+            log.info("Final SQL before cleaning: {}", originalSql);
+            log.info("Final SQL after cleaning: {}", cleanedSql);
+            log.info("SQL parameters: {}", paramValues.size());
 
             List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(
-                    sql.toString(), paramValues.toArray());
+                    cleanedSql, paramValues.toArray());
             log.info("Query returned {} rows", results.size());
 
             return results;
@@ -616,8 +650,6 @@ public class OracleTableExecutorUtil {
             throw new RuntimeException("Failed to execute INSERT operation: " + detailedError, e);
         }
     }
-
-
 
     public Object executeUpdate(String tableName, String owner, Map<String, Object> params,
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {

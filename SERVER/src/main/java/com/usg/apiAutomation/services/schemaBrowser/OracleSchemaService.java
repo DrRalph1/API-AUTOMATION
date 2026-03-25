@@ -2569,6 +2569,7 @@ public class OracleSchemaService implements DatabaseSchemaService {
                     Map<String, Object> queryResult = executeSelectQuery(query, timeoutSeconds);
                     result.put("success", true);
                     result.put("message", getSuccessMessage(statementType, queryResult));
+                    // Wrap the queryResult inside a "data" field for consistency
                     result.put("data", queryResult);
                     break;
 
@@ -2729,14 +2730,49 @@ public class OracleSchemaService implements DatabaseSchemaService {
 
 
     /**
+     * Cleans SQL statements by removing trailing semicolons and other common issues
+     * @param sql The SQL statement to clean
+     * @return Cleaned SQL statement safe for JDBC execution
+     */
+    private String cleanSqlStatement(String sql) {
+        if (sql == null || sql.trim().isEmpty()) {
+            return sql;
+        }
+
+        String cleaned = sql.trim();
+
+        // Remove trailing semicolon(s) - JDBC doesn't need them and Oracle rejects them
+        while (cleaned.endsWith(";")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1).trim();
+        }
+
+        // Remove any leading/trailing whitespace
+        cleaned = cleaned.trim();
+
+        // Log the cleaning for debugging
+        if (!cleaned.equals(sql.trim())) {
+            log.info("Cleaned SQL statement - Original: [{}], Cleaned: [{}]", sql, cleaned);
+        }
+
+        return cleaned;
+    }
+
+
+
+    /**
      * Execute SELECT query
      */
     private Map<String, Object> executeSelectQuery(String query, int timeoutSeconds) {
         try {
+            // CLEAN THE SQL BEFORE EXECUTION - THIS IS THE FIX
+            String cleanedQuery = cleanSqlStatement(query);
+            log.info("Original query: [{}], Cleaned query: [{}]", query, cleanedQuery);
+
             long startTime = System.currentTimeMillis();
-            List<Map<String, Object>> rows = oracleJdbcTemplate.queryForList(query);
+            List<Map<String, Object>> rows = oracleJdbcTemplate.queryForList(cleanedQuery);
             long executionTime = System.currentTimeMillis() - startTime;
 
+            // Extract columns from the first row (if any)
             List<String> columns = rows.isEmpty() ? new ArrayList<>() : new ArrayList<>(rows.get(0).keySet());
 
             Map<String, Object> result = new HashMap<>();
@@ -2744,6 +2780,12 @@ public class OracleSchemaService implements DatabaseSchemaService {
             result.put("rows", rows);
             result.put("rowCount", rows.size());
             result.put("executionTimeMs", executionTime);
+
+            // Add pagination info for consistency (even though not paginated here)
+            result.put("page", 1);
+            result.put("pageSize", rows.size());
+            result.put("totalPages", 1);
+            result.put("totalRows", rows.size());
 
             return result;
         } catch (Exception e) {
@@ -2757,7 +2799,9 @@ public class OracleSchemaService implements DatabaseSchemaService {
      */
     private int executeUpdateQuery(String query, int timeoutSeconds) {
         try {
-            return oracleJdbcTemplate.update(query);
+            // Clean the SQL before execution
+            String cleanedQuery = cleanSqlStatement(query);
+            return oracleJdbcTemplate.update(cleanedQuery);
         } catch (Exception e) {
             log.error("Error executing UPDATE query", e);
             throw new RuntimeException("Failed to execute UPDATE query: " + e.getMessage(), e);
@@ -2769,7 +2813,11 @@ public class OracleSchemaService implements DatabaseSchemaService {
      */
     private void executeDDL(String query, int timeoutSeconds) {
         try {
-            oracleJdbcTemplate.execute(query);
+            // Clean the SQL before execution - remove trailing semicolons
+            String cleanedQuery = cleanSqlStatement(query);
+            log.info("Original DDL: [{}], Cleaned DDL: [{}]", query, cleanedQuery);
+
+            oracleJdbcTemplate.execute(cleanedQuery);
         } catch (Exception e) {
             log.error("Error executing DDL", e);
 
@@ -2989,11 +3037,15 @@ public class OracleSchemaService implements DatabaseSchemaService {
      * This wrapper ensures we capture all output regardless of how the block is structured
      */
     private String wrapPlSqlBlockWithCapture(String originalQuery) {
+        // Clean the query first - remove trailing semicolons
+        String cleanedQuery = cleanSqlStatement(originalQuery);
+
         // Remove any trailing semicolons and clean up
-        String cleanedQuery = originalQuery.trim();
         if (cleanedQuery.endsWith(";")) {
             cleanedQuery = cleanedQuery.substring(0, cleanedQuery.length() - 1);
         }
+
+        log.debug("Wrapping PL/SQL block - Original: [{}], Cleaned: [{}]", originalQuery, cleanedQuery);
 
         // Check if it's already a complete block
         boolean isCompleteBlock = cleanedQuery.toUpperCase().startsWith("BEGIN") ||

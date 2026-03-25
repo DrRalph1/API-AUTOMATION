@@ -1529,181 +1529,217 @@ const QueryEditorModal = ({
   };
   
   const handleCompile = async () => {
-    if (!authToken) return;
+  if (!authToken) return;
+  
+  const sqlToExecute = getSQLToExecute();
+  
+  if (!sqlToExecute.trim()) {
+    setCompilationResult({
+      success: false,
+      message: 'Execution failed',
+      error: 'No SQL statement to execute. Please select text or ensure the editor has content.',
+      output: ''
+    });
+    return;
+  }
+  
+  setIsCompiling(true);
+  setCompilationResult(null);
+  
+  try {
+    const executeSQL = dbConfig.executeSQL;
+    let trimmedSql = sqlToExecute.trim();
     
-    const sqlToExecute = getSQLToExecute();
+    // Check if this is a SELECT query
+    const isSelectQuery = /^\s*SELECT\b/i.test(trimmedSql);
     
-    if (!sqlToExecute.trim()) {
-      setCompilationResult({
-        success: false,
-        message: 'Execution failed',
-        error: 'No SQL statement to execute. Please select text or ensure the editor has content.',
-        output: ''
-      });
-      return;
+    // Check if this is a procedure/function definition (CREATE OR REPLACE)
+    const isObjectDefinition = /^\s*CREATE\s+(OR\s+REPLACE\s+)?(PROCEDURE|FUNCTION|PACKAGE|TYPE|TRIGGER|VIEW|MATERIALIZED\s+VIEW)/i.test(trimmedSql);
+    
+    // Check if this is a PL/SQL block (starts with DECLARE or BEGIN)
+    const isPLSQLBlock = /^\s*(DECLARE|BEGIN)/i.test(trimmedSql);
+    
+    // Check if this is a DDL statement
+    const isDDL = /^\s*(CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)/i.test(trimmedSql);
+    
+    // Check if this is a procedure/function without CREATE (just the body)
+    const isProcedureBody = /^\s*PROCEDURE\s+\w+/i.test(trimmedSql) && 
+                            !/^\s*CREATE/i.test(trimmedSql);
+    
+    let finalSql = sqlToExecute;
+    
+    // For procedure/function definitions without CREATE, add CREATE OR REPLACE
+    if (isProcedureBody && selectedObject?.type === 'PROCEDURE') {
+      finalSql = `CREATE OR REPLACE ${sqlToExecute}`;
     }
     
-    setIsCompiling(true);
-    setCompilationResult(null);
+    // For PL/SQL blocks, ensure they are properly terminated
+    if (isPLSQLBlock && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
+      finalSql = sqlToExecute + ';\n/';
+    }
     
-    try {
-      const executeSQL = dbConfig.executeSQL;
-      let trimmedSql = sqlToExecute.trim();
-      
-      // Check if this is a procedure/function definition (CREATE OR REPLACE)
-      const isObjectDefinition = /^\s*CREATE\s+(OR\s+REPLACE\s+)?(PROCEDURE|FUNCTION|PACKAGE|TYPE|TRIGGER|VIEW|MATERIALIZED\s+VIEW)/i.test(trimmedSql);
-      
-      // Check if this is a PL/SQL block (starts with DECLARE or BEGIN)
-      const isPLSQLBlock = /^\s*(DECLARE|BEGIN)/i.test(trimmedSql);
-      
-      // Check if this is a DDL statement
-      const isDDL = /^\s*(CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)/i.test(trimmedSql);
-      
-      // Check if this is a procedure/function without CREATE (just the body)
-      const isProcedureBody = /^\s*PROCEDURE\s+\w+/i.test(trimmedSql) && 
-                              !/^\s*CREATE/i.test(trimmedSql);
-      
-      let finalSql = sqlToExecute;
-      
-      // For procedure/function definitions without CREATE, add CREATE OR REPLACE
-      if (isProcedureBody && selectedObject?.type === 'PROCEDURE') {
-        finalSql = `CREATE OR REPLACE ${sqlToExecute}`;
-      }
-      
-      // For PL/SQL blocks, ensure they are properly terminated
-      if (isPLSQLBlock && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
-        finalSql = sqlToExecute + ';\n/';
-      }
-      
-      console.log('Executing SQL:', {
-        hasSelection: textareaRef.current && textareaRef.current.selectionStart !== textareaRef.current.selectionEnd,
-        isObjectDefinition,
-        isPLSQLBlock,
-        isDDL,
-        isProcedureBody,
-        sqlPreview: finalSql.substring(0, 200)
-      });
-      
-      const response = await executeSQL(authToken, {
-        sql: finalSql,
-        objectType: selectedObject?.type,
-        objectName: selectedObject?.name,
-        owner: selectedObject?.owner,
-        schema: selectedObject?.schema || selectedObject?.owner,
-        databaseType: databaseType,
-        readOnly: false
-      });
-      
-      // Process response for ALL database types
-      let success = false;
-      let message = '';
-      let output = '';
-      let error = null;
-      
-      console.log('Response received:', response);
-      
-      // Check if the response indicates an error structure
-      if (response && typeof response === 'object') {
-        // Check for success field directly in response (PostgreSQL style)
-        if (response.hasOwnProperty('success')) {
-          success = response.success === true;
-          message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
-          output = response.output || response.data?.output || '';
-          error = response.error || response.message || null;
-        }
-        // Check for responseCode field (Oracle style)
-        else if (response.hasOwnProperty('responseCode')) {
-          success = response.responseCode === 200;
-          message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
+    console.log('Executing SQL:', {
+      hasSelection: textareaRef.current && textareaRef.current.selectionStart !== textareaRef.current.selectionEnd,
+      isSelectQuery,
+      isObjectDefinition,
+      isPLSQLBlock,
+      isDDL,
+      isProcedureBody,
+      sqlPreview: finalSql.substring(0, 200)
+    });
+    
+    const response = await executeSQL(authToken, {
+      sql: finalSql,
+      objectType: selectedObject?.type,
+      objectName: selectedObject?.name,
+      owner: selectedObject?.owner,
+      schema: selectedObject?.schema || selectedObject?.owner,
+      databaseType: databaseType,
+      readOnly: false
+    });
+    
+    // Process response for ALL database types
+    let success = false;
+    let message = '';
+    let output = '';
+    let error = null;
+    let rows = [];
+    let columns = [];
+    
+    console.log('Response received:', response);
+    
+    // Check if the response indicates an error structure
+    if (response && typeof response === 'object') {
+      // Check for success field directly in response (PostgreSQL style)
+      if (response.hasOwnProperty('success')) {
+        success = response.success === true;
+        message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
+        
+        // If this is a SELECT query and we have data, format it as JSON array
+        if (isSelectQuery && response.data && response.data.rows) {
+          rows = response.data.rows || [];
+          columns = response.data.columns || [];
           
-          // Extract data based on structure
-          if (response.data) {
-            if (typeof response.data === 'string') {
-              output = response.data;
-            } else if (response.data.ddl) {
-              output = response.data.ddl;
-            } else if (response.data.rows) {
-              output = JSON.stringify(response.data.rows, null, 2);
-            } else if (response.data.output) {
-              output = response.data.output;
-            } else {
-              output = JSON.stringify(response.data, null, 2);
-            }
-          }
-          error = response.error || null;
-        }
-        // Check for data object directly with rows/columns
-        else if (response.hasOwnProperty('data') && response.data && (response.data.hasOwnProperty('rows') || response.data.hasOwnProperty('rowCount'))) {
-          success = true;
-          message = 'Query executed successfully';
-          
-          if (response.data.rows && response.data.rows.length > 0) {
-            output = JSON.stringify(response.data.rows, null, 2);
-          } else if (response.data.rowCount !== undefined) {
-            output = `${response.data.rowCount} row(s) returned`;
+          if (rows.length > 0) {
+            // Format as JSON array like PostgreSQL does
+            output = JSON.stringify(rows, null, 2);
           } else {
-            output = 'Query executed successfully';
+            output = `${message}\n[]`;
           }
-          error = null;
+        } else {
+          output = response.output || response.data?.output || '';
         }
-        // Check for error message in response
-        else if (response.hasOwnProperty('error') || response.hasOwnProperty('message')) {
-          success = false;
-          message = response.message || 'Execution failed';
-          error = response.error || response.message;
-          output = response.output || '';
+        error = response.error || response.message || null;
+      }
+      // Check for responseCode field (Oracle style)
+      else if (response.hasOwnProperty('responseCode')) {
+        success = response.responseCode === 200;
+        message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
+        
+        // Extract data based on structure
+        if (response.data) {
+          if (typeof response.data === 'string') {
+            output = response.data;
+          } else if (response.data.ddl) {
+            output = response.data.ddl;
+          } else if (response.data.rows && response.data.rows.length > 0) {
+            // Oracle SELECT query response - format as JSON array
+            rows = response.data.rows;
+            columns = response.data.columns || (rows.length > 0 ? Object.keys(rows[0]) : []);
+            
+            // Format as JSON array like PostgreSQL does
+            output = JSON.stringify(rows, null, 2);
+          } else if (response.data.rows && response.data.rows.length === 0) {
+            // Empty result set
+            output = `${message}\n[]`;
+          } else if (response.data.output) {
+            output = response.data.output;
+          } else if (response.data.rowsAffected !== undefined) {
+            output = `${response.data.rowsAffected} row(s) affected`;
+          } else {
+            output = JSON.stringify(response.data, null, 2);
+          }
+        } else {
+          output = message;
         }
-        // Default - try to treat as successful
-        else {
-          success = true;
-          message = 'Execution completed successfully';
-          output = JSON.stringify(response, null, 2);
-          error = null;
-        }
-      } else if (typeof response === 'string') {
+        error = response.error || null;
+      }
+      // Check for data object directly with rows/columns (Fallback)
+      else if (response.hasOwnProperty('data') && response.data && (response.data.hasOwnProperty('rows') || response.data.hasOwnProperty('rowCount'))) {
         success = true;
-        message = 'Execution completed successfully';
-        output = response;
-        error = null;
-      } else {
-        success = true;
-        message = 'Execution completed successfully';
-        output = String(response);
+        message = response.message || 'Query executed successfully';
+        
+        if (response.data.rows && response.data.rows.length > 0) {
+          rows = response.data.rows;
+          columns = response.data.columns || (rows.length > 0 ? Object.keys(rows[0]) : []);
+          
+          // Format as JSON array
+          output = JSON.stringify(rows, null, 2);
+        } else if (response.data.rowCount !== undefined) {
+          output = `${response.data.rowCount} row(s) returned\n[]`;
+        } else {
+          output = 'Query executed successfully\n[]';
+        }
         error = null;
       }
-      
-      setCompilationResult({
-        success: success,
-        message: message,
-        output: output || (success ? 'Statement executed successfully' : ''),
-        error: error
-      });
-      
-    } catch (error) {
-      console.error('Execution error:', error);
-      
-      let errorMessage = error.message || String(error);
-      let errorDetail = null;
-      
-      if (error.response && error.response.data) {
-        if (error.response.data.message) {
-          errorMessage = error.response.data.message;
-          errorDetail = error.response.data.error || error.response.data.detail;
-        } else if (error.response.data.error) {
-          errorMessage = error.response.data.error;
-        }
+      // Check for error message in response
+      else if (response.hasOwnProperty('error') || response.hasOwnProperty('message')) {
+        success = false;
+        message = response.message || 'Execution failed';
+        error = response.error || response.message;
+        output = response.output || '';
       }
-      
-      setCompilationResult({
-        success: false,
-        message: 'Execution failed',
-        error: errorMessage,
-        output: errorDetail || ''
-      });
-    } finally {
-      setIsCompiling(false);
+      // Default - try to treat as successful
+      else {
+        success = true;
+        message = 'Execution completed successfully';
+        output = JSON.stringify(response, null, 2);
+        error = null;
+      }
+    } else if (typeof response === 'string') {
+      success = true;
+      message = 'Execution completed successfully';
+      output = response;
+      error = null;
+    } else {
+      success = true;
+      message = 'Execution completed successfully';
+      output = String(response);
+      error = null;
     }
-  };
+    
+    setCompilationResult({
+      success: success,
+      message: message,
+      output: output || (success ? 'Statement executed successfully' : ''),
+      error: error
+    });
+    
+  } catch (error) {
+    console.error('Execution error:', error);
+    
+    let errorMessage = error.message || String(error);
+    let errorDetail = null;
+    
+    if (error.response && error.response.data) {
+      if (error.response.data.message) {
+        errorMessage = error.response.data.message;
+        errorDetail = error.response.data.error || error.response.data.detail;
+      } else if (error.response.data.error) {
+        errorMessage = error.response.data.error;
+      }
+    }
+    
+    setCompilationResult({
+      success: false,
+      message: 'Execution failed',
+      error: errorMessage,
+      output: errorDetail || ''
+    });
+  } finally {
+    setIsCompiling(false);
+  }
+};
   
   const handleSave = async () => {
     if (!authToken || !selectedObject) {

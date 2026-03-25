@@ -34,6 +34,34 @@ public class OracleViewExecutorUtil {
     private final OracleTableExecutorUtil oracleTableExecutorUtil;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /**
+     * Cleans SQL statements by removing trailing semicolons and other common issues
+     * @param sql The SQL statement to clean
+     * @return Cleaned SQL statement safe for JDBC execution
+     */
+    private String cleanSqlStatement(String sql) {
+        if (sql == null || sql.trim().isEmpty()) {
+            return sql;
+        }
+
+        String cleaned = sql.trim();
+
+        // Remove trailing semicolon(s) - JDBC doesn't need them and Oracle rejects them
+        while (cleaned.endsWith(";")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1).trim();
+        }
+
+        // Remove any leading/trailing whitespace
+        cleaned = cleaned.trim();
+
+        // Log the cleaning for debugging
+        if (!cleaned.equals(sql.trim())) {
+            log.info("Cleaned SQL statement - Original: [{}], Cleaned: [{}]", sql, cleaned);
+        }
+
+        return cleaned;
+    }
+
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String viewName, String owner, ExecuteApiRequestDTO request,
                           List<ApiParameterDTO> configuredParamDTOs) {
@@ -469,8 +497,6 @@ public class OracleViewExecutorUtil {
         return null;
     }
 
-
-
     private String getDbColumnName(ApiParameterEntity param) {
         if (param.getDbColumn() != null && !param.getDbColumn().isEmpty()) {
             return param.getDbColumn().toUpperCase();
@@ -486,7 +512,10 @@ public class OracleViewExecutorUtil {
         // Check if view exists
         String sql = "SELECT COUNT(*) FROM ALL_VIEWS WHERE OWNER = ? AND VIEW_NAME = ?";
 
-        Integer count = oracleJdbcTemplate.queryForObject(sql, Integer.class, schemaName, viewName);
+        // Clean the SQL before execution
+        String cleanedSql = cleanSqlStatement(sql);
+
+        Integer count = oracleJdbcTemplate.queryForObject(cleanedSql, Integer.class, schemaName, viewName);
         if (count == null || count == 0) {
             throw new ValidationException(
                     String.format("View '%s.%s' does not exist", schemaName, viewName)
@@ -495,7 +524,9 @@ public class OracleViewExecutorUtil {
 
         // Validate view is accessible
         try {
-            oracleJdbcTemplate.execute("SELECT 1 FROM " + schemaName + "." + viewName + " WHERE ROWNUM = 1");
+            String testSql = "SELECT 1 FROM " + schemaName + "." + viewName + " WHERE ROWNUM = 1";
+            String cleanedTestSql = cleanSqlStatement(testSql);
+            oracleJdbcTemplate.execute(cleanedTestSql);
         } catch (Exception e) {
             throw new ValidationException(
                     String.format("Cannot access view '%s.%s': %s",
@@ -511,8 +542,11 @@ public class OracleViewExecutorUtil {
                             "FROM ALL_TAB_COLUMNS " +
                             "WHERE OWNER = ? AND TABLE_NAME = ?";
 
+            // Clean the SQL before execution
+            String cleanedColumnSql = cleanSqlStatement(columnSql);
+
             List<Map<String, Object>> columns = oracleJdbcTemplate.queryForList(
-                    columnSql, schemaName, viewName);
+                    cleanedColumnSql, schemaName, viewName);
 
             Map<String, Map<String, Object>> columnMap = new HashMap<>();
             for (Map<String, Object> column : columns) {

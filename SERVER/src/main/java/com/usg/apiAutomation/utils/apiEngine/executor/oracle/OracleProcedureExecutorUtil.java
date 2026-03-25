@@ -42,6 +42,34 @@ public class OracleProcedureExecutorUtil {
         this.objectResolver = objectResolver;
     }
 
+    /**
+     * Cleans SQL statements by removing trailing semicolons and other common issues
+     * @param sql The SQL statement to clean
+     * @return Cleaned SQL statement safe for JDBC execution
+     */
+    private String cleanSqlStatement(String sql) {
+        if (sql == null || sql.trim().isEmpty()) {
+            return sql;
+        }
+
+        String cleaned = sql.trim();
+
+        // Remove trailing semicolon(s) - JDBC doesn't need them and Oracle rejects them
+        while (cleaned.endsWith(";")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1).trim();
+        }
+
+        // Remove any leading/trailing whitespace
+        cleaned = cleaned.trim();
+
+        // Log the cleaning for debugging
+        if (!cleaned.equals(sql.trim())) {
+            log.info("Cleaned SQL statement - Original: [{}], Cleaned: [{}]", sql, cleaned);
+        }
+
+        return cleaned;
+    }
+
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String procedureName, String owner, ExecuteApiRequestDTO request,
                           List<ApiParameterDTO> configuredParamDTOs) {
@@ -569,9 +597,9 @@ public class OracleProcedureExecutorUtil {
 
         // Strategy 5: Try to get current user's default schema
         try {
-            String currentSchema = oracleJdbcTemplate.queryForObject(
-                    "SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM DUAL",
-                    String.class);
+            String currentSchemaSql = "SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM DUAL";
+            String cleanedCurrentSchemaSql = cleanSqlStatement(currentSchemaSql);
+            String currentSchema = oracleJdbcTemplate.queryForObject(cleanedCurrentSchemaSql, String.class);
             if (currentSchema != null && !currentSchema.isEmpty()) {
                 log.info("Strategy 5 - Using current schema from Oracle: {}", currentSchema);
                 return currentSchema;
@@ -586,7 +614,8 @@ public class OracleProcedureExecutorUtil {
 
             // Query to find the procedure in any schema the current user has access to
             String findProcedureSql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND OBJECT_TYPE = 'PROCEDURE' AND ROWNUM = 1";
-            List<String> owners = oracleJdbcTemplate.queryForList(findProcedureSql, String.class, procedureName);
+            String cleanedFindProcedureSql = cleanSqlStatement(findProcedureSql);
+            List<String> owners = oracleJdbcTemplate.queryForList(cleanedFindProcedureSql, String.class, procedureName);
 
             if (!owners.isEmpty()) {
                 String foundOwner = owners.get(0);
@@ -596,7 +625,8 @@ public class OracleProcedureExecutorUtil {
 
             // If not found as procedure, check if it's a function (in case of mixed usage)
             String findFunctionSql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND OBJECT_TYPE = 'FUNCTION' AND ROWNUM = 1";
-            List<String> functionOwners = oracleJdbcTemplate.queryForList(findFunctionSql, String.class, procedureName);
+            String cleanedFindFunctionSql = cleanSqlStatement(findFunctionSql);
+            List<String> functionOwners = oracleJdbcTemplate.queryForList(cleanedFindFunctionSql, String.class, procedureName);
 
             if (!functionOwners.isEmpty()) {
                 String foundOwner = functionOwners.get(0);
@@ -606,7 +636,8 @@ public class OracleProcedureExecutorUtil {
 
             // If still not found, try to find as any object type
             String findAnyObjectSql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND ROWNUM = 1";
-            List<String> anyOwners = oracleJdbcTemplate.queryForList(findAnyObjectSql, String.class, procedureName);
+            String cleanedFindAnyObjectSql = cleanSqlStatement(findAnyObjectSql);
+            List<String> anyOwners = oracleJdbcTemplate.queryForList(cleanedFindAnyObjectSql, String.class, procedureName);
 
             if (!anyOwners.isEmpty()) {
                 String foundOwner = anyOwners.get(0);
@@ -624,8 +655,6 @@ public class OracleProcedureExecutorUtil {
         return null;
     }
 
-
-
     private int mapToSqlType(String oracleType) {
         if (oracleType == null) return java.sql.Types.VARCHAR;
 
@@ -642,7 +671,6 @@ public class OracleProcedureExecutorUtil {
 
         return java.sql.Types.VARCHAR;
     }
-
 
     // Add these helper methods to ProcedureExecutorUtil
     private String getDbParamName(ApiParameterEntity param) {
@@ -691,7 +719,6 @@ public class OracleProcedureExecutorUtil {
             }
         }
     }
-
 
     /**
      * Parse XML body and extract parameter values
