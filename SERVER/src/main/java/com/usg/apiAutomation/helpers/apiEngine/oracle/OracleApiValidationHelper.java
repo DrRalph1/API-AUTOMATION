@@ -80,11 +80,22 @@ public class OracleApiValidationHelper implements DatabaseValidationHelper {
             Map<String, Object> data = (Map<String, Object>) validation.get("data");
 
             if (data != null && Boolean.TRUE.equals(data.get("exists"))) {
+                // CRITICAL FIX: Extract and set the actual owner from the validation
+                if (data.containsKey("owner")) {
+                    String actualOwner = (String) data.get("owner");
+                    if (actualOwner != null && !actualOwner.isEmpty()) {
+                        sourceObject.setOwner(actualOwner);
+                        sourceObject.setSchemaName(actualOwner);  // Also set schemaName
+                        sourceObject.setTargetOwner(actualOwner); // Also set targetOwner
+                        log.info("✅ Updated source object with actual owner from database: {}", actualOwner);
+                    }
+                }
+
                 result.put("valid", true);
                 result.put("exists", true);
                 result.put("objectName", sourceObject.getObjectName());
                 result.put("objectType", sourceObject.getObjectType());
-                result.put("owner", sourceObject.getOwner());
+                result.put("owner", sourceObject.getOwner());  // Now this will have the actual owner
 
                 if (sourceObject.getObjectType().equalsIgnoreCase("SYNONYM")) {
                     Map<String, Object> resolved = oracleSchemaService.resolveSynonym(
@@ -96,6 +107,13 @@ public class OracleApiValidationHelper implements DatabaseValidationHelper {
 
                     Map<String, Object> resolvedData = (Map<String, Object>) resolved.get("data");
                     if (resolvedData != null && !resolvedData.containsKey("error")) {
+                        // For synonyms, also set the target owner
+                        if (resolvedData.containsKey("targetOwner")) {
+                            String targetOwner = (String) resolvedData.get("targetOwner");
+                            sourceObject.setTargetOwner(targetOwner);
+                            log.info("✅ Set target owner for synonym: {}", targetOwner);
+                        }
+
                         result.put("targetOwner", resolvedData.get("targetOwner"));
                         result.put("targetName", resolvedData.get("targetName"));
                         result.put("targetType", resolvedData.get("targetType"));

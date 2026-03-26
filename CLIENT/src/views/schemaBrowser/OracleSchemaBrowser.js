@@ -157,10 +157,16 @@ const FilterInput = React.memo(({
   }, [filterQuery]);
 
   const handleFilterChange = useCallback((e) => {
-    const value = e.target.value;
-    setLocalFilterValue(value);
-    onFilterChange(value);
-  }, [onFilterChange]);
+  const value = e.target.value;
+  setLocalFilterValue(value);
+  onFilterChange(value);
+  
+  // IMPORTANT: When the input is cleared manually (user deletes all text), 
+  // automatically clear all filters and reset to show all objects
+  if (value === '') {
+    onCancelSearch();
+  }
+}, [onFilterChange, onCancelSearch]);
 
   const handleOwnerChange = useCallback((e) => {
     onOwnerChange(e.target.value);
