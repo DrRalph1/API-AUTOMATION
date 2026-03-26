@@ -93,32 +93,40 @@ public class PostgreSQLSearchRepository extends PostgreSQLRepository {
 
             } else {
                 // Search all object types
+                // Get total count including functions and procedures
                 String fullCountSql = "SELECT COUNT(*) FROM (" +
+                        // Tables, views, materialized views, indexes, sequences
                         "SELECT c.relname FROM pg_class c " +
                         "JOIN pg_namespace n ON c.relnamespace = n.oid " +
                         "WHERE n.nspname = current_schema() " +
-                        "AND c.relkind IN ('r', 'v', 'm', 'f', 'p', 'S', 'i') " +
-                        "AND c.relname ILIKE ?) t";
-                int totalCount = getJdbcTemplate().queryForObject(fullCountSql, Integer.class, searchParam);
+                        "AND c.relkind IN ('r', 'v', 'm', 'i', 'S') " +
+                        "AND c.relname ILIKE ? " +
+                        "UNION ALL " +
+                        // Functions and procedures
+                        "SELECT p.proname FROM pg_proc p " +
+                        "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                        "WHERE n.nspname = current_schema() " +
+                        "AND p.proname ILIKE ?) t";
+                int totalCount = getJdbcTemplate().queryForObject(fullCountSql, Integer.class, searchParam, searchParam);
 
-                // Get all results and paginate
+                // Get all results
                 List<Map<String, Object>> allResults = new ArrayList<>();
+
+                // Query for tables, views, materialized views, indexes, sequences
                 String objectsSql = "SELECT " +
                         "    n.nspname as owner, " +
                         "    c.relname as name, " +
                         "    CASE WHEN c.relkind = 'r' THEN 'TABLE' " +
                         "         WHEN c.relkind = 'v' THEN 'VIEW' " +
                         "         WHEN c.relkind = 'm' THEN 'MATERIALIZED VIEW' " +
-                        "         WHEN c.relkind = 'f' THEN 'FUNCTION' " +
-                        "         WHEN c.relkind = 'p' THEN 'PROCEDURE' " +
-                        "         WHEN c.relkind = 'S' THEN 'SEQUENCE' " +
                         "         WHEN c.relkind = 'i' THEN 'INDEX' " +
+                        "         WHEN c.relkind = 'S' THEN 'SEQUENCE' " +
                         "         ELSE 'OTHER' END as type, " +
                         "    'VALID' as status " +
                         "FROM pg_class c " +
                         "JOIN pg_namespace n ON c.relnamespace = n.oid " +
                         "WHERE n.nspname = current_schema() " +
-                        "AND c.relkind IN ('r', 'v', 'm', 'f', 'p', 'S', 'i') " +
+                        "AND c.relkind IN ('r', 'v', 'm', 'i', 'S') " +
                         "AND c.relname ILIKE ? " +
                         "ORDER BY type, name";
 
@@ -135,8 +143,44 @@ public class PostgreSQLSearchRepository extends PostgreSQLRepository {
                     allResults.add(transformed);
                 }
 
-                allResults.sort((a, b) -> ((String) a.get("name")).compareTo((String) b.get("name")));
+                // Query for functions and procedures
+                String functionsSql = "SELECT " +
+                        "    n.nspname as owner, " +
+                        "    p.proname as name, " +
+                        "    CASE WHEN p.prokind = 'f' THEN 'FUNCTION' " +
+                        "         WHEN p.prokind = 'p' THEN 'PROCEDURE' " +
+                        "         WHEN p.prokind = 'a' THEN 'AGGREGATE' " +
+                        "         WHEN p.prokind = 'w' THEN 'WINDOW' " +
+                        "         ELSE 'FUNCTION' END as type, " +
+                        "    'VALID' as status " +
+                        "FROM pg_proc p " +
+                        "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                        "WHERE n.nspname = current_schema() " +
+                        "AND p.proname ILIKE ? " +
+                        "ORDER BY type, name";
 
+                List<Map<String, Object>> functions = getJdbcTemplate().queryForList(functionsSql, searchParam);
+
+                for (Map<String, Object> func : functions) {
+                    Map<String, Object> transformed = new HashMap<>();
+                    transformed.put("name", func.get("name"));
+                    transformed.put("owner", func.get("owner"));
+                    transformed.put("type", func.get("type"));
+                    transformed.put("status", func.get("status"));
+                    transformed.put("icon", getObjectTypeIcon((String) func.get("type")));
+                    transformed.put("isSynonym", false);
+                    allResults.add(transformed);
+                }
+
+                // Sort all results
+                allResults.sort((a, b) -> {
+                    // First compare by type, then by name
+                    int typeCompare = ((String) a.get("type")).compareTo((String) b.get("type"));
+                    if (typeCompare != 0) return typeCompare;
+                    return ((String) a.get("name")).compareTo((String) b.get("name"));
+                });
+
+                // Apply pagination
                 int fromIndex = Math.min(offset, allResults.size());
                 int toIndex = Math.min(offset + pageSize, allResults.size());
                 List<Map<String, Object>> paginatedResults = allResults.subList(fromIndex, toIndex);
