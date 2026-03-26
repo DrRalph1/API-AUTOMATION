@@ -155,10 +155,15 @@ const FilterInput = React.memo(({
   }, [filterQuery]);
 
   const handleFilterChange = useCallback((e) => {
-    const value = e.target.value;
-    setLocalFilterValue(value);
-    onFilterChange(value);
-  }, [onFilterChange]);
+  const value = e.target.value;
+  setLocalFilterValue(value);
+  onFilterChange(value);
+  
+  // If the input becomes empty, automatically clear all filters
+  if (value === '') {
+    onCancelSearch();
+  }
+}, [onFilterChange, onCancelSearch]);
 
   const handleOwnerChange = useCallback((e) => {
     onOwnerChange(e.target.value);
@@ -513,24 +518,16 @@ const LeftSidebar = React.memo(({
     setIsLeftSidebarVisible(false);
   }, [setIsLeftSidebarVisible]);
 
-  const filterObjects = useCallback((objects, type) => {
+ const filterObjects = useCallback((objects, type) => {
   if (hasActiveFilter && filteredResults) {
-    // Return the filtered results for this type if they exist
+    // Return filtered results
     if (filteredResults[type]) {
       return filteredResults[type];
-    }
-    // Handle special cases where type name might not match exactly
-    const typeMapping = {
-      'indexes': 'indexes',
-      'other': 'other'
-    };
-    if (typeMapping[type] && filteredResults[typeMapping[type]]) {
-      return filteredResults[typeMapping[type]];
     }
     return [];
   }
   if (!hasActiveFilter) {
-    return objects || [];
+    return objects || [];  // <-- Returns ALL original objects when hasActiveFilter is false
   }
   return [];
 }, [hasActiveFilter, filteredResults]);
@@ -4665,6 +4662,7 @@ if (isProcedure) {
     setIsFiltering(false);
     setFilteredResults({});
     setSearchPerformed(false);
+    setHasActiveFilter(false);  // <-- ADD THIS LINE - this is critical!
     setFilterQuery('');
     setFilterSearchTerm('');
     setSelectedOwner('ALL');
