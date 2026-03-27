@@ -2549,7 +2549,90 @@ const deletePathParam = (id) => {
   );
 };
 
-// Replace the handleSelectRequest function with this complete updated version
+// Add this function to replace environment variables in a URL
+const replaceEnvironmentVariables = useCallback((url, environmentsList, activeEnvId) => {
+  if (!url || !environmentsList || environmentsList.length === 0 || !activeEnvId) {
+    return url;
+  }
+  
+  // Find the active environment
+  const activeEnvironment = environmentsList.find(env => env.id === activeEnvId);
+  if (!activeEnvironment || !activeEnvironment.variables || activeEnvironment.variables.length === 0) {
+    return url;
+  }
+  
+  // Create a map of environment variables
+  const envVarMap = new Map();
+  activeEnvironment.variables.forEach(variable => {
+    if (variable.enabled && variable.key) {
+      envVarMap.set(variable.key, variable.value);
+    }
+  });
+  
+  // Replace all {{variable}} placeholders in the URL
+  let processedUrl = url;
+  const placeholderRegex = /\{\{([^}]+)\}\}/g;
+  let match;
+  let hasReplacements = false;
+  
+  while ((match = placeholderRegex.exec(url)) !== null) {
+    const fullPlaceholder = match[0];
+    const varName = match[1];
+    const varValue = envVarMap.get(varName);
+    
+    if (varValue !== undefined) {
+      processedUrl = processedUrl.replace(new RegExp(fullPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), varValue);
+      hasReplacements = true;
+      console.log(`🔄 Replaced environment variable: ${fullPlaceholder} → ${varValue}`);
+    } else {
+      console.log(`⚠️ Environment variable not found: ${fullPlaceholder}`);
+    }
+  }
+  
+  if (hasReplacements) {
+    console.log(`✅ Final URL after environment replacement: ${processedUrl}`);
+  }
+  
+  return processedUrl;
+}, []);
+
+// Add this helper function to resolve environment variables in URLs
+const resolveEnvironmentVariables = useCallback((url, envVariables) => {
+  if (!url || !envVariables || envVariables.length === 0) return url;
+  
+  console.log('🌍 Resolving environment variables in URL:', url);
+  console.log('🌍 Available variables:', envVariables.map(v => ({ key: v.key, value: v.value, enabled: v.enabled })));
+  
+  // Pattern to match {{variableName}}
+  const envVarPattern = /\{\{([^}]+)\}\}/g;
+  let resolvedUrl = url;
+  let match;
+  
+  // Create a map for quick lookup
+  const envMap = new Map();
+  envVariables.forEach(v => {
+    if (v.enabled && v.key) {
+      envMap.set(v.key, v.value);
+      console.log(`📝 Mapped variable: {{${v.key}}} -> ${v.value}`);
+    }
+  });
+  
+  // Replace all environment variables
+  while ((match = envVarPattern.exec(url)) !== null) {
+    const varName = match[1];
+    const envValue = envMap.get(varName);
+    
+    if (envValue) {
+      resolvedUrl = resolvedUrl.replace(match[0], envValue);
+      console.log(`🌍 Resolved environment variable {{${varName}}} to: ${envValue}`);
+    } else {
+      console.warn(`⚠️ Environment variable {{${varName}}} not found or disabled`);
+    }
+  }
+  
+  console.log('🌍 Final resolved URL:', resolvedUrl);
+  return resolvedUrl;
+}, []);
 
 const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
   console.log('🎯 [handleSelectRequest] Selected request:', {
@@ -2701,8 +2784,19 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     initialTemplateUrl = cleanedTemplateUrl;
   }
 
-  setTemplateUrl(initialTemplateUrl);
-  setRequestUrl(initialTemplateUrl);
+  // Add environment variable resolution here
+  if (activeEnvironment) {
+    const currentEnv = environments.find(env => env.id === activeEnvironment);
+    if (currentEnv && currentEnv.variables) {
+      const resolvedUrl = resolveEnvironmentVariables(initialTemplateUrl, currentEnv.variables);
+      setRequestUrl(resolvedUrl);
+      console.log('🌍 Resolved URL with environment variables:', resolvedUrl);
+    } else {
+      setRequestUrl(initialTemplateUrl);
+    }
+  } else {
+    setRequestUrl(initialTemplateUrl);
+  }
   
   // Set request body and other params
   setRequestBody(request.body || '');
@@ -3967,6 +4061,35 @@ const separateParamsAndHeaders = (items) => {
       setLoading(prev => ({ ...prev, import: false }));
     }
   }, [authToken, fetchCollections]);
+
+
+
+  // Add this useEffect after your other useEffects (around line where you handle environment changes)
+useEffect(() => {
+  if (selectedRequest && selectedRequest.url && environments && activeEnvironment) {
+    const templateUrlWithPlaceholders = selectedRequest.url;
+    const hasEnvPlaceholders = /\{\{[^}]+\}\}/.test(templateUrlWithPlaceholders);
+    
+    if (hasEnvPlaceholders) {
+      console.log('🌍 Environment changed, re-applying environment variables to:', selectedRequest.name);
+      
+      // Get the processed URL with new environment variables
+      const processedUrl = replaceEnvironmentVariables(templateUrlWithPlaceholders, environments, activeEnvironment);
+      const currentUrl = requestUrl;
+      
+      if (processedUrl !== currentUrl) {
+        console.log('🔄 Updating URL from:', currentUrl, 'to:', processedUrl);
+        setRequestUrl(processedUrl);
+        
+        // Keep all other request data (headers, body, auth, params) intact
+        // They are already preserved in state
+        
+        // Show a subtle notification
+        showToast(`Environment applied: ${processedUrl}`, 'info');
+      }
+    }
+  }
+}, [activeEnvironment, environments, selectedRequest, requestUrl, replaceEnvironmentVariables, showToast]);
 
 
   useEffect(() => {
@@ -7472,7 +7595,7 @@ const renderResponseContent = () => {
     `}</style>
 
       {/* Loading Overlay */}
-      <LoadingOverlay />
+      {/* <LoadingOverlay /> */}
 
       {/* TOP NAVIGATION */}
       <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
@@ -7486,27 +7609,43 @@ const renderResponseContent = () => {
         <div className="flex items-center gap-2">
           {/* Environment Selector */}
           <div className="relative">
-            <button type="button" className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-opacity-50 transition-colors hover-lift"
-              style={{ backgroundColor: colors.hover }}
-              onClick={() => {
-                if (environments.length === 0) {
-                  showToast('No environments available', 'info');
-                  return;
-                }
-                const currentIndex = environments.findIndex(e => e.id === activeEnvironment);
-                const nextIndex = (currentIndex + 1) % environments.length;
-                const nextEnv = environments[nextIndex];
-                setActiveEnvironment(nextEnv.id);
-                setEnvironments(envs => envs.map(e => ({ ...e, isActive: e.id === nextEnv.id })));
-                showToast(`Switched to ${nextEnv.name}`, 'success');
-              }}>
-              <Globe size={12} style={{ color: colors.textSecondary }} />
-              <span style={{ color: colors.text }}>
-                {environments.find(e => e.id === activeEnvironment)?.name || 'No Environment'}
-              </span>
-              <ChevronDown size={12} style={{ color: colors.textSecondary }} />
-            </button>
-          </div>
+  <button 
+    type="button" 
+    className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-opacity-50 transition-colors hover-lift"
+    style={{ backgroundColor: colors.hover }}
+    onClick={() => {
+      if (environments.length === 0) {
+        showToast('No environments available', 'info');
+        return;
+      }
+      
+      // Find the current active environment index
+      const currentIndex = environments.findIndex(e => e.id === activeEnvironment);
+      const nextIndex = (currentIndex + 1) % environments.length;
+      const nextEnv = environments[nextIndex];
+      
+      // Update active environment - this will trigger the useEffect above
+      setActiveEnvironment(nextEnv.id);
+      setEnvironments(envs => envs.map(e => ({ ...e, isActive: e.id === nextEnv.id })));
+      
+      // Show toast with environment info
+      const varCount = nextEnv.variables?.filter(v => v.enabled).length || 0;
+      showToast(`Switched to ${nextEnv.name} (${varCount} variables available)`, 'success');
+      
+      // Log available variables for debugging
+      if (nextEnv.variables) {
+        console.log(`🌍 Environment ${nextEnv.name} variables:`, 
+          nextEnv.variables.filter(v => v.enabled).map(v => v.key));
+      }
+    }}
+  >
+    <Globe size={12} style={{ color: colors.textSecondary }} />
+    <span style={{ color: colors.text }}>
+      {environments.find(e => e.id === activeEnvironment)?.name || 'No Environment'}
+    </span>
+    <ChevronDown size={12} style={{ color: colors.textSecondary }} />
+  </button>
+</div>
 
           <div className="w-px h-4" style={{ backgroundColor: colors.border }}></div>
 
