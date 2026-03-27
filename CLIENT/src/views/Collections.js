@@ -2549,6 +2549,8 @@ const deletePathParam = (id) => {
   );
 };
 
+// Replace the handleSelectRequest function with this complete updated version
+
 const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
   console.log('🎯 [handleSelectRequest] Selected request:', {
     id: request.id,
@@ -2561,7 +2563,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     hasRequestBody: !!request.requestBody
   });
 
-  // Add this helper function near the top of your component
+  // Add this helper function
   const escapeXml = (str) => {
     if (!str) return '';
     return str
@@ -2574,6 +2576,42 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
 
   // Check if this is a new/empty request
   const isNewRequest = request.id?.startsWith('req-') || !request.url;
+  
+  // ============== FIX: Update request tabs FIRST ==============
+  // Update request tabs to show the selected request
+  setRequestTabs(prevTabs => {
+    // Check if this tab already exists
+    const existingTabIndex = prevTabs.findIndex(tab => tab.id === request.id);
+    
+    let newTabs;
+    if (existingTabIndex >= 0) {
+      // Update existing tab with latest info
+      newTabs = prevTabs.map((tab, index) => ({
+        ...tab,
+        isActive: tab.id === request.id,
+        name: request.name || tab.name,
+        method: request.method || tab.method,
+        collectionId: collectionId || tab.collectionId,
+        folderId: folderId || tab.folderId
+      }));
+    } else {
+      // Add new tab and deactivate others
+      newTabs = prevTabs.map(tab => ({ ...tab, isActive: false }));
+      newTabs.push({
+        id: request.id,
+        name: request.name || 'New Request',
+        method: request.method || 'GET',
+        collectionId: collectionId,
+        folderId: folderId,
+        isActive: true,
+        url: request.url || '',
+        isSaved: request.isSaved !== false
+      });
+    }
+    
+    console.log('📑 Updated request tabs:', newTabs.map(t => ({ id: t.id, name: t.name, isActive: t.isActive })));
+    return newTabs;
+  });
   
   if (isNewRequest) {
     console.log('🆕 New request detected - resetting all form fields');
@@ -2603,29 +2641,14 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     const newRequestWithContext = { ...request, collectionId, folderId };
     setSelectedRequest(newRequestWithContext);
     
-    // Update tabs
-    setRequestTabs(tabs => {
-      const existingTab = tabs.find(t => t.id === request.id);
-      if (existingTab) {
-        return tabs.map(t => ({ ...t, isActive: t.id === request.id }));
-      } else {
-        return tabs.map(t => ({ ...t, isActive: false }))
-          .concat({ 
-            id: request.id, 
-            name: request.name || 'New Request', 
-            method: 'GET', 
-            collectionId, 
-            folderId, 
-            isActive: true 
-          });
-      }
-    });
-    
     setActiveTab('path-params');
     return;
   }
 
-  // ============== FIX: Reset all states before loading new request ==============
+  // ============== SET LOADING STATE ==============
+  setLoading(prev => ({ ...prev, request: true }));
+
+  // ============== Reset all states before loading new request ==============
   console.log('🔄 Resetting states for new request');
   
   // Reset all form states to empty first
@@ -2769,7 +2792,6 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   
   // Then fetch additional details from API
   if (authToken && request.id && collectionId) {
-    setLoading(prev => ({ ...prev, request: true }));
     try {
       const response = await getRequestDetails(authToken, collectionId, request.id);
       if (!isMounted.current) return;
@@ -3253,17 +3275,32 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     } catch (apiError) {
       console.error('Error fetching request details from API:', apiError);
     } finally {
-      // Use setTimeout to ensure loading state is set after all other state updates
+      // ============== TURN OFF LOADING STATE ==============
       setTimeout(() => {
         if (isMounted.current) {
           setLoading(prev => ({ ...prev, request: false }));
         }
       }, 100);
     }
-    } else {
+  } else {
     // If no API call was made (no authToken or no request id), set the active tab immediately
-    // Active tab will be set by useEffect after loading completes
+    setTimeout(() => {
+      const newActiveTab = determineActiveTab();
+      console.log('🎯 [No API] Setting active tab to:', newActiveTab);
+      setActiveTab(newActiveTab);
+      setLoading(prev => ({ ...prev, request: false }));
+    }, 100);
   }
+  
+  // ============== FIX: Update selected request state ==============
+  const requestWithContext = { 
+    ...request, 
+    collectionId, 
+    folderId,
+    isSaved: request.isSaved !== false
+  };
+  setSelectedRequest(requestWithContext);
+  
 }, [authToken, determineActiveTab, requestUrl, authType, authConfig, activeTab, requestBodyType, formData.length, urlEncodedData.length, requestHeaders]);
 
 

@@ -4,7 +4,6 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.orm.jpa.EntityManagerFactoryBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,6 +12,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
+import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
@@ -28,14 +28,19 @@ public class DatabaseConfig {
 
     @Primary
     @Bean(name = "postgresDataSource")
-    @ConfigurationProperties(prefix = "spring.datasource.hikari")
     public DataSource postgresDataSource(
             @Value("${spring.datasource.driver-class-name}") String driverClassName,
             @Value("${spring.datasource.url}") String url,
             @Value("${spring.datasource.username}") String username,
             @Value("${spring.datasource.password}") String password,
             @Value("${spring.datasource.hikari.maximum-pool-size}") int maximumPoolSize,
-            @Value("${spring.datasource.hikari.minimum-idle}") int minimumIdle) {
+            @Value("${spring.datasource.hikari.minimum-idle}") int minimumIdle,
+            @Value("${spring.datasource.hikari.connection-timeout}") int connectionTimeout,
+            @Value("${spring.datasource.hikari.idle-timeout}") long idleTimeout,
+            @Value("${spring.datasource.hikari.max-lifetime}") long maxLifetime,
+            @Value("${spring.datasource.hikari.leak-detection-threshold}") long leakDetectionThreshold,
+            @Value("${spring.datasource.hikari.validation-timeout}") long validationTimeout,
+            @Value("${spring.datasource.hikari.connection-test-query}") String connectionTestQuery) {
 
         HikariConfig config = new HikariConfig();
 
@@ -45,12 +50,41 @@ public class DatabaseConfig {
         config.setPassword(password);
         config.setMaximumPoolSize(maximumPoolSize);
         config.setMinimumIdle(minimumIdle);
-        config.setConnectionTimeout(30000);
+        config.setConnectionTimeout(connectionTimeout);
+        config.setIdleTimeout(idleTimeout);
+        config.setMaxLifetime(maxLifetime);
+        config.setLeakDetectionThreshold(leakDetectionThreshold);
+        config.setValidationTimeout(validationTimeout);
+        config.setConnectionTestQuery(connectionTestQuery);
         config.setPoolName("PostgreSQL-Hikari-Pool");
-        config.setConnectionTestQuery("SELECT 1");
         config.setAutoCommit(true);
 
+        // Add PostgreSQL specific optimizations
+        config.addDataSourceProperty("prepareThreshold", "3");
+        config.addDataSourceProperty("preparedStatementCacheQueries", "256");
+        config.addDataSourceProperty("preparedStatementCacheSizeMiB", "50");
+        config.addDataSourceProperty("defaultRowFetchSize", "500");
+        config.addDataSourceProperty("binaryTransfer", "true");
+        config.addDataSourceProperty("reWriteBatchedInserts", "true");
+
         return new HikariDataSource(config);
+    }
+
+    @SuppressWarnings("deprecation")
+    @Bean
+    public EntityManagerFactoryBuilder entityManagerFactoryBuilder() {
+        HibernateJpaVendorAdapter vendorAdapter = new HibernateJpaVendorAdapter();
+        vendorAdapter.setGenerateDdl(true);
+        vendorAdapter.setShowSql(true);
+        vendorAdapter.setDatabasePlatform("org.hibernate.dialect.PostgreSQLDialect");
+
+        return new EntityManagerFactoryBuilder(vendorAdapter, new HashMap<>(), null);
+    }
+
+    // For DatabaseTypeServiceFactory compatibility - REMOVE @Primary
+    @Bean(name = "postgresqlDataSource")
+    public DataSource postgresqlDataSource(@Qualifier("postgresDataSource") DataSource dataSource) {
+        return dataSource;
     }
 
     @Primary
@@ -62,7 +96,10 @@ public class DatabaseConfig {
     @Bean(name = "postgresqlJdbcTemplate")
     public JdbcTemplate postgresqlJdbcTemplate(@Qualifier("postgresDataSource") DataSource dataSource) {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
-        jdbcTemplate.setFetchSize(100);
+        jdbcTemplate.setFetchSize(500);
+        jdbcTemplate.setQueryTimeout(30);
+        jdbcTemplate.setMaxRows(10000);
+        jdbcTemplate.setResultsMapCaseInsensitive(true);
         return jdbcTemplate;
     }
 
@@ -83,6 +120,12 @@ public class DatabaseConfig {
         properties.put("hibernate.format_sql", formatSql);
         properties.put("hibernate.physical_naming_strategy",
                 "org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy");
+
+        properties.put("hibernate.jdbc.batch_size", "100");
+        properties.put("hibernate.jdbc.fetch_size", "500");
+        properties.put("hibernate.jdbc.batch_versioned_data", "true");
+        properties.put("hibernate.order_inserts", "true");
+        properties.put("hibernate.order_updates", "true");
 
         return builder
                 .dataSource(dataSource)
@@ -114,11 +157,10 @@ public class DatabaseConfig {
     }
 
     // ==================== ORACLE DATASOURCE (SECONDARY) ====================
-    // ADDED @Lazy and initializationFailTimeout to prevent startup failures
+    // REMOVE @Primary from Oracle - it's secondary
 
     @Bean(name = "oracleDataSource")
-    @Lazy  // ADDED: This prevents initialization at startup
-    @ConfigurationProperties(prefix = "spring.datasource.oracle.hikari")
+    @Lazy
     public DataSource oracleDataSource(
             @Value("${spring.datasource.oracle.driver-class-name}") String driverClassName,
             @Value("${spring.datasource.oracle.url}") String url,
@@ -126,7 +168,12 @@ public class DatabaseConfig {
             @Value("${spring.datasource.oracle.password}") String password,
             @Value("${spring.datasource.oracle.hikari.maximum-pool-size}") int maximumPoolSize,
             @Value("${spring.datasource.oracle.hikari.minimum-idle}") int minimumIdle,
-            @Value("${spring.datasource.oracle.hikari.connection-timeout}") int connectionTimeout) {
+            @Value("${spring.datasource.oracle.hikari.connection-timeout}") int connectionTimeout,
+            @Value("${spring.datasource.oracle.hikari.idle-timeout}") long idleTimeout,
+            @Value("${spring.datasource.oracle.hikari.max-lifetime}") long maxLifetime,
+            @Value("${spring.datasource.oracle.hikari.leak-detection-threshold}") long leakDetectionThreshold,
+            @Value("${spring.datasource.oracle.hikari.validation-timeout}") long validationTimeout,
+            @Value("${spring.datasource.oracle.hikari.connection-test-query}") String connectionTestQuery) {
 
         HikariConfig config = new HikariConfig();
 
@@ -137,27 +184,38 @@ public class DatabaseConfig {
         config.setMaximumPoolSize(maximumPoolSize);
         config.setMinimumIdle(minimumIdle);
         config.setConnectionTimeout(connectionTimeout);
+        config.setIdleTimeout(idleTimeout);
+        config.setMaxLifetime(maxLifetime);
+        config.setLeakDetectionThreshold(leakDetectionThreshold);
+        config.setValidationTimeout(validationTimeout);
+        config.setConnectionTestQuery(connectionTestQuery);
         config.setPoolName("Oracle-Hikari-Pool");
-        config.setConnectionTestQuery("SELECT 1 FROM DUAL");
         config.setAutoCommit(true);
+        config.setInitializationFailTimeout(-1);
 
-        // ADDED: Prevents Hikari from failing fast during initialization
-        config.setInitializationFailTimeout(-1);  // Don't fail on initialization
-        config.setConnectionInitSql("SELECT 1 FROM DUAL");  // Test connection when first used
+        // Oracle specific optimizations
+        config.addDataSourceProperty("defaultRowPrefetch", "500");
+        config.addDataSourceProperty("defaultBatchValue", "100");
+        config.addDataSourceProperty("implicitStatementCacheSize", "50");
+        config.addDataSourceProperty("oracle.jdbc.ReadTimeout", "30000");
+        config.addDataSourceProperty("oracle.net.CONNECT_TIMEOUT", "10000");
 
         return new HikariDataSource(config);
     }
 
     @Bean(name = "oracleJdbcTemplate")
-    @Lazy  // ADDED: Lazy initialization for JDBC template
+    @Lazy
     public JdbcTemplate oracleJdbcTemplate(@Qualifier("oracleDataSource") DataSource dataSource) {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
-        jdbcTemplate.setFetchSize(100);
+        jdbcTemplate.setFetchSize(500);
+        jdbcTemplate.setQueryTimeout(30);
+        jdbcTemplate.setMaxRows(10000);
+        jdbcTemplate.setResultsMapCaseInsensitive(false);
         return jdbcTemplate;
     }
 
     @Bean(name = "oracleEntityManagerFactory")
-    @Lazy  // ADDED: Lazy initialization for EntityManagerFactory
+    @Lazy
     public LocalContainerEntityManagerFactoryBean oracleEntityManagerFactory(
             EntityManagerFactoryBuilder builder,
             @Qualifier("oracleDataSource") DataSource dataSource,
@@ -172,6 +230,9 @@ public class DatabaseConfig {
         properties.put("hibernate.format_sql", true);
         properties.put("hibernate.jdbc.lob.non_contextual_creation", true);
 
+        properties.put("hibernate.jdbc.batch_size", "100");
+        properties.put("hibernate.jdbc.fetch_size", "500");
+
         return builder
                 .dataSource(dataSource)
                 .packages("com.usg.apiAutomation.entities.oracle")
@@ -181,9 +242,21 @@ public class DatabaseConfig {
     }
 
     @Bean(name = "oracleTransactionManager")
-    @Lazy  // ADDED: Lazy initialization for transaction manager
+    @Lazy
     public PlatformTransactionManager oracleTransactionManager(
             @Qualifier("oracleEntityManagerFactory") LocalContainerEntityManagerFactoryBean oracleEntityManagerFactory) {
         return new JpaTransactionManager(oracleEntityManagerFactory.getObject());
+    }
+
+    // ==================== ADD TRANSACTION TEMPLATE FOR EXECUTION HELPERS ====================
+
+    @Bean(name = "transactionTemplate")
+    public org.springframework.transaction.support.TransactionTemplate transactionTemplate(
+            @Qualifier("postgresTransactionManager") PlatformTransactionManager transactionManager) {
+        org.springframework.transaction.support.TransactionTemplate template =
+                new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        template.setTimeout(30);
+        template.setReadOnly(false);
+        return template;
     }
 }

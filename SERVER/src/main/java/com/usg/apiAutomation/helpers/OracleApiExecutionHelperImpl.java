@@ -9,6 +9,9 @@ import com.usg.apiAutomation.utils.apiEngine.DatabaseParameterGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.executor.oracle.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -23,21 +26,28 @@ public class OracleApiExecutionHelperImpl extends BaseApiExecutionHelper {
     private final OracleFunctionExecutorUtil oracleFunctionExecutorUtil;
     private final OraclePackageExecutorUtil oraclePackageExecutorUtil;
 
+    @Autowired
+    @Qualifier("oracleJdbcTemplate")
+    private JdbcTemplate oracleJdbcTemplate;
+
     public OracleApiExecutionHelperImpl(
             ApiResponseHelper responseHelper,
             LoggerUtil loggerUtil,
             ApiConversionHelper conversionHelper,
+            org.springframework.transaction.support.TransactionTemplate transactionTemplate,
             OracleTableExecutorUtil oracleTableExecutorUtil,
             OracleViewExecutorUtil oracleViewExecutorUtil,
             OracleProcedureExecutorUtil oracleProcedureExecutorUtil,
             OracleFunctionExecutorUtil oracleFunctionExecutorUtil,
-            OraclePackageExecutorUtil oraclePackageExecutorUtil) {
-        super(responseHelper, loggerUtil, conversionHelper);
+            OraclePackageExecutorUtil oraclePackageExecutorUtil,
+            @Qualifier("oracleJdbcTemplate") JdbcTemplate oracleJdbcTemplate) {
+        super(responseHelper, loggerUtil, conversionHelper, transactionTemplate);
         this.oracleTableExecutorUtil = oracleTableExecutorUtil;
         this.oracleViewExecutorUtil = oracleViewExecutorUtil;
         this.oracleProcedureExecutorUtil = oracleProcedureExecutorUtil;
         this.oracleFunctionExecutorUtil = oracleFunctionExecutorUtil;
         this.oraclePackageExecutorUtil = oraclePackageExecutorUtil;
+        this.oracleJdbcTemplate = oracleJdbcTemplate;
     }
 
     @Override
@@ -253,5 +263,42 @@ public class OracleApiExecutionHelperImpl extends BaseApiExecutionHelper {
 
         // OraclePackageExecutorUtil.execute signature: (api, sourceObject, packageName, owner, request, configuredParamDTOs)
         return oraclePackageExecutorUtil.execute(api, sourceObject, packageName, owner, validatedRequest, configuredParamDTOs);
+    }
+
+
+    @Override
+    protected boolean checkObjectExistsInDatabase(String schema, String objectName,
+                                                  String objectType, String databaseType) {
+        try {
+            String sql = "SELECT COUNT(*) FROM ALL_OBJECTS WHERE OWNER = ? AND OBJECT_NAME = ? AND OBJECT_TYPE = ?";
+            Integer count = oracleJdbcTemplate.queryForObject(sql, Integer.class, schema, objectName, objectType);
+            return count != null && count > 0;
+        } catch (Exception e) {
+            log.debug("Error checking object existence in Oracle: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    protected String resolveSchemaFromDatabase(String objectName, String defaultSchema, String databaseType) {
+        try {
+            // Try to find the object in accessible schemas
+            String sql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND OWNER NOT IN ('SYS', 'SYSTEM') AND ROWNUM = 1";
+            List<String> owners = oracleJdbcTemplate.queryForList(sql, String.class, objectName);
+            if (!owners.isEmpty()) {
+                return owners.get(0);
+            }
+
+            // Check if it's a synonym
+            sql = "SELECT TABLE_OWNER FROM ALL_SYNONYMS WHERE SYNONYM_NAME = ? AND ROWNUM = 1";
+            owners = oracleJdbcTemplate.queryForList(sql, String.class, objectName);
+            if (!owners.isEmpty()) {
+                return owners.get(0);
+            }
+        } catch (Exception e) {
+            log.debug("Error resolving schema in Oracle: {}", e.getMessage());
+        }
+
+        return defaultSchema;
     }
 }

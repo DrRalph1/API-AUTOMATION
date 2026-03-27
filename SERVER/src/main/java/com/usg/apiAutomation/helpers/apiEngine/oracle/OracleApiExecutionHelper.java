@@ -15,6 +15,8 @@ import com.usg.apiAutomation.utils.apiEngine.OracleParameterGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.OracleParameterValidatorUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -34,18 +36,23 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
     private final OracleFunctionExecutorUtil oracleFunctionExecutorUtil;
     private final OraclePackageExecutorUtil oraclePackageExecutorUtil;
 
+    @Qualifier("oracleJdbcTemplate")
+    private final JdbcTemplate oracleJdbcTemplate;
+
     public OracleApiExecutionHelper(
             ApiResponseHelper responseHelper,
             LoggerUtil loggerUtil,
             ApiConversionHelper conversionHelper,
+            org.springframework.transaction.support.TransactionTemplate transactionTemplate,
             OracleObjectResolverUtil objectResolver,
             OracleParameterValidatorUtil parameterValidator,
             OracleTableExecutorUtil oracleTableExecutorUtil,
             OracleViewExecutorUtil oracleViewExecutorUtil,
             OracleProcedureExecutorUtil oracleProcedureExecutorUtil,
             OracleFunctionExecutorUtil oracleFunctionExecutorUtil,
-            OraclePackageExecutorUtil oraclePackageExecutorUtil) {
-        super(responseHelper, loggerUtil, conversionHelper);
+            OraclePackageExecutorUtil oraclePackageExecutorUtil,
+            @Qualifier("oracleJdbcTemplate") JdbcTemplate oracleJdbcTemplate) {
+        super(responseHelper, loggerUtil, conversionHelper, transactionTemplate);
         this.objectResolver = objectResolver;
         this.parameterValidator = parameterValidator;
         this.oracleTableExecutorUtil = oracleTableExecutorUtil;
@@ -53,6 +60,7 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
         this.oracleProcedureExecutorUtil = oracleProcedureExecutorUtil;
         this.oracleFunctionExecutorUtil = oracleFunctionExecutorUtil;
         this.oraclePackageExecutorUtil = oraclePackageExecutorUtil;
+        this.oracleJdbcTemplate = oracleJdbcTemplate;
     }
 
     public GeneratedApiEntity getApiEntity(GeneratedAPIRepository repository, String apiId) {
@@ -1090,5 +1098,42 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
                 validatedRequest,             // ExecuteApiRequestDTO request
                 configuredParamDTOs           // List<ApiParameterDTO> configuredParamDTOs
         );
+    }
+
+
+    @Override
+    protected boolean checkObjectExistsInDatabase(String schema, String objectName,
+                                                  String objectType, String databaseType) {
+        try {
+            String sql = "SELECT COUNT(*) FROM ALL_OBJECTS WHERE OWNER = ? AND OBJECT_NAME = ? AND OBJECT_TYPE = ?";
+            Integer count = oracleJdbcTemplate.queryForObject(sql, Integer.class, schema, objectName, objectType);
+            return count != null && count > 0;
+        } catch (Exception e) {
+            log.debug("Error checking object existence in Oracle: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    protected String resolveSchemaFromDatabase(String objectName, String defaultSchema, String databaseType) {
+        try {
+            // Try to find the object in accessible schemas
+            String sql = "SELECT OWNER FROM ALL_OBJECTS WHERE OBJECT_NAME = ? AND OWNER NOT IN ('SYS', 'SYSTEM') AND ROWNUM = 1";
+            List<String> owners = oracleJdbcTemplate.queryForList(sql, String.class, objectName);
+            if (!owners.isEmpty()) {
+                return owners.get(0);
+            }
+
+            // Check if it's a synonym
+            sql = "SELECT TABLE_OWNER FROM ALL_SYNONYMS WHERE SYNONYM_NAME = ? AND ROWNUM = 1";
+            owners = oracleJdbcTemplate.queryForList(sql, String.class, objectName);
+            if (!owners.isEmpty()) {
+                return owners.get(0);
+            }
+        } catch (Exception e) {
+            log.debug("Error resolving schema in Oracle: {}", e.getMessage());
+        }
+
+        return defaultSchema;
     }
 }

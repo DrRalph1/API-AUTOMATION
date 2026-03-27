@@ -14,11 +14,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Component;
 
+import javax.sql.DataSource;
 import java.sql.*;
 import java.util.*;
+import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -36,9 +37,11 @@ public class PostgreSQLViewExecutorUtil {
     private final PostgreSQLTableExecutorUtil tableExecutorUtil;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // Timeout constants
+    private static final int STATEMENT_TIMEOUT_SECONDS = 30;
+    private static final int CONNECTION_TIMEOUT_MS = 30000;
+
     // Flag to control whether to capture RAISE NOTICE messages
-    // Set to true to capture notices (useful for views that call functions with notices)
-    // Set to false for cleaner responses (default for views)
     private boolean captureNotices = false;
 
     /**
@@ -55,9 +58,32 @@ public class PostgreSQLViewExecutorUtil {
         return captureNotices;
     }
 
+    /**
+     * Get connection with timeout settings
+     */
+    private Connection getConnectionWithTimeout() throws SQLException {
+        DataSource dataSource = postgresqlJdbcTemplate.getDataSource();
+        if (dataSource == null) {
+            throw new SQLException("No DataSource available");
+        }
+
+        Connection conn = dataSource.getConnection();
+
+        // Set network timeout
+        conn.setNetworkTimeout(Executors.newSingleThreadExecutor(), CONNECTION_TIMEOUT_MS);
+
+        // Set session statement timeout
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute("SET statement_timeout = '" + STATEMENT_TIMEOUT_SECONDS + "s'");
+            stmt.execute("SET lock_timeout = '" + STATEMENT_TIMEOUT_SECONDS + "s'");
+        }
+
+        return conn;
+    }
+
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String viewName, String schema, ExecuteApiRequestDTO request,
-                          List<ApiParameterDTO> configuredParamDTOs) {
+                          List<ApiParameterDTO> configuredParamDTOs) throws SQLException {
 
         // ============ DEBUGGING: Log all input parameters ============
         log.info("============ POSTGRESQL VIEW EXECUTOR DEBUG ============");
@@ -65,8 +91,6 @@ public class PostgreSQLViewExecutorUtil {
         log.info("API Name: {}", api != null ? api.getApiName() : "null");
         log.info("View Name parameter: {}", viewName);
         log.info("Schema parameter: {}", schema);
-        log.info("Request Body Type: {}", request.getBody() != null ? request.getBody().getClass().getName() : "null");
-        log.info("Request Body: {}", request.getBody());
         log.info("Capture notices: {}", captureNotices);
 
         // ============ CREATE PARAMETER MAPPING ============
@@ -102,14 +126,11 @@ public class PostgreSQLViewExecutorUtil {
                 if (trimmed.startsWith("<")) {
                     isXmlBody = true;
                     body = bodyString;
-                    log.info("XML BODY DETECTED!");
-                    log.info("XML Length: {} characters", body.length());
-                    log.info("XML Preview: {}", body.substring(0, Math.min(500, body.length())));
+                    log.info("XML BODY DETECTED! Length: {} characters", body.length());
                 } else if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
                     isJsonBody = true;
                     body = bodyString;
                     log.info("JSON BODY DETECTED!");
-                    log.info("JSON Preview: {}", body.substring(0, Math.min(200, body.length())));
 
                     // Parse JSON body
                     try {
@@ -131,7 +152,7 @@ public class PostgreSQLViewExecutorUtil {
                         dbParams.put("body_string", bodyString);
                     }
                 } else {
-                    log.info("String body detected (non-XML/JSON): {}", bodyString.substring(0, Math.min(100, bodyString.length())));
+                    log.info("String body detected (non-XML/JSON)");
                     if (!bodyString.isEmpty() && !bodyString.equals("{}")) {
                         dbParams.put("body_string", bodyString);
                     }
@@ -169,7 +190,6 @@ public class PostgreSQLViewExecutorUtil {
             if (!extractedParams.isEmpty()) {
                 dbParams.putAll(extractedParams);
                 log.info("✅ Extracted {} parameters from {} and added to dbParams", extractedParams.size(), isXmlBody ? "XML" : "JSON");
-                log.info("Extracted params: {}", extractedParams.keySet());
             }
 
             // Look for explicit body parameter in API configuration
@@ -209,7 +229,6 @@ public class PostgreSQLViewExecutorUtil {
                 dbParams.put(dbColumnName, entry.getValue());
                 log.debug("Added path param: {} -> {} = {}", entry.getKey(), dbColumnName, entry.getValue());
             }
-            log.info("Path params added: {}", request.getPathParams().keySet());
         }
 
         if (request.getQueryParams() != null && !request.getQueryParams().isEmpty()) {
@@ -219,11 +238,9 @@ public class PostgreSQLViewExecutorUtil {
                 dbParams.put(dbColumnName, entry.getValue());
                 log.debug("Added query param: {} -> {} = {}", entry.getKey(), dbColumnName, entry.getValue());
             }
-            log.info("Query params added: {}", request.getQueryParams().keySet());
         }
 
         // ============ ADD HEADERS AS PARAMETERS ============
-        Map<String, Object> headerParams = new HashMap<>();
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
             for (Map.Entry<String, String> entry : request.getHeaders().entrySet()) {
                 String headerKey = entry.getKey().toLowerCase();
@@ -233,14 +250,11 @@ public class PostgreSQLViewExecutorUtil {
                 if (headerIsParameter) {
                     String dbColumnName = apiToDbColumnMap.getOrDefault(headerKey, headerKey.toLowerCase());
                     dbParams.put(dbColumnName, entry.getValue());
-                    headerParams.put(headerKey, entry.getValue());
                     log.debug("Added header as parameter: {} -> {} = {}", headerKey, dbColumnName, entry.getValue());
                 } else {
-                    headerParams.put(headerKey, entry.getValue());
                     log.debug("Header stored for reference: {} = {}", headerKey, entry.getValue());
                 }
             }
-            log.info("Headers added: {}", request.getHeaders().keySet());
         }
 
         // ============ HANDLE COLLECTION/ARRAY PARAMETERS ============
@@ -335,7 +349,7 @@ public class PostgreSQLViewExecutorUtil {
 
         log.info("============ VIEW EXECUTION COMPLETE ============");
 
-        // Execute the SELECT on the view using TableExecutorUtil with notice capture
+        // Execute the SELECT on the view with proper connection management
         try {
             // Store captured notices only if enabled
             List<String> capturedNotices = captureNotices ? new ArrayList<>() : null;
@@ -419,12 +433,12 @@ public class PostgreSQLViewExecutorUtil {
     }
 
     /**
-     * Execute SELECT with optional notice capture
+     * Execute SELECT with optional notice capture using manual PreparedStatement
      */
     private Object executeSelectWithNoticeCapture(String tableName, String schema, Map<String, Object> params,
                                                   GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs,
-                                                  List<String> capturedNotices) {
-        try {
+                                                  List<String> capturedNotices) throws SQLException {
+        try (Connection conn = getConnectionWithTimeout()) {
             StringBuilder sql = new StringBuilder("SELECT * FROM ");
             if (schema != null && !schema.isEmpty()) {
                 sql.append(schema).append(".");
@@ -434,8 +448,8 @@ public class PostgreSQLViewExecutorUtil {
             List<Object> paramValues = new ArrayList<>();
             List<String> whereClauses = new ArrayList<>();
 
-            log.info("=== TABLE SELECT DEBUG ===");
-            log.info("Table: {}.{}", schema, tableName);
+            log.info("=== VIEW SELECT DEBUG ===");
+            log.info("View: {}.{}", schema, tableName);
             log.info("All incoming params: {}", params);
             log.info("Capture notices: {}", captureNotices);
 
@@ -473,7 +487,7 @@ public class PostgreSQLViewExecutorUtil {
                         if (xmlString.trim().startsWith("<")) {
                             isXmlBody = true;
                             body = xmlString;
-                            log.info("XML BODY DETECTED in TableExecutor!");
+                            log.info("XML BODY DETECTED!");
 
                             Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, true);
                             if (!extractedParams.isEmpty()) {
@@ -490,7 +504,7 @@ public class PostgreSQLViewExecutorUtil {
                         if (jsonString.trim().startsWith("{") || jsonString.trim().startsWith("[")) {
                             isJsonBody = true;
                             body = jsonString;
-                            log.info("JSON BODY DETECTED in TableExecutor!");
+                            log.info("JSON BODY DETECTED!");
 
                             Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, false);
                             if (!extractedParams.isEmpty()) {
@@ -632,47 +646,55 @@ public class PostgreSQLViewExecutorUtil {
 
             log.info("Final SQL: {} with {} parameters", sql.toString(), paramValues.size());
 
-            // Execute with optional notice capture
+            // Execute with optional notice capture using PreparedStatement
             List<Map<String, Object>> results;
-            if (captureNotices && capturedNotices != null) {
-                results = postgresqlJdbcTemplate.query(
-                        sql.toString(),
-                        paramValues.toArray(),
-                        (ResultSetExtractor<List<Map<String, Object>>>) rs -> {
-                            // Check for warnings
-                            SQLWarning warning = rs.getStatement().getWarnings();
-                            while (warning != null) {
-                                String warningMessage = warning.getMessage();
-                                if (warningMessage != null) {
-                                    capturedNotices.add(warningMessage);
-                                    log.debug("Captured warning/notice: {}", warningMessage);
-                                }
-                                warning = warning.getNextWarning();
-                            }
 
-                            List<Map<String, Object>> rows = new ArrayList<>();
-                            ResultSetMetaData metaData = rs.getMetaData();
-                            int columnCount = metaData.getColumnCount();
+            try (PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
+                // Set parameters
+                for (int i = 0; i < paramValues.size(); i++) {
+                    pstmt.setObject(i + 1, paramValues.get(i));
+                }
 
-                            while (rs.next()) {
-                                Map<String, Object> row = new LinkedHashMap<>();
-                                for (int i = 1; i <= columnCount; i++) {
-                                    String columnName = metaData.getColumnName(i);
-                                    Object value = rs.getObject(i);
-                                    row.put(columnName, value);
-                                }
-                                rows.add(row);
-                            }
-                            return rows;
+                // Set statement timeout
+                pstmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
+
+                // Capture warnings if enabled
+                if (captureNotices && capturedNotices != null) {
+                    SQLWarning warning = pstmt.getWarnings();
+                    while (warning != null) {
+                        String warningMessage = warning.getMessage();
+                        if (warningMessage != null) {
+                            capturedNotices.add(warningMessage);
+                            log.debug("Captured warning/notice: {}", warningMessage);
                         }
-                );
-            } else {
-                results = postgresqlJdbcTemplate.queryForList(sql.toString(), paramValues.toArray());
+                        warning = warning.getNextWarning();
+                    }
+                }
+
+                // Execute and process result set
+                results = new ArrayList<>();
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    ResultSetMetaData metaData = rs.getMetaData();
+                    int columnCount = metaData.getColumnCount();
+
+                    while (rs.next()) {
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        for (int i = 1; i <= columnCount; i++) {
+                            String columnName = metaData.getColumnName(i);
+                            Object value = rs.getObject(i);
+                            row.put(columnName, value);
+                        }
+                        results.add(row);
+                    }
+                }
             }
 
             log.info("Query returned {} rows", results.size());
             return results;
 
+        } catch (SQLTimeoutException e) {
+            log.error("Database operation timed out for view {}.{}", schema, tableName, e);
+            throw new RuntimeException("Database operation timed out after " + STATEMENT_TIMEOUT_SECONDS + " seconds", e);
         } catch (Exception e) {
             log.error("Error executing view select: {}", e.getMessage(), e);
             throw e;
@@ -763,10 +785,19 @@ public class PostgreSQLViewExecutorUtil {
 
         // Strategy 5: Try to get current schema
         try {
-            String currentSchema = postgresqlJdbcTemplate.queryForObject("SELECT current_schema()", String.class);
-            if (currentSchema != null && !currentSchema.isEmpty()) {
-                log.info("Strategy 5 - Using current schema: {}", currentSchema);
-                return currentSchema;
+            DataSource dataSource = postgresqlJdbcTemplate.getDataSource();
+            if (dataSource != null) {
+                try (Connection conn = dataSource.getConnection();
+                     Statement stmt = conn.createStatement();
+                     ResultSet rs = stmt.executeQuery("SELECT current_schema()")) {
+                    if (rs.next()) {
+                        String currentSchema = rs.getString(1);
+                        if (currentSchema != null && !currentSchema.isEmpty()) {
+                            log.info("Strategy 5 - Using current schema: {}", currentSchema);
+                            return currentSchema;
+                        }
+                    }
+                }
             }
         } catch (Exception e) {
             log.warn("Could not get current schema: {}", e.getMessage());
@@ -825,20 +856,36 @@ public class PostgreSQLViewExecutorUtil {
 
     private void validateViewQuery(String schemaName, String viewName, Map<String, Object> queryParams,
                                    List<String> allowedColumns) {
-        // Check if view exists
-        String sql = "SELECT COUNT(*) FROM information_schema.views " +
-                "WHERE table_schema = ? AND table_name = ?";
+        // Check if view exists - using manual connection
+        try (Connection conn = getConnectionWithTimeout();
+             PreparedStatement pstmt = conn.prepareStatement(
+                     "SELECT COUNT(*) FROM information_schema.views WHERE table_schema = ? AND table_name = ?")) {
 
-        Integer count = postgresqlJdbcTemplate.queryForObject(sql, Integer.class, schemaName, viewName);
-        if (count == null || count == 0) {
+            pstmt.setString(1, schemaName);
+            pstmt.setString(2, viewName);
+            pstmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
+
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    int count = rs.getInt(1);
+                    if (count == 0) {
+                        throw new ValidationException(
+                                String.format("View '%s.%s' does not exist", schemaName, viewName)
+                        );
+                    }
+                }
+            }
+        } catch (SQLException e) {
             throw new ValidationException(
-                    String.format("View '%s.%s' does not exist", schemaName, viewName)
+                    String.format("Cannot validate view '%s.%s': %s", schemaName, viewName, e.getMessage())
             );
         }
 
         // Validate view is accessible
-        try {
-            postgresqlJdbcTemplate.execute("SELECT 1 FROM " + schemaName + "." + viewName + " LIMIT 1");
+        try (Connection conn = getConnectionWithTimeout();
+             Statement stmt = conn.createStatement()) {
+            stmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
+            stmt.execute("SELECT 1 FROM " + schemaName + "." + viewName + " LIMIT 1");
         } catch (Exception e) {
             throw new ValidationException(
                     String.format("Cannot access view '%s.%s': %s",
@@ -849,41 +896,55 @@ public class PostgreSQLViewExecutorUtil {
         // Validate query parameters against view columns
         if (queryParams != null && !queryParams.isEmpty()) {
             // Get view columns
-            String columnSql = "SELECT column_name, data_type, is_nullable " +
-                    "FROM information_schema.columns " +
-                    "WHERE table_schema = ? AND table_name = ?";
+            try (Connection conn = getConnectionWithTimeout();
+                 PreparedStatement pstmt = conn.prepareStatement(
+                         "SELECT column_name, data_type, is_nullable FROM information_schema.columns " +
+                                 "WHERE table_schema = ? AND table_name = ?")) {
 
-            List<Map<String, Object>> columns = postgresqlJdbcTemplate.queryForList(
-                    columnSql, schemaName, viewName);
+                pstmt.setString(1, schemaName);
+                pstmt.setString(2, viewName);
+                pstmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
 
-            Map<String, Map<String, Object>> columnMap = new HashMap<>();
-            for (Map<String, Object> column : columns) {
-                columnMap.put(((String) column.get("column_name")).toLowerCase(), column);
-            }
-
-            // Validate each query parameter
-            for (Map.Entry<String, Object> param : queryParams.entrySet()) {
-                String paramName = param.getKey().toLowerCase();
-
-                // Skip special parameters that aren't view columns
-                if ("page".equals(paramName) || "pagesize".equals(paramName) ||
-                        "sort".equals(paramName) || "order".equals(paramName) ||
-                        "where_condition".equals(paramName)) {
-                    continue;
+                Map<String, Map<String, Object>> columnMap = new HashMap<>();
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    while (rs.next()) {
+                        Map<String, Object> column = new HashMap<>();
+                        column.put("data_type", rs.getString("data_type"));
+                        column.put("is_nullable", rs.getString("is_nullable"));
+                        columnMap.put(rs.getString("column_name").toLowerCase(), column);
+                    }
                 }
 
-                Map<String, Object> column = columnMap.get(paramName);
-                if (column == null && allowedColumns != null && !allowedColumns.contains(paramName)) {
-                    throw new ValidationException(
-                            String.format("Invalid query parameter '%s'. Not a valid column in view %s.%s",
-                                    param.getKey(), schemaName, viewName)
-                    );
+                // Validate each query parameter
+                for (Map.Entry<String, Object> param : queryParams.entrySet()) {
+                    String paramName = param.getKey().toLowerCase();
+
+                    // Skip special parameters that aren't view columns
+                    if ("page".equals(paramName) || "pagesize".equals(paramName) ||
+                            "sort".equals(paramName) || "order".equals(paramName) ||
+                            "where_condition".equals(paramName)) {
+                        continue;
+                    }
+
+                    Map<String, Object> column = columnMap.get(paramName);
+                    if (column == null && allowedColumns != null && !allowedColumns.contains(paramName)) {
+                        throw new ValidationException(
+                                String.format("Invalid query parameter '%s'. Not a valid column in view %s.%s",
+                                        param.getKey(), schemaName, viewName)
+                        );
+                    }
+
+                    // Validate data type if column exists
+                    if (column != null && param.getValue() != null) {
+                        validateColumnDataType(param.getKey(), param.getValue(), column);
+                    }
                 }
 
-                // Validate data type if column exists
-                if (column != null && param.getValue() != null) {
-                    validateColumnDataType(param.getKey(), param.getValue(), column);
-                }
+            } catch (SQLException e) {
+                throw new ValidationException(
+                        String.format("Cannot validate view columns for '%s.%s': %s",
+                                schemaName, viewName, e.getMessage())
+                );
             }
         }
     }
@@ -920,11 +981,8 @@ public class PostgreSQLViewExecutorUtil {
                 }
             } else if (lowerDataType.contains("date") || lowerDataType.contains("time") ||
                     lowerDataType.contains("timestamp")) {
-                // Basic date validation
-                if (!(value instanceof java.util.Date) && !(value instanceof java.sql.Timestamp) &&
-                        !(value instanceof java.sql.Date) && !(value instanceof java.sql.Time)) {
-                    log.debug("Date/time value provided for column {}: {}", columnName, value);
-                }
+                // Basic date validation - let PostgreSQL handle it
+                log.debug("Date/time value provided for column {}: {}", columnName, value);
             } else if (lowerDataType.contains("bool") || lowerDataType.contains("boolean")) {
                 if (!(value instanceof Boolean)) {
                     String strValue = value.toString().toLowerCase();
@@ -937,13 +995,6 @@ public class PostgreSQLViewExecutorUtil {
                                         columnName, value)
                         );
                     }
-                }
-            } else if (lowerDataType.contains("json") || lowerDataType.contains("jsonb")) {
-                // JSON validation is basic - PostgreSQL will handle full validation
-                try {
-                    new com.fasterxml.jackson.databind.ObjectMapper().readTree(value.toString());
-                } catch (Exception e) {
-                    log.debug("JSON value for column {}: {}", columnName, value);
                 }
             }
         }

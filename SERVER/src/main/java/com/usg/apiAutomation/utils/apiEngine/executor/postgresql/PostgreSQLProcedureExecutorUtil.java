@@ -14,14 +14,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.*;
-import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 import org.springframework.stereotype.Component;
 
-import java.sql.CallableStatement;
-import java.sql.ResultSet;
-import java.sql.SQLWarning;
-import java.sql.Types;
+import javax.sql.DataSource;
+import java.sql.*;
 import java.util.*;
+import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,6 +35,10 @@ public class PostgreSQLProcedureExecutorUtil {
     private final PostgreSQLObjectResolverUtil objectResolver;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // Timeout constants
+    private static final int STATEMENT_TIMEOUT_SECONDS = 30;
+    private static final int CONNECTION_TIMEOUT_MS = 30000;
+
     public PostgreSQLProcedureExecutorUtil(
             PostgreSQLParameterValidatorUtil parameterValidatorUtil,
             PostgreSQLObjectResolverUtil objectResolver) {
@@ -46,14 +48,6 @@ public class PostgreSQLProcedureExecutorUtil {
 
     /**
      * Execute a PostgreSQL procedure (stored procedure)
-     *
-     * @param api The generated API entity
-     * @param sourceObject The source object containing procedure/schema information
-     * @param procedureName The procedure name to execute
-     * @param schema The schema name (equivalent to Oracle owner)
-     * @param request The execution request with parameters
-     * @param configuredParamDTOs Configured parameter DTOs
-     * @return Execution result
      */
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String procedureName, String schema, ExecuteApiRequestDTO request,
@@ -65,8 +59,6 @@ public class PostgreSQLProcedureExecutorUtil {
         log.info("API Name: {}", api != null ? api.getApiName() : "null");
         log.info("Procedure Name parameter: {}", procedureName);
         log.info("Schema parameter: {}", schema);
-        log.info("Request Body Type: {}", request.getBody() != null ? request.getBody().getClass().getName() : "null");
-        log.info("Request Body: {}", request.getBody());
 
         // ============ CREATE PARAMETER MAPPING ============
         Map<String, String> apiToDbParamMap = new HashMap<>();
@@ -90,7 +82,6 @@ public class PostgreSQLProcedureExecutorUtil {
         Map<String, Object> dbParams = new HashMap<>();
         String xmlBody = null;
         boolean isXmlBody = false;
-        boolean hasBodyParameter = false;
 
         if (request.getBody() != null) {
             if (request.getBody() instanceof String) {
@@ -100,37 +91,24 @@ public class PostgreSQLProcedureExecutorUtil {
                 if (trimmed.startsWith("<")) {
                     isXmlBody = true;
                     xmlBody = bodyString;
-                    log.info("=========================================");
-                    log.info("XML BODY DETECTED!");
-                    log.info("XML Length: {} characters", xmlBody.length());
-                    log.info("XML Preview: {}", xmlBody.substring(0, Math.min(500, xmlBody.length())));
-                    log.info("=========================================");
+                    log.info("XML BODY DETECTED! Length: {} characters", xmlBody.length());
                 } else if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
                     log.info("JSON BODY DETECTED!");
-                    log.info("JSON Preview: {}", bodyString.substring(0, Math.min(200, bodyString.length())));
-
                     // Parse JSON body
                     try {
                         Map<String, Object> jsonMap = objectMapper.readValue(bodyString, new TypeReference<Map<String, Object>>() {});
                         for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
                             String paramKey = entry.getKey().toLowerCase();
                             String dbParamName = apiToDbParamMap.getOrDefault(paramKey, entry.getKey().toLowerCase());
-
-                            Object value = entry.getValue();
-                            if (value instanceof Map || value instanceof List) {
-                                value = objectMapper.writeValueAsString(value);
-                            }
-
-                            dbParams.put(dbParamName, value);
-                            log.debug("Added JSON param: {} -> {} = {}", entry.getKey(), dbParamName, value);
+                            dbParams.put(dbParamName, entry.getValue());
+                            log.debug("Added JSON param: {} -> {}", entry.getKey(), dbParamName);
                         }
                     } catch (Exception e) {
                         log.warn("Failed to parse JSON body: {}", e.getMessage());
-                        // Treat as plain text if JSON parsing fails
                         dbParams.put("request_body", bodyString);
                     }
                 } else {
-                    log.info("String body detected: {}", bodyString.substring(0, Math.min(100, bodyString.length())));
+                    log.info("String body detected");
                     dbParams.put("request_body", bodyString);
                 }
             } else if (request.getBody() instanceof Map) {
@@ -139,19 +117,8 @@ public class PostgreSQLProcedureExecutorUtil {
                 for (Map.Entry<String, Object> entry : bodyMap.entrySet()) {
                     String paramKey = entry.getKey().toLowerCase();
                     String dbParamName = apiToDbParamMap.getOrDefault(paramKey, entry.getKey().toLowerCase());
-
-                    Object value = entry.getValue();
-                    if (value instanceof Map || value instanceof List) {
-                        try {
-                            value = objectMapper.writeValueAsString(value);
-                            log.debug("Converted complex object to JSON string for parameter: {}", dbParamName);
-                        } catch (Exception e) {
-                            log.warn("Failed to convert complex object to string: {}", e.getMessage());
-                        }
-                    }
-
-                    dbParams.put(dbParamName, value);
-                    log.debug("Added JSON param: {} -> {} = {}", entry.getKey(), dbParamName, value);
+                    dbParams.put(dbParamName, entry.getValue());
+                    log.debug("Added JSON param: {} -> {}", entry.getKey(), dbParamName);
                 }
             }
         }
@@ -160,15 +127,14 @@ public class PostgreSQLProcedureExecutorUtil {
         if (isXmlBody && xmlBody != null) {
             log.info("Processing XML body for procedure execution");
 
-            // Try to extract individual parameters from XML
             Map<String, Object> extractedXmlParams = parseXmlParameters(xmlBody, configuredParamDTOs, apiToDbParamMap);
             if (!extractedXmlParams.isEmpty()) {
                 dbParams.putAll(extractedXmlParams);
                 log.info("✅ Extracted {} parameters from XML and added to dbParams", extractedXmlParams.size());
-                log.info("Extracted params: {}", extractedXmlParams.keySet());
             }
 
-            // Look for explicit XML/TEXT parameter in API configuration
+            // Look for explicit XML/JSON parameter in API configuration
+            boolean hasBodyParameter = false;
             for (ApiParameterEntity param : api.getParameters()) {
                 String paramKey = param.getKey().toLowerCase();
                 String dbParamName = getDbParamName(param);
@@ -178,7 +144,8 @@ public class PostgreSQLProcedureExecutorUtil {
                         paramKey.contains("text") ||
                         paramKey.contains("request") ||
                         paramKey.contains("payload") ||
-                        paramKey.contains("body");
+                        paramKey.contains("body") ||
+                        paramKey.equals("_xml");
 
                 if (isBodyParameter && dbParamName != null && !dbParams.containsKey(dbParamName)) {
                     dbParams.put(dbParamName, xmlBody);
@@ -188,7 +155,7 @@ public class PostgreSQLProcedureExecutorUtil {
                 }
             }
 
-            // If no explicit parameter found, look for TEXT parameter
+            // If no explicit parameter found, look for text parameter
             if (!hasBodyParameter && extractedXmlParams.isEmpty()) {
                 for (ApiParameterEntity param : api.getParameters()) {
                     String dbParamName = getDbParamName(param);
@@ -196,57 +163,32 @@ public class PostgreSQLProcedureExecutorUtil {
                         String pgType = param.getOracleType();
                         if (pgType != null && pgType.toLowerCase().contains("text")) {
                             dbParams.put(dbParamName, xmlBody);
-                            hasBodyParameter = true;
                             log.info("✅ Mapped full XML body to TEXT parameter: {}", dbParamName);
                             break;
                         }
                     }
                 }
             }
-
-            if (!hasBodyParameter && extractedXmlParams.isEmpty()) {
-                log.warn("⚠️ No suitable database parameter found for XML body");
-                dbParams.put("xml_body", xmlBody);
-            }
         }
 
-        // ============ ADD PATH AND QUERY PARAMETERS ============
-        if (request.getPathParams() != null && !request.getPathParams().isEmpty()) {
-            for (Map.Entry<String, Object> entry : request.getPathParams().entrySet()) {
-                String paramKey = entry.getKey().toLowerCase();
-                String dbParamName = apiToDbParamMap.getOrDefault(paramKey, entry.getKey().toLowerCase());
-                dbParams.put(dbParamName, entry.getValue());
-                log.debug("Added path param: {} -> {} = {}", entry.getKey(), dbParamName, entry.getValue());
-            }
-            log.info("Path params added: {}", request.getPathParams().keySet());
-        }
+        // ============ ADD PATH, QUERY, HEADER PARAMETERS ============
+        addParameters(request, api, apiToDbParamMap, dbParams);
 
-        if (request.getQueryParams() != null && !request.getQueryParams().isEmpty()) {
-            for (Map.Entry<String, Object> entry : request.getQueryParams().entrySet()) {
-                String paramKey = entry.getKey().toLowerCase();
-                String dbParamName = apiToDbParamMap.getOrDefault(paramKey, entry.getKey().toLowerCase());
-                dbParams.put(dbParamName, entry.getValue());
-                log.debug("Added query param: {} -> {} = {}", entry.getKey(), dbParamName, entry.getValue());
-            }
-            log.info("Query params added: {}", request.getQueryParams().keySet());
-        }
-
-        // ============ ADD HEADERS AS PARAMETERS ============
-        if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
-            for (Map.Entry<String, String> entry : request.getHeaders().entrySet()) {
-                String headerKey = entry.getKey().toLowerCase();
-                boolean headerIsParameter = api.getParameters().stream()
-                        .anyMatch(p -> p.getKey().equalsIgnoreCase(headerKey));
-
-                if (headerIsParameter) {
-                    String dbParamName = apiToDbParamMap.getOrDefault(headerKey, headerKey.toLowerCase());
-                    dbParams.put(dbParamName, entry.getValue());
-                    log.debug("Added header as parameter: {} -> {} = {}", headerKey, dbParamName, entry.getValue());
+        // Convert complex objects to JSON strings for JSON parameters
+        for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof Map || value instanceof List) {
+                try {
+                    String jsonValue = objectMapper.writeValueAsString(value);
+                    dbParams.put(entry.getKey(), jsonValue);
+                    log.debug("Converted complex object to JSON string for parameter: {}", entry.getKey());
+                } catch (Exception e) {
+                    log.warn("Failed to convert complex object to string: {}", e.getMessage());
                 }
             }
         }
 
-        // ============ HANDLE COLLECTION/ARRAY PARAMETERS ============
+        // Handle collection/array parameters
         for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
             Object value = entry.getValue();
             if (value instanceof List || (value != null && value.getClass().isArray())) {
@@ -263,14 +205,10 @@ public class PostgreSQLProcedureExecutorUtil {
 
         log.info("Final DB params prepared: {}", dbParams.keySet());
 
-        // ============ SCHEMA RESOLUTION STRATEGY ============
+        // ============ SCHEMA RESOLUTION ============
         String pgSchema = resolveSchema(schema, sourceObject, api, procedureName);
-
         if (pgSchema == null || pgSchema.trim().isEmpty()) {
-            log.error("❌ COULD NOT DETERMINE SCHEMA NAME");
-            throw new ValidationException(
-                    "Could not determine the database schema for procedure: " + procedureName
-            );
+            throw new ValidationException("Could not determine the database schema for procedure: " + procedureName);
         }
 
         pgSchema = pgSchema.toLowerCase();
@@ -279,270 +217,411 @@ public class PostgreSQLProcedureExecutorUtil {
         log.info("Final resolved schema: {}", pgSchema);
         log.info("Final procedure name: {}", pgProcedureName);
 
-        // ============ RESOLVE PROCEDURE (PostgreSQL doesn't have synonyms) ============
-        String actualSchema = pgSchema;
-        String actualProcedureName = pgProcedureName;
-
-        // ==================== VALIDATION STEP 1: Validate procedure exists ====================
+        // ============ VALIDATION ============
         try {
-            objectResolver.validateDatabaseObject(actualSchema, actualProcedureName, "PROCEDURE");
-            log.info("✅ Procedure {}.{} exists", actualSchema, actualProcedureName);
+            objectResolver.validateDatabaseObject(pgSchema, pgProcedureName, "PROCEDURE");
+            log.info("✅ Procedure {}.{} exists", pgSchema, pgProcedureName);
         } catch (EmptyResultDataAccessException e) {
-            log.error("❌ Procedure {}.{} does not exist", actualSchema, actualProcedureName);
-            throw new ValidationException(
-                    String.format("The procedure '%s.%s' does not exist or you don't have access to it.",
-                            actualSchema, actualProcedureName)
-            );
+            throw new ValidationException(String.format("The procedure '%s.%s' does not exist or you don't have access to it.",
+                    pgSchema, pgProcedureName));
         }
 
-        // ==================== VALIDATION STEP 2: Validate all parameters ====================
         try {
-            parameterValidatorUtil.validateParameters(configuredParamDTOs, dbParams, actualSchema, actualProcedureName);
-            log.info("✅ All parameter validations passed for procedure {}.{}", actualSchema, actualProcedureName);
+            parameterValidatorUtil.validateParameters(configuredParamDTOs, dbParams, pgSchema, pgProcedureName);
+            log.info("✅ All parameter validations passed for procedure {}.{}", pgSchema, pgProcedureName);
         } catch (ValidationException e) {
             log.error("❌ Parameter validation failed: {}", e.getMessage());
             throw e;
         }
 
-        // ==================== EXECUTE PROCEDURE USING CALL SYNTAX ====================
+        // ============ EXECUTE PROCEDURE WITH PROPER CONNECTION MANAGEMENT ============
         try {
-            // Build the CALL statement
-            String callSql = buildCallStatement(actualSchema, actualProcedureName, dbParams.size());
-            log.info("Executing PostgreSQL procedure with CALL syntax: {}", callSql);
-            log.info("Parameters: {}", dbParams);
+            // Get DataSource from JdbcTemplate
+            DataSource dataSource = postgresqlJdbcTemplate.getDataSource();
+            if (dataSource == null) {
+                throw new SQLException("No DataSource available");
+            }
 
-            // Store captured notices and result
-            List<String> capturedNotices = new ArrayList<>();
-            Map<String, Object> finalResult = new HashMap<>();
+            // Use try-with-resources to ensure connection is properly closed
+            try (Connection conn = dataSource.getConnection()) {
+                // Set network timeout
+                conn.setNetworkTimeout(Executors.newSingleThreadExecutor(), CONNECTION_TIMEOUT_MS);
 
-            // Create CallableStatementCreator
-            CallableStatementCreator csc = connection -> {
-                CallableStatement cs = connection.prepareCall(callSql);
+                // Set session statement timeout
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("SET statement_timeout = '" + STATEMENT_TIMEOUT_SECONDS + "s'");
+                    stmt.execute("SET lock_timeout = '" + STATEMENT_TIMEOUT_SECONDS + "s'");
+                }
 
-                // Set input parameters
-                int index = 1;
-                List<ApiParameterEntity> inputParams = new ArrayList<>();
+                // Build the CALL statement with proper type casting
+                String callSql = buildCallStatement(pgSchema, pgProcedureName, api.getParameters(), dbParams);
+                log.info("Executing PostgreSQL procedure with CALL syntax: {}", callSql);
+                log.info("Parameters: {}", dbParams);
 
-                // First, collect all IN parameters from API configuration
-                if (api.getParameters() != null && !api.getParameters().isEmpty()) {
-                    for (ApiParameterEntity param : api.getParameters()) {
-                        if (param == null || param.getKey() == null) continue;
+                List<String> capturedNotices = new ArrayList<>();
+                Map<String, Object> finalResult = new HashMap<>();
 
-                        String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
-                        String dbParamName = getDbParamName(param);
+                // Use try-with-resources for CallableStatement
+                try (CallableStatement cs = conn.prepareCall(callSql)) {
+                    // Set statement timeout
+                    cs.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
 
-                        // Check if this is an IN parameter and we have a value for it
-                        if ((paramMode.contains("IN") || paramMode.equals("INOUT")) && dbParams.containsKey(dbParamName)) {
-                            Object value = dbParams.get(dbParamName);
-                            int sqlType = mapToSqlType(param.getOracleType());
-                            cs.setObject(index++, value, sqlType);
-                            inputParams.add(param);
-                            log.debug("Set IN parameter {} (index {}): {} = {}",
-                                    dbParamName, index-1, param.getOracleType(), value);
+                    // Set IN parameters
+                    setParameters(cs, api.getParameters(), dbParams);
+
+                    // Register OUT parameters (calculate indices based on IN parameters)
+                    int outParamIndex = registerOutParameters(cs, api.getResponseMappings(), api.getParameters(), dbParams);
+
+                    // Execute the procedure
+                    log.info("Executing procedure {}.{}", pgSchema, pgProcedureName);
+                    boolean hasResultSet = cs.execute();
+                    log.info("Procedure executed successfully");
+
+                    // Capture NOTICE messages (SQLWarnings)
+                    SQLWarning warning = cs.getWarnings();
+                    while (warning != null) {
+                        if (warning.getMessage() != null) {
+                            capturedNotices.add(warning.getMessage());
+                            log.debug("Captured warning/notice: {}", warning.getMessage());
                         }
+                        warning = warning.getNextWarning();
                     }
-                }
 
-                // Register OUT parameters from response mappings
-                if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-                    for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
-                        if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
-                            String outParamName = mapping.getDbColumn() != null && !mapping.getDbColumn().isEmpty() ?
-                                    mapping.getDbColumn().toLowerCase() : "out_param_" + mapping.getPosition();
+                    // Process captured notices
+                    if (!capturedNotices.isEmpty()) {
+                        log.info("Captured {} NOTICE messages from procedure", capturedNotices.size());
 
-                            int sqlType = mapToSqlType(mapping.getOracleType());
-                            cs.registerOutParameter(index++, sqlType);
-
-                            log.debug("Registered OUT parameter: {} (index {}) of type: {} (SQL type: {})",
-                                    outParamName, index-1, mapping.getOracleType(), sqlType);
-                        }
-                    }
-                }
-
-                return cs;
-            };
-
-            // Create CallableStatementCallback
-            CallableStatementCallback<Map<String, Object>> callback = callableStatement -> {
-                // Execute the call
-                callableStatement.execute();
-                log.info("Procedure executed successfully using CALL syntax");
-
-                // Check for SQLWarnings (which contain RAISE NOTICE messages)
-                SQLWarning warning = callableStatement.getWarnings();
-                while (warning != null) {
-                    String warningMessage = warning.getMessage();
-                    if (warningMessage != null) {
-                        capturedNotices.add(warningMessage);
-                        log.debug("Captured warning/notice: {}", warningMessage);
-                    }
-                    warning = warning.getNextWarning();
-                }
-
-                // Process results
-                Map<String, Object> responseData = new HashMap<>();
-
-                // Count how many IN parameters we had
-                int inParamCount = 0;
-                if (api.getParameters() != null && !api.getParameters().isEmpty()) {
-                    for (ApiParameterEntity param : api.getParameters()) {
-                        if (param == null || param.getKey() == null) continue;
-                        String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
-                        String dbParamName = getDbParamName(param);
-                        if ((paramMode.contains("IN") || paramMode.equals("INOUT")) && dbParams.containsKey(dbParamName)) {
-                            inParamCount++;
-                        }
-                    }
-                }
-
-                // Process captured notices (these contain your JSON results)
-                if (!capturedNotices.isEmpty()) {
-                    log.info("Captured {} NOTICE messages from procedure", capturedNotices.size());
-
-                    for (String notice : capturedNotices) {
-                        log.debug("Processing notice: {}", notice);
-
-                        // Look for the "Result: " prefix in your RAISE NOTICE
-                        if (notice != null && notice.contains("Result: ")) {
-                            // Extract JSON from the notice
-                            String jsonPart = extractJsonFromNotice(notice);
-                            if (jsonPart != null) {
-                                try {
-                                    Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
-                                            new TypeReference<Map<String, Object>>() {});
-                                    responseData.putAll(jsonResult);
-                                    log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
-                                } catch (Exception e) {
-                                    log.warn("Failed to parse JSON from notice: {} - {}", jsonPart, e.getMessage());
-                                    responseData.put("notice", notice);
+                        for (String notice : capturedNotices) {
+                            if (notice != null && notice.contains("Result: ")) {
+                                String jsonPart = extractJsonFromNotice(notice);
+                                if (jsonPart != null) {
+                                    try {
+                                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                                new TypeReference<Map<String, Object>>() {});
+                                        finalResult.putAll(jsonResult);
+                                        log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
+                                    } catch (Exception e) {
+                                        log.warn("Failed to parse JSON from notice: {}", e.getMessage());
+                                        finalResult.put("notice", notice);
+                                    }
+                                } else {
+                                    finalResult.put("notice", notice);
                                 }
-                            } else {
-                                responseData.put("notice", notice);
+                            } else if (notice != null) {
+                                finalResult.put("notice", notice);
+                                log.info("Captured notice: {}", notice);
                             }
-                        } else if (notice != null) {
-                            responseData.put("notice", notice);
-                            log.info("Captured notice: {}", notice);
                         }
                     }
-                }
 
-                // Process OUT parameters from response mappings
-                if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-                    int outParamIndex = inParamCount + 1; // OUT parameters start after IN parameters
-                    int mappedCount = 0;
+                    // Process results
+                    Map<String, Object> responseData = processResults(cs, api, dbParams, hasResultSet);
 
-                    for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
-                        if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
-                            String outParamName = mapping.getDbColumn() != null && !mapping.getDbColumn().isEmpty() ?
-                                    mapping.getDbColumn().toLowerCase() : "out_param_" + mapping.getPosition();
-
-                            try {
-                                Object value = callableStatement.getObject(outParamIndex);
-                                if (value != null) {
-                                    responseData.put(mapping.getApiField(), value);
-                                    log.debug("Mapped OUT parameter {} to {} with value: {}",
-                                            outParamName, mapping.getApiField(), value);
-                                    mappedCount++;
-                                }
-                            } catch (Exception e) {
-                                log.warn("Failed to get OUT parameter {}: {}", outParamName, e.getMessage());
-                            }
-                            outParamIndex++;
-                        }
+                    // Merge captured notices into response
+                    if (!finalResult.isEmpty()) {
+                        responseData.putAll(finalResult);
                     }
-                    log.debug("Mapped {} output parameters to response", mappedCount);
+
+                    log.info("============ PROCEDURE EXECUTION COMPLETE ============");
+                    return responseData;
                 }
-
-                // Process any result sets (if the procedure returns data)
-                boolean hasResultSet = callableStatement.getMoreResults();
-                if (hasResultSet) {
-                    ResultSet rs = callableStatement.getResultSet();
-                    if (rs != null) {
-                        List<Map<String, Object>> resultSetData = new ArrayList<>();
-                        while (rs.next()) {
-                            Map<String, Object> row = new HashMap<>();
-                            int columnCount = rs.getMetaData().getColumnCount();
-                            for (int i = 1; i <= columnCount; i++) {
-                                row.put(rs.getMetaData().getColumnName(i).toLowerCase(), rs.getObject(i));
-                            }
-                            resultSetData.add(row);
-                        }
-                        if (!resultSetData.isEmpty()) {
-                            responseData.put("result_set", resultSetData);
-                            log.info("Retrieved {} rows from result set", resultSetData.size());
-                        }
-                    }
-                }
-
-                // If no response data, add default success
-                if (responseData.isEmpty()) {
-                    responseData.put("success", true);
-                    responseData.put("message", "Procedure executed successfully");
-                }
-
-                finalResult.putAll(responseData);
-                return responseData;
-            };
-
-            // Execute with explicit type parameters to resolve ambiguity
-            Map<String, Object> result = postgresqlJdbcTemplate.execute(csc, callback);
-
-            log.info("============ PROCEDURE EXECUTION COMPLETE ============");
-            return !result.isEmpty() ? result : finalResult;
-
+            }
+        } catch (SQLTimeoutException e) {
+            log.error("Database operation timed out for {}.{}", pgSchema, pgProcedureName, e);
+            throw new RuntimeException("Database operation timed out after " + STATEMENT_TIMEOUT_SECONDS + " seconds", e);
         } catch (ValidationException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Error executing procedure {}.{}: {}",
-                    actualSchema, actualProcedureName, e.getMessage(), e);
-
-            // Check if the exception contains the result JSON
+            log.error("Error executing procedure {}.{}: {}", pgSchema, pgProcedureName, e.getMessage(), e);
             String errorMessage = e.getMessage();
+
             if (errorMessage != null && errorMessage.contains("Result: ")) {
                 String jsonPart = extractJsonFromNotice(errorMessage);
                 if (jsonPart != null) {
                     try {
-                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
-                                new TypeReference<Map<String, Object>>() {});
-                        log.info("Parsed JSON from exception: {}", jsonResult);
-                        return jsonResult;
+                        return objectMapper.readValue(jsonPart, new TypeReference<Map<String, Object>>() {});
                     } catch (Exception parseEx) {
                         log.warn("Failed to parse JSON from exception: {}", jsonPart);
                     }
                 }
             }
 
-            if (errorMessage != null) {
-                if (errorMessage.contains("ERROR: procedure") && errorMessage.contains("does not exist")) {
-                    throw new ValidationException(
-                            String.format("Procedure '%s.%s' does not exist. Please check the procedure name and schema.",
-                                    actualSchema, actualProcedureName)
-                    );
+            throw new RuntimeException("Failed to execute the requested operation: " + extractPostgreSQLError(errorMessage), e);
+        }
+    }
+
+    /**
+     * Set IN and INOUT parameters
+     */
+    private void setParameters(CallableStatement cs, List<ApiParameterEntity> parameters,
+                               Map<String, Object> dbParams) throws SQLException {
+        int index = 1;
+
+        if (parameters != null && !parameters.isEmpty()) {
+            for (ApiParameterEntity param : parameters) {
+                if (param == null || param.getKey() == null) continue;
+
+                String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
+                if (!paramMode.contains("IN") && !paramMode.equals("INOUT")) {
+                    continue;
                 }
-                if (errorMessage.contains("ERROR: permission denied")) {
-                    throw new ValidationException(
-                            String.format("Insufficient privileges to execute procedure '%s.%s'. Details: %s",
-                                    actualSchema, actualProcedureName, extractPostgreSQLError(errorMessage))
-                    );
+
+                String dbParamName = getDbParamName(param);
+                if (!dbParams.containsKey(dbParamName)) {
+                    continue;
                 }
-                if (errorMessage.contains("ERROR: null value in column")) {
-                    throw new ValidationException(
-                            "A required value is missing for a NOT NULL column. Please provide all required parameters."
-                    );
+
+                Object value = dbParams.get(dbParamName);
+                String pgType = param.getOracleType();
+
+                if (value == null) {
+                    cs.setNull(index++, Types.NULL);
+                    log.debug("Set NULL parameter {} (index {})", dbParamName, index-1);
+                } else {
+                    cs.setObject(index++, value);
+                    log.debug("Set parameter {} (index {}): type={}, value={}",
+                            dbParamName, index-1, pgType, value);
                 }
-                if (errorMessage.contains("ERROR: value too long for type")) {
-                    throw new ValidationException(
-                            String.format("Value too large for column. Details: %s", extractPostgreSQLError(errorMessage))
-                    );
+            }
+        }
+    }
+
+    /**
+     * Register OUT parameters and return the next available index
+     */
+    private int registerOutParameters(CallableStatement cs, List<ApiResponseMappingEntity> responseMappings,
+                                      List<ApiParameterEntity> parameters, Map<String, Object> dbParams) throws SQLException {
+        if (responseMappings == null || responseMappings.isEmpty()) {
+            return 1;
+        }
+
+        // Calculate how many IN parameters we have
+        int inParamCount = 0;
+        if (parameters != null) {
+            for (ApiParameterEntity param : parameters) {
+                if (param == null || param.getKey() == null) continue;
+                String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
+                String dbParamName = getDbParamName(param);
+                if ((paramMode.contains("IN") || paramMode.equals("INOUT")) && dbParams.containsKey(dbParamName)) {
+                    inParamCount++;
                 }
-                if (errorMessage.contains("ERROR: invalid input syntax")) {
-                    throw new ValidationException(
-                            "Invalid parameter format. Please check the data types of your parameters."
-                    );
+            }
+        }
+
+        // Register OUT parameters starting after IN parameters
+        int outParamIndex = inParamCount + 1;
+        for (ApiResponseMappingEntity mapping : responseMappings) {
+            if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                String dbColumn = mapping.getDbColumn();
+                String oracleType = mapping.getOracleType();
+                if (dbColumn != null && !dbColumn.isEmpty()) {
+                    cs.registerOutParameter(outParamIndex, mapToSqlType(oracleType));
+                    log.debug("Registered OUT parameter {} at index {} with type: {}",
+                            dbColumn, outParamIndex, oracleType);
+                    outParamIndex++;
+                }
+            }
+        }
+
+        return outParamIndex;
+    }
+
+    /**
+     * Build the CALL statement with proper type casting for PostgreSQL
+     */
+    private String buildCallStatement(String schema, String procedureName,
+                                      List<ApiParameterEntity> parameters,
+                                      Map<String, Object> dbParams) {
+        StringBuilder callBuilder = new StringBuilder("CALL ");
+
+        if (schema != null && !schema.isEmpty()) {
+            callBuilder.append(schema).append(".");
+        }
+
+        callBuilder.append(procedureName).append("(");
+
+        List<String> paramPlaceholders = new ArrayList<>();
+
+        if (parameters != null && !parameters.isEmpty()) {
+            for (ApiParameterEntity param : parameters) {
+                if (param == null || param.getKey() == null) continue;
+
+                String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
+                String dbParamName = getDbParamName(param);
+
+                if ((paramMode.contains("IN") || paramMode.equals("INOUT")) && dbParams.containsKey(dbParamName)) {
+                    String pgType = param.getOracleType();
+
+                    // Add explicit casts for specific types
+                    if (pgType != null) {
+                        String lowerType = pgType.toLowerCase();
+                        if (lowerType.contains("jsonb")) {
+                            paramPlaceholders.add("?::jsonb");
+                            log.debug("Added JSONB cast for parameter: {}", dbParamName);
+                        }
+                        else if (lowerType.contains("json")) {
+                            paramPlaceholders.add("?::json");
+                            log.debug("Added JSON cast for parameter: {}", dbParamName);
+                        }
+                        else if (lowerType.contains("uuid")) {
+                            paramPlaceholders.add("?::uuid");
+                            log.debug("Added UUID cast for parameter: {}", dbParamName);
+                        }
+                        else if (lowerType.contains("timestamp")) {
+                            paramPlaceholders.add("?::timestamp");
+                            log.debug("Added TIMESTAMP cast for parameter: {}", dbParamName);
+                        }
+                        else if (lowerType.contains("date")) {
+                            paramPlaceholders.add("?::date");
+                            log.debug("Added DATE cast for parameter: {}", dbParamName);
+                        }
+                        else if (lowerType.contains("integer") || lowerType.contains("int")) {
+                            paramPlaceholders.add("?::integer");
+                            log.debug("Added INTEGER cast for parameter: {}", dbParamName);
+                        }
+                        else if (lowerType.contains("bigint")) {
+                            paramPlaceholders.add("?::bigint");
+                            log.debug("Added BIGINT cast for parameter: {}", dbParamName);
+                        }
+                        else if (lowerType.contains("numeric") || lowerType.contains("decimal")) {
+                            paramPlaceholders.add("?::numeric");
+                            log.debug("Added NUMERIC cast for parameter: {}", dbParamName);
+                        }
+                        else if (lowerType.contains("boolean") || lowerType.contains("bool")) {
+                            paramPlaceholders.add("?::boolean");
+                            log.debug("Added BOOLEAN cast for parameter: {}", dbParamName);
+                        }
+                        else {
+                            paramPlaceholders.add("?");
+                        }
+                    } else {
+                        paramPlaceholders.add("?");
+                    }
+                }
+            }
+        }
+
+        // If no parameters from config, use generic placeholders
+        if (paramPlaceholders.isEmpty() && !dbParams.isEmpty()) {
+            for (int i = 0; i < dbParams.size(); i++) {
+                paramPlaceholders.add("?");
+            }
+        }
+
+        callBuilder.append(String.join(", ", paramPlaceholders));
+        callBuilder.append(")");
+
+        log.info("Built CALL statement: {}", callBuilder.toString());
+        return callBuilder.toString();
+    }
+
+    /**
+     * Process results from procedure execution
+     */
+    private Map<String, Object> processResults(CallableStatement callableStatement, GeneratedApiEntity api,
+                                               Map<String, Object> dbParams, boolean hasResultSet)
+            throws SQLException {
+        Map<String, Object> responseData = new HashMap<>();
+
+        // Process OUT parameters
+        if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+            // Calculate OUT parameter indices
+            int inParamCount = 0;
+            if (api.getParameters() != null) {
+                for (ApiParameterEntity param : api.getParameters()) {
+                    if (param == null || param.getKey() == null) continue;
+                    String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
+                    String dbParamName = getDbParamName(param);
+                    if ((paramMode.contains("IN") || paramMode.equals("INOUT")) && dbParams.containsKey(dbParamName)) {
+                        inParamCount++;
+                    }
                 }
             }
 
-            throw new RuntimeException("Failed to execute the requested operation: " + extractPostgreSQLError(errorMessage), e);
+            int outParamIndex = inParamCount + 1;
+            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                    try {
+                        Object value = callableStatement.getObject(outParamIndex);
+                        if (value != null) {
+                            responseData.put(mapping.getApiField(), value);
+                            log.debug("Mapped OUT parameter to {} with value: {}", mapping.getApiField(), value);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to get OUT parameter: {}", e.getMessage());
+                    }
+                    outParamIndex++;
+                }
+            }
+        }
+
+        // Process result set
+        if (hasResultSet) {
+            try (ResultSet rs = callableStatement.getResultSet()) {
+                if (rs != null) {
+                    List<Map<String, Object>> resultSetData = new ArrayList<>();
+                    ResultSetMetaData metaData = rs.getMetaData();
+                    int columnCount = metaData.getColumnCount();
+
+                    while (rs.next()) {
+                        Map<String, Object> row = new HashMap<>();
+                        for (int i = 1; i <= columnCount; i++) {
+                            String columnName = metaData.getColumnName(i);
+                            row.put(columnName.toLowerCase(), rs.getObject(i));
+                        }
+                        resultSetData.add(row);
+                    }
+                    if (!resultSetData.isEmpty()) {
+                        responseData.put("data", resultSetData);
+                        log.info("Retrieved {} rows from result set", resultSetData.size());
+                    }
+                }
+            }
+        }
+
+        // Default success response
+        if (responseData.isEmpty()) {
+            responseData.put("success", true);
+            responseData.put("message", "Procedure executed successfully");
+        }
+
+        return responseData;
+    }
+
+    /**
+     * Add parameters from request (path, query, headers)
+     */
+    private void addParameters(ExecuteApiRequestDTO request, GeneratedApiEntity api,
+                               Map<String, String> apiToDbParamMap, Map<String, Object> dbParams) {
+        // Add path parameters
+        if (request.getPathParams() != null) {
+            for (Map.Entry<String, Object> entry : request.getPathParams().entrySet()) {
+                String dbParamName = apiToDbParamMap.getOrDefault(entry.getKey().toLowerCase(), entry.getKey().toLowerCase());
+                dbParams.put(dbParamName, entry.getValue());
+                log.debug("Added path param: {} -> {}", entry.getKey(), dbParamName);
+            }
+        }
+
+        // Add query parameters
+        if (request.getQueryParams() != null) {
+            for (Map.Entry<String, Object> entry : request.getQueryParams().entrySet()) {
+                String dbParamName = apiToDbParamMap.getOrDefault(entry.getKey().toLowerCase(), entry.getKey().toLowerCase());
+                dbParams.put(dbParamName, entry.getValue());
+                log.debug("Added query param: {} -> {}", entry.getKey(), dbParamName);
+            }
+        }
+
+        // Add headers that are defined as parameters
+        if (request.getHeaders() != null && api.getParameters() != null) {
+            for (Map.Entry<String, String> entry : request.getHeaders().entrySet()) {
+                boolean headerIsParameter = api.getParameters().stream()
+                        .anyMatch(p -> p.getKey().equalsIgnoreCase(entry.getKey()));
+                if (headerIsParameter) {
+                    String dbParamName = apiToDbParamMap.getOrDefault(entry.getKey().toLowerCase(), entry.getKey().toLowerCase());
+                    dbParams.put(dbParamName, entry.getValue());
+                    log.debug("Added header as parameter: {} -> {}", entry.getKey(), dbParamName);
+                }
+            }
         }
     }
 
@@ -552,11 +631,9 @@ public class PostgreSQLProcedureExecutorUtil {
     private String extractJsonFromNotice(String notice) {
         if (notice == null) return null;
 
-        // Look for "Result: " prefix
         int resultIndex = notice.indexOf("Result: ");
         if (resultIndex >= 0) {
             String afterResult = notice.substring(resultIndex + 8);
-            // Find the JSON object
             int start = afterResult.indexOf('{');
             int end = afterResult.lastIndexOf('}');
             if (start >= 0 && end > start) {
@@ -564,7 +641,6 @@ public class PostgreSQLProcedureExecutorUtil {
             }
         }
 
-        // Try to find any JSON object
         int start = notice.indexOf('{');
         int end = notice.lastIndexOf('}');
         if (start >= 0 && end > start) {
@@ -575,31 +651,7 @@ public class PostgreSQLProcedureExecutorUtil {
     }
 
     /**
-     * Build the CALL statement for PostgreSQL procedure
-     */
-    private String buildCallStatement(String schema, String procedureName, int paramCount) {
-        StringBuilder callBuilder = new StringBuilder("CALL ");
-
-        if (schema != null && !schema.isEmpty()) {
-            callBuilder.append(schema).append(".");
-        }
-
-        callBuilder.append(procedureName).append("(");
-
-        for (int i = 0; i < paramCount; i++) {
-            if (i > 0) {
-                callBuilder.append(", ");
-            }
-            callBuilder.append("?");
-        }
-
-        callBuilder.append(")");
-
-        return callBuilder.toString();
-    }
-
-    /**
-     * Helper method to extract PostgreSQL error message
+     * Extract PostgreSQL error message
      */
     private String extractPostgreSQLError(String errorMessage) {
         if (errorMessage == null) return "Unknown error";
@@ -610,109 +662,12 @@ public class PostgreSQLProcedureExecutorUtil {
             return matcher.group();
         }
 
-        if (errorMessage.length() > 200) {
-            return errorMessage.substring(0, 200) + "...";
-        }
-        return errorMessage;
+        return errorMessage.length() > 200 ? errorMessage.substring(0, 200) + "..." : errorMessage;
     }
 
     /**
-     * Helper method to resolve schema from multiple sources
+     * Map PostgreSQL type to JDBC SQL type
      */
-    private String resolveSchema(String schema, ApiSourceObjectDTO sourceObject,
-                                 GeneratedApiEntity api, String procedureName) {
-        // Strategy 1: Use the schema parameter
-        if (schema != null && !schema.trim().isEmpty()) {
-            log.info("Strategy 1 - Using schema parameter: {}", schema);
-            return schema.trim().toLowerCase();
-        }
-
-        // Strategy 2: Try sourceObject.getOwner()
-        if (sourceObject != null && sourceObject.getOwner() != null && !sourceObject.getOwner().trim().isEmpty()) {
-            log.info("Strategy 2 - Using sourceObject.getOwner(): {}", sourceObject.getOwner());
-            return sourceObject.getOwner().trim().toLowerCase();
-        }
-
-        // Strategy 3: Try sourceObject.getSchemaName()
-        if (sourceObject != null && sourceObject.getSchemaName() != null && !sourceObject.getSchemaName().trim().isEmpty()) {
-            log.info("Strategy 3 - Using sourceObject.getSchemaName(): {}", sourceObject.getSchemaName());
-            return sourceObject.getSchemaName().trim().toLowerCase();
-        }
-
-        // Strategy 4: Get from API's source_object_info
-        if (api != null && api.getSourceObjectInfo() != null) {
-            try {
-                if (api.getSourceObjectInfo() instanceof Map) {
-                    Map<String, Object> sourceInfo = (Map<String, Object>) api.getSourceObjectInfo();
-                    if (sourceInfo.containsKey("schemaName") && sourceInfo.get("schemaName") != null) {
-                        String schemaName = sourceInfo.get("schemaName").toString();
-                        log.info("Strategy 4 - Using schemaName from source_object_info Map: {}", schemaName);
-                        return schemaName.trim().toLowerCase();
-                    }
-                    if (sourceInfo.containsKey("owner") && sourceInfo.get("owner") != null) {
-                        String ownerName = sourceInfo.get("owner").toString();
-                        log.info("Strategy 4 - Using owner from source_object_info Map: {}", ownerName);
-                        return ownerName.trim().toLowerCase();
-                    }
-                } else {
-                    String jsonString = api.getSourceObjectInfo().toString();
-                    Map<String, Object> sourceInfo = objectMapper.readValue(jsonString, new TypeReference<Map<String, Object>>() {});
-                    if (sourceInfo.containsKey("schemaName") && sourceInfo.get("schemaName") != null) {
-                        String schemaName = sourceInfo.get("schemaName").toString();
-                        log.info("Strategy 4 - Using schemaName from source_object_info JSON: {}", schemaName);
-                        return schemaName.trim().toLowerCase();
-                    }
-                    if (sourceInfo.containsKey("owner") && sourceInfo.get("owner") != null) {
-                        String ownerName = sourceInfo.get("owner").toString();
-                        log.info("Strategy 4 - Using owner from source_object_info JSON: {}", ownerName);
-                        return ownerName.trim().toLowerCase();
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Could not process sourceObjectInfo: {}", e.getMessage());
-            }
-        }
-
-        // Strategy 5: Try to get current schema
-        try {
-            String currentSchema = postgresqlJdbcTemplate.queryForObject("SELECT current_schema()", String.class);
-            if (currentSchema != null && !currentSchema.isEmpty()) {
-                log.info("Strategy 5 - Using current schema: {}", currentSchema);
-                return currentSchema;
-            }
-        } catch (Exception e) {
-            log.warn("Could not get current schema: {}", e.getMessage());
-        }
-
-        // Strategy 6: Try to locate the procedure in accessible schemas
-        try {
-            log.info("Strategy 6 - Attempting to locate procedure '{}' in accessible schemas", procedureName);
-
-            String findProcedureSql = "SELECT n.nspname FROM pg_proc p " +
-                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
-                    "WHERE p.proname = ? AND p.prokind = 'p' " +
-                    "AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
-                    "LIMIT 1";
-
-            List<String> schemas = postgresqlJdbcTemplate.queryForList(findProcedureSql, String.class, procedureName);
-
-            if (!schemas.isEmpty()) {
-                String foundSchema = schemas.get(0);
-                log.info("Strategy 6 - Found procedure '{}' in schema: {}", procedureName, foundSchema);
-                return foundSchema;
-            }
-
-            log.warn("Strategy 6 - Could not locate procedure '{}' in any accessible schema", procedureName);
-
-        } catch (Exception e) {
-            log.warn("Error while searching for procedure in accessible schemas: {}", e.getMessage());
-        }
-
-        // Strategy 7: Default to 'public' schema
-        log.info("Strategy 7 - Using default 'public' schema");
-        return "public";
-    }
-
     private int mapToSqlType(String pgType) {
         if (pgType == null) return Types.VARCHAR;
 
@@ -741,6 +696,100 @@ public class PostgreSQLProcedureExecutorUtil {
         return Types.VARCHAR;
     }
 
+    /**
+     * Resolve schema from multiple sources
+     */
+    private String resolveSchema(String schema, ApiSourceObjectDTO sourceObject,
+                                 GeneratedApiEntity api, String procedureName) {
+        // Strategy 1: Use the schema parameter
+        if (schema != null && !schema.trim().isEmpty()) {
+            log.info("Strategy 1 - Using schema parameter: {}", schema);
+            return schema.trim().toLowerCase();
+        }
+
+        // Strategy 2: Try sourceObject.getOwner()
+        if (sourceObject != null && sourceObject.getOwner() != null && !sourceObject.getOwner().trim().isEmpty()) {
+            log.info("Strategy 2 - Using sourceObject.getOwner(): {}", sourceObject.getOwner());
+            return sourceObject.getOwner().trim().toLowerCase();
+        }
+
+        // Strategy 3: Try sourceObject.getSchemaName()
+        if (sourceObject != null && sourceObject.getSchemaName() != null && !sourceObject.getSchemaName().trim().isEmpty()) {
+            log.info("Strategy 3 - Using sourceObject.getSchemaName(): {}", sourceObject.getSchemaName());
+            return sourceObject.getSchemaName().trim().toLowerCase();
+        }
+
+        // Strategy 4: Get from API's source_object_info
+        if (api != null && api.getSourceObjectInfo() != null) {
+            try {
+                if (api.getSourceObjectInfo() instanceof Map) {
+                    Map<String, Object> sourceInfo = (Map<String, Object>) api.getSourceObjectInfo();
+                    if (sourceInfo.containsKey("schemaName") && sourceInfo.get("schemaName") != null) {
+                        return sourceInfo.get("schemaName").toString().trim().toLowerCase();
+                    }
+                    if (sourceInfo.containsKey("owner") && sourceInfo.get("owner") != null) {
+                        return sourceInfo.get("owner").toString().trim().toLowerCase();
+                    }
+                } else {
+                    String jsonString = api.getSourceObjectInfo().toString();
+                    Map<String, Object> sourceInfo = objectMapper.readValue(jsonString, new TypeReference<Map<String, Object>>() {});
+                    if (sourceInfo.containsKey("schemaName") && sourceInfo.get("schemaName") != null) {
+                        return sourceInfo.get("schemaName").toString().trim().toLowerCase();
+                    }
+                    if (sourceInfo.containsKey("owner") && sourceInfo.get("owner") != null) {
+                        return sourceInfo.get("owner").toString().trim().toLowerCase();
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Could not process sourceObjectInfo: {}", e.getMessage());
+            }
+        }
+
+        // Strategy 5: Try to get current schema
+        try {
+            DataSource dataSource = postgresqlJdbcTemplate.getDataSource();
+            if (dataSource != null) {
+                try (Connection conn = dataSource.getConnection();
+                     Statement stmt = conn.createStatement();
+                     ResultSet rs = stmt.executeQuery("SELECT current_schema()")) {
+                    if (rs.next()) {
+                        String currentSchema = rs.getString(1);
+                        if (currentSchema != null && !currentSchema.isEmpty()) {
+                            log.info("Strategy 5 - Using current schema: {}", currentSchema);
+                            return currentSchema;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not get current schema: {}", e.getMessage());
+        }
+
+        // Strategy 6: Try to locate the procedure in accessible schemas
+        try {
+            String findProcedureSql = "SELECT n.nspname FROM pg_proc p " +
+                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                    "WHERE p.proname = ? AND p.prokind = 'p' " +
+                    "AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
+                    "LIMIT 1";
+
+            List<String> schemas = postgresqlJdbcTemplate.queryForList(findProcedureSql, String.class, procedureName);
+            if (!schemas.isEmpty()) {
+                log.info("Strategy 6 - Found procedure in schema: {}", schemas.get(0));
+                return schemas.get(0);
+            }
+        } catch (Exception e) {
+            log.warn("Error searching for procedure: {}", e.getMessage());
+        }
+
+        // Strategy 7: Default to 'public' schema
+        log.info("Strategy 7 - Using default 'public' schema");
+        return "public";
+    }
+
+    /**
+     * Get database parameter name from API parameter entity
+     */
     private String getDbParamName(ApiParameterEntity param) {
         if (param.getDbParameter() != null && !param.getDbParameter().isEmpty()) {
             return param.getDbParameter().toLowerCase();
@@ -757,20 +806,14 @@ public class PostgreSQLProcedureExecutorUtil {
     private Map<String, Object> parseXmlParameters(String xmlBody, List<ApiParameterDTO> configuredParamDTOs,
                                                    Map<String, String> apiToDbParamMap) {
         Map<String, Object> extractedParams = new HashMap<>();
-
         if (xmlBody == null || xmlBody.trim().isEmpty()) {
             return extractedParams;
         }
 
-        log.info("Parsing XML body to extract parameter values");
-        log.debug("XML Body: {}", xmlBody);
-
         try {
             for (ApiParameterDTO param : configuredParamDTOs) {
                 String paramKey = param.getKey();
-                if (paramKey == null || paramKey.isEmpty()) {
-                    continue;
-                }
+                if (paramKey == null || paramKey.isEmpty()) continue;
 
                 Pattern pattern = Pattern.compile("<" + paramKey + ">(.*?)</" + paramKey + ">",
                         Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
@@ -790,9 +833,6 @@ public class PostgreSQLProcedureExecutorUtil {
                     }
                 }
             }
-
-            log.info("Extracted {} parameters from XML: {}", extractedParams.size(), extractedParams.keySet());
-
         } catch (Exception e) {
             log.error("Error parsing XML parameters: {}", e.getMessage(), e);
         }

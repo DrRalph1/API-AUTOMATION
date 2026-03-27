@@ -14,7 +14,32 @@ import java.util.List;
 import java.util.Map;
 
 @Entity(name = "CollectionEntityCollections")
-@Table(name = "tb_collections")
+@Table(name = "tb_collections", indexes = {
+        // Index for filtering by owner (most common query)
+        @Index(name = "idx_collections_owner", columnList = "owner"),
+
+        // Index for sorting by timestamps
+        @Index(name = "idx_collections_created_at", columnList = "created_at"),
+        @Index(name = "idx_collections_updated_at", columnList = "updated_at"),
+        @Index(name = "idx_collections_last_activity", columnList = "last_activity"),
+
+        // Index for filtering by collection type
+        @Index(name = "idx_collections_collection_type", columnList = "collection_type"),
+
+        // Index for favorite collections
+        @Index(name = "idx_collections_is_favorite", columnList = "is_favorite"),
+
+        // Composite indexes for common query patterns
+        @Index(name = "idx_collections_owner_favorite", columnList = "owner, is_favorite"),
+        @Index(name = "idx_collections_owner_updated", columnList = "owner, updated_at"),
+        @Index(name = "idx_collections_type_owner", columnList = "collection_type, owner"),
+
+        // Index for name searches (if you search by name)
+        @Index(name = "idx_collections_name", columnList = "name"),
+
+        // Index for API ID lookups
+        @Index(name = "idx_collections_api_id", columnList = "api_id")
+})
 @Data
 @ToString(exclude = {"folders", "variables"})
 public class CollectionEntity {
@@ -91,7 +116,7 @@ public class CollectionEntity {
     @Version
     private Integer version;
 
-    // Helper method to get collection type from metadata if not directly set
+    // Helper methods remain unchanged
     public String getCollectionType() {
         if (collectionType != null) {
             return collectionType;
@@ -102,7 +127,6 @@ public class CollectionEntity {
         return null;
     }
 
-    // Helper method to set collection type in both field and metadata
     public void setCollectionType(String collectionType) {
         this.collectionType = collectionType;
         if (metadata == null) {
@@ -111,13 +135,11 @@ public class CollectionEntity {
         metadata.put("collectionType", collectionType);
     }
 
-    // Helper method to check if collection is new (from frontend)
     public boolean isNewCollection() {
         return metadata != null && metadata.containsKey("isNewCollection") &&
                 Boolean.TRUE.equals(metadata.get("isNewCollection"));
     }
 
-    // Helper method to get frontend ID if available
     public String getFrontendId() {
         if (metadata != null && metadata.containsKey("frontendId")) {
             return (String) metadata.get("frontendId");

@@ -10,9 +10,18 @@ import com.usg.apiAutomation.utils.apiEngine.DatabaseParameterGeneratorUtil;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -21,7 +30,104 @@ public abstract class BaseApiExecutionHelper {
     protected final ApiResponseHelper responseHelper;
     protected final LoggerUtil loggerUtil;
     protected final ApiConversionHelper conversionHelper;
-
+    protected final TransactionTemplate transactionTemplate;
+    
+    // Connection pool management
+    private final Map<String, Boolean> objectExistenceCache = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Object>> schemaCache = new ConcurrentHashMap<>();
+    
+    // Performance configuration
+    protected static final int BATCH_SIZE = 500;
+    protected static final int FETCH_SIZE = 1000;
+    protected static final int QUERY_TIMEOUT_SECONDS = 30;
+    protected static final int MAX_ROWS = 10000;
+    protected static final int MAX_RETRY_ATTEMPTS = 3;
+    protected static final long RETRY_DELAY_MS = 1000;
+    
+    // Cache TTL in milliseconds
+    protected static final long OBJECT_CACHE_TTL = 300000; // 5 minutes
+    protected static final long SCHEMA_CACHE_TTL = 600000; // 10 minutes
+    
+    private final Map<String, Long> objectCacheTimestamps = new ConcurrentHashMap<>();
+    private final Map<String, Long> schemaCacheTimestamps = new ConcurrentHashMap<>();
+    
+    // ==================== CORE METHODS WITH CONNECTION MANAGEMENT ====================
+    
+    /**
+     * Execute with automatic retry and connection recovery
+     */
+    @Retryable(
+        value = {DataAccessException.class},
+        maxAttempts = MAX_RETRY_ATTEMPTS,
+        backoff = @Backoff(delay = RETRY_DELAY_MS, multiplier = 2)
+    )
+    protected <T> T executeWithRetry(Supplier<T> operation, String operationName, String databaseType) {
+        long startTime = System.nanoTime();
+        
+        try {
+            T result = operation.get();
+            long duration = (System.nanoTime() - startTime) / 1_000_000;
+            
+            if (duration > 1000) {
+                log.warn("Slow {} operation on {}: {} ms", databaseType, operationName, duration);
+            }
+            
+            return result;
+            
+        } catch (DataAccessException e) {
+            long duration = (System.nanoTime() - startTime) / 1_000_000;
+            
+            // Check for connection pool exhaustion
+            if (e.getMessage() != null && e.getMessage().contains("Connection is not available")) {
+                log.error("Connection pool exhausted for {} after {} ms", databaseType, duration);
+                // Force connection pool refresh
+                refreshConnectionPool(databaseType);
+            }
+            
+            log.error("{} operation failed on {} after {} ms: {}", operationName, databaseType, duration, e.getMessage());
+            throw e;
+        }
+    }
+    
+    /**
+     * Refresh connection pool when exhaustion detected
+     */
+    protected void refreshConnectionPool(String databaseType) {
+        try {
+            log.warn("Refreshing connection pool for {}", databaseType);
+            JdbcTemplate template = getJdbcTemplate(databaseType);
+            if (template != null && template.getDataSource() != null) {
+                // Force connection validation
+                template.queryForObject("SELECT 1", Integer.class);
+                log.info("Connection pool refresh successful for {}", databaseType);
+            }
+        } catch (Exception e) {
+            log.error("Failed to refresh connection pool: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Ensure connection is valid and release if stuck
+     */
+    protected void ensureConnectionValid(JdbcTemplate template, String databaseType) {
+        try {
+            if (template != null) {
+                String testQuery = "postgresql".equalsIgnoreCase(databaseType) ? "SELECT 1" : "SELECT 1 FROM DUAL";
+                template.queryForObject(testQuery, Integer.class);
+            }
+        } catch (Exception e) {
+            log.warn("Connection validation failed for {}: {}", databaseType, e.getMessage());
+            refreshConnectionPool(databaseType);
+        }
+    }
+    
+    // ==================== EXISTING METHODS WITH ENHANCEMENTS ====================
+    
+    @Retryable(
+        value = {DataAccessException.class},
+        maxAttempts = MAX_RETRY_ATTEMPTS,
+        backoff = @Backoff(delay = RETRY_DELAY_MS, multiplier = 2)
+    )
     public GeneratedApiEntity createAndSaveApiEntity(
             GenerateApiRequestDTO request,
             ApiSourceObjectDTO sourceObjectDTO,
@@ -35,67 +141,58 @@ public abstract class BaseApiExecutionHelper {
             ApiConversionHelper conversionHelper,
             String databaseType) {
 
-        GeneratedApiEntity api = new GeneratedApiEntity();
+        return transactionTemplate.execute(status -> {
+            GeneratedApiEntity api = new GeneratedApiEntity();
 
-        // REMOVE THIS LINE - Don't set ID manually
-        // api.setId(UUID.randomUUID().toString());
+            api.setApiName(request.getApiName());
+            api.setApiCode(request.getApiCode());
+            api.setDescription(request.getDescription());
+            api.setVersion(request.getVersion());
+            api.setHttpMethod(request.getHttpMethod());
+            api.setBasePath(request.getBasePath());
+            api.setEndpointPath(endpointPath);
+            api.setStatus(request.getStatus() != null ? request.getStatus() : "DRAFT");
+            api.setIsActive(true);
+            api.setCategory(request.getCategory());
+            api.setTags(request.getTags() != null ? request.getTags() : new ArrayList<>());
+            api.setCreatedAt(LocalDateTime.now());
+            api.setCreatedBy(performedBy);
+            api.setUpdatedAt(LocalDateTime.now());
+            api.setUpdatedBy(performedBy);
+            api.setOwner(performedBy);
+            api.setTotalCalls(0L);
+            api.setDatabaseType(databaseType);
 
-        // Set basic fields (ID will be generated by Hibernate)
-        api.setApiName(request.getApiName());
-        api.setApiCode(request.getApiCode());
-        api.setDescription(request.getDescription());
-        api.setVersion(request.getVersion());
-        api.setHttpMethod(request.getHttpMethod());
-        api.setBasePath(request.getBasePath());
-        api.setEndpointPath(endpointPath);
-        api.setStatus(request.getStatus() != null ? request.getStatus() : "DRAFT");
-        api.setIsActive(true);
-        api.setCategory(request.getCategory());
-        api.setTags(request.getTags() != null ? request.getTags() : new ArrayList<>());
-        api.setCreatedAt(LocalDateTime.now());
-        api.setCreatedBy(performedBy);
-        api.setUpdatedAt(LocalDateTime.now());
-        api.setUpdatedBy(performedBy);
-        api.setOwner(performedBy);
-        api.setTotalCalls(0L);
-
-        // CRITICAL: Set database type
-        api.setDatabaseType(databaseType);
-
-        // Store source object info as Map
-        if (sourceObjectDTO != null) {
-            try {
-                Map<String, Object> sourceObjectMap = objectMapper.convertValue(
-                        sourceObjectDTO,
-                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
-                api.setSourceObjectInfo(sourceObjectMap);
-            } catch (Exception e) {
-                log.error("Error converting source object to map", e);
+            if (sourceObjectDTO != null) {
+                try {
+                    Map<String, Object> sourceObjectMap = objectMapper.convertValue(
+                            sourceObjectDTO,
+                            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                    api.setSourceObjectInfo(sourceObjectMap);
+                } catch (Exception e) {
+                    log.error("Error converting source object to map", e);
+                }
             }
-        }
 
-        // Store collection info as Map
-        if (collectionInfo != null) {
-            try {
-                Map<String, Object> collectionInfoMap = objectMapper.convertValue(
-                        collectionInfo,
-                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
-                api.setCollectionInfo(collectionInfoMap);
-            } catch (Exception e) {
-                log.error("Error converting collection info to map", e);
+            if (collectionInfo != null) {
+                try {
+                    Map<String, Object> collectionInfoMap = objectMapper.convertValue(
+                            collectionInfo,
+                            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                    api.setCollectionInfo(collectionInfoMap);
+                } catch (Exception e) {
+                    log.error("Error converting collection info to map", e);
+                }
             }
-        }
 
-        api.setSourceRequestId(sourceRequestId);
+            api.setSourceRequestId(sourceRequestId);
+            setupApiRelationships(api, request, sourceObjectDTO, parameterGenerator, conversionHelper);
 
-        // Set up relationships
-        setupApiRelationships(api, request, sourceObjectDTO, parameterGenerator, conversionHelper);
+            GeneratedApiEntity savedApi = repository.save(api);
+            log.info("Created API entity with ID: {}, Database Type: {}", savedApi.getId(), savedApi.getDatabaseType());
 
-        // Let Hibernate generate the ID
-        GeneratedApiEntity savedApi = repository.save(api);
-        log.info("Created API entity with ID: {}, Database Type: {}", savedApi.getId(), savedApi.getDatabaseType());
-
-        return savedApi;
+            return savedApi;
+        });
     }
 
     public GeneratedApiEntity getApiEntity(GeneratedAPIRepository repository, String apiId) {
@@ -103,9 +200,12 @@ public abstract class BaseApiExecutionHelper {
                 .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
     }
 
-    /**
-     * Update API entity with new data
-     */
+    @Retryable(
+        value = {DataAccessException.class},
+        maxAttempts = 2,
+        backoff = @Backoff(delay = 500)
+    )
+    @Transactional
     public void updateApiEntity(GeneratedApiEntity api,
                                 GenerateApiRequestDTO request,
                                 ApiSourceObjectDTO sourceObjectDTO,
@@ -129,23 +229,19 @@ public abstract class BaseApiExecutionHelper {
             api.setTags(request.getTags());
         }
 
-        // Preserve database type - DO NOT change it!
-        // api.setDatabaseType() - intentionally commented to preserve original
-
         if (sourceObjectDTO != null) {
             try {
                 Map<String, Object> sourceObjectMap = new HashMap<>();
                 sourceObjectMap.put("objectName", sourceObjectDTO.getObjectName());
                 sourceObjectMap.put("objectType", sourceObjectDTO.getObjectType());
                 sourceObjectMap.put("owner", sourceObjectDTO.getOwner());
-                sourceObjectMap.put("OWNER", sourceObjectDTO.getOwner());  // Add uppercase version
+                sourceObjectMap.put("OWNER", sourceObjectDTO.getOwner());
                 sourceObjectMap.put("schemaName", sourceObjectDTO.getSchemaName());
-                sourceObjectMap.put("SchemaName", sourceObjectDTO.getSchemaName());  // Add original case
-                sourceObjectMap.put("SCHEMA_NAME", sourceObjectDTO.getSchemaName());  // Add uppercase underscore version
+                sourceObjectMap.put("SchemaName", sourceObjectDTO.getSchemaName());
+                sourceObjectMap.put("SCHEMA_NAME", sourceObjectDTO.getSchemaName());
                 sourceObjectMap.put("operation", sourceObjectDTO.getOperation());
                 sourceObjectMap.put("databaseType", sourceObjectDTO.getDatabaseType());
 
-                // Add synonym info if present
                 if (sourceObjectDTO.getIsSynonym() != null) {
                     sourceObjectMap.put("isSynonym", sourceObjectDTO.getIsSynonym());
                     sourceObjectMap.put("targetType", sourceObjectDTO.getTargetType());
@@ -174,41 +270,25 @@ public abstract class BaseApiExecutionHelper {
         log.info("Updated API entity: {}, Preserving database type: {}", api.getId(), api.getDatabaseType());
     }
 
-    /**
-     * Clear all relationships from the API entity
-     */
     public void clearApiRelationships(GeneratedApiEntity api) {
         if (api == null) return;
 
         log.debug("Clearing relationships for API: {}", api.getId());
 
-        // Clear one-to-one relationships (setting to null is fine)
         api.setSchemaConfig(null);
         api.setAuthConfig(null);
         api.setRequestConfig(null);
         api.setResponseConfig(null);
         api.setSettings(null);
 
-        // Clear collections by modifying the existing ones
-        if (api.getParameters() != null) {
-            api.getParameters().clear();  // Clear the existing collection
-        }
-        if (api.getResponseMappings() != null) {
-            api.getResponseMappings().clear();  // Clear the existing collection
-        }
-        if (api.getHeaders() != null) {
-            api.getHeaders().clear();  // Clear the existing collection
-        }
-        if (api.getTests() != null) {
-            api.getTests().clear();  // Clear the existing collection
-        }
+        if (api.getParameters() != null) api.getParameters().clear();
+        if (api.getResponseMappings() != null) api.getResponseMappings().clear();
+        if (api.getHeaders() != null) api.getHeaders().clear();
+        if (api.getTests() != null) api.getTests().clear();
 
         log.debug("Successfully cleared relationships for API: {}", api.getId());
     }
 
-    /**
-     * Recreate all relationships for the API entity
-     */
     public void recreateApiRelationships(GeneratedApiEntity api,
                                          GenerateApiRequestDTO request,
                                          ApiSourceObjectDTO sourceObjectDTO,
@@ -217,40 +297,25 @@ public abstract class BaseApiExecutionHelper {
 
         log.debug("Recreating relationships for API: {}", api.getId());
 
-        // IMPORTANT: Make sure collections are initialized
-        if (api.getParameters() == null) {
-            api.setParameters(new ArrayList<>());
-        }
-        if (api.getHeaders() == null) {
-            api.setHeaders(new ArrayList<>());
-        }
-        if (api.getResponseMappings() == null) {
-            api.setResponseMappings(new ArrayList<>());
-        }
-        if (api.getTests() == null) {
-            api.setTests(new ArrayList<>());
-        }
+        if (api.getParameters() == null) api.setParameters(new ArrayList<>());
+        if (api.getHeaders() == null) api.setHeaders(new ArrayList<>());
+        if (api.getResponseMappings() == null) api.setResponseMappings(new ArrayList<>());
+        if (api.getTests() == null) api.setTests(new ArrayList<>());
 
-        // Recreate relationships using the setup method
         setupApiRelationships(api, request, sourceObjectDTO, parameterGenerator, conversionHelper);
 
         log.debug("Successfully recreated relationships for API: {}", api.getId());
     }
 
-    /**
-     * Prepare validated request for execution
-     */
     public ExecuteApiRequestDTO prepareValidatedRequest(GeneratedApiEntity api, ExecuteApiRequestDTO executeRequest) {
         if (executeRequest == null) {
             executeRequest = new ExecuteApiRequestDTO();
         }
 
-        // Ensure request has ID
         if (executeRequest.getRequestId() == null) {
             executeRequest.setRequestId(UUID.randomUUID().toString());
         }
 
-        // Set URL if not present
         if (executeRequest.getUrl() == null && api.getBasePath() != null && api.getEndpointPath() != null) {
             executeRequest.setUrl(api.getBasePath() + api.getEndpointPath());
         }
@@ -258,17 +323,17 @@ public abstract class BaseApiExecutionHelper {
         return executeRequest;
     }
 
-    /**
-     * Log execution to database
-     */
+    @Retryable(
+        value = {DataAccessException.class},
+        maxAttempts = 2,
+        backoff = @Backoff(delay = 500)
+    )
     public void logExecution(ApiExecutionLogRepository logRepository, GeneratedApiEntity api,
                              ExecuteApiRequestDTO request, Object response, int statusCode,
                              long executionTime, String performedBy, String clientIp,
                              String userAgent, String errorMessage, ObjectMapper objectMapper) {
         try {
-            // Build the log entity WITHOUT setting ID manually
             ApiExecutionLogEntity logEntity = ApiExecutionLogEntity.builder()
-                    // Don't set ID - let Hibernate generate it
                     .executedAt(LocalDateTime.now())
                     .executedBy(performedBy)
                     .executionTimeMs(executionTime)
@@ -278,47 +343,37 @@ public abstract class BaseApiExecutionHelper {
                     .errorMessage(errorMessage)
                     .build();
 
-            // Set the bidirectional relationship
-            if (api != null) {
-                logEntity.setGeneratedApi(api);
+            if (api != null) logEntity.setGeneratedApi(api);
+            if (request != null) logEntity.setRequestId(request.getRequestId());
+
+            if (request != null && (request.getPathParams() != null || request.getQueryParams() != null || request.getHeaders() != null)) {
+                Map<String, Object> requestParams = new HashMap<>();
+                if (request.getPathParams() != null) requestParams.put("pathParams", request.getPathParams());
+                if (request.getQueryParams() != null) requestParams.put("queryParams", request.getQueryParams());
+                if (request.getHeaders() != null) requestParams.put("headers", request.getHeaders());
+                if (request.getUrl() != null) requestParams.put("url", request.getUrl());
+                if (request.getHttpMethod() != null) requestParams.put("httpMethod", request.getHttpMethod());
+                logEntity.setRequestParams(requestParams);
             }
 
-            // Process request data
-            if (request != null) {
-                logEntity.setRequestId(request.getRequestId());
-
-                // Convert request params to Map
-                if (request.getPathParams() != null || request.getQueryParams() != null || request.getHeaders() != null) {
-                    Map<String, Object> requestParams = new HashMap<>();
-                    if (request.getPathParams() != null) requestParams.put("pathParams", request.getPathParams());
-                    if (request.getQueryParams() != null) requestParams.put("queryParams", request.getQueryParams());
-                    if (request.getHeaders() != null) requestParams.put("headers", request.getHeaders());
-                    if (request.getUrl() != null) requestParams.put("url", request.getUrl());
-                    if (request.getHttpMethod() != null) requestParams.put("httpMethod", request.getHttpMethod());
-                    logEntity.setRequestParams(requestParams);
-                }
-
-                // Convert request body to Map
-                if (request.getBody() != null) {
-                    try {
-                        if (request.getBody() instanceof Map) {
-                            logEntity.setRequestBody((Map<String, Object>) request.getBody());
-                        } else {
-                            Map<String, Object> bodyMap = new HashMap<>();
-                            bodyMap.put("value", request.getBody());
-                            logEntity.setRequestBody(bodyMap);
-                        }
-                    } catch (Exception e) {
-                        log.warn("Failed to convert request body to map: {}", e.getMessage());
-                        Map<String, Object> errorBody = new HashMap<>();
-                        errorBody.put("error", "Failed to serialize body");
-                        errorBody.put("type", request.getBody().getClass().getSimpleName());
-                        logEntity.setRequestBody(errorBody);
+            if (request != null && request.getBody() != null) {
+                try {
+                    if (request.getBody() instanceof Map) {
+                        logEntity.setRequestBody((Map<String, Object>) request.getBody());
+                    } else {
+                        Map<String, Object> bodyMap = new HashMap<>();
+                        bodyMap.put("value", request.getBody());
+                        logEntity.setRequestBody(bodyMap);
                     }
+                } catch (Exception e) {
+                    log.warn("Failed to convert request body to map: {}", e.getMessage());
+                    Map<String, Object> errorBody = new HashMap<>();
+                    errorBody.put("error", "Failed to serialize body");
+                    errorBody.put("type", request.getBody().getClass().getSimpleName());
+                    logEntity.setRequestBody(errorBody);
                 }
             }
 
-            // Convert response to Map
             if (response != null) {
                 try {
                     if (response instanceof Map) {
@@ -337,28 +392,20 @@ public abstract class BaseApiExecutionHelper {
                 }
             }
 
-            // Save the log entity - let Hibernate generate the ID
             try {
                 logRepository.save(logEntity);
                 log.debug("Execution log saved successfully with ID: {}", logEntity.getId());
             } catch (org.springframework.orm.ObjectOptimisticLockingFailureException e) {
-                // For optimistic locking failures, just log the error and continue
-                // Don't retry - let Hibernate handle it on next attempt
                 log.warn("Optimistic locking failure for execution log (non-critical): {}", e.getMessage());
             } catch (Exception e) {
-                // Log the error but don't throw - logging should not break the main flow
                 log.error("Failed to save execution log (non-critical): {}", e.getMessage(), e);
             }
 
         } catch (Exception e) {
-            // Catch all to ensure logging failure doesn't affect the main transaction
             log.error("Error in logExecution (non-critical): {}", e.getMessage(), e);
         }
     }
 
-    /**
-     * Update API statistics after execution
-     */
     public void updateApiStats(GeneratedApiEntity api, GeneratedAPIRepository repository) {
         if (api != null) {
             api.setTotalCalls(api.getTotalCalls() != null ? api.getTotalCalls() + 1 : 1);
@@ -367,22 +414,17 @@ public abstract class BaseApiExecutionHelper {
         }
     }
 
-    /**
-     * Save test result
-     */
     public ApiTestEntity saveTestResult(ApiTestRepository testRepository, GeneratedApiEntity api,
                                         ApiTestRequestDTO testRequest, ExecuteApiResponseDTO executionResult,
                                         boolean passed, long executionTime, String performedBy,
                                         ObjectMapper objectMapper) {
 
-        // Create test data map from request
         Map<String, Object> testData = new HashMap<>();
         if (testRequest.getPathParams() != null) testData.put("pathParams", testRequest.getPathParams());
         if (testRequest.getQueryParams() != null) testData.put("queryParams", testRequest.getQueryParams());
         if (testRequest.getHeaders() != null) testData.put("headers", testRequest.getHeaders());
         if (testRequest.getBody() != null) testData.put("body", testRequest.getBody());
 
-        // Prepare expected response
         Map<String, Object> expectedResponse = new HashMap<>();
         if (testRequest.getExpectedResponse() != null) {
             if (testRequest.getExpectedResponse() instanceof Map) {
@@ -392,7 +434,6 @@ public abstract class BaseApiExecutionHelper {
             }
         }
 
-        // Prepare actual response
         Map<String, Object> actualResponse = new HashMap<>();
         if (executionResult.getData() != null) {
             if (executionResult.getData() instanceof Map) {
@@ -402,14 +443,12 @@ public abstract class BaseApiExecutionHelper {
             }
         }
 
-        // Prepare execution results
         Map<String, Object> executionResults = new HashMap<>();
         executionResults.put("responseCode", executionResult.getResponseCode());
         executionResults.put("success", executionResult.getSuccess());
         executionResults.put("message", executionResult.getMessage());
         executionResults.put("passed", passed);
 
-        // Build the test entity
         ApiTestEntity test = ApiTestEntity.builder()
                 .id(UUID.randomUUID().toString())
                 .testName(testRequest.getTestName())
@@ -422,7 +461,6 @@ public abstract class BaseApiExecutionHelper {
                 .expectedResponse(expectedResponse)
                 .actualResponse(actualResponse)
                 .executionResults(executionResults)
-                // Set default test configuration flags
                 .testConnection(true)
                 .testObjectAccess(true)
                 .testDataTypes(true)
@@ -432,22 +470,90 @@ public abstract class BaseApiExecutionHelper {
                 .testAuthorization(true)
                 .build();
 
-        // Set the bidirectional relationship
         test.setGeneratedApi(api);
-
         return testRepository.save(test);
     }
 
-    // Abstract method for database-specific relationship setup
+    // ==================== HELPER METHODS ====================
+    
+    protected JdbcTemplate getJdbcTemplate(String databaseType) {
+        // This should be implemented by subclasses
+        return null;
+    }
+    
+    protected boolean objectExists(String schema, String objectName, String objectType, String databaseType) {
+        String cacheKey = String.format("%s:%s:%s:%s", databaseType, schema, objectName, objectType).toLowerCase();
+        
+        Long timestamp = objectCacheTimestamps.get(cacheKey);
+        if (timestamp != null && (System.currentTimeMillis() - timestamp) < OBJECT_CACHE_TTL) {
+            Boolean exists = objectExistenceCache.get(cacheKey);
+            if (exists != null) {
+                return exists;
+            }
+        }
+        
+        boolean exists = checkObjectExistsInDatabase(schema, objectName, objectType, databaseType);
+        
+        objectExistenceCache.put(cacheKey, exists);
+        objectCacheTimestamps.put(cacheKey, System.currentTimeMillis());
+        
+        return exists;
+    }
+    
+    protected String resolveSchema(String objectName, String defaultSchema, String databaseType) {
+        String cacheKey = String.format("%s:%s:%s", databaseType, objectName, defaultSchema).toLowerCase();
+        
+        Long timestamp = schemaCacheTimestamps.get(cacheKey);
+        if (timestamp != null && (System.currentTimeMillis() - timestamp) < SCHEMA_CACHE_TTL) {
+            Map<String, Object> cached = schemaCache.get(cacheKey);
+            if (cached != null && cached.containsKey("schema")) {
+                return (String) cached.get("schema");
+            }
+        }
+        
+        String resolvedSchema = resolveSchemaFromDatabase(objectName, defaultSchema, databaseType);
+        
+        Map<String, Object> cacheEntry = new HashMap<>();
+        cacheEntry.put("schema", resolvedSchema);
+        cacheEntry.put("timestamp", System.currentTimeMillis());
+        schemaCache.put(cacheKey, cacheEntry);
+        schemaCacheTimestamps.put(cacheKey, System.currentTimeMillis());
+        
+        return resolvedSchema;
+    }
+    
+    public void clearCaches() {
+        objectExistenceCache.clear();
+        schemaCache.clear();
+        objectCacheTimestamps.clear();
+        schemaCacheTimestamps.clear();
+        log.info("All caches cleared");
+    }
+    
+    public Map<String, Object> getCacheStats() {
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("objectCacheSize", objectExistenceCache.size());
+        stats.put("schemaCacheSize", schemaCache.size());
+        stats.put("objectCacheTTL", OBJECT_CACHE_TTL);
+        stats.put("schemaCacheTTL", SCHEMA_CACHE_TTL);
+        return stats;
+    }
+    
+    // ==================== ABSTRACT METHODS ====================
+    
+    protected abstract boolean checkObjectExistsInDatabase(String schema, String objectName, 
+                                                           String objectType, String databaseType);
+    
+    protected abstract String resolveSchemaFromDatabase(String objectName, String defaultSchema, String databaseType);
+    
     protected abstract void setupApiRelationships(GeneratedApiEntity api,
                                                   GenerateApiRequestDTO request,
                                                   ApiSourceObjectDTO sourceObjectDTO,
                                                   DatabaseParameterGeneratorUtil parameterGenerator,
                                                   ApiConversionHelper conversionHelper);
-
-    // Abstract method for database-specific execution
+    
     public abstract Object executeAgainstDatabase(GeneratedApiEntity api,
                                                   ApiSourceObjectDTO sourceObject,
                                                   ExecuteApiRequestDTO validatedRequest,
-                                                  List<ApiParameterDTO> configuredParamDTOs);
+                                                  List<ApiParameterDTO> configuredParamDTOs) throws SQLException;
 }

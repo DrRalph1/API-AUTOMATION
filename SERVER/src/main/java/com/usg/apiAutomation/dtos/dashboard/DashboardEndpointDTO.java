@@ -1,6 +1,8 @@
 package com.usg.apiAutomation.dtos.dashboard;
 
 import lombok.Data;
+
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -23,6 +25,8 @@ public class DashboardEndpointDTO {
     private String url;
     private String description;
     private String status;
+    private Long totalCalls;
+    private LocalDateTime lastCalledAt;
     private String version;
     private String owner;
 

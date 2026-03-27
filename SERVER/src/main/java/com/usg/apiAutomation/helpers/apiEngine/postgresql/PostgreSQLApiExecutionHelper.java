@@ -11,8 +11,12 @@ import com.usg.apiAutomation.utils.LoggerUtil;
 import com.usg.apiAutomation.utils.apiEngine.DatabaseParameterGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.executor.postgresql.*;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -25,19 +29,26 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
     private final PostgreSQLProcedureExecutorUtil postgreSQLProcedureExecutorUtil;
     private final PostgreSQLFunctionExecutorUtil postgreSQLFunctionExecutorUtil;
 
+    @Autowired
+    @Qualifier("postgresqlJdbcTemplate")
+    private JdbcTemplate postgresqlJdbcTemplate;
+
     public PostgreSQLApiExecutionHelper(
             ApiResponseHelper responseHelper,
             LoggerUtil loggerUtil,
             ApiConversionHelper conversionHelper,
+            org.springframework.transaction.support.TransactionTemplate transactionTemplate,
             PostgreSQLTableExecutorUtil postgreSQLTableExecutorUtil,
             PostgreSQLViewExecutorUtil postgreSQLViewExecutorUtil,
             PostgreSQLProcedureExecutorUtil postgreSQLProcedureExecutorUtil,
-            PostgreSQLFunctionExecutorUtil postgreSQLFunctionExecutorUtil) {
-        super(responseHelper, loggerUtil, conversionHelper);
+            PostgreSQLFunctionExecutorUtil postgreSQLFunctionExecutorUtil,
+            @Qualifier("postgresqlJdbcTemplate") JdbcTemplate postgresqlJdbcTemplate) {
+        super(responseHelper, loggerUtil, conversionHelper, transactionTemplate);
         this.postgreSQLTableExecutorUtil = postgreSQLTableExecutorUtil;
         this.postgreSQLViewExecutorUtil = postgreSQLViewExecutorUtil;
         this.postgreSQLProcedureExecutorUtil = postgreSQLProcedureExecutorUtil;
         this.postgreSQLFunctionExecutorUtil = postgreSQLFunctionExecutorUtil;
+        this.postgresqlJdbcTemplate = postgresqlJdbcTemplate;
     }
 
     @Override
@@ -134,7 +145,7 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
     public Object executeAgainstDatabase(GeneratedApiEntity api,
                                          ApiSourceObjectDTO sourceObject,
                                          ExecuteApiRequestDTO validatedRequest,
-                                         List<ApiParameterDTO> configuredParamDTOs) {
+                                         List<ApiParameterDTO> configuredParamDTOs) throws SQLException {
 
         log.info("Executing PostgreSQL operation for API: {}", api.getId());
 
@@ -196,5 +207,71 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
             default:
                 throw new RuntimeException("Unsupported table operation: " + operation);
         }
+    }
+
+
+    @Override
+    protected boolean checkObjectExistsInDatabase(String schema, String objectName,
+                                                  String objectType, String databaseType) {
+        try {
+            String sql = "";
+            switch (objectType.toUpperCase()) {
+                case "TABLE":
+                    sql = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?";
+                    break;
+                case "VIEW":
+                    sql = "SELECT COUNT(*) FROM information_schema.views WHERE table_schema = ? AND table_name = ?";
+                    break;
+                case "MATERIALIZED VIEW":
+                    sql = "SELECT COUNT(*) FROM pg_matviews WHERE schemaname = ? AND matviewname = ?";
+                    break;
+                case "FUNCTION":
+                    sql = "SELECT COUNT(*) FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname = ? AND p.proname = ?";
+                    break;
+                case "PROCEDURE":
+                    sql = "SELECT COUNT(*) FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname = ? AND p.proname = ? AND p.prokind = 'p'";
+                    break;
+                default:
+                    return false;
+            }
+
+            Integer count = postgresqlJdbcTemplate.queryForObject(sql, Integer.class, schema, objectName);
+            return count != null && count > 0;
+        } catch (Exception e) {
+            log.debug("Error checking object existence in PostgreSQL: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    protected String resolveSchemaFromDatabase(String objectName, String defaultSchema, String databaseType) {
+        try {
+            // Try to find the object in accessible schemas
+            String sql = "SELECT n.nspname FROM pg_class c " +
+                    "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                    "WHERE c.relname = ? AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
+                    "LIMIT 1";
+
+            List<String> schemas = postgresqlJdbcTemplate.queryForList(sql, String.class, objectName);
+            if (!schemas.isEmpty()) {
+                return schemas.get(0);
+            }
+
+            // Check for functions/procedures
+            sql = "SELECT n.nspname FROM pg_proc p " +
+                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                    "WHERE p.proname = ? AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
+                    "LIMIT 1";
+
+            schemas = postgresqlJdbcTemplate.queryForList(sql, String.class, objectName);
+            if (!schemas.isEmpty()) {
+                return schemas.get(0);
+            }
+
+        } catch (Exception e) {
+            log.debug("Error resolving schema in PostgreSQL: {}", e.getMessage());
+        }
+
+        return defaultSchema != null ? defaultSchema : "public";
     }
 }

@@ -324,7 +324,7 @@ public class DocumentationGeneratorUtil {
         devEnv.setId(UUID.randomUUID().toString());
         devEnv.setGeneratedApiId(generatedApiId);
         devEnv.setName("Development");
-        devEnv.setBaseUrl("http://localhost:8080");
+        devEnv.setBaseUrl("http://127.0.0.1:4789");
         devEnv.setActive(true);
         devEnv.setDescription("Local development environment");
         devEnv.setCreatedBy(performedBy);

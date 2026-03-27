@@ -1089,7 +1089,7 @@ public class AutomationEngineService {
         long startTime = System.currentTimeMillis();
         String capturedRequestId = null;
         ApiRequestResponseDTO capturedRequest = null;
-        String databaseType = "oracle"; // Declare outside try block with default value
+        String databaseType = "oracle";
 
         try {
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
@@ -1107,7 +1107,7 @@ public class AutomationEngineService {
 
             log.info("Executing API: {} on database: {}", apiId, databaseType);
 
-            // 3. Get the appropriate execution helper based on database type
+            // 3. Get the appropriate execution helper
             BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
 
             // 4. Check API status
@@ -1408,6 +1408,143 @@ public class AutomationEngineService {
 
                 executionTime = System.currentTimeMillis() - startTime;
 
+                // ============ GENERIC RESPONSE HANDLING ============
+                // Check if the result contains response metadata (like responseCode, status, etc.)
+                boolean isResponseWithStatus = false;
+                Integer determinedHttpStatus = null;
+                String responseMessage = null;
+                Object responseData = null;
+
+                if (result instanceof Map) {
+                    Map<String, Object> resultMap = (Map<String, Object>) result;
+
+                    // Check for common response code fields
+                    String responseCode = null;
+                    if (resultMap.containsKey("responseCode")) {
+                        responseCode = resultMap.get("responseCode").toString();
+                        isResponseWithStatus = true;
+                    } else if (resultMap.containsKey("code")) {
+                        responseCode = resultMap.get("code").toString();
+                        isResponseWithStatus = true;
+                    } else if (resultMap.containsKey("status")) {
+                        responseCode = resultMap.get("status").toString();
+                        isResponseWithStatus = true;
+                    }
+
+                    // Extract message if present
+                    if (resultMap.containsKey("message")) {
+                        responseMessage = resultMap.get("message").toString();
+                    } else if (resultMap.containsKey("msg")) {
+                        responseMessage = resultMap.get("msg").toString();
+                    }
+
+                    // Extract data if present
+                    if (resultMap.containsKey("data")) {
+                        responseData = resultMap.get("data");
+                    }
+
+                    // Determine HTTP status based on response code patterns
+                    if (isResponseWithStatus && responseCode != null) {
+                        // Handle success codes (000, 200, "SUCCESS", etc.)
+                        if ("000".equals(responseCode) || "200".equals(responseCode) ||
+                                "SUCCESS".equalsIgnoreCase(responseCode) || "OK".equalsIgnoreCase(responseCode)) {
+                            determinedHttpStatus = 200;
+                        }
+                        // Handle error codes
+                        else {
+                            // Try to map common error patterns
+                            if (responseCode.startsWith("4")) {
+                                try {
+                                    determinedHttpStatus = Integer.parseInt(responseCode);
+                                } catch (NumberFormatException e) {
+                                    determinedHttpStatus = 400; // Default to 400 for 4xx
+                                }
+                            } else if (responseCode.startsWith("5")) {
+                                try {
+                                    determinedHttpStatus = Integer.parseInt(responseCode);
+                                } catch (NumberFormatException e) {
+                                    determinedHttpStatus = 500;
+                                }
+                            } else {
+                                // For custom codes (like 401, 423, etc.), try to parse
+                                try {
+                                    int code = Integer.parseInt(responseCode);
+                                    if (code >= 400 && code < 600) {
+                                        determinedHttpStatus = code;
+                                    } else {
+                                        determinedHttpStatus = 500; // Default error
+                                    }
+                                } catch (NumberFormatException e) {
+                                    determinedHttpStatus = 500; // Default error for non-numeric codes
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Prepare the final response
+                ExecuteApiResponseDTO finalResponse;
+
+                if (isResponseWithStatus && determinedHttpStatus != null && determinedHttpStatus >= 400) {
+                    // This is an error response from the procedure
+                    log.info("Procedure returned error status: HTTP={}, responseCode={}",
+                            determinedHttpStatus, ((Map<String, Object>) result).get("responseCode"));
+
+                    // Update captured request with error
+                    if (capturedRequestId != null) {
+                        try {
+                            String errorMessage = responseMessage != null ? responseMessage : "Procedure execution error";
+                            String dbErrorMessage = truncateErrorMessage(errorMessage, 250);
+                            apiRequestService.updateRequestWithError(
+                                    requestId, capturedRequestId, determinedHttpStatus,
+                                    dbErrorMessage, executionTime);
+                        } catch (Exception e) {
+                            log.error("Failed to update captured request: {}", e.getMessage());
+                        }
+                    }
+
+                    // Log the execution
+                    executionHelper.logExecution(executionLogRepository, api, validatedRequest,
+                            null, determinedHttpStatus, executionTime, performedBy,
+                            clientIp, userAgent, responseMessage, objectMapper);
+
+                    // Build error response
+                    finalResponse = new ExecuteApiResponseDTO();
+                    finalResponse.setResponseCode(determinedHttpStatus);
+                    finalResponse.setSuccess(false);
+                    finalResponse.setMessage(responseMessage != null ? responseMessage : "Operation failed");
+
+                    // Set data - preserve the original structure
+                    if (responseData != null) {
+                        finalResponse.setData(responseData instanceof List ?
+                                (List<?>) responseData : Collections.singletonList(responseData));
+                    } else if (result instanceof Map) {
+                        // If no data field, but result has other fields, use the whole result
+                        Map<String, Object> resultMap = (Map<String, Object>) result;
+                        // Remove metadata fields to avoid duplication
+                        resultMap.remove("responseCode");
+                        resultMap.remove("code");
+                        resultMap.remove("status");
+                        resultMap.remove("message");
+                        resultMap.remove("msg");
+                        if (!resultMap.isEmpty()) {
+                            finalResponse.setData(Collections.singletonList(resultMap));
+                        } else {
+                            finalResponse.setData(Collections.emptyList());
+                        }
+                    } else {
+                        finalResponse.setData(Collections.emptyList());
+                    }
+
+                    loggerUtil.log("apiAutomation", "Request ID: " + requestId +
+                            ", API returned error: HTTP=" + determinedHttpStatus +
+                            ", responseCode=" + ((Map<String, Object>) result).get("responseCode"));
+
+                    return finalResponse;
+                }
+
+                // ============ SUCCESS RESPONSE HANDLING ============
+
                 // 22. Format the response
                 Object formattedResponse = responseHelper.formatResponse(api, result);
 
@@ -1436,7 +1573,7 @@ public class AutomationEngineService {
                         clientIp, userAgent, null, objectMapper);
 
                 // 26. Build success response
-                ExecuteApiResponseDTO response = responseHelper.buildSuccessResponse(
+                finalResponse = responseHelper.buildSuccessResponse(
                         formattedResponse, executionTime, api);
 
                 loggerUtil.log("apiAutomation", "Request ID: " + requestId +
@@ -1444,7 +1581,7 @@ public class AutomationEngineService {
                         " on database: " + databaseType +
                         " - Time: " + executionTime + "ms");
 
-                return response;
+                return finalResponse;
 
             } catch (Exception e) {
                 executionTime = System.currentTimeMillis() - startTime;
@@ -1453,10 +1590,9 @@ public class AutomationEngineService {
                 // Extract the actual database error
                 String detailedError = extractDatabaseError(e, databaseType);
 
-                // Log the raw error for debugging
                 log.info("Returning raw database error: {}", detailedError);
 
-                // Create error response - DO NOT RE-THROW, return this directly
+                // Create error response
                 ExecuteApiResponseDTO errorResponse = new ExecuteApiResponseDTO();
                 errorResponse.setResponseCode(500);
                 errorResponse.setSuccess(false);
@@ -1489,7 +1625,6 @@ public class AutomationEngineService {
                     log.error("Failed to log execution error: {}", logError.getMessage());
                 }
 
-                // Return the error response directly
                 return errorResponse;
             }
 
@@ -1500,7 +1635,6 @@ public class AutomationEngineService {
                     ", Error executing API: " + e.getMessage());
             log.error("Error executing API: ", e);
 
-            // Extract the actual database error if it's a data integrity violation
             String detailedError = extractDatabaseError(e, databaseType);
 
             ExecuteApiResponseDTO safeResponse = new ExecuteApiResponseDTO();

@@ -42,6 +42,7 @@ const MOCK_COLLECTIONS = [
     type: 'core',
     folders: [
       { id: 'core-api-loans', name: 'Loans', description: 'Loan origination, servicing, and management' },
+      { id: 'core-api-investments', name: 'Investments', description: 'Investment products, portfolio management, and trading operations'},
       { id: 'core-api-accounts', name: 'Accounts', description: 'Deposit accounts, savings, and current accounts' },
       { id: 'core-api-customers', name: 'Customers', description: 'Customer onboarding and profile management' },
       { id: 'core-api-transactions', name: 'Transactions', description: 'Financial transactions and history' },
@@ -255,7 +256,7 @@ const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'
 const ORACLE_DATA_TYPES = [
   'VARCHAR2', 'NUMBER', 'DATE', 'TIMESTAMP', 'TIMESTAMP WITH TIME ZONE',
   'TIMESTAMP WITH LOCAL TIME ZONE', 'INTERVAL YEAR TO MONTH', 'INTERVAL DAY TO SECOND',
-  'RAW', 'LONG RAW', 'CHAR', 'NCHAR', 'NVARCHAR2', 'CLOB', 'NCLOB', 'BLOB',
+  'RAW', 'LONG RAW', 'CHAR', 'NCHAR', 'NVARCHAR2', 'CLOB', 'NCLOB', 'BLOB', 'JSONB',
   'BFILE', 'ROWID', 'UROWID'
 ];
 
@@ -2762,7 +2763,7 @@ const populateFormFromObject = useCallback((object) => {
           apiType = 'string';
         }
       } else {
-        // Oracle type mapping
+        // Data Type mapping
         if (paramType.includes('VARCHAR') || paramType.includes('CHAR')) {
           oracleType = 'VARCHAR2';
           apiType = 'string';
@@ -2829,7 +2830,7 @@ const populateFormFromObject = useCallback((object) => {
     // For functions, handle return type
     const returnType = object.RETURN_TYPE || object.return_type || object.returnType || object.details?.returnType;
     if (returnType && objectType === 'FUNCTION') {
-      // Determine oracle type for return based on database type
+      // Determine Data Type for return based on database type
       const dbType = object.databaseType?.toLowerCase() || 'oracle';
       let oracleType = 'VARCHAR2';
       
@@ -6196,7 +6197,7 @@ return ReactDOM.createPortal(
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
                                 borderColor: themeColors.border,
                                 color: themeColors.textSecondary
-                              }}>Oracle Type</th>
+                              }}>Data Type</th>
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
                                 borderColor: themeColors.border,
                                 color: themeColors.textSecondary
@@ -6399,7 +6400,7 @@ return ReactDOM.createPortal(
                             <tr style={{ backgroundColor: themeColors.hover }}>
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>API Field</th>
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>DB Column</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Oracle Type</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Data Type</th>
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>API Type</th>
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Nullable</th>
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>PK</th>

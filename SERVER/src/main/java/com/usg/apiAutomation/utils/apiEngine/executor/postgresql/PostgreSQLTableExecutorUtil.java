@@ -9,16 +9,16 @@ import jakarta.validation.ValidationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.PreparedStatementCallback;
 import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Component;
 
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.SQLException;
-import java.sql.SQLWarning;
-import java.sql.Types;
+import javax.sql.DataSource;
+import java.sql.*;
 import java.util.*;
+import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -34,9 +34,11 @@ public class PostgreSQLTableExecutorUtil {
     private final PostgreSQLParameterValidatorUtil parameterValidator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // Timeout constants
+    private static final int STATEMENT_TIMEOUT_SECONDS = 30;
+    private static final int CONNECTION_TIMEOUT_MS = 30000;
+
     // Flag to control whether to capture RAISE NOTICE messages
-    // Set to true to capture notices (useful for procedures/functions called from tables)
-    // Set to false for cleaner responses (default for table operations)
     private boolean captureNotices = false;
 
     public PostgreSQLTableExecutorUtil(
@@ -56,6 +58,29 @@ public class PostgreSQLTableExecutorUtil {
      */
     public boolean isCaptureNotices() {
         return captureNotices;
+    }
+
+    /**
+     * Get connection with timeout settings
+     */
+    private Connection getConnectionWithTimeout() throws SQLException {
+        DataSource dataSource = postgresqlJdbcTemplate.getDataSource();
+        if (dataSource == null) {
+            throw new SQLException("No DataSource available");
+        }
+
+        Connection conn = dataSource.getConnection();
+
+        // Set network timeout
+        conn.setNetworkTimeout(Executors.newSingleThreadExecutor(), CONNECTION_TIMEOUT_MS);
+
+        // Set session statement timeout
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute("SET statement_timeout = '" + STATEMENT_TIMEOUT_SECONDS + "s'");
+            stmt.execute("SET lock_timeout = '" + STATEMENT_TIMEOUT_SECONDS + "s'");
+        }
+
+        return conn;
     }
 
     /**
@@ -181,7 +206,7 @@ public class PostgreSQLTableExecutorUtil {
         List<String> capturedNotices = captureNotices ? new ArrayList<>() : null;
         Map<String, Object> noticeResult = new HashMap<>();
 
-        try {
+        try (Connection conn = getConnectionWithTimeout()) {
             StringBuilder sql = new StringBuilder("SELECT * FROM ");
             if (schema != null && !schema.isEmpty()) {
                 sql.append(schema).append(".");
@@ -389,72 +414,76 @@ public class PostgreSQLTableExecutorUtil {
 
             log.info("Final SQL: {} with {} parameters", sql.toString(), paramValues.size());
 
-            // Execute query with optional notice capture
+            // Execute query with optional notice capture using PreparedStatement
             List<Map<String, Object>> results;
-            if (captureNotices) {
-                results = postgresqlJdbcTemplate.query(
-                        sql.toString(),
-                        paramValues.toArray(),
-                        (ResultSetExtractor<List<Map<String, Object>>>) rs -> {
-                            // Check for warnings (RAISE NOTICE messages)
-                            SQLWarning warning = rs.getStatement().getWarnings();
-                            while (warning != null) {
-                                String warningMessage = warning.getMessage();
-                                if (warningMessage != null) {
-                                    capturedNotices.add(warningMessage);
-                                    log.debug("Captured warning/notice: {}", warningMessage);
-                                }
-                                warning = warning.getNextWarning();
+
+            try (PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
+                // Set parameters
+                for (int i = 0; i < paramValues.size(); i++) {
+                    pstmt.setObject(i + 1, paramValues.get(i));
+                }
+
+                // Set statement timeout
+                pstmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
+
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    // Capture warnings if enabled
+                    if (captureNotices && capturedNotices != null) {
+                        SQLWarning warning = pstmt.getWarnings();
+                        while (warning != null) {
+                            String warningMessage = warning.getMessage();
+                            if (warningMessage != null) {
+                                capturedNotices.add(warningMessage);
+                                log.debug("Captured warning/notice: {}", warningMessage);
                             }
-
-                            List<Map<String, Object>> rows = new ArrayList<>();
-                            ResultSetMetaData metaData = rs.getMetaData();
-                            int columnCount = metaData.getColumnCount();
-
-                            while (rs.next()) {
-                                Map<String, Object> row = new LinkedHashMap<>();
-                                for (int i = 1; i <= columnCount; i++) {
-                                    String columnName = metaData.getColumnName(i);
-                                    Object value = rs.getObject(i);
-                                    row.put(columnName, value);
-                                }
-                                rows.add(row);
-                            }
-                            return rows;
-                        }
-                );
-
-                // Process captured notices
-                if (!capturedNotices.isEmpty()) {
-                    log.info("Captured {} NOTICE messages from select execution", capturedNotices.size());
-
-                    for (String notice : capturedNotices) {
-                        log.debug("Processing notice: {}", notice);
-
-                        if (notice != null && notice.contains("Result: ")) {
-                            String jsonPart = extractJsonFromNotice(notice);
-                            if (jsonPart != null) {
-                                try {
-                                    Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
-                                            new TypeReference<Map<String, Object>>() {});
-                                    noticeResult.putAll(jsonResult);
-                                    log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
-                                } catch (Exception e) {
-                                    log.warn("Failed to parse JSON from notice: {} - {}", jsonPart, e.getMessage());
-                                    noticeResult.put("notice", notice);
-                                }
-                            } else {
-                                noticeResult.put("notice", notice);
-                            }
-                        } else if (notice != null) {
-                            noticeResult.put("notice", notice);
-                            log.info("Captured notice: {}", notice);
+                            warning = warning.getNextWarning();
                         }
                     }
+
+                    // Process result set
+                    results = new ArrayList<>();
+                    ResultSetMetaData metaData = rs.getMetaData();
+                    int columnCount = metaData.getColumnCount();
+
+                    while (rs.next()) {
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        for (int i = 1; i <= columnCount; i++) {
+                            String columnName = metaData.getColumnName(i);
+                            Object value = rs.getObject(i);
+                            row.put(columnName, value);
+                        }
+                        results.add(row);
+                    }
                 }
-            } else {
-                // No notice capture - just execute
-                results = postgresqlJdbcTemplate.queryForList(sql.toString(), paramValues.toArray());
+            }
+
+            // Process captured notices
+            if (captureNotices && capturedNotices != null && !capturedNotices.isEmpty()) {
+                log.info("Captured {} NOTICE messages from select execution", capturedNotices.size());
+
+                for (String notice : capturedNotices) {
+                    log.debug("Processing notice: {}", notice);
+
+                    if (notice != null && notice.contains("Result: ")) {
+                        String jsonPart = extractJsonFromNotice(notice);
+                        if (jsonPart != null) {
+                            try {
+                                Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                        new TypeReference<Map<String, Object>>() {});
+                                noticeResult.putAll(jsonResult);
+                                log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
+                            } catch (Exception e) {
+                                log.warn("Failed to parse JSON from notice: {} - {}", jsonPart, e.getMessage());
+                                noticeResult.put("notice", notice);
+                            }
+                        } else {
+                            noticeResult.put("notice", notice);
+                        }
+                    } else if (notice != null) {
+                        noticeResult.put("notice", notice);
+                        log.info("Captured notice: {}", notice);
+                    }
+                }
             }
 
             log.info("Query returned {} rows", results.size());
@@ -468,6 +497,9 @@ public class PostgreSQLTableExecutorUtil {
 
             return response;
 
+        } catch (SQLTimeoutException e) {
+            log.error("Database operation timed out for table {}.{}", schema, tableName, e);
+            throw new RuntimeException("Database operation timed out after " + STATEMENT_TIMEOUT_SECONDS + " seconds", e);
         } catch (Exception e) {
             log.error("Error executing table select: {}", e.getMessage(), e);
 
@@ -523,232 +555,237 @@ public class PostgreSQLTableExecutorUtil {
         log.info("Original params: {}", params);
         log.info("Capture notices: {}", captureNotices);
 
-        // Build parameter mapping
-        Map<String, String> apiToDbColumnMap = new HashMap<>();
-        if (configuredParamDTOs != null) {
-            for (ApiParameterDTO param : configuredParamDTOs) {
-                if (param.getKey() != null) {
-                    String dbColumnName = param.getDbColumn();
-                    if (dbColumnName == null || dbColumnName.isEmpty()) {
-                        dbColumnName = param.getDbParameter();
-                    }
-                    if (dbColumnName == null || dbColumnName.isEmpty()) {
-                        dbColumnName = param.getKey();
-                    }
-                    apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toLowerCase());
-                    log.info("Parameter mapping: API '{}' -> DB Column '{}'", param.getKey(), dbColumnName.toLowerCase());
-                }
-            }
-        }
-
-        // Process body parameters
-        Map<String, Object> processedParams = new HashMap<>();
-        String body = null;
-        boolean isXmlBody = false;
-        boolean isJsonBody = false;
-
-        if (params.containsKey("_xml")) {
-            Object xmlObj = params.get("_xml");
-            if (xmlObj instanceof String) {
-                String xmlString = (String) xmlObj;
-                if (xmlString.trim().startsWith("<")) {
-                    isXmlBody = true;
-                    body = xmlString;
-                    log.info("XML BODY DETECTED in INSERT operation!");
-
-                    Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, true);
-                    if (!extractedParams.isEmpty()) {
-                        processedParams.putAll(extractedParams);
-                        log.info("✅ Extracted {} parameters from XML", extractedParams.size());
+        try (Connection conn = getConnectionWithTimeout()) {
+            // Build parameter mapping
+            Map<String, String> apiToDbColumnMap = new HashMap<>();
+            if (configuredParamDTOs != null) {
+                for (ApiParameterDTO param : configuredParamDTOs) {
+                    if (param.getKey() != null) {
+                        String dbColumnName = param.getDbColumn();
+                        if (dbColumnName == null || dbColumnName.isEmpty()) {
+                            dbColumnName = param.getDbParameter();
+                        }
+                        if (dbColumnName == null || dbColumnName.isEmpty()) {
+                            dbColumnName = param.getKey();
+                        }
+                        apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toLowerCase());
+                        log.info("Parameter mapping: API '{}' -> DB Column '{}'", param.getKey(), dbColumnName.toLowerCase());
                     }
                 }
             }
-        }
 
-        if (!isXmlBody && params.containsKey("_json")) {
-            Object jsonObj = params.get("_json");
-            if (jsonObj instanceof String) {
-                String jsonString = (String) jsonObj;
-                if (jsonString.trim().startsWith("{") || jsonString.trim().startsWith("[")) {
-                    isJsonBody = true;
-                    body = jsonString;
-                    log.info("JSON BODY DETECTED in INSERT operation!");
+            // Process body parameters
+            Map<String, Object> processedParams = new HashMap<>();
+            String body = null;
+            boolean isXmlBody = false;
+            boolean isJsonBody = false;
 
-                    Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, false);
-                    if (!extractedParams.isEmpty()) {
-                        processedParams.putAll(extractedParams);
-                        log.info("✅ Extracted {} parameters from JSON", extractedParams.size());
+            if (params.containsKey("_xml")) {
+                Object xmlObj = params.get("_xml");
+                if (xmlObj instanceof String) {
+                    String xmlString = (String) xmlObj;
+                    if (xmlString.trim().startsWith("<")) {
+                        isXmlBody = true;
+                        body = xmlString;
+                        log.info("XML BODY DETECTED in INSERT operation!");
+
+                        Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, true);
+                        if (!extractedParams.isEmpty()) {
+                            processedParams.putAll(extractedParams);
+                            log.info("✅ Extracted {} parameters from XML", extractedParams.size());
+                        }
                     }
                 }
             }
-        }
 
-        // Copy all parameters
-        Map<String, Object> allParams = new HashMap<>();
-        for (Map.Entry<String, Object> entry : params.entrySet()) {
-            String key = entry.getKey();
-            if ("_xml".equals(key) || "_json".equals(key)) {
-                continue;
+            if (!isXmlBody && params.containsKey("_json")) {
+                Object jsonObj = params.get("_json");
+                if (jsonObj instanceof String) {
+                    String jsonString = (String) jsonObj;
+                    if (jsonString.trim().startsWith("{") || jsonString.trim().startsWith("[")) {
+                        isJsonBody = true;
+                        body = jsonString;
+                        log.info("JSON BODY DETECTED in INSERT operation!");
+
+                        Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, false);
+                        if (!extractedParams.isEmpty()) {
+                            processedParams.putAll(extractedParams);
+                            log.info("✅ Extracted {} parameters from JSON", extractedParams.size());
+                        }
+                    }
+                }
             }
-            String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
-            allParams.put(dbColumnName, entry.getValue());
-        }
-        allParams.putAll(processedParams);
 
-        log.info("All params before type conversion: {}", allParams);
+            // Copy all parameters
+            Map<String, Object> allParams = new HashMap<>();
+            for (Map.Entry<String, Object> entry : params.entrySet()) {
+                String key = entry.getKey();
+                if ("_xml".equals(key) || "_json".equals(key)) {
+                    continue;
+                }
+                String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
+                allParams.put(dbColumnName, entry.getValue());
+            }
+            allParams.putAll(processedParams);
 
-        // Convert to proper types
-        Map<String, Object> typedParams = new HashMap<>();
+            log.info("All params before type conversion: {}", allParams);
 
-        for (Map.Entry<String, Object> entry : allParams.entrySet()) {
-            String dbColumnName = entry.getKey();
-            Object value = entry.getValue();
+            // Convert to proper types
+            Map<String, Object> typedParams = new HashMap<>();
 
-            ApiParameterEntity paramDef = api.getParameters().stream()
-                    .filter(p -> dbColumnName.equalsIgnoreCase(p.getDbColumn()) ||
-                            dbColumnName.equalsIgnoreCase(p.getKey()))
-                    .findFirst()
-                    .orElse(null);
+            for (Map.Entry<String, Object> entry : allParams.entrySet()) {
+                String dbColumnName = entry.getKey();
+                Object value = entry.getValue();
 
-            Object convertedValue = null;
+                ApiParameterEntity paramDef = api.getParameters().stream()
+                        .filter(p -> dbColumnName.equalsIgnoreCase(p.getDbColumn()) ||
+                                dbColumnName.equalsIgnoreCase(p.getKey()))
+                        .findFirst()
+                        .orElse(null);
 
-            if (paramDef != null) {
-                convertedValue = convertParameterValueWithDefinition(value, paramDef);
-                log.debug("Converted param {} using definition: {} -> {}", dbColumnName, value, convertedValue);
-            } else {
-                if (value instanceof String) {
-                    String strValue = (String) value;
-                    if (strValue.matches("\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?.*")) {
-                        convertedValue = convertToTimestamp(strValue);
-                        log.debug("Auto-converted param {} as timestamp: {} -> {}", dbColumnName, value, convertedValue);
+                Object convertedValue = null;
+
+                if (paramDef != null) {
+                    convertedValue = convertParameterValueWithDefinition(value, paramDef);
+                    log.debug("Converted param {} using definition: {} -> {}", dbColumnName, value, convertedValue);
+                } else {
+                    if (value instanceof String) {
+                        String strValue = (String) value;
+                        if (strValue.matches("\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?.*")) {
+                            convertedValue = convertToTimestamp(strValue);
+                            log.debug("Auto-converted param {} as timestamp: {} -> {}", dbColumnName, value, convertedValue);
+                        } else {
+                            convertedValue = value;
+                        }
                     } else {
                         convertedValue = value;
                     }
-                } else {
-                    convertedValue = value;
+                }
+
+                if (convertedValue != null) {
+                    typedParams.put(dbColumnName, convertedValue);
                 }
             }
 
-            if (convertedValue != null) {
-                typedParams.put(dbColumnName, convertedValue);
-            }
-        }
-
-        // Handle collection/array parameters
-        for (Map.Entry<String, Object> entry : typedParams.entrySet()) {
-            Object value = entry.getValue();
-            if (value instanceof List || (value != null && value.getClass().isArray())) {
-                Collection<?> collection = value instanceof List ?
-                        (List<?>) value : Arrays.asList((Object[]) value);
-                if (!collection.isEmpty()) {
-                    typedParams.put(entry.getKey(), collection.iterator().next());
-                    log.info("Converted collection parameter '{}' to single value", entry.getKey());
-                } else {
-                    typedParams.put(entry.getKey(), null);
-                }
-            }
-        }
-
-        log.info("Final typed params for INSERT: {}", typedParams.keySet());
-
-        if (typedParams.isEmpty()) {
-            log.error("No valid parameters to insert after type conversion!");
-            throw new ValidationException(
-                    "No valid parameters provided for INSERT operation. " +
-                            "Please provide at least one field with a non-empty value."
-            );
-        }
-
-        // Build the INSERT SQL
-        StringBuilder columns = new StringBuilder();
-        StringBuilder values = new StringBuilder();
-        List<Object> paramValues = new ArrayList<>();
-
-        for (Map.Entry<String, Object> entry : typedParams.entrySet()) {
-            if (entry.getValue() != null) {
-                if (columns.length() > 0) {
-                    columns.append(", ");
-                    values.append(", ");
-                }
-                columns.append(entry.getKey());
-                values.append("?");
-                paramValues.add(entry.getValue());
-                log.debug("Column: {} = {} (type: {})", entry.getKey(), entry.getValue(),
-                        entry.getValue().getClass().getSimpleName());
-            }
-        }
-
-        String sql = "INSERT INTO " + (schema != null && !schema.isEmpty() ? schema + "." : "") + tableName +
-                " (" + columns + ") VALUES (" + values + ") RETURNING *";
-
-        log.info("Final INSERT SQL: {}", sql);
-        log.info("INSERT parameters: {}", paramValues);
-
-        try {
-            List<Map<String, Object>> inserted;
-
-            if (captureNotices) {
-                inserted = postgresqlJdbcTemplate.query(
-                        sql,
-                        paramValues.toArray(),
-                        (ResultSetExtractor<List<Map<String, Object>>>) rs -> {
-                            SQLWarning warning = rs.getStatement().getWarnings();
-                            while (warning != null) {
-                                String warningMessage = warning.getMessage();
-                                if (warningMessage != null) {
-                                    capturedNotices.add(warningMessage);
-                                    log.debug("Captured warning/notice: {}", warningMessage);
-                                }
-                                warning = warning.getNextWarning();
-                            }
-
-                            List<Map<String, Object>> rows = new ArrayList<>();
-                            ResultSetMetaData metaData = rs.getMetaData();
-                            int columnCount = metaData.getColumnCount();
-
-                            while (rs.next()) {
-                                Map<String, Object> row = new LinkedHashMap<>();
-                                for (int i = 1; i <= columnCount; i++) {
-                                    String columnName = metaData.getColumnName(i);
-                                    Object value = rs.getObject(i);
-                                    row.put(columnName, value);
-                                }
-                                rows.add(row);
-                            }
-                            return rows;
-                        }
-                );
-
-                // Process captured notices
-                if (!capturedNotices.isEmpty()) {
-                    log.info("Captured {} NOTICE messages from insert execution", capturedNotices.size());
-
-                    for (String notice : capturedNotices) {
-                        log.debug("Processing notice: {}", notice);
-
-                        if (notice != null && notice.contains("Result: ")) {
-                            String jsonPart = extractJsonFromNotice(notice);
-                            if (jsonPart != null) {
-                                try {
-                                    Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
-                                            new TypeReference<Map<String, Object>>() {});
-                                    noticeResult.putAll(jsonResult);
-                                    log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
-                                } catch (Exception e) {
-                                    log.warn("Failed to parse JSON from notice: {} - {}", jsonPart, e.getMessage());
-                                    noticeResult.put("notice", notice);
-                                }
-                            } else {
-                                noticeResult.put("notice", notice);
-                            }
-                        } else if (notice != null) {
-                            noticeResult.put("notice", notice);
-                            log.info("Captured notice: {}", notice);
-                        }
+            // Handle collection/array parameters
+            for (Map.Entry<String, Object> entry : typedParams.entrySet()) {
+                Object value = entry.getValue();
+                if (value instanceof List || (value != null && value.getClass().isArray())) {
+                    Collection<?> collection = value instanceof List ?
+                            (List<?>) value : Arrays.asList((Object[]) value);
+                    if (!collection.isEmpty()) {
+                        typedParams.put(entry.getKey(), collection.iterator().next());
+                        log.info("Converted collection parameter '{}' to single value", entry.getKey());
+                    } else {
+                        typedParams.put(entry.getKey(), null);
                     }
                 }
-            } else {
-                inserted = postgresqlJdbcTemplate.queryForList(sql, paramValues.toArray());
+            }
+
+            log.info("Final typed params for INSERT: {}", typedParams.keySet());
+
+            if (typedParams.isEmpty()) {
+                log.error("No valid parameters to insert after type conversion!");
+                throw new ValidationException(
+                        "No valid parameters provided for INSERT operation. " +
+                                "Please provide at least one field with a non-empty value."
+                );
+            }
+
+            // Build the INSERT SQL
+            StringBuilder columns = new StringBuilder();
+            StringBuilder values = new StringBuilder();
+            List<Object> paramValues = new ArrayList<>();
+
+            for (Map.Entry<String, Object> entry : typedParams.entrySet()) {
+                if (entry.getValue() != null) {
+                    if (columns.length() > 0) {
+                        columns.append(", ");
+                        values.append(", ");
+                    }
+                    columns.append(entry.getKey());
+                    values.append("?");
+                    paramValues.add(entry.getValue());
+                    log.debug("Column: {} = {} (type: {})", entry.getKey(), entry.getValue(),
+                            entry.getValue().getClass().getSimpleName());
+                }
+            }
+
+            String sql = "INSERT INTO " + (schema != null && !schema.isEmpty() ? schema + "." : "") + tableName +
+                    " (" + columns + ") VALUES (" + values + ") RETURNING *";
+
+            log.info("Final INSERT SQL: {}", sql);
+            log.info("INSERT parameters: {}", paramValues);
+
+            List<Map<String, Object>> inserted;
+
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                // Set parameters
+                for (int i = 0; i < paramValues.size(); i++) {
+                    pstmt.setObject(i + 1, paramValues.get(i));
+                }
+
+                // Set statement timeout
+                pstmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
+
+                // Capture warnings if enabled
+                if (captureNotices && capturedNotices != null) {
+                    SQLWarning warning = pstmt.getWarnings();
+                    while (warning != null) {
+                        String warningMessage = warning.getMessage();
+                        if (warningMessage != null) {
+                            capturedNotices.add(warningMessage);
+                            log.debug("Captured warning/notice: {}", warningMessage);
+                        }
+                        warning = warning.getNextWarning();
+                    }
+                }
+
+                // Execute and process result set
+                inserted = new ArrayList<>();
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    ResultSetMetaData metaData = rs.getMetaData();
+                    int columnCount = metaData.getColumnCount();
+
+                    while (rs.next()) {
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        for (int i = 1; i <= columnCount; i++) {
+                            String columnName = metaData.getColumnName(i);
+                            Object value = rs.getObject(i);
+                            row.put(columnName, value);
+                        }
+                        inserted.add(row);
+                    }
+                }
+            }
+
+            // Process captured notices
+            if (captureNotices && capturedNotices != null && !capturedNotices.isEmpty()) {
+                log.info("Captured {} NOTICE messages from insert execution", capturedNotices.size());
+
+                for (String notice : capturedNotices) {
+                    log.debug("Processing notice: {}", notice);
+
+                    if (notice != null && notice.contains("Result: ")) {
+                        String jsonPart = extractJsonFromNotice(notice);
+                        if (jsonPart != null) {
+                            try {
+                                Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                        new TypeReference<Map<String, Object>>() {});
+                                noticeResult.putAll(jsonResult);
+                                log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
+                            } catch (Exception e) {
+                                log.warn("Failed to parse JSON from notice: {} - {}", jsonPart, e.getMessage());
+                                noticeResult.put("notice", notice);
+                            }
+                        } else {
+                            noticeResult.put("notice", notice);
+                        }
+                    } else if (notice != null) {
+                        noticeResult.put("notice", notice);
+                        log.info("Captured notice: {}", notice);
+                    }
+                }
             }
 
             Map<String, Object> result = new HashMap<>();
@@ -763,8 +800,387 @@ public class PostgreSQLTableExecutorUtil {
 
             return result;
 
+        } catch (SQLTimeoutException e) {
+            log.error("Database operation timed out for INSERT on {}.{}", schema, tableName, e);
+            throw new RuntimeException("Database operation timed out after " + STATEMENT_TIMEOUT_SECONDS + " seconds", e);
         } catch (Exception e) {
             log.error("Error executing INSERT on {}: {}", tableName, e.getMessage(), e);
+
+            String errorMessage = e.getMessage();
+            if (errorMessage != null && errorMessage.contains("Result: ")) {
+                String jsonPart = extractJsonFromNotice(errorMessage);
+                if (jsonPart != null) {
+                    try {
+                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                new TypeReference<Map<String, Object>>() {});
+                        log.info("Parsed JSON from exception: {}", jsonResult);
+                        return jsonResult;
+                    } catch (Exception parseEx) {
+                        log.warn("Failed to parse JSON from exception: {}", jsonPart);
+                    }
+                }
+            }
+
+            String rawError = extractFullPostgreSQLError(e);
+            throw new RuntimeException(rawError, e);
+        }
+    }
+
+    public Object executeUpdate(String tableName, String schema, Map<String, Object> params,
+                                GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
+
+        // Store captured notices only if enabled
+        Map<String, Object> noticeResult = new HashMap<>();
+
+        if (params == null || params.isEmpty()) {
+            throw new RuntimeException("No parameters provided for UPDATE operation");
+        }
+
+        log.info("=== TABLE UPDATE DEBUG ===");
+        log.info("Table: {}.{}", schema, tableName);
+        log.info("Capture notices: {}", captureNotices);
+
+        try (Connection conn = getConnectionWithTimeout()) {
+            List<String> pkColumns = api.getResponseMappings().stream()
+                    .filter(m -> Boolean.TRUE.equals(m.getIsPrimaryKey()))
+                    .map(ApiResponseMappingEntity::getDbColumn)
+                    .collect(Collectors.toList());
+
+            if (pkColumns.isEmpty()) {
+                throw new RuntimeException("No primary key defined for UPDATE operation");
+            }
+
+            // Build parameter mapping
+            Map<String, String> apiToDbColumnMap = new HashMap<>();
+            if (configuredParamDTOs != null) {
+                for (ApiParameterDTO param : configuredParamDTOs) {
+                    if (param.getKey() != null) {
+                        String dbColumnName = param.getDbColumn();
+                        if (dbColumnName == null || dbColumnName.isEmpty()) {
+                            dbColumnName = param.getDbParameter();
+                        }
+                        if (dbColumnName == null || dbColumnName.isEmpty()) {
+                            dbColumnName = param.getKey();
+                        }
+                        apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toLowerCase());
+                    }
+                }
+            }
+
+            // Process body parameters
+            Map<String, Object> processedParams = new HashMap<>();
+            String body = null;
+            boolean isXmlBody = false;
+            boolean isJsonBody = false;
+
+            if (params.containsKey("_xml")) {
+                Object xmlObj = params.get("_xml");
+                if (xmlObj instanceof String) {
+                    String xmlString = (String) xmlObj;
+                    if (xmlString.trim().startsWith("<")) {
+                        isXmlBody = true;
+                        body = xmlString;
+                        log.info("XML BODY DETECTED in UPDATE operation!");
+
+                        Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, true);
+                        if (!extractedParams.isEmpty()) {
+                            processedParams.putAll(extractedParams);
+                        }
+                    }
+                }
+            }
+
+            if (!isXmlBody && params.containsKey("_json")) {
+                Object jsonObj = params.get("_json");
+                if (jsonObj instanceof String) {
+                    String jsonString = (String) jsonObj;
+                    if (jsonString.trim().startsWith("{") || jsonString.trim().startsWith("[")) {
+                        isJsonBody = true;
+                        body = jsonString;
+                        log.info("JSON BODY DETECTED in UPDATE operation!");
+
+                        Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, false);
+                        if (!extractedParams.isEmpty()) {
+                            processedParams.putAll(extractedParams);
+                        }
+                    }
+                }
+            }
+
+            // Copy all parameters
+            for (Map.Entry<String, Object> entry : params.entrySet()) {
+                String key = entry.getKey();
+                if ("_xml".equals(key) || "_json".equals(key)) {
+                    continue;
+                }
+
+                String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
+                processedParams.put(dbColumnName, entry.getValue());
+            }
+
+            // Handle collection/array parameters
+            for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
+                Object value = entry.getValue();
+                if (value instanceof List || (value != null && value.getClass().isArray())) {
+                    Collection<?> collection = value instanceof List ?
+                            (List<?>) value : Arrays.asList((Object[]) value);
+                    if (!collection.isEmpty()) {
+                        processedParams.put(entry.getKey(), collection.iterator().next());
+                    } else {
+                        processedParams.put(entry.getKey(), null);
+                    }
+                }
+            }
+
+            log.info("Processed params for UPDATE: {}", processedParams.keySet());
+
+            StringBuilder setClause = new StringBuilder();
+            StringBuilder whereClause = new StringBuilder();
+            List<Object> setValues = new ArrayList<>();
+            List<Object> whereValues = new ArrayList<>();
+
+            for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
+                String key = entry.getKey();
+                boolean isPk = pkColumns.stream().anyMatch(pk -> pk.equalsIgnoreCase(key));
+
+                if (isPk) {
+                    if (whereClause.length() > 0) {
+                        whereClause.append(" AND ");
+                    } else {
+                        whereClause.append(" WHERE ");
+                    }
+                    whereClause.append(key).append(" = ?");
+                    whereValues.add(entry.getValue());
+                } else {
+                    if (setClause.length() > 0) {
+                        setClause.append(", ");
+                    }
+                    setClause.append(key).append(" = ?");
+                    setValues.add(entry.getValue());
+                }
+            }
+
+            if (whereValues.isEmpty()) {
+                throw new RuntimeException("No primary key values provided for UPDATE operation");
+            }
+
+            String sql = "UPDATE " + (schema != null && !schema.isEmpty() ? schema + "." : "") + tableName +
+                    " SET " + setClause + whereClause;
+
+            List<Object> allParams = new ArrayList<>(setValues);
+            allParams.addAll(whereValues);
+
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                // Set parameters
+                for (int i = 0; i < allParams.size(); i++) {
+                    pstmt.setObject(i + 1, allParams.get(i));
+                }
+
+                // Set statement timeout
+                pstmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
+
+                // Capture warnings if enabled
+                if (captureNotices) {
+                    SQLWarning warning = pstmt.getWarnings();
+                    while (warning != null) {
+                        String warningMessage = warning.getMessage();
+                        if (warningMessage != null) {
+                            log.debug("Captured warning/notice: {}", warningMessage);
+                        }
+                        warning = warning.getNextWarning();
+                    }
+                }
+
+                int rowsAffected = pstmt.executeUpdate();
+
+                Map<String, Object> result = new HashMap<>();
+                result.put("rowsAffected", rowsAffected);
+                result.put("message", rowsAffected > 0 ? "Update successful" : "No rows updated");
+                if (!noticeResult.isEmpty()) {
+                    result.putAll(noticeResult);
+                }
+
+                return result;
+            }
+
+        } catch (SQLTimeoutException e) {
+            log.error("Database operation timed out for UPDATE on {}.{}", schema, tableName, e);
+            throw new RuntimeException("Database operation timed out after " + STATEMENT_TIMEOUT_SECONDS + " seconds", e);
+        } catch (Exception e) {
+            log.error("Error executing UPDATE on {}: {}", tableName, e.getMessage(), e);
+
+            String errorMessage = e.getMessage();
+            if (errorMessage != null && errorMessage.contains("Result: ")) {
+                String jsonPart = extractJsonFromNotice(errorMessage);
+                if (jsonPart != null) {
+                    try {
+                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                new TypeReference<Map<String, Object>>() {});
+                        log.info("Parsed JSON from exception: {}", jsonResult);
+                        return jsonResult;
+                    } catch (Exception parseEx) {
+                        log.warn("Failed to parse JSON from exception: {}", jsonPart);
+                    }
+                }
+            }
+
+            String rawError = extractFullPostgreSQLError(e);
+            throw new RuntimeException(rawError, e);
+        }
+    }
+
+    public Object executeDelete(String tableName, String schema, Map<String, Object> params,
+                                GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
+
+        // Store captured notices only if enabled
+        Map<String, Object> noticeResult = new HashMap<>();
+
+        if (params == null || params.isEmpty()) {
+            throw new RuntimeException("No parameters provided for DELETE operation");
+        }
+
+        log.info("=== TABLE DELETE DEBUG ===");
+        log.info("Table: {}.{}", schema, tableName);
+        log.info("Capture notices: {}", captureNotices);
+
+        try (Connection conn = getConnectionWithTimeout()) {
+            // Build parameter mapping
+            Map<String, String> apiToDbColumnMap = new HashMap<>();
+            if (configuredParamDTOs != null) {
+                for (ApiParameterDTO param : configuredParamDTOs) {
+                    if (param.getKey() != null) {
+                        String dbColumnName = param.getDbColumn();
+                        if (dbColumnName == null || dbColumnName.isEmpty()) {
+                            dbColumnName = param.getDbParameter();
+                        }
+                        if (dbColumnName == null || dbColumnName.isEmpty()) {
+                            dbColumnName = param.getKey();
+                        }
+                        apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toLowerCase());
+                    }
+                }
+            }
+
+            // Process body parameters
+            Map<String, Object> processedParams = new HashMap<>();
+            String body = null;
+            boolean isXmlBody = false;
+            boolean isJsonBody = false;
+
+            if (params.containsKey("_xml")) {
+                Object xmlObj = params.get("_xml");
+                if (xmlObj instanceof String) {
+                    String xmlString = (String) xmlObj;
+                    if (xmlString.trim().startsWith("<")) {
+                        isXmlBody = true;
+                        body = xmlString;
+                        log.info("XML BODY DETECTED in DELETE operation!");
+
+                        Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, true);
+                        if (!extractedParams.isEmpty()) {
+                            processedParams.putAll(extractedParams);
+                        }
+                    }
+                }
+            }
+
+            if (!isXmlBody && params.containsKey("_json")) {
+                Object jsonObj = params.get("_json");
+                if (jsonObj instanceof String) {
+                    String jsonString = (String) jsonObj;
+                    if (jsonString.trim().startsWith("{") || jsonString.trim().startsWith("[")) {
+                        isJsonBody = true;
+                        body = jsonString;
+                        log.info("JSON BODY DETECTED in DELETE operation!");
+
+                        Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, false);
+                        if (!extractedParams.isEmpty()) {
+                            processedParams.putAll(extractedParams);
+                        }
+                    }
+                }
+            }
+
+            // Copy all parameters
+            for (Map.Entry<String, Object> entry : params.entrySet()) {
+                String key = entry.getKey();
+                if ("_xml".equals(key) || "_json".equals(key)) {
+                    continue;
+                }
+
+                String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
+                processedParams.put(dbColumnName, entry.getValue());
+            }
+
+            // Handle collection/array parameters
+            for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
+                Object value = entry.getValue();
+                if (value instanceof List || (value != null && value.getClass().isArray())) {
+                    Collection<?> collection = value instanceof List ?
+                            (List<?>) value : Arrays.asList((Object[]) value);
+                    if (!collection.isEmpty()) {
+                        processedParams.put(entry.getKey(), collection.iterator().next());
+                    } else {
+                        processedParams.put(entry.getKey(), null);
+                    }
+                }
+            }
+
+            log.info("Processed params for DELETE: {}", processedParams.keySet());
+
+            StringBuilder whereClause = new StringBuilder();
+            List<Object> whereValues = new ArrayList<>();
+
+            for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
+                if (whereClause.length() > 0) {
+                    whereClause.append(" AND ");
+                } else {
+                    whereClause.append(" WHERE ");
+                }
+                whereClause.append(entry.getKey()).append(" = ?");
+                whereValues.add(entry.getValue());
+            }
+
+            String sql = "DELETE FROM " + (schema != null && !schema.isEmpty() ? schema + "." : "") + tableName + whereClause;
+
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                // Set parameters
+                for (int i = 0; i < whereValues.size(); i++) {
+                    pstmt.setObject(i + 1, whereValues.get(i));
+                }
+
+                // Set statement timeout
+                pstmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
+
+                // Capture warnings if enabled
+                if (captureNotices) {
+                    SQLWarning warning = pstmt.getWarnings();
+                    while (warning != null) {
+                        String warningMessage = warning.getMessage();
+                        if (warningMessage != null) {
+                            log.debug("Captured warning/notice: {}", warningMessage);
+                        }
+                        warning = warning.getNextWarning();
+                    }
+                }
+
+                int rowsAffected = pstmt.executeUpdate();
+
+                Map<String, Object> result = new HashMap<>();
+                result.put("rowsAffected", rowsAffected);
+                result.put("message", rowsAffected > 0 ? "Delete successful" : "No rows deleted");
+                if (!noticeResult.isEmpty()) {
+                    result.putAll(noticeResult);
+                }
+
+                return result;
+            }
+
+        } catch (SQLTimeoutException e) {
+            log.error("Database operation timed out for DELETE on {}.{}", schema, tableName, e);
+            throw new RuntimeException("Database operation timed out after " + STATEMENT_TIMEOUT_SECONDS + " seconds", e);
+        } catch (Exception e) {
+            log.error("Error executing DELETE on {}: {}", tableName, e.getMessage(), e);
 
             String errorMessage = e.getMessage();
             if (errorMessage != null && errorMessage.contains("Result: ")) {
@@ -872,389 +1288,6 @@ public class PostgreSQLTableExecutorUtil {
         }
     }
 
-    public Object executeUpdate(String tableName, String schema, Map<String, Object> params,
-                                GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
-
-        // Store captured notices only if enabled
-        Map<String, Object> noticeResult = new HashMap<>();
-
-        if (params == null || params.isEmpty()) {
-            throw new RuntimeException("No parameters provided for UPDATE operation");
-        }
-
-        log.info("=== TABLE UPDATE DEBUG ===");
-        log.info("Table: {}.{}", schema, tableName);
-        log.info("Capture notices: {}", captureNotices);
-
-        List<String> pkColumns = api.getResponseMappings().stream()
-                .filter(m -> Boolean.TRUE.equals(m.getIsPrimaryKey()))
-                .map(ApiResponseMappingEntity::getDbColumn)
-                .collect(Collectors.toList());
-
-        if (pkColumns.isEmpty()) {
-            throw new RuntimeException("No primary key defined for UPDATE operation");
-        }
-
-        // Build parameter mapping
-        Map<String, String> apiToDbColumnMap = new HashMap<>();
-        if (configuredParamDTOs != null) {
-            for (ApiParameterDTO param : configuredParamDTOs) {
-                if (param.getKey() != null) {
-                    String dbColumnName = param.getDbColumn();
-                    if (dbColumnName == null || dbColumnName.isEmpty()) {
-                        dbColumnName = param.getDbParameter();
-                    }
-                    if (dbColumnName == null || dbColumnName.isEmpty()) {
-                        dbColumnName = param.getKey();
-                    }
-                    apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toLowerCase());
-                }
-            }
-        }
-
-        // Process body parameters
-        Map<String, Object> processedParams = new HashMap<>();
-        String body = null;
-        boolean isXmlBody = false;
-        boolean isJsonBody = false;
-
-        if (params.containsKey("_xml")) {
-            Object xmlObj = params.get("_xml");
-            if (xmlObj instanceof String) {
-                String xmlString = (String) xmlObj;
-                if (xmlString.trim().startsWith("<")) {
-                    isXmlBody = true;
-                    body = xmlString;
-                    log.info("XML BODY DETECTED in UPDATE operation!");
-
-                    Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, true);
-                    if (!extractedParams.isEmpty()) {
-                        processedParams.putAll(extractedParams);
-                    }
-                }
-            }
-        }
-
-        if (!isXmlBody && params.containsKey("_json")) {
-            Object jsonObj = params.get("_json");
-            if (jsonObj instanceof String) {
-                String jsonString = (String) jsonObj;
-                if (jsonString.trim().startsWith("{") || jsonString.trim().startsWith("[")) {
-                    isJsonBody = true;
-                    body = jsonString;
-                    log.info("JSON BODY DETECTED in UPDATE operation!");
-
-                    Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, false);
-                    if (!extractedParams.isEmpty()) {
-                        processedParams.putAll(extractedParams);
-                    }
-                }
-            }
-        }
-
-        // Copy all parameters
-        for (Map.Entry<String, Object> entry : params.entrySet()) {
-            String key = entry.getKey();
-            if ("_xml".equals(key) || "_json".equals(key)) {
-                continue;
-            }
-
-            String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
-            processedParams.put(dbColumnName, entry.getValue());
-        }
-
-        // Handle collection/array parameters
-        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
-            Object value = entry.getValue();
-            if (value instanceof List || (value != null && value.getClass().isArray())) {
-                Collection<?> collection = value instanceof List ?
-                        (List<?>) value : Arrays.asList((Object[]) value);
-                if (!collection.isEmpty()) {
-                    processedParams.put(entry.getKey(), collection.iterator().next());
-                } else {
-                    processedParams.put(entry.getKey(), null);
-                }
-            }
-        }
-
-        log.info("Processed params for UPDATE: {}", processedParams.keySet());
-
-        StringBuilder setClause = new StringBuilder();
-        StringBuilder whereClause = new StringBuilder();
-        List<Object> setValues = new ArrayList<>();
-        List<Object> whereValues = new ArrayList<>();
-
-        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
-            String key = entry.getKey();
-            boolean isPk = pkColumns.stream().anyMatch(pk -> pk.equalsIgnoreCase(key));
-
-            if (isPk) {
-                if (whereClause.length() > 0) {
-                    whereClause.append(" AND ");
-                } else {
-                    whereClause.append(" WHERE ");
-                }
-                whereClause.append(key).append(" = ?");
-                whereValues.add(entry.getValue());
-            } else {
-                if (setClause.length() > 0) {
-                    setClause.append(", ");
-                }
-                setClause.append(key).append(" = ?");
-                setValues.add(entry.getValue());
-            }
-        }
-
-        if (whereValues.isEmpty()) {
-            throw new RuntimeException("No primary key values provided for UPDATE operation");
-        }
-
-        String sql = "UPDATE " + (schema != null && !schema.isEmpty() ? schema + "." : "") + tableName +
-                " SET " + setClause + whereClause;
-
-        List<Object> allParams = new ArrayList<>(setValues);
-        allParams.addAll(whereValues);
-
-        try {
-            int rowsAffected = postgresqlJdbcTemplate.update(sql, allParams.toArray());
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("rowsAffected", rowsAffected);
-            result.put("message", rowsAffected > 0 ? "Update successful" : "No rows updated");
-            if (!noticeResult.isEmpty()) {
-                result.putAll(noticeResult);
-            }
-
-            return result;
-
-        } catch (Exception e) {
-            log.error("Error executing UPDATE on {}: {}", tableName, e.getMessage(), e);
-
-            String errorMessage = e.getMessage();
-            if (errorMessage != null && errorMessage.contains("Result: ")) {
-                String jsonPart = extractJsonFromNotice(errorMessage);
-                if (jsonPart != null) {
-                    try {
-                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
-                                new TypeReference<Map<String, Object>>() {});
-                        log.info("Parsed JSON from exception: {}", jsonResult);
-                        return jsonResult;
-                    } catch (Exception parseEx) {
-                        log.warn("Failed to parse JSON from exception: {}", jsonPart);
-                    }
-                }
-            }
-
-            String rawError = extractFullPostgreSQLError(e);
-            throw new RuntimeException(rawError, e);
-        }
-    }
-
-    public Object executeDelete(String tableName, String schema, Map<String, Object> params,
-                                GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
-
-        // Store captured notices only if enabled
-        Map<String, Object> noticeResult = new HashMap<>();
-
-        if (params == null || params.isEmpty()) {
-            throw new RuntimeException("No parameters provided for DELETE operation");
-        }
-
-        log.info("=== TABLE DELETE DEBUG ===");
-        log.info("Table: {}.{}", schema, tableName);
-        log.info("Capture notices: {}", captureNotices);
-
-        // Build parameter mapping
-        Map<String, String> apiToDbColumnMap = new HashMap<>();
-        if (configuredParamDTOs != null) {
-            for (ApiParameterDTO param : configuredParamDTOs) {
-                if (param.getKey() != null) {
-                    String dbColumnName = param.getDbColumn();
-                    if (dbColumnName == null || dbColumnName.isEmpty()) {
-                        dbColumnName = param.getDbParameter();
-                    }
-                    if (dbColumnName == null || dbColumnName.isEmpty()) {
-                        dbColumnName = param.getKey();
-                    }
-                    apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toLowerCase());
-                }
-            }
-        }
-
-        // Process body parameters
-        Map<String, Object> processedParams = new HashMap<>();
-        String body = null;
-        boolean isXmlBody = false;
-        boolean isJsonBody = false;
-
-        if (params.containsKey("_xml")) {
-            Object xmlObj = params.get("_xml");
-            if (xmlObj instanceof String) {
-                String xmlString = (String) xmlObj;
-                if (xmlString.trim().startsWith("<")) {
-                    isXmlBody = true;
-                    body = xmlString;
-                    log.info("XML BODY DETECTED in DELETE operation!");
-
-                    Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, true);
-                    if (!extractedParams.isEmpty()) {
-                        processedParams.putAll(extractedParams);
-                    }
-                }
-            }
-        }
-
-        if (!isXmlBody && params.containsKey("_json")) {
-            Object jsonObj = params.get("_json");
-            if (jsonObj instanceof String) {
-                String jsonString = (String) jsonObj;
-                if (jsonString.trim().startsWith("{") || jsonString.trim().startsWith("[")) {
-                    isJsonBody = true;
-                    body = jsonString;
-                    log.info("JSON BODY DETECTED in DELETE operation!");
-
-                    Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, false);
-                    if (!extractedParams.isEmpty()) {
-                        processedParams.putAll(extractedParams);
-                    }
-                }
-            }
-        }
-
-        // Copy all parameters
-        for (Map.Entry<String, Object> entry : params.entrySet()) {
-            String key = entry.getKey();
-            if ("_xml".equals(key) || "_json".equals(key)) {
-                continue;
-            }
-
-            String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
-            processedParams.put(dbColumnName, entry.getValue());
-        }
-
-        // Handle collection/array parameters
-        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
-            Object value = entry.getValue();
-            if (value instanceof List || (value != null && value.getClass().isArray())) {
-                Collection<?> collection = value instanceof List ?
-                        (List<?>) value : Arrays.asList((Object[]) value);
-                if (!collection.isEmpty()) {
-                    processedParams.put(entry.getKey(), collection.iterator().next());
-                } else {
-                    processedParams.put(entry.getKey(), null);
-                }
-            }
-        }
-
-        log.info("Processed params for DELETE: {}", processedParams.keySet());
-
-        StringBuilder whereClause = new StringBuilder();
-        List<Object> whereValues = new ArrayList<>();
-
-        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
-            if (whereClause.length() > 0) {
-                whereClause.append(" AND ");
-            } else {
-                whereClause.append(" WHERE ");
-            }
-            whereClause.append(entry.getKey()).append(" = ?");
-            whereValues.add(entry.getValue());
-        }
-
-        String sql = "DELETE FROM " + (schema != null && !schema.isEmpty() ? schema + "." : "") + tableName + whereClause;
-
-        try {
-            int rowsAffected = postgresqlJdbcTemplate.update(sql, whereValues.toArray());
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("rowsAffected", rowsAffected);
-            result.put("message", rowsAffected > 0 ? "Delete successful" : "No rows deleted");
-            if (!noticeResult.isEmpty()) {
-                result.putAll(noticeResult);
-            }
-
-            return result;
-
-        } catch (Exception e) {
-            log.error("Error executing DELETE on {}: {}", tableName, e.getMessage(), e);
-
-            String errorMessage = e.getMessage();
-            if (errorMessage != null && errorMessage.contains("Result: ")) {
-                String jsonPart = extractJsonFromNotice(errorMessage);
-                if (jsonPart != null) {
-                    try {
-                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
-                                new TypeReference<Map<String, Object>>() {});
-                        log.info("Parsed JSON from exception: {}", jsonResult);
-                        return jsonResult;
-                    } catch (Exception parseEx) {
-                        log.warn("Failed to parse JSON from exception: {}", jsonPart);
-                    }
-                }
-            }
-
-            String rawError = extractFullPostgreSQLError(e);
-            throw new RuntimeException(rawError, e);
-        }
-    }
-
-    private Object convertParameterValue(Object value, String dbColumn, GeneratedApiEntity api) {
-        if (value == null || value.toString().trim().isEmpty()) {
-            return null;
-        }
-
-        ApiParameterEntity paramDef = api.getParameters().stream()
-                .filter(p -> dbColumn.equalsIgnoreCase(p.getDbColumn()))
-                .findFirst()
-                .orElse(null);
-
-        if (paramDef == null) {
-            return value;
-        }
-
-        String oracleType = paramDef.getOracleType();
-        if (oracleType == null) {
-            oracleType = paramDef.getApiType();
-        }
-
-        if (oracleType == null) {
-            return value;
-        }
-
-        String type = oracleType.toUpperCase();
-        String stringValue = value.toString();
-
-        try {
-            if (type.contains("BOOL")) {
-                if ("true".equalsIgnoreCase(stringValue) || "1".equals(stringValue) || "yes".equalsIgnoreCase(stringValue)) {
-                    return true;
-                }
-                if ("false".equalsIgnoreCase(stringValue) || "0".equals(stringValue) || "no".equalsIgnoreCase(stringValue)) {
-                    return false;
-                }
-                return Boolean.parseBoolean(stringValue);
-            }
-            else if (type.contains("INT") || type.contains("NUMERIC")) {
-                if (stringValue.matches("-?\\d+")) {
-                    return Long.parseLong(stringValue);
-                }
-                if (stringValue.matches("-?\\d+\\.\\d+")) {
-                    return Double.parseDouble(stringValue);
-                }
-                return value;
-            }
-            else if (type.contains("DATE") || type.contains("TIMESTAMP")) {
-                return convertToTimestamp(stringValue);
-            }
-            else {
-                return value;
-            }
-        } catch (Exception e) {
-            log.warn("Failed to convert value '{}' to type {}: {}", stringValue, type, e.getMessage());
-            return value;
-        }
-    }
-
     /**
      * Convert various datetime formats to java.sql.Timestamp
      */
@@ -1312,33 +1345,5 @@ public class PostgreSQLTableExecutorUtil {
             log.warn("Error converting date string '{}': {}", dateStr, e.getMessage());
             return dateStr;
         }
-    }
-
-    /**
-     * Pre-process parameters to convert ISO 8601 datetime strings to Timestamp
-     */
-    private Map<String, Object> preProcessDateTimeParameters(Map<String, Object> params, GeneratedApiEntity api) {
-        Map<String, Object> processed = new HashMap<>();
-
-        for (Map.Entry<String, Object> entry : params.entrySet()) {
-            Object value = entry.getValue();
-            String key = entry.getKey();
-
-            boolean isDateTimeColumn = api.getParameters().stream()
-                    .filter(p -> key.equalsIgnoreCase(p.getKey()) || key.equalsIgnoreCase(p.getDbColumn()))
-                    .anyMatch(p -> {
-                        String type = p.getOracleType();
-                        if (type == null) type = p.getApiType();
-                        return type != null && (type.toUpperCase().contains("DATE") || type.toUpperCase().contains("TIMESTAMP"));
-                    });
-
-            if (isDateTimeColumn && value instanceof String) {
-                value = convertToTimestamp((String) value);
-            }
-
-            processed.put(key, value);
-        }
-
-        return processed;
     }
 }

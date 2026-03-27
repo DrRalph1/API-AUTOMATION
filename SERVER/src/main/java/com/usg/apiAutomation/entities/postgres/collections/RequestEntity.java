@@ -12,14 +12,41 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity(name = "RequestsEntityCollections")
-@Table(name = "tb_col_requests")
+@Table(name = "tb_col_requests", indexes = {
+        // CRITICAL: Index for batch query by collection_id (used in dashboard)
+        @Index(name = "idx_requests_collection_id", columnList = "collection_id"),
+
+        // Index for folder lookups
+        @Index(name = "idx_requests_folder_id", columnList = "folder_id"),
+
+        // Index for API ID lookups
+        @Index(name = "idx_requests_api_id", columnList = "api_id"),
+
+        // Index for sorting and filtering
+        @Index(name = "idx_requests_created_at", columnList = "created_at"),
+        @Index(name = "idx_requests_updated_at", columnList = "updated_at"),
+        @Index(name = "idx_requests_last_modified", columnList = "last_modified"),
+
+        // Index for filtering by method (GET, POST, etc.)
+        @Index(name = "idx_requests_method", columnList = "method"),
+
+        // Index for filtering by status
+        @Index(name = "idx_requests_status", columnList = "status"),
+
+        // Composite indexes for common query patterns
+        @Index(name = "idx_requests_collection_folder", columnList = "collection_id, folder_id"),
+        @Index(name = "idx_requests_collection_updated", columnList = "collection_id, updated_at"),
+        @Index(name = "idx_requests_method_status", columnList = "method, status"),
+
+        // Index for name searches (if you search by name)
+        @Index(name = "idx_requests_name", columnList = "name")
+})
 @Data
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @ToString(onlyExplicitlyIncluded = true)
 public class RequestEntity {
 
     @Id
-//    @GeneratedValue(strategy = GenerationType.UUID)
     @EqualsAndHashCode.Include
     @ToString.Include
     private String id;

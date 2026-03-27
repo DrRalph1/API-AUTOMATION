@@ -184,11 +184,11 @@ const FilterInput = React.memo(({
   }, [onFilterChange, onOwnerChange, onClearFilters]);
 
   const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && localFilterValue && localFilterValue.length >= 2) {
-      e.preventDefault();
-      onSearch(localFilterValue);
-    }
-  }, [localFilterValue, onSearch]);
+  if (e.key === 'Enter' && localFilterValue && localFilterValue.trim().length >= 2) {
+    e.preventDefault();
+    onSearch(localFilterValue.trim());
+  }
+}, [localFilterValue, onSearch]);
 
   return (
     <>
@@ -1299,14 +1299,22 @@ const PostgreSQLSchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   
   // Handle search
   const handleSearch = useCallback((searchTerm) => {
-    if (searchTerm && searchTerm.length >= 2) {
-      if (isFiltering || searchPerformed) {
-        handleClearFilters();
-      }
-      setSearchPerformed(true);
-      searchObjects(searchTerm, selectedOwner);
+  // Trim the search term to remove leading/trailing spaces
+  const trimmedSearchTerm = searchTerm?.trim();
+  
+  // Check if the trimmed term is valid
+  if (trimmedSearchTerm && trimmedSearchTerm.length >= 2) {
+    if (isFiltering || searchPerformed) {
+      handleClearFilters();
     }
-  }, [searchObjects, selectedOwner, isFiltering, searchPerformed, handleClearFilters]);
+    setSearchPerformed(true);
+    searchObjects(trimmedSearchTerm, selectedOwner);
+  } else if (searchTerm && searchTerm.trim().length < 2) {
+    // If the trimmed search term is too short, clear filters
+    handleClearFilters();
+  }
+}, [searchObjects, selectedOwner, isFiltering, searchPerformed, handleClearFilters]);
+
 
   // Pagination state for each object type - PostgreSQL types (no packages)
   const [pagination, setPagination] = useState({
@@ -2909,7 +2917,7 @@ if (isFunction) {
         </div>
         
         {/* Show message when no detailed information is available */}
-        {!hasDetailedInfo && (
+        {/* {!hasDetailedInfo && (
           <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
             <div className="text-sm text-center p-4 rounded" style={{ 
               backgroundColor: colors.hover, 
@@ -2921,7 +2929,7 @@ if (isFunction) {
             </div>
           </div>
         )}
-        
+         */}
         {/* Function Signature */}
         {data.signature && (
           <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
@@ -3087,7 +3095,7 @@ if (isProcedure) {
         </div>
         
         {/* Show message when no detailed information is available */}
-        {!hasDetailedInfo && (
+        {/* {!hasDetailedInfo && (
           <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
             <div className="text-sm text-center p-4 rounded" style={{ 
               backgroundColor: colors.hover, 
@@ -3098,7 +3106,7 @@ if (isProcedure) {
               (definition, parameters, etc.) could not be retrieved.
             </div>
           </div>
-        )}
+        )} */}
         
         {/* Procedure Signature */}
         {data.signature && (
@@ -4422,7 +4430,9 @@ if (isProcedure) {
                   color: colors.text,
                   margin: 0,
                   whiteSpace: 'pre-wrap',
-                  wordWrap: 'break-word'
+                  wordWrap: 'break-word',
+                  overflowWrap: 'break-word',  // Add this
+                  maxWidth: '100%'              // Ensure it doesn't overflow container
                 }}
               >
                 {data.viewInfo.TEXT || 'No view definition available'}
@@ -4447,13 +4457,17 @@ if (isProcedure) {
 
   // Search objects
   const searchObjects = useCallback(async (searchTerm, owner) => {
-  if (!authToken || !searchTerm || searchTerm.length < 2) {
+  // Trim the search term at the beginning
+  const trimmedSearchTerm = searchTerm?.trim();
+  
+  if (!authToken || !trimmedSearchTerm || trimmedSearchTerm.length < 2) {
     setFilteredResults({});
     setSearchPerformed(false);
+    setHasActiveFilter(false);
     return;
   }
 
-  const requestKey = `search_${searchTerm}_${owner}`;
+  const requestKey = `search_${trimmedSearchTerm}_${owner}`;
   
   if (searchAbortController.current) {
     searchAbortController.current.abort();
@@ -4462,18 +4476,18 @@ if (isProcedure) {
   searchAbortController.current = new AbortController();
   
   if (ongoingRequests.has(requestKey)) {
-    Logger.debug('PostgreSQLSchemaBrowser', 'searchObjects', `Already searching for "${searchTerm}", skipping`);
+    Logger.debug('PostgreSQLSchemaBrowser', 'searchObjects', `Already searching for "${trimmedSearchTerm}", skipping`);
     return;
   }
 
-  Logger.info('PostgreSQLSchemaBrowser', 'searchObjects', `Searching for "${searchTerm}" in ${owner === 'ALL' ? 'all schemas' : owner}`);
+  Logger.info('PostgreSQLSchemaBrowser', 'searchObjects', `Searching for "${trimmedSearchTerm}" in ${owner === 'ALL' ? 'all schemas' : owner}`);
 
   setIsFiltering(true);
   ongoingRequests.set(requestKey, true);
 
   try {
     const params = {
-      query: searchTerm,
+      query: trimmedSearchTerm, // Use trimmed search term
       page: 1,
       pageSize: 100
     };
@@ -4500,8 +4514,8 @@ if (isProcedure) {
       types: [],
       triggers: [],
       materializedViews: [],
-      indexes: [],        // ADD THIS
-      other: []           // ADD THIS for any other object types
+      indexes: [],
+      other: []
     };
 
     let resultsArray = [];
@@ -4592,10 +4606,8 @@ if (isProcedure) {
       } else if (objectType.includes('MATERIALIZED VIEW') || objectType.includes('MATERIALIZED_VIEW')) {
         groupedResults.materializedViews.push(normalizedObj);
       } else if (objectType.includes('INDEX')) {
-        // ADD THIS: Handle INDEX objects
         groupedResults.indexes.push(normalizedObj);
       } else {
-        // ADD THIS: Handle any other object types
         groupedResults.other.push(normalizedObj);
       }
     }
@@ -4606,6 +4618,7 @@ if (isProcedure) {
     
     setFilteredResults(groupedResults);
     setSearchPerformed(true);
+    setHasActiveFilter(true);
     
     // Update object tree expansion based on what has results
     setObjectTree(prev => ({
@@ -4627,11 +4640,13 @@ if (isProcedure) {
     if (err.name === 'AbortError' || err.message === 'Aborted') {
       Logger.info('PostgreSQLSchemaBrowser', 'searchObjects', 'Search was cancelled');
       setSearchPerformed(false);
+      setHasActiveFilter(false);
       return;
     }
     Logger.error('PostgreSQLSchemaBrowser', 'searchObjects', 'Error searching objects', err);
     setFilteredResults({});
     setSearchPerformed(false);
+    setHasActiveFilter(false);
   } finally {
     setIsFiltering(false);
     ongoingRequests.delete(requestKey);
@@ -4639,54 +4654,56 @@ if (isProcedure) {
   }
 }, [authToken, schemaInfo]);
 
+// Update the resetToDefaultState function to ensure hasActiveFilter is reset
+const resetToDefaultState = useCallback(() => {
+  console.log('Resetting to default state');
+  
+  if (searchAbortController.current) {
+    searchAbortController.current.abort();
+    searchAbortController.current = null;
+  }
+  
+  setIsFiltering(false);
+  setFilteredResults({});
+  setSearchPerformed(false);
+  setHasActiveFilter(false);  // Critical: Reset this flag
+  setFilterQuery('');
+  setFilterSearchTerm('');
+  setSelectedOwner('ALL');
+  
+  const requestKeys = Array.from(ongoingRequests.keys());
+  requestKeys.forEach(key => {
+    if (key.startsWith('search_')) {
+      ongoingRequests.delete(key);
+    }
+  });
+  
+  setObjectTree({
+    tables: true,
+    procedures: false,
+    views: false,
+    functions: false,
+    sequences: false,
+    types: false,
+    triggers: false,
+    materializedViews: false
+  });
+  
+  Logger.info('PostgreSQLSchemaBrowser', 'resetToDefaultState', 'Reset to default state');
+}, []);
+
   // Handle filter changes
   const handleFilterChange = useCallback((value) => {
-    setFilterQuery(value);
-    setFilterSearchTerm(value);
-  }, []);
+  const trimmedValue = value?.trim() || '';
+  setFilterQuery(trimmedValue);
+  setFilterSearchTerm(trimmedValue);
+}, []);
 
   // Handle owner change
   const handleOwnerChange = useCallback((value) => {
     setSelectedOwner(value);
   }, []);
 
-  // Reset to default state
-  const resetToDefaultState = useCallback(() => {
-    console.log('Resetting to default state');
-    
-    if (searchAbortController.current) {
-      searchAbortController.current.abort();
-      searchAbortController.current = null;
-    }
-    
-    setIsFiltering(false);
-    setFilteredResults({});
-    setSearchPerformed(false);
-    setHasActiveFilter(false);  // <-- ADD THIS LINE - this is critical!
-    setFilterQuery('');
-    setFilterSearchTerm('');
-    setSelectedOwner('ALL');
-    
-    const requestKeys = Array.from(ongoingRequests.keys());
-    requestKeys.forEach(key => {
-      if (key.startsWith('search_')) {
-        ongoingRequests.delete(key);
-      }
-    });
-    
-    setObjectTree({
-      tables: true, // Keep tables expanded when resetting
-      procedures: false,
-      views: false,
-      functions: false,
-      sequences: false,
-      types: false,
-      triggers: false,
-      materializedViews: false
-    });
-    
-    Logger.info('PostgreSQLSchemaBrowser', 'resetToDefaultState', 'Reset to default state');
-  }, []);
 
   const handleCancelSearch = resetToDefaultState;
   const handleClearFilters = resetToDefaultState;

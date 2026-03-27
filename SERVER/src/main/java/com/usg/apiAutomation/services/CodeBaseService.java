@@ -1141,7 +1141,7 @@ public class CodeBaseService {
             case "java":
                 guide.put("step1", "mvn clean install");
                 guide.put("step2", "mvn spring-boot:run");
-                guide.put("step3", "Open http://localhost:8080");
+                guide.put("step3", "Open http://127.0.0.1:4789");
                 break;
             case "javascript":
                 guide.put("step1", "npm install");

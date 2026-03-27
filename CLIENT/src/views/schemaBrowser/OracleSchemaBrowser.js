@@ -187,11 +187,11 @@ const FilterInput = React.memo(({
   }, [onFilterChange, onOwnerChange, onClearFilters]);
 
   const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && localFilterValue && localFilterValue.length >= 2) {
-      e.preventDefault();
-      onSearch(localFilterValue);
-    }
-  }, [localFilterValue, onSearch]);
+  if (e.key === 'Enter' && localFilterValue && localFilterValue.trim().length >= 2) {
+    e.preventDefault();
+    onSearch(localFilterValue.trim());
+  }
+}, [localFilterValue, onSearch]);
 
   return (
     <>
@@ -1279,13 +1279,21 @@ const OracleSchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   
   // Handle search
 const handleSearch = useCallback((searchTerm) => {
-  if (searchTerm && searchTerm.length >= 2) {
+  // Trim the search term to remove leading/trailing spaces
+  const trimmedSearchTerm = searchTerm?.trim();
+  
+  // Check if the trimmed term is valid
+  if (trimmedSearchTerm && trimmedSearchTerm.length >= 2) {
     // If there's an existing search, clear it first
     if (isFiltering || searchPerformed) {
       handleClearFilters();
     }
     setSearchPerformed(true);
-    searchObjects(searchTerm, selectedOwner);
+    searchObjects(trimmedSearchTerm, selectedOwner);
+  } else if (searchTerm && searchTerm.trim().length < 2) {
+    // If the trimmed search term is too short, show a warning or clear filters
+    console.log('Search term too short after trimming:', trimmedSearchTerm);
+    handleClearFilters();
   }
 }, [searchObjects, selectedOwner, isFiltering, searchPerformed, handleClearFilters]);
 
@@ -3252,7 +3260,10 @@ const renderPropertiesTab = () => {
                       color: colors.text,
                       margin: 0,
                       whiteSpace: 'pre-wrap',
-                      wordWrap: 'break-word'
+                      wordWrap: 'break-word',
+                      overflowWrap: 'break-word',
+                      wordBreak: 'break-all',
+                      maxWidth: '100%'
                     }}
                   >
                     {data.viewInfo.TEXT || 'No view definition available'}
@@ -3417,13 +3428,16 @@ const renderPropertiesTab = () => {
 
 // Update the searchObjects function to filter out duplicate objects and only show the correct ones
 const searchObjects = useCallback(async (searchTerm, owner) => {
-  if (!authToken || !searchTerm || searchTerm.length < 2) {
+  // Trim the search term at the beginning
+  const trimmedSearchTerm = searchTerm?.trim();
+  
+  if (!authToken || !trimmedSearchTerm || trimmedSearchTerm.length < 2) {
     setFilteredResults({});
     setSearchPerformed(false);
     return;
   }
 
-  const requestKey = `search_${searchTerm}_${owner}`;
+  const requestKey = `search_${trimmedSearchTerm}_${owner}`;
   
   if (searchAbortController.current) {
     searchAbortController.current.abort();
@@ -3432,18 +3446,18 @@ const searchObjects = useCallback(async (searchTerm, owner) => {
   searchAbortController.current = new AbortController();
   
   if (ongoingRequests.has(requestKey)) {
-    Logger.debug('OracleSchemaBrowser', 'searchObjects', `Already searching for "${searchTerm}", skipping`);
+    Logger.debug('OracleSchemaBrowser', 'searchObjects', `Already searching for "${trimmedSearchTerm}", skipping`);
     return;
   }
 
-  Logger.info('OracleSchemaBrowser', 'searchObjects', `Searching for "${searchTerm}" in ${owner === 'ALL' ? 'all schemas' : owner}`);
+  Logger.info('OracleSchemaBrowser', 'searchObjects', `Searching for "${trimmedSearchTerm}" in ${owner === 'ALL' ? 'all schemas' : owner}`);
 
   setIsFiltering(true);
   ongoingRequests.set(requestKey, true);
 
   try {
     const params = {
-      query: searchTerm,
+      query: trimmedSearchTerm, // Use trimmed search term
       page: 1,
       pageSize: 100
     };
@@ -3675,9 +3689,10 @@ const searchObjects = useCallback(async (searchTerm, owner) => {
 
   // Handle filter changes
   const handleFilterChange = useCallback((value) => {
-    setFilterQuery(value);
-    setFilterSearchTerm(value);
-  }, []);
+  const trimmedValue = value?.trim() || '';
+  setFilterQuery(trimmedValue);
+  setFilterSearchTerm(trimmedValue);
+}, []);
 
   // Handle owner change
   const handleOwnerChange = useCallback((value) => {

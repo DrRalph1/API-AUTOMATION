@@ -17,11 +17,10 @@ import org.springframework.jdbc.core.*;
 import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 import org.springframework.stereotype.Component;
 
-import java.sql.CallableStatement;
-import java.sql.ResultSet;
-import java.sql.SQLWarning;
-import java.sql.Types;
+import javax.sql.DataSource;
+import java.sql.*;
 import java.util.*;
+import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -36,6 +35,10 @@ public class PostgreSQLFunctionExecutorUtil {
     private final PostgreSQLParameterValidatorUtil parameterValidatorUtil;
     private final PostgreSQLObjectResolverUtil objectResolver;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    // Timeout constants
+    private static final int STATEMENT_TIMEOUT_SECONDS = 30;
+    private static final int CONNECTION_TIMEOUT_MS = 30000;
 
     public PostgreSQLFunctionExecutorUtil(
             PostgreSQLParameterValidatorUtil parameterValidatorUtil,
@@ -54,8 +57,6 @@ public class PostgreSQLFunctionExecutorUtil {
         log.info("API Name: {}", api != null ? api.getApiName() : "null");
         log.info("Function Name parameter: {}", functionName);
         log.info("Schema parameter: {}", schema);
-        log.info("Request Body Type: {}", request.getBody() != null ? request.getBody().getClass().getName() : "null");
-        log.info("Request Body: {}", request.getBody());
 
         // ============ CREATE PARAMETER MAPPING ============
         Map<String, String> apiToDbParamMap = new HashMap<>();
@@ -79,7 +80,6 @@ public class PostgreSQLFunctionExecutorUtil {
         Map<String, Object> dbParams = new HashMap<>();
         String xmlBody = null;
         boolean isXmlBody = false;
-        boolean isJsonBody = false;
         boolean hasBodyParameter = false;
 
         // Check if request body is a String and looks like XML or JSON
@@ -91,16 +91,9 @@ public class PostgreSQLFunctionExecutorUtil {
                 if (trimmed.startsWith("<")) {
                     isXmlBody = true;
                     xmlBody = bodyString;
-                    log.info("=========================================");
-                    log.info("XML BODY DETECTED!");
-                    log.info("XML Length: {} characters", xmlBody.length());
-                    log.info("XML Preview: {}", xmlBody.substring(0, Math.min(500, xmlBody.length())));
-                    log.info("=========================================");
+                    log.info("XML BODY DETECTED! Length: {} characters", xmlBody.length());
                 } else if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-                    isJsonBody = true;
                     log.info("JSON BODY DETECTED!");
-                    log.info("JSON Preview: {}", bodyString.substring(0, Math.min(200, bodyString.length())));
-
                     // Parse JSON body
                     try {
                         Map<String, Object> jsonMap = objectMapper.readValue(bodyString, new TypeReference<Map<String, Object>>() {});
@@ -118,16 +111,14 @@ public class PostgreSQLFunctionExecutorUtil {
                         }
                     } catch (Exception e) {
                         log.warn("Failed to parse JSON body: {}", e.getMessage());
-                        // Treat as plain text if JSON parsing fails
                         dbParams.put("request_body", bodyString);
                     }
                 } else {
-                    log.info("String body detected: {}", bodyString.substring(0, Math.min(100, bodyString.length())));
+                    log.info("String body detected");
                     dbParams.put("request_body", bodyString);
                 }
             } else if (request.getBody() instanceof Map) {
                 Map<String, Object> bodyMap = (Map<String, Object>) request.getBody();
-                isJsonBody = true;
                 log.info("JSON body detected with keys: {}", bodyMap.keySet());
                 for (Map.Entry<String, Object> entry : bodyMap.entrySet()) {
                     String paramKey = entry.getKey().toLowerCase();
@@ -157,7 +148,6 @@ public class PostgreSQLFunctionExecutorUtil {
             if (!extractedXmlParams.isEmpty()) {
                 dbParams.putAll(extractedXmlParams);
                 log.info("✅ Extracted {} parameters from XML and added to dbParams", extractedXmlParams.size());
-                log.info("Extracted params: {}", extractedXmlParams.keySet());
             }
 
             // Look for explicit XML/JSON parameter in API configuration
@@ -211,7 +201,6 @@ public class PostgreSQLFunctionExecutorUtil {
                 dbParams.put(dbParamName, entry.getValue());
                 log.debug("Added path param: {} -> {} = {}", entry.getKey(), dbParamName, entry.getValue());
             }
-            log.info("Path params added: {}", request.getPathParams().keySet());
         }
 
         if (request.getQueryParams() != null && !request.getQueryParams().isEmpty()) {
@@ -221,7 +210,6 @@ public class PostgreSQLFunctionExecutorUtil {
                 dbParams.put(dbParamName, entry.getValue());
                 log.debug("Added query param: {} -> {} = {}", entry.getKey(), dbParamName, entry.getValue());
             }
-            log.info("Query params added: {}", request.getQueryParams().keySet());
         }
 
         // ============ ADD HEADERS AS PARAMETERS ============
@@ -272,7 +260,7 @@ public class PostgreSQLFunctionExecutorUtil {
         log.info("Final resolved schema: {}", pgSchema);
         log.info("Final function name: {}", pgFunctionName);
 
-        // ============ RESOLVE FUNCTION (PostgreSQL doesn't have synonyms) ============
+        // ============ RESOLVE FUNCTION ============
         String actualSchema = pgSchema;
         String actualFunctionName = pgFunctionName;
 
@@ -297,174 +285,104 @@ public class PostgreSQLFunctionExecutorUtil {
             throw e;
         }
 
-        // ==================== EXECUTE FUNCTION ====================
+        // ==================== EXECUTE FUNCTION WITH PROPER CONNECTION MANAGEMENT ====================
         try {
-            // Store captured notices and result
-            List<String> capturedNotices = new ArrayList<>();
-            Map<String, Object> finalResult = new HashMap<>();
-
-            SimpleJdbcCall jdbcCall = new SimpleJdbcCall(postgresqlJdbcTemplate);
-
-            // Set schema and function name
-            if (actualSchema != null && !actualSchema.isEmpty()) {
-                jdbcCall = jdbcCall.withSchemaName(actualSchema);
-                log.info("Setting schema name to: {}", actualSchema);
+            // Get DataSource from JdbcTemplate
+            DataSource dataSource = postgresqlJdbcTemplate.getDataSource();
+            if (dataSource == null) {
+                throw new SQLException("No DataSource available");
             }
 
-            jdbcCall = jdbcCall.withFunctionName(actualFunctionName);
-            log.info("Setting function name to: {}", actualFunctionName);
+            // Use try-with-resources to ensure connection is properly closed
+            try (Connection conn = dataSource.getConnection()) {
+                // Set network timeout
+                conn.setNetworkTimeout(Executors.newSingleThreadExecutor(), CONNECTION_TIMEOUT_MS);
 
-            log.info("PostgreSQL will execute: {}.{}", actualSchema, actualFunctionName);
+                // Set session statement timeout
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("SET statement_timeout = '" + STATEMENT_TIMEOUT_SECONDS + "s'");
+                    stmt.execute("SET lock_timeout = '" + STATEMENT_TIMEOUT_SECONDS + "s'");
+                }
 
-            // Declare return parameter from response mappings
-            if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-                String returnType = api.getResponseMappings().get(0).getOracleType();
-                jdbcCall.declareParameters(
-                        new SqlOutParameter("return", mapToSqlType(returnType))
-                );
-                log.debug("Declared return parameter of type: {}", returnType);
-            }
+                // Build the CALL statement
+                String callSql = buildCallStatement(actualSchema, actualFunctionName, api.getParameters(), dbParams);
+                log.info("Executing PostgreSQL function with CALL syntax: {}", callSql);
 
-            // Declare input parameters from API parameters
-            if (api.getParameters() != null && !api.getParameters().isEmpty()) {
-                int inParamCount = 0;
+                // Store captured notices and result
+                List<String> capturedNotices = new ArrayList<>();
+                Map<String, Object> finalResult = new HashMap<>();
 
-                for (ApiParameterEntity param : api.getParameters()) {
-                    if (param == null || param.getKey() == null) continue;
+                // Use try-with-resources for CallableStatement
+                try (CallableStatement cs = conn.prepareCall(callSql)) {
+                    // Set statement timeout
+                    cs.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
 
-                    String paramType = param.getParameterType();
-                    String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
+                    // Set parameters
+                    setParameters(cs, api.getParameters(), dbParams);
 
-                    String dbParamName = getDbParamName(param);
+                    // Register OUT parameters
+                    registerOutParameters(cs, api.getResponseMappings(), api.getParameters(), dbParams);
 
-                    boolean isInParameter = paramMode.contains("IN") || paramType == null ||
-                            "query".equals(paramType) || "path".equals(paramType) || "body".equals(paramType);
+                    // Execute
+                    log.info("Executing function {}.{} with {} parameters", actualSchema, actualFunctionName, dbParams.size());
+                    boolean hasResultSet = cs.execute();
 
-                    if (dbParams.containsKey(dbParamName) && isInParameter) {
-                        int sqlType = mapToSqlType(param.getOracleType());
-                        jdbcCall.declareParameters(new SqlParameter(dbParamName, sqlType));
-
-                        Object paramValue = dbParams.get(dbParamName);
-                        log.debug("Declared IN parameter: {} of type: {} (SQL type: {}) with value: {}",
-                                dbParamName, param.getOracleType(), sqlType,
-                                paramValue instanceof String && paramValue.toString().length() > 100 ?
-                                        paramValue.toString().substring(0, 100) + "..." : paramValue);
-                        inParamCount++;
+                    // Process SQL warnings (these contain RAISE NOTICE messages)
+                    SQLWarning warning = cs.getWarnings();
+                    while (warning != null) {
+                        if (warning.getMessage() != null) {
+                            capturedNotices.add(warning.getMessage());
+                            log.debug("Captured warning/notice: {}", warning.getMessage());
+                        }
+                        warning = warning.getNextWarning();
                     }
-                }
 
-                log.debug("Declared {} IN parameters", inParamCount);
-            }
+                    // Process captured notices
+                    if (!capturedNotices.isEmpty()) {
+                        log.info("Captured {} NOTICE messages from function", capturedNotices.size());
 
-            log.info("Executing SimpleJdbcCall for {}.{} with {} input parameters",
-                    actualSchema, actualFunctionName, dbParams.size());
-
-            // Execute the function with custom CallableStatementCallback to capture warnings
-            Map<String, Object> result = jdbcCall.execute(dbParams);
-
-            // Check for warnings in the result (some functions might return warnings)
-            if (result.containsKey("warning") || result.containsKey("notice")) {
-                Object warning = result.getOrDefault("warning", result.get("notice"));
-                if (warning != null) {
-                    capturedNotices.add(warning.toString());
-                }
-            }
-
-            // Process captured notices (these contain your JSON results)
-            if (!capturedNotices.isEmpty()) {
-                log.info("Captured {} NOTICE messages from function", capturedNotices.size());
-
-                for (String notice : capturedNotices) {
-                    log.debug("Processing notice: {}", notice);
-
-                    // Look for the "Result: " prefix
-                    if (notice != null && notice.contains("Result: ")) {
-                        // Extract JSON from the notice
-                        String jsonPart = extractJsonFromNotice(notice);
-                        if (jsonPart != null) {
-                            try {
-                                Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
-                                        new TypeReference<Map<String, Object>>() {});
-                                finalResult.putAll(jsonResult);
-                                log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
-                            } catch (Exception e) {
-                                log.warn("Failed to parse JSON from notice: {} - {}", jsonPart, e.getMessage());
+                        for (String notice : capturedNotices) {
+                            if (notice != null && notice.contains("Result: ")) {
+                                String jsonPart = extractJsonFromNotice(notice);
+                                if (jsonPart != null) {
+                                    try {
+                                        Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                                new TypeReference<Map<String, Object>>() {});
+                                        finalResult.putAll(jsonResult);
+                                        log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
+                                    } catch (Exception e) {
+                                        log.warn("Failed to parse JSON from notice: {}", e.getMessage());
+                                        finalResult.put("notice", notice);
+                                    }
+                                } else {
+                                    finalResult.put("notice", notice);
+                                }
+                            } else if (notice != null) {
                                 finalResult.put("notice", notice);
-                            }
-                        } else {
-                            finalResult.put("notice", notice);
-                        }
-                    } else if (notice != null) {
-                        finalResult.put("notice", notice);
-                        log.info("Captured notice: {}", notice);
-                    }
-                }
-            }
-
-            log.info("Function executed successfully, result contains {} keys: {}", result.size(), result.keySet());
-
-            // Map the results to response data
-            Map<String, Object> responseData = new HashMap<>();
-
-            if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-                int mappedCount = 0;
-
-                for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
-                    if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
-                        String dbColumn = mapping.getDbColumn();
-                        if (dbColumn != null && !dbColumn.isEmpty()) {
-                            // PostgreSQL returns lowercase column names
-                            String lowerDbColumn = dbColumn.toLowerCase();
-
-                            if (result.containsKey(lowerDbColumn)) {
-                                responseData.put(mapping.getApiField(), result.get(lowerDbColumn));
-                                log.debug("Mapped output {} to {} with value: {}",
-                                        lowerDbColumn, mapping.getApiField(), result.get(lowerDbColumn));
-                                mappedCount++;
-                            } else if (result.containsKey(dbColumn)) {
-                                responseData.put(mapping.getApiField(), result.get(dbColumn));
-                                log.debug("Mapped output {} to {} with value: {}",
-                                        dbColumn, mapping.getApiField(), result.get(dbColumn));
-                                mappedCount++;
-                            } else {
-                                log.warn("Output parameter {} not found in result set. Available keys: {}",
-                                        dbColumn, result.keySet());
+                                log.info("Captured notice: {}", notice);
                             }
                         }
                     }
+
+                    // Process results
+                    Map<String, Object> responseData = processResults(cs, api, hasResultSet);
+
+                    // Merge captured notices into response
+                    if (!finalResult.isEmpty()) {
+                        responseData.putAll(finalResult);
+                    }
+
+                    log.info("============ FUNCTION EXECUTION COMPLETE ============");
+                    return responseData;
                 }
-
-                log.debug("Mapped {} output parameters to response", mappedCount);
-            } else {
-                log.debug("No response mappings found, returning entire result map");
-                responseData.putAll(result);
             }
-
-            // Handle function return value
-            if (result.containsKey("return") && !responseData.containsKey("result")) {
-                responseData.put("result", result.get("return"));
-                log.info("Function returned value: {}", result.get("return"));
-            }
-
-            // Merge captured notices into response if not already present
-            if (!finalResult.isEmpty()) {
-                responseData.putAll(finalResult);
-            }
-
-            // If no response data, add default success
-            if (responseData.isEmpty()) {
-                responseData.put("success", true);
-                responseData.put("message", "Function executed successfully");
-            }
-
-            log.info("============ FUNCTION EXECUTION COMPLETE ============");
-            return responseData;
-
+        } catch (SQLTimeoutException e) {
+            log.error("Database operation timed out for {}.{}", actualSchema, actualFunctionName, e);
+            throw new RuntimeException("Database operation timed out after " + STATEMENT_TIMEOUT_SECONDS + " seconds", e);
         } catch (ValidationException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Error executing function {}.{}: {}",
-                    actualSchema, actualFunctionName, e.getMessage(), e);
+            log.error("Error executing function {}.{}: {}", actualSchema, actualFunctionName, e.getMessage(), e);
 
             // Check if the exception contains the result JSON
             String errorMessage = e.getMessage();
@@ -496,25 +414,223 @@ public class PostgreSQLFunctionExecutorUtil {
                                     actualSchema, actualFunctionName, extractPostgreSQLError(errorMessage))
                     );
                 }
-                if (errorMessage.contains("ERROR: null value in column")) {
-                    throw new ValidationException(
-                            "A required value is missing for a NOT NULL column. Please provide all required parameters."
-                    );
-                }
-                if (errorMessage.contains("ERROR: value too long for type")) {
-                    throw new ValidationException(
-                            String.format("Value too large for column. Details: %s", extractPostgreSQLError(errorMessage))
-                    );
-                }
-                if (errorMessage.contains("ERROR: invalid input syntax")) {
-                    throw new ValidationException(
-                            "Invalid parameter format. Please check the data types of your parameters."
-                    );
-                }
             }
 
             throw new RuntimeException("Failed to execute the requested operation: " + extractPostgreSQLError(errorMessage), e);
         }
+    }
+
+    /**
+     * Build the CALL statement for PostgreSQL function
+     */
+    private String buildCallStatement(String schema, String functionName,
+                                      List<ApiParameterEntity> parameters,
+                                      Map<String, Object> dbParams) {
+        StringBuilder callBuilder = new StringBuilder("SELECT * FROM ");
+
+        if (schema != null && !schema.isEmpty()) {
+            callBuilder.append(schema).append(".");
+        }
+
+        callBuilder.append(functionName).append("(");
+
+        List<String> paramPlaceholders = new ArrayList<>();
+
+        if (parameters != null && !parameters.isEmpty()) {
+            for (ApiParameterEntity param : parameters) {
+                if (param == null || param.getKey() == null) continue;
+
+                String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
+                String dbParamName = getDbParamName(param);
+
+                if ((paramMode.contains("IN") || paramMode.equals("INOUT")) && dbParams.containsKey(dbParamName)) {
+                    String pgType = param.getOracleType();
+
+                    // Add explicit casts for specific types
+                    if (pgType != null) {
+                        String lowerType = pgType.toLowerCase();
+                        if (lowerType.contains("jsonb")) {
+                            paramPlaceholders.add("?::jsonb");
+                        } else if (lowerType.contains("json")) {
+                            paramPlaceholders.add("?::json");
+                        } else if (lowerType.contains("uuid")) {
+                            paramPlaceholders.add("?::uuid");
+                        } else if (lowerType.contains("timestamp")) {
+                            paramPlaceholders.add("?::timestamp");
+                        } else if (lowerType.contains("date")) {
+                            paramPlaceholders.add("?::date");
+                        } else if (lowerType.contains("integer") || lowerType.contains("int")) {
+                            paramPlaceholders.add("?::integer");
+                        } else if (lowerType.contains("bigint")) {
+                            paramPlaceholders.add("?::bigint");
+                        } else if (lowerType.contains("numeric") || lowerType.contains("decimal")) {
+                            paramPlaceholders.add("?::numeric");
+                        } else if (lowerType.contains("boolean") || lowerType.contains("bool")) {
+                            paramPlaceholders.add("?::boolean");
+                        } else {
+                            paramPlaceholders.add("?");
+                        }
+                    } else {
+                        paramPlaceholders.add("?");
+                    }
+                }
+            }
+        }
+
+        // If no parameters from config, use generic placeholders
+        if (paramPlaceholders.isEmpty() && !dbParams.isEmpty()) {
+            for (int i = 0; i < dbParams.size(); i++) {
+                paramPlaceholders.add("?");
+            }
+        }
+
+        callBuilder.append(String.join(", ", paramPlaceholders));
+        callBuilder.append(")");
+
+        log.info("Built CALL statement: {}", callBuilder.toString());
+        return callBuilder.toString();
+    }
+
+    /**
+     * Set IN and INOUT parameters
+     */
+    private void setParameters(CallableStatement cs, List<ApiParameterEntity> parameters,
+                               Map<String, Object> dbParams) throws SQLException {
+        int index = 1;
+
+        if (parameters != null && !parameters.isEmpty()) {
+            for (ApiParameterEntity param : parameters) {
+                if (param == null || param.getKey() == null) continue;
+
+                String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
+                if (!paramMode.contains("IN") && !paramMode.equals("INOUT")) {
+                    continue;
+                }
+
+                String dbParamName = getDbParamName(param);
+                if (!dbParams.containsKey(dbParamName)) {
+                    continue;
+                }
+
+                Object value = dbParams.get(dbParamName);
+                if (value == null) {
+                    cs.setNull(index++, Types.NULL);
+                } else {
+                    cs.setObject(index++, value);
+                }
+                log.debug("Set parameter {} (index {}): value={}", dbParamName, index - 1, value);
+            }
+        }
+    }
+
+    /**
+     * Register OUT parameters
+     */
+    private void registerOutParameters(CallableStatement cs, List<ApiResponseMappingEntity> responseMappings,
+                                       List<ApiParameterEntity> parameters, Map<String, Object> dbParams) throws SQLException {
+        if (responseMappings == null || responseMappings.isEmpty()) {
+            return;
+        }
+
+        // Calculate how many IN parameters we have
+        int inParamCount = 0;
+        if (parameters != null) {
+            for (ApiParameterEntity param : parameters) {
+                if (param == null || param.getKey() == null) continue;
+                String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
+                String dbParamName = getDbParamName(param);
+                if ((paramMode.contains("IN") || paramMode.equals("INOUT")) && dbParams.containsKey(dbParamName)) {
+                    inParamCount++;
+                }
+            }
+        }
+
+        // Register OUT parameters starting after IN parameters
+        int outParamIndex = inParamCount + 1;
+        for (ApiResponseMappingEntity mapping : responseMappings) {
+            if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                String dbColumn = mapping.getDbColumn();
+                String oracleType = mapping.getOracleType();
+                if (dbColumn != null && !dbColumn.isEmpty()) {
+                    cs.registerOutParameter(outParamIndex, mapToSqlType(oracleType));
+                    log.debug("Registered OUT parameter {} at index {} with type: {}",
+                            dbColumn, outParamIndex, oracleType);
+                    outParamIndex++;
+                }
+            }
+        }
+    }
+
+    /**
+     * Process results from function execution
+     */
+    private Map<String, Object> processResults(CallableStatement cs, GeneratedApiEntity api,
+                                               boolean hasResultSet) throws SQLException {
+        Map<String, Object> responseData = new HashMap<>();
+
+        // Process result set if present
+        if (hasResultSet) {
+            try (ResultSet rs = cs.getResultSet()) {
+                if (rs != null) {
+                    List<Map<String, Object>> resultSetData = new ArrayList<>();
+                    ResultSetMetaData metaData = rs.getMetaData();
+                    int columnCount = metaData.getColumnCount();
+
+                    while (rs.next()) {
+                        Map<String, Object> row = new HashMap<>();
+                        for (int i = 1; i <= columnCount; i++) {
+                            String columnName = metaData.getColumnName(i);
+                            row.put(columnName.toLowerCase(), rs.getObject(i));
+                        }
+                        resultSetData.add(row);
+                    }
+                    if (!resultSetData.isEmpty()) {
+                        responseData.put("data", resultSetData);
+                        log.info("Retrieved {} rows from result set", resultSetData.size());
+                    }
+                }
+            }
+        }
+
+        // Process OUT parameters
+        if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+            // Calculate how many IN parameters we have
+            int inParamCount = 0;
+            if (api.getParameters() != null) {
+                for (ApiParameterEntity param : api.getParameters()) {
+                    if (param == null || param.getKey() == null) continue;
+                    String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
+                    if (paramMode.contains("IN") || paramMode.equals("INOUT")) {
+                        inParamCount++;
+                    }
+                }
+            }
+
+            int outParamIndex = inParamCount + 1;
+            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                    try {
+                        Object value = cs.getObject(outParamIndex);
+                        if (value != null) {
+                            responseData.put(mapping.getApiField(), value);
+                            log.debug("Mapped OUT parameter {} to {} with value: {}",
+                                    mapping.getDbColumn(), mapping.getApiField(), value);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to get OUT parameter: {}", e.getMessage());
+                    }
+                    outParamIndex++;
+                }
+            }
+        }
+
+        // If no response data, add default success
+        if (responseData.isEmpty()) {
+            responseData.put("success", true);
+            responseData.put("message", "Function executed successfully");
+        }
+
+        return responseData;
     }
 
     /**
@@ -523,11 +639,9 @@ public class PostgreSQLFunctionExecutorUtil {
     private String extractJsonFromNotice(String notice) {
         if (notice == null) return null;
 
-        // Look for "Result: " prefix
         int resultIndex = notice.indexOf("Result: ");
         if (resultIndex >= 0) {
             String afterResult = notice.substring(resultIndex + 8);
-            // Find the JSON object
             int start = afterResult.indexOf('{');
             int end = afterResult.lastIndexOf('}');
             if (start >= 0 && end > start) {
@@ -535,7 +649,6 @@ public class PostgreSQLFunctionExecutorUtil {
             }
         }
 
-        // Try to find any JSON object
         int start = notice.indexOf('{');
         int end = notice.lastIndexOf('}');
         if (start >= 0 && end > start) {
@@ -551,14 +664,12 @@ public class PostgreSQLFunctionExecutorUtil {
     private String extractPostgreSQLError(String errorMessage) {
         if (errorMessage == null) return "Unknown error";
 
-        // Look for ERROR: pattern
         Pattern pattern = Pattern.compile("ERROR:[^\\n]*");
         Matcher matcher = pattern.matcher(errorMessage);
         if (matcher.find()) {
             return matcher.group();
         }
 
-        // Return first line if it's long
         if (errorMessage.length() > 200) {
             return errorMessage.substring(0, 200) + "...";
         }
@@ -624,10 +735,19 @@ public class PostgreSQLFunctionExecutorUtil {
 
         // Strategy 5: Try to get current schema
         try {
-            String currentSchema = postgresqlJdbcTemplate.queryForObject("SELECT current_schema()", String.class);
-            if (currentSchema != null && !currentSchema.isEmpty()) {
-                log.info("Strategy 5 - Using current schema: {}", currentSchema);
-                return currentSchema;
+            DataSource dataSource = postgresqlJdbcTemplate.getDataSource();
+            if (dataSource != null) {
+                try (Connection conn = dataSource.getConnection();
+                     Statement stmt = conn.createStatement();
+                     ResultSet rs = stmt.executeQuery("SELECT current_schema()")) {
+                    if (rs.next()) {
+                        String currentSchema = rs.getString(1);
+                        if (currentSchema != null && !currentSchema.isEmpty()) {
+                            log.info("Strategy 5 - Using current schema: {}", currentSchema);
+                            return currentSchema;
+                        }
+                    }
+                }
             }
         } catch (Exception e) {
             log.warn("Could not get current schema: {}", e.getMessage());
@@ -700,7 +820,6 @@ public class PostgreSQLFunctionExecutorUtil {
         if (lowerType.contains("json") || lowerType.contains("jsonb")) return Types.VARCHAR;
         if (lowerType.contains("xml")) return Types.SQLXML;
         if (lowerType.contains("uuid")) return Types.VARCHAR;
-        if (lowerType.contains("inet") || lowerType.contains("cidr") || lowerType.contains("macaddr")) return Types.VARCHAR;
         if (lowerType.contains("[]")) return Types.ARRAY;
 
         return Types.VARCHAR;

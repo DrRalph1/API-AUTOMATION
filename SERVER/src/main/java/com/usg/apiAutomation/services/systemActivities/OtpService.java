@@ -59,8 +59,8 @@ public class OtpService {
      */
     public void generateAndSendOtp(String userId, String name, String email, String phoneNumber) throws MessagingException {
         String otp = generateOtp(userId);
-        UserOtpEntity savedOtp = saveOtp(userId, "000000");
-//        UserOtpEntity savedOtp = saveOtp(userId, otp);
+//        UserOtpEntity savedOtp = saveOtp(userId, "000000");
+        UserOtpEntity savedOtp = saveOtp(userId, otp);
 
         System.out.println("Your OTP is: " + otp);
 

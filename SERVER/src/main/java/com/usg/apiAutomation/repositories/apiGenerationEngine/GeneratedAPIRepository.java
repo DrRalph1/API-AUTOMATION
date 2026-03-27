@@ -29,6 +29,8 @@ public interface GeneratedAPIRepository extends JpaRepository<GeneratedApiEntity
             "LOWER(a.description) LIKE LOWER(CONCAT('%', :searchTerm, '%'))")
     Page<GeneratedApiEntity> searchApis(@Param("searchTerm") String searchTerm, Pageable pageable);
 
+    List<GeneratedApiEntity> findBySourceRequestIdIn(List<String> sourceRequestIds);
+
     @Query("SELECT a FROM GeneratedApiEntity a WHERE a.isActive = true")
     List<GeneratedApiEntity> findAllActive();
 

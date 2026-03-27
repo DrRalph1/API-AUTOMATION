@@ -11,7 +11,31 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 @Entity
-@Table(name = "tb_eng_generated_apis")
+@Table(name = "tb_eng_generated_apis", indexes = {
+        // Index for batch query by source_request_id (CRITICAL for dashboard performance)
+        @Index(name = "idx_eng_api_source_request_id", columnList = "source_request_id"),
+
+        // Index for API lookups
+        @Index(name = "idx_eng_api_api_code", columnList = "api_code", unique = true),
+        @Index(name = "idx_eng_api_status", columnList = "status"),
+        @Index(name = "idx_eng_api_is_active", columnList = "is_active"),
+
+        // Index for filtering by owner
+        @Index(name = "idx_eng_api_owner", columnList = "owner"),
+
+        // Index for sorting and filtering by timestamps
+        @Index(name = "idx_eng_api_created_at", columnList = "created_at"),
+        @Index(name = "idx_eng_api_updated_at", columnList = "updated_at"),
+        @Index(name = "idx_eng_api_last_called_at", columnList = "last_called_at"),
+
+        // Composite indexes for common query patterns
+        @Index(name = "idx_eng_api_owner_status", columnList = "owner, status"),
+        @Index(name = "idx_eng_api_active_owner", columnList = "is_active, owner"),
+        @Index(name = "idx_eng_api_database_type", columnList = "database_type"),
+
+        // Index for JSONB fields (PostgreSQL specific)
+        @Index(name = "idx_eng_api_collection_info", columnList = "collection_info")
+})
 @Getter
 @Setter
 @Builder

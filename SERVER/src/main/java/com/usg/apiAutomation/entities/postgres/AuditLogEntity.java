@@ -24,29 +24,32 @@ import java.util.UUID;
 public class AuditLogEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
-    @Column(name = "audit_id")
+    @GeneratedValue(strategy = GenerationType.UUID) // Better UUID generation
+    @Column(name = "audit_id", columnDefinition = "UUID")
     private UUID auditId;
 
+    @Version
+    @Column(name = "version")
+    private Long version; // Add version field for optimistic locking
+
     @Column(name = "user_id", nullable = false)
-    private String userId;  // ID of the user who performed the action
+    private String userId;
 
     @Column(name = "action", nullable = false, length = 200)
-    private String action;  // action performed
+    private String action;
 
     @Column(name = "operation", nullable = false, length = 200)
-    private String operation; // operation name or code
+    private String operation;
 
     @Column(name = "details", length = 2000)
-    private String details; // additional optional details
+    private String details;
 
     @Column(name = "is_success", nullable = false)
     @Builder.Default
     private Boolean isSuccess = true;
 
     @Column(name = "created_date", nullable = false, updatable = false)
-    @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private LocalDateTime createdAt;
 
     @Column(name = "last_modified_date")
     private LocalDateTime lastModifiedDate;
@@ -56,6 +59,9 @@ public class AuditLogEntity {
         createdAt = LocalDateTime.now();
         if (isSuccess == null) {
             isSuccess = true;
+        }
+        if (version == null) {
+            version = 0L;
         }
     }
 
