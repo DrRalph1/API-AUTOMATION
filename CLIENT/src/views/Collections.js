@@ -7472,7 +7472,7 @@ const renderResponseContent = () => {
     `}</style>
 
       {/* Loading Overlay */}
-      {/* <LoadingOverlay /> */}
+      <LoadingOverlay />
 
       {/* TOP NAVIGATION */}
       <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
