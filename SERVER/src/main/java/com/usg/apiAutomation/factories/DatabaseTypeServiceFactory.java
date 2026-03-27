@@ -220,11 +220,11 @@ public class DatabaseTypeServiceFactory {
             int total = pool.getTotalConnections();
             int waiting = pool.getThreadsAwaitingConnection();
             
-            log.info("PostgreSQL Pool - Active: {}, Idle: {}, Total: {}, Waiting: {}, Leaks: {}, Success: {}, Failed: {}",
-                active, idle, total, waiting, 
-                connectionLeakCounts.get("postgresql").get(),
-                totalExecutions.get("postgresql").get(),
-                failedExecutions.get("postgresql").get());
+//            log.info("PostgreSQL Pool - Active: {}, Idle: {}, Total: {}, Waiting: {}, Leaks: {}, Success: {}, Failed: {}",
+//                active, idle, total, waiting,
+//                connectionLeakCounts.get("postgresql").get(),
+//                totalExecutions.get("postgresql").get(),
+//                failedExecutions.get("postgresql").get());
         }
         
         if (oracleDataSource instanceof HikariDataSource) {
@@ -236,11 +236,11 @@ public class DatabaseTypeServiceFactory {
             int total = pool.getTotalConnections();
             int waiting = pool.getThreadsAwaitingConnection();
             
-            log.info("Oracle Pool - Active: {}, Idle: {}, Total: {}, Waiting: {}, Leaks: {}, Success: {}, Failed: {}",
-                active, idle, total, waiting,
-                connectionLeakCounts.get("oracle").get(),
-                totalExecutions.get("oracle").get(),
-                failedExecutions.get("oracle").get());
+//            log.info("Oracle Pool - Active: {}, Idle: {}, Total: {}, Waiting: {}, Leaks: {}, Success: {}, Failed: {}",
+//                active, idle, total, waiting,
+//                connectionLeakCounts.get("oracle").get(),
+//                totalExecutions.get("oracle").get(),
+//                failedExecutions.get("oracle").get());
         }
     }
     

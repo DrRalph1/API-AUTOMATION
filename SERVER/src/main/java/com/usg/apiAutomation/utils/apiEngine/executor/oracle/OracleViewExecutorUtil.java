@@ -16,10 +16,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import javax.sql.DataSource;
-import java.sql.*;
 import java.util.*;
-import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,72 +34,26 @@ public class OracleViewExecutorUtil {
     private final OracleTableExecutorUtil oracleTableExecutorUtil;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // Timeout constants
-    private static final int STATEMENT_TIMEOUT_SECONDS = 30;
-    private static final int CONNECTION_TIMEOUT_MS = 30000;
-
-    /**
-     * Get connection with timeout settings
-     */
-    private Connection getConnectionWithTimeout() throws SQLException {
-        DataSource dataSource = oracleJdbcTemplate.getDataSource();
-        if (dataSource == null) {
-            throw new SQLException("No DataSource available");
-        }
-
-        Connection conn = dataSource.getConnection();
-
-        // Set network timeout
-        conn.setNetworkTimeout(Executors.newSingleThreadExecutor(), CONNECTION_TIMEOUT_MS);
-
-        // Set session timeout for Oracle
-        try (Statement stmt = conn.createStatement()) {
-            stmt.execute("ALTER SESSION SET SQL_TRACE = FALSE");
-            stmt.execute("ALTER SESSION SET RESOURCE_LIMIT = TRUE");
-        }
-
-        return conn;
-    }
-
-    /**
-     * Cleans SQL statements by removing trailing semicolons and other common issues
-     */
-    private String cleanSqlStatement(String sql) {
-        if (sql == null || sql.trim().isEmpty()) {
-            return sql;
-        }
-
-        String cleaned = sql.trim();
-
-        while (cleaned.endsWith(";")) {
-            cleaned = cleaned.substring(0, cleaned.length() - 1).trim();
-        }
-
-        cleaned = cleaned.trim();
-
-        if (!cleaned.equals(sql.trim())) {
-            log.info("Cleaned SQL statement - Original: [{}], Cleaned: [{}]", sql, cleaned);
-        }
-
-        return cleaned;
-    }
-
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String viewName, String owner, ExecuteApiRequestDTO request,
                           List<ApiParameterDTO> configuredParamDTOs) {
 
         // ============ DEBUGGING: Log all input parameters ============
-        log.info("============ ORACLE VIEW EXECUTOR DEBUG ============");
+        log.info("============ VIEW EXECUTOR DEBUG ============");
         log.info("API ID: {}", api != null ? api.getId() : "null");
         log.info("API Name: {}", api != null ? api.getApiName() : "null");
         log.info("View Name parameter: {}", viewName);
         log.info("Owner parameter: {}", owner);
+        log.info("Request Body Type: {}", request.getBody() != null ? request.getBody().getClass().getName() : "null");
+        log.info("Request Body: {}", request.getBody());
 
         // ============ CREATE PARAMETER MAPPING ============
+        // Build a map of API parameter keys to database column names
         Map<String, String> apiToDbColumnMap = new HashMap<>();
         if (configuredParamDTOs != null) {
             for (ApiParameterDTO param : configuredParamDTOs) {
                 if (param.getKey() != null) {
+                    // For views, we typically use dbColumn as the column name
                     String dbColumnName = param.getDbColumn();
                     if (dbColumnName == null || dbColumnName.isEmpty()) {
                         dbColumnName = param.getDbParameter();
@@ -116,21 +67,29 @@ public class OracleViewExecutorUtil {
             }
         }
 
-        // ============ HANDLE XML/JSON BODY ============
+        // ============ HANDLE XML BODY ============
         Map<String, Object> dbParams = new HashMap<>();
         String xmlBody = null;
         boolean isXmlBody = false;
         boolean hasXmlParameter = false;
 
+        // Check if request body is a String and looks like XML
         if (request.getBody() != null) {
             if (request.getBody() instanceof String) {
                 String bodyString = (String) request.getBody();
+                // Check if it's XML (starts with <)
                 if (bodyString.trim().startsWith("<")) {
                     isXmlBody = true;
                     xmlBody = bodyString;
-                    log.info("XML BODY DETECTED! Length: {} characters", xmlBody.length());
+                    log.info("=========================================");
+                    log.info("XML BODY DETECTED!");
+                    log.info("XML Length: {} characters", xmlBody.length());
+                    log.info("XML Preview: {}", xmlBody.substring(0, Math.min(500, xmlBody.length())));
+                    log.info("=========================================");
                 } else {
-                    log.info("String body detected (non-XML)");
+                    // Regular string body - might be JSON or plain text
+                    log.info("String body detected (non-XML): {}", bodyString.substring(0, Math.min(100, bodyString.length())));
+                    // For view queries, a plain string might be a simple query parameter
                     if (!bodyString.isEmpty() && !bodyString.equals("{}")) {
                         dbParams.put("BODY_STRING", bodyString);
                     }
@@ -138,16 +97,19 @@ public class OracleViewExecutorUtil {
             } else if (request.getBody() instanceof Map) {
                 Map<String, Object> bodyMap = (Map<String, Object>) request.getBody();
 
+                // Check for wrapped XML from old format
                 if (bodyMap.containsKey("_xml")) {
                     isXmlBody = true;
                     xmlBody = (String) bodyMap.get("_xml");
-                    log.info("Found XML in _xml wrapper");
+                    log.info("Found XML in _xml wrapper: {}", xmlBody.substring(0, Math.min(200, xmlBody.length())));
                 } else {
+                    // Regular JSON body
                     log.info("JSON body detected with keys: {}", bodyMap.keySet());
                     for (Map.Entry<String, Object> entry : bodyMap.entrySet()) {
                         String paramKey = entry.getKey().toLowerCase();
                         String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey, entry.getKey().toUpperCase());
 
+                        // Handle nested objects and arrays
                         Object value = entry.getValue();
                         if (value instanceof Map || value instanceof List) {
                             try {
@@ -169,48 +131,105 @@ public class OracleViewExecutorUtil {
         if (isXmlBody && xmlBody != null) {
             log.info("Processing XML body for view execution");
 
+            // FIRST: Try to extract individual parameters from XML
             Map<String, Object> extractedXmlParams = parseXmlParameters(xmlBody, configuredParamDTOs, apiToDbColumnMap);
             if (!extractedXmlParams.isEmpty()) {
                 dbParams.putAll(extractedXmlParams);
-                log.info("✅ Extracted {} parameters from XML", extractedXmlParams.size());
+                log.info("✅ Extracted {} parameters from XML and added to dbParams", extractedXmlParams.size());
+                log.info("Extracted params: {}", extractedXmlParams.keySet());
             }
 
+            // For views, we might need to handle XML specially - it could be used for dynamic WHERE clauses
+            // or stored as a parameter for XML-based queries
             if (api.getParameters() != null) {
                 for (ApiParameterEntity param : api.getParameters()) {
                     String paramKey = param.getKey().toLowerCase();
                     String dbColumnName = getDbColumnName(param);
 
+                    // Check if this parameter is designed to accept XML
                     boolean isXmlParameter = paramKey.contains("xml") ||
                             paramKey.contains("clob") ||
                             paramKey.contains("where") ||
                             paramKey.contains("filter") ||
                             paramKey.contains("condition");
 
-                    if (isXmlParameter && dbColumnName != null && !dbParams.containsKey(dbColumnName)) {
-                        dbParams.put(dbColumnName, xmlBody);
-                        hasXmlParameter = true;
-                        log.info("✅ Mapped full XML body to database column: {}", dbColumnName);
+                    if (isXmlParameter && dbColumnName != null) {
+                        if (!dbParams.containsKey(dbColumnName)) {
+                            dbParams.put(dbColumnName, xmlBody);
+                            hasXmlParameter = true;
+                            log.info("✅ Mapped full XML body to database column: {}", dbColumnName);
+                        }
                         break;
                     }
                 }
             }
 
+            // If no explicit XML parameter found, log warning
             if (!hasXmlParameter && extractedXmlParams.isEmpty()) {
-                log.warn("⚠️ No suitable database column found for XML body");
+                log.warn("⚠️ No suitable database column found for XML body. XML will be stored as a WHERE_CONDITION.");
                 dbParams.put("WHERE_CONDITION", xmlBody);
             }
         }
 
         // ============ ADD PATH AND QUERY PARAMETERS ============
-        addParameters(request, api, apiToDbColumnMap, dbParams);
+        // Add path parameters
+        if (request.getPathParams() != null && !request.getPathParams().isEmpty()) {
+            for (Map.Entry<String, Object> entry : request.getPathParams().entrySet()) {
+                String paramKey = entry.getKey().toLowerCase();
+                String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey, entry.getKey().toUpperCase());
+                dbParams.put(dbColumnName, entry.getValue());
+                log.debug("Added path param: {} -> {} = {}", entry.getKey(), dbColumnName, entry.getValue());
+            }
+            log.info("Path params added: {}", request.getPathParams().keySet());
+        }
+
+        // Add query parameters
+        if (request.getQueryParams() != null && !request.getQueryParams().isEmpty()) {
+            for (Map.Entry<String, Object> entry : request.getQueryParams().entrySet()) {
+                String paramKey = entry.getKey().toLowerCase();
+                String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey, entry.getKey().toUpperCase());
+                dbParams.put(dbColumnName, entry.getValue());
+                log.debug("Added query param: {} -> {} = {}", entry.getKey(), dbColumnName, entry.getValue());
+            }
+            log.info("Query params added: {}", request.getQueryParams().keySet());
+        }
+
+        // ============ ADD HEADERS AS PARAMETERS (if needed) ============
+        Map<String, Object> headerParams = new HashMap<>();
+        if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
+            for (Map.Entry<String, String> entry : request.getHeaders().entrySet()) {
+                String headerKey = entry.getKey().toLowerCase();
+                // Check if the API expects this header as a parameter
+                boolean headerIsParameter = api.getParameters() != null && api.getParameters().stream()
+                        .anyMatch(p -> p.getKey().equalsIgnoreCase(headerKey));
+
+                if (headerIsParameter) {
+                    String dbColumnName = apiToDbColumnMap.getOrDefault(headerKey, headerKey.toUpperCase());
+                    dbParams.put(dbColumnName, entry.getValue());
+                    headerParams.put(headerKey, entry.getValue());
+                    log.debug("Added header as parameter: {} -> {} = {}", headerKey, dbColumnName, entry.getValue());
+                } else {
+                    // Store header for potential use but not for column validation
+                    headerParams.put(headerKey, entry.getValue());
+                    log.debug("Header stored for reference (not as column param): {} = {}", headerKey, entry.getValue());
+                }
+            }
+            log.info("Headers added: {}", request.getHeaders().keySet());
+
+            if (request.getHeaders().containsKey("group_id")) {
+                log.info("✅ group_id header found with value: {}", request.getHeaders().get("group_id"));
+            }
+        }
 
         // ============ HANDLE COLLECTION/ARRAY PARAMETERS ============
+        // Convert collection/array parameters to single values for WHERE clause
         for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
             Object value = entry.getValue();
             if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);
                 if (!collection.isEmpty()) {
+                    // Take the first value for WHERE clause
                     dbParams.put(entry.getKey(), collection.iterator().next());
                     log.info("Converted collection parameter '{}' to single value", entry.getKey());
                 } else {
@@ -220,6 +239,11 @@ public class OracleViewExecutorUtil {
         }
 
         log.info("Final DB params for view execution: {}", dbParams.keySet());
+
+        // Verify group_id is in the params
+        if (dbParams.containsKey("GROUP_ID") || headerParams.containsKey("group_id")) {
+            log.info("✅ group_id successfully passed to view executor");
+        }
 
         // ============ OWNER RESOLUTION STRATEGY ============
         String resolvedOwner = resolveOwner(owner, sourceObject, api, viewName);
@@ -233,6 +257,7 @@ public class OracleViewExecutorUtil {
         log.info("Final view name: {}", resolvedViewName);
 
         // ============ SYNONYM RESOLUTION ============
+        // Resolve the actual target (handle synonyms)
         Map<String, Object> resolutionResult = objectResolver.resolveObject(resolvedOwner, resolvedViewName, "VIEW");
 
         if (!(boolean) resolutionResult.getOrDefault("exists", false)) {
@@ -242,6 +267,7 @@ public class OracleViewExecutorUtil {
             throw new ValidationException(errorMsg);
         }
 
+        // Get the resolved target information
         String targetOwner = (String) resolutionResult.get("targetOwner");
         String targetName = (String) resolutionResult.get("targetName");
         String targetType = (String) resolutionResult.get("targetType");
@@ -250,6 +276,7 @@ public class OracleViewExecutorUtil {
         log.info("🔍 Resolved to: {}.{} ({}) {}", targetOwner, targetName, targetType,
                 isSynonym ? "(via synonym)" : "");
 
+        // If it resolved to something other than a VIEW, that's a problem
         if (!"VIEW".equalsIgnoreCase(targetType)) {
             throw new ValidationException(
                     String.format("Object '%s.%s' resolved to %s, but VIEW was expected",
@@ -268,6 +295,7 @@ public class OracleViewExecutorUtil {
 
         // ==================== VALIDATION STEP 2: Validate view query parameters ====================
         try {
+            // Get allowed columns from response mappings or API parameters
             List<String> allowedColumns = new ArrayList<>();
             if (api.getResponseMappings() != null) {
                 for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
@@ -277,19 +305,25 @@ public class OracleViewExecutorUtil {
                 }
             }
 
+            // CRITICAL FIX: Create a filtered map for view column validation
+            // Only include parameters that are configured in the API definition
+            Map<String, Object> queryParamsForValidation = new HashMap<>();
+
+            // Get the list of configured parameter keys from the API
             Set<String> configuredParamKeys = new HashSet<>();
             if (api.getParameters() != null) {
                 for (ApiParameterEntity param : api.getParameters()) {
                     configuredParamKeys.add(param.getKey().toLowerCase());
-                    configuredParamKeys.add(param.getKey());
+                    configuredParamKeys.add(param.getKey()); // Keep original case too
                 }
             }
 
             log.info("Configured parameter keys: {}", configuredParamKeys);
 
-            Map<String, Object> queryParamsForValidation = new HashMap<>();
+            // Only include parameters that are in the configured list
             for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
                 String key = entry.getKey();
+                // Check if this is a configured parameter (case-insensitive)
                 boolean isConfigured = false;
                 for (String configuredKey : configuredParamKeys) {
                     if (configuredKey.equalsIgnoreCase(key)) {
@@ -298,10 +332,13 @@ public class OracleViewExecutorUtil {
                     }
                 }
 
+                // Also include common pagination parameters
                 if (isConfigured || "page".equalsIgnoreCase(key) || "pagesize".equalsIgnoreCase(key) ||
                         "sort".equalsIgnoreCase(key) || "order".equalsIgnoreCase(key) ||
                         "where_condition".equalsIgnoreCase(key)) {
                     queryParamsForValidation.put(key, entry.getValue());
+                } else {
+                    log.debug("Excluding header/other param from view validation: {} = {}", key, entry.getValue());
                 }
             }
 
@@ -325,55 +362,15 @@ public class OracleViewExecutorUtil {
 
         log.info("============ VIEW EXECUTION COMPLETE ============");
 
-        // Delegate to TableExecutorUtil for execution
+        // Pass ALL combined parameters to TableExecutorUtil (including headers)
         return oracleTableExecutorUtil.executeSelect(targetName, targetOwner, dbParams, api, configuredParamDTOs);
-    }
-
-    /**
-     * Add parameters from request (path, query, headers)
-     */
-    private void addParameters(ExecuteApiRequestDTO request, GeneratedApiEntity api,
-                               Map<String, String> apiToDbColumnMap, Map<String, Object> dbParams) {
-        // Add path parameters
-        if (request.getPathParams() != null) {
-            for (Map.Entry<String, Object> entry : request.getPathParams().entrySet()) {
-                String dbColumnName = apiToDbColumnMap.getOrDefault(entry.getKey().toLowerCase(), entry.getKey().toUpperCase());
-                dbParams.put(dbColumnName, entry.getValue());
-                log.debug("Added path param: {} -> {}", entry.getKey(), dbColumnName);
-            }
-        }
-
-        // Add query parameters
-        if (request.getQueryParams() != null) {
-            for (Map.Entry<String, Object> entry : request.getQueryParams().entrySet()) {
-                String dbColumnName = apiToDbColumnMap.getOrDefault(entry.getKey().toLowerCase(), entry.getKey().toUpperCase());
-                dbParams.put(dbColumnName, entry.getValue());
-                log.debug("Added query param: {} -> {}", entry.getKey(), dbColumnName);
-            }
-        }
-
-        // Add headers that are defined as parameters
-        if (request.getHeaders() != null && api.getParameters() != null) {
-            for (Map.Entry<String, String> entry : request.getHeaders().entrySet()) {
-                String headerKey = entry.getKey().toLowerCase();
-                boolean headerIsParameter = api.getParameters().stream()
-                        .anyMatch(p -> p.getKey().equalsIgnoreCase(headerKey));
-
-                if (headerIsParameter) {
-                    String dbColumnName = apiToDbColumnMap.getOrDefault(headerKey, headerKey.toUpperCase());
-                    dbParams.put(dbColumnName, entry.getValue());
-                    log.debug("Added header as parameter: {} -> {}", headerKey, dbColumnName);
-                }
-            }
-        }
     }
 
     /**
      * Helper method to resolve the owner from multiple sources
      */
-    private String resolveOwner(String owner, ApiSourceObjectDTO sourceObject,
-                                GeneratedApiEntity api, String viewName) {
-        // Strategy 1: Use the owner parameter
+    private String resolveOwner(String owner, ApiSourceObjectDTO sourceObject, GeneratedApiEntity api, String viewName) {
+        // Strategy 1: Use the owner parameter passed to the method
         if (owner != null && !owner.trim().isEmpty()) {
             log.info("Strategy 1 - Using owner parameter: {}", owner);
             return owner.trim().toUpperCase();
@@ -391,9 +388,10 @@ public class OracleViewExecutorUtil {
             return sourceObject.getSchemaName().trim().toUpperCase();
         }
 
-        // Strategy 4: Get from API's source_object_info
+        // Strategy 4: Get from API's source_object_info (as Map)
         if (api != null && api.getSourceObjectInfo() != null) {
             try {
+                // Check if it's already a Map
                 if (api.getSourceObjectInfo() instanceof Map) {
                     Map<String, Object> sourceInfo = (Map<String, Object>) api.getSourceObjectInfo();
                     if (sourceInfo.containsKey("schemaName") && sourceInfo.get("schemaName") != null) {
@@ -407,6 +405,7 @@ public class OracleViewExecutorUtil {
                         return ownerName.trim().toUpperCase();
                     }
                 } else {
+                    // If it's a String, parse it
                     String jsonString = api.getSourceObjectInfo().toString();
                     Map<String, Object> sourceInfo = objectMapper.readValue(jsonString, new TypeReference<Map<String, Object>>() {});
                     if (sourceInfo.containsKey("schemaName") && sourceInfo.get("schemaName") != null) {
@@ -426,49 +425,38 @@ public class OracleViewExecutorUtil {
         }
 
         // Strategy 5: Try to get current user's default schema
-        try (Connection conn = getConnectionWithTimeout();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM DUAL")) {
-            if (rs.next()) {
-                String currentSchema = rs.getString(1);
-                if (currentSchema != null && !currentSchema.isEmpty()) {
-                    log.info("Strategy 5 - Using current schema from Oracle: {}", currentSchema);
-                    return currentSchema;
-                }
+        try {
+            String currentSchema = objectResolver.getCurrentSchema();
+            if (currentSchema != null && !currentSchema.isEmpty()) {
+                log.info("Strategy 5 - Using current schema from Oracle: {}", currentSchema);
+                return currentSchema;
             }
         } catch (Exception e) {
             log.warn("Could not get current schema: {}", e.getMessage());
         }
 
-        // Strategy 6: Try to locate the view in accessible schemas
-        try (Connection conn = getConnectionWithTimeout();
-             PreparedStatement pstmt = conn.prepareStatement(
-                     "SELECT OWNER FROM ALL_VIEWS WHERE VIEW_NAME = ? AND ROWNUM = 1")) {
+        // Strategy 6: Try to resolve the view from all accessible schemas
+        try {
+            log.info("Strategy 6 - Attempting to locate view '{}' in accessible schemas", viewName);
 
-            pstmt.setString(1, viewName);
-            pstmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
+            // Query to find the view in any schema the current user has access to
+            String findViewSql = "SELECT OWNER FROM ALL_VIEWS WHERE VIEW_NAME = ? AND ROWNUM = 1";
+            List<String> owners = oracleJdbcTemplate.queryForList(findViewSql, String.class, viewName);
 
-            try (ResultSet rs = pstmt.executeQuery()) {
-                if (rs.next()) {
-                    String foundOwner = rs.getString(1);
-                    log.info("Strategy 6 - Found view '{}' in schema: {}", viewName, foundOwner);
-                    return foundOwner;
-                }
+            if (!owners.isEmpty()) {
+                String foundOwner = owners.get(0);
+                log.info("Strategy 6 - Found view '{}' in schema: {}", viewName, foundOwner);
+                return foundOwner;
             }
 
-            // If not found in views, check tables
-            try (PreparedStatement pstmt2 = conn.prepareStatement(
-                    "SELECT OWNER FROM ALL_TABLES WHERE TABLE_NAME = ? AND ROWNUM = 1")) {
-                pstmt2.setString(1, viewName);
-                pstmt2.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
+            // If not found in views, check if it's a table (in case it's a table being accessed as a view)
+            String findTableSql = "SELECT OWNER FROM ALL_TABLES WHERE TABLE_NAME = ? AND ROWNUM = 1";
+            List<String> tableOwners = oracleJdbcTemplate.queryForList(findTableSql, String.class, viewName);
 
-                try (ResultSet rs2 = pstmt2.executeQuery()) {
-                    if (rs2.next()) {
-                        String foundOwner = rs2.getString(1);
-                        log.info("Strategy 6 - Found table '{}' in schema: {} (treating as view)", viewName, foundOwner);
-                        return foundOwner;
-                    }
-                }
+            if (!tableOwners.isEmpty()) {
+                String foundOwner = tableOwners.get(0);
+                log.info("Strategy 6 - Found table '{}' in schema: {} (treating as view)", viewName, foundOwner);
+                return foundOwner;
             }
 
             log.warn("Strategy 6 - Could not locate view '{}' in any accessible schema", viewName);
@@ -480,6 +468,8 @@ public class OracleViewExecutorUtil {
         log.error("❌ All owner resolution strategies failed for view: {}", viewName);
         return null;
     }
+
+
 
     private String getDbColumnName(ApiParameterEntity param) {
         if (param.getDbColumn() != null && !param.getDbColumn().isEmpty()) {
@@ -493,92 +483,67 @@ public class OracleViewExecutorUtil {
 
     private void validateViewQuery(String schemaName, String viewName, Map<String, Object> queryParams,
                                    List<String> allowedColumns) {
-        try (Connection conn = getConnectionWithTimeout()) {
-            // Check if view exists
-            try (PreparedStatement pstmt = conn.prepareStatement(
-                    "SELECT COUNT(*) FROM ALL_VIEWS WHERE OWNER = ? AND VIEW_NAME = ?")) {
+        // Check if view exists
+        String sql = "SELECT COUNT(*) FROM ALL_VIEWS WHERE OWNER = ? AND VIEW_NAME = ?";
 
-                pstmt.setString(1, schemaName);
-                pstmt.setString(2, viewName);
-                pstmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
-
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        int count = rs.getInt(1);
-                        if (count == 0) {
-                            throw new ValidationException(
-                                    String.format("View '%s.%s' does not exist", schemaName, viewName)
-                            );
-                        }
-                    }
-                }
-            }
-
-            // Validate view is accessible
-            try (Statement stmt = conn.createStatement()) {
-                stmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
-                stmt.execute("SELECT 1 FROM " + schemaName + "." + viewName + " WHERE ROWNUM = 1");
-            } catch (Exception e) {
-                throw new ValidationException(
-                        String.format("Cannot access view '%s.%s': %s",
-                                schemaName, viewName, extractOracleError(e.getMessage()))
-                );
-            }
-
-            // Validate query parameters against view columns
-            if (queryParams != null && !queryParams.isEmpty()) {
-                // Get view columns
-                try (PreparedStatement pstmt = conn.prepareStatement(
-                        "SELECT COLUMN_NAME, DATA_TYPE, NULLABLE FROM ALL_TAB_COLUMNS " +
-                                "WHERE OWNER = ? AND TABLE_NAME = ?")) {
-
-                    pstmt.setString(1, schemaName);
-                    pstmt.setString(2, viewName);
-                    pstmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
-
-                    Map<String, Map<String, Object>> columnMap = new HashMap<>();
-                    try (ResultSet rs = pstmt.executeQuery()) {
-                        while (rs.next()) {
-                            Map<String, Object> column = new HashMap<>();
-                            column.put("DATA_TYPE", rs.getString("DATA_TYPE"));
-                            column.put("NULLABLE", rs.getString("NULLABLE"));
-                            columnMap.put(rs.getString("COLUMN_NAME").toLowerCase(), column);
-                        }
-                    }
-
-                    // Validate each query parameter
-                    for (Map.Entry<String, Object> param : queryParams.entrySet()) {
-                        String paramName = param.getKey().toLowerCase();
-
-                        // Skip special parameters
-                        if ("page".equals(paramName) || "pagesize".equals(paramName) ||
-                                "sort".equals(paramName) || "order".equals(paramName) ||
-                                "where_condition".equals(paramName)) {
-                            continue;
-                        }
-
-                        Map<String, Object> column = columnMap.get(paramName);
-                        if (column == null && allowedColumns != null && !allowedColumns.contains(paramName)) {
-                            throw new ValidationException(
-                                    String.format("Invalid query parameter '%s'. Not a valid column in view %s.%s",
-                                            param.getKey(), schemaName, viewName)
-                            );
-                        }
-
-                        // Validate data type if column exists
-                        if (column != null && param.getValue() != null) {
-                            validateColumnDataType(param.getKey(), param.getValue(), column);
-                        }
-                    }
-                }
-            }
-        } catch (SQLTimeoutException e) {
-            log.error("Database operation timed out validating view {}.{}", schemaName, viewName, e);
-            throw new RuntimeException("Database operation timed out after " + STATEMENT_TIMEOUT_SECONDS + " seconds", e);
-        } catch (SQLException e) {
+        Integer count = oracleJdbcTemplate.queryForObject(sql, Integer.class, schemaName, viewName);
+        if (count == null || count == 0) {
             throw new ValidationException(
-                    String.format("Cannot validate view '%s.%s': %s", schemaName, viewName, e.getMessage())
+                    String.format("View '%s.%s' does not exist", schemaName, viewName)
             );
+        }
+
+        // Validate view is accessible
+        try {
+            oracleJdbcTemplate.execute("SELECT 1 FROM " + schemaName + "." + viewName + " WHERE ROWNUM = 1");
+        } catch (Exception e) {
+            throw new ValidationException(
+                    String.format("Cannot access view '%s.%s': %s",
+                            schemaName, viewName, extractOracleError(e.getMessage()))
+            );
+        }
+
+        // Validate query parameters against view columns
+        if (queryParams != null && !queryParams.isEmpty()) {
+            // Get view columns
+            String columnSql =
+                    "SELECT COLUMN_NAME, DATA_TYPE, NULLABLE " +
+                            "FROM ALL_TAB_COLUMNS " +
+                            "WHERE OWNER = ? AND TABLE_NAME = ?";
+
+            List<Map<String, Object>> columns = oracleJdbcTemplate.queryForList(
+                    columnSql, schemaName, viewName);
+
+            Map<String, Map<String, Object>> columnMap = new HashMap<>();
+            for (Map<String, Object> column : columns) {
+                columnMap.put(((String) column.get("COLUMN_NAME")).toLowerCase(), column);
+            }
+
+            // Validate each query parameter
+            for (Map.Entry<String, Object> param : queryParams.entrySet()) {
+                String paramName = param.getKey().toLowerCase();
+
+                // Skip special parameters that aren't view columns
+                if ("page".equals(paramName) || "pagesize".equals(paramName) ||
+                        "sort".equals(paramName) || "order".equals(paramName) ||
+                        "where_condition".equals(paramName)) {
+                    continue;
+                }
+
+                // Check if parameter corresponds to a view column
+                Map<String, Object> column = columnMap.get(paramName);
+                if (column == null && allowedColumns != null && !allowedColumns.contains(paramName)) {
+                    throw new ValidationException(
+                            String.format("Invalid query parameter '%s'. Not a valid column in view %s.%s",
+                                    param.getKey(), schemaName, viewName)
+                    );
+                }
+
+                // Validate data type if column exists
+                if (column != null && param.getValue() != null) {
+                    validateColumnDataType(param.getKey(), param.getValue(), column);
+                }
+            }
         }
     }
 
@@ -610,7 +575,10 @@ public class OracleViewExecutorUtil {
                     }
                 }
             } else if (upperDataType.contains("DATE") || upperDataType.contains("TIMESTAMP")) {
-                log.debug("Date value provided for column {}: {}", columnName, value);
+                // Basic date validation - you might want to enhance this
+                if (!(value instanceof Date) && !(value instanceof java.sql.Timestamp)) {
+                    log.debug("Date value provided for column {}: {}", columnName, value);
+                }
             }
         }
     }
@@ -627,14 +595,18 @@ public class OracleViewExecutorUtil {
         }
 
         log.info("Parsing XML body to extract parameter values");
+        log.debug("XML Body: {}", xmlBody);
 
         try {
+            // For each configured parameter, try to extract its value from XML
             for (ApiParameterDTO param : configuredParamDTOs) {
                 String paramKey = param.getKey();
                 if (paramKey == null || paramKey.isEmpty()) {
                     continue;
                 }
 
+                // Look for XML tags with this key (case-insensitive)
+                // Pattern matches: <acct_link>value</acct_link> or <ACCT_LINK>value</ACCT_LINK>
                 Pattern pattern = Pattern.compile("<" + paramKey + ">(.*?)</" + paramKey + ">",
                         Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
                 Matcher matcher = pattern.matcher(xmlBody);
@@ -642,15 +614,19 @@ public class OracleViewExecutorUtil {
                 if (matcher.find()) {
                     String value = matcher.group(1).trim();
                     if (!value.isEmpty()) {
+                        // Map to database column name
                         String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey.toLowerCase(), paramKey.toUpperCase());
                         extractedParams.put(dbColumnName, value);
                         log.info("✅ Extracted XML parameter: {} -> {} = {}", paramKey, dbColumnName, value);
                     } else {
                         log.info("⚠️ XML tag <{}> found but empty", paramKey);
+                        // Still add empty string as a value (required parameter might accept empty)
                         String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey.toLowerCase(), paramKey.toUpperCase());
                         extractedParams.put(dbColumnName, "");
                         log.info("Added empty parameter: {} -> {}", paramKey, dbColumnName);
                     }
+                } else {
+                    log.debug("XML tag <{}> not found in body", paramKey);
                 }
             }
 
@@ -669,12 +645,14 @@ public class OracleViewExecutorUtil {
     private String extractOracleError(String errorMessage) {
         if (errorMessage == null) return "Unknown error";
 
+        // Look for ORA-xxxxx pattern
         Pattern pattern = Pattern.compile("ORA-\\d{5}:[^\\n]*");
         Matcher matcher = pattern.matcher(errorMessage);
         if (matcher.find()) {
             return matcher.group();
         }
 
+        // Return first line if it's long
         if (errorMessage.length() > 200) {
             return errorMessage.substring(0, 200) + "...";
         }
