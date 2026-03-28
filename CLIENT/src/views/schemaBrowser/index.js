@@ -140,7 +140,6 @@ const ComingSoonModal = ({ isOpen, onClose, database, colors, isDark }) => {
             </button>
             <button
               onClick={() => {
-                // You can add notification subscription logic here
                 alert(`We'll notify you when ${database.title} becomes available!`);
                 onClose();
               }}
@@ -299,7 +298,7 @@ const DatabaseTopNav = ({
     if (hasComponent) {
       onSelectDatabase(db);
     } else {
-      onComingSoonClick(db); // This will show the coming soon modal
+      onComingSoonClick(db);
     }
   };
 
@@ -850,148 +849,6 @@ const SchemaBrowserIndex = ({
           isDark={isDark}
         />
       </div>
-      
-      {/* Enhanced animation styles */}
-      <style jsx>{`
-        @keyframes slide-in {
-          from {
-            transform: translateX(100%);
-            opacity: 0;
-          }
-          to {
-            transform: translateX(0);
-            opacity: 1;
-          }
-        }
-        
-        @keyframes slide-down {
-          from {
-            transform: translateY(-100%);
-            opacity: 0;
-          }
-          to {
-            transform: translateY(0);
-            opacity: 1;
-          }
-        }
-        
-        @keyframes fade-in {
-          from {
-            opacity: 0;
-            transform: scale(0.95);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1);
-          }
-        }
-        
-        @keyframes scale-in {
-          from {
-            opacity: 0;
-            transform: scale(0.9);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1);
-          }
-        }
-        
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
-          20%, 40%, 60%, 80% { transform: translateX(5px); }
-        }
-        
-        .animate-slide-in {
-          animation: slide-in 0.3s ease-out;
-        }
-        
-        .animate-slide-down {
-          animation: slide-down 0.3s ease-out;
-        }
-        
-        .animate-fade-in {
-          animation: fade-in 0.5s ease-out;
-        }
-        
-        .animate-scale-in {
-          animation: scale-in 0.3s ease-out;
-        }
-        
-        .animate-shake {
-          animation: shake 0.5s ease-in-out;
-        }
-        
-        .animation-delay-1000 {
-          animation-delay: 1000ms;
-        }
-        
-        @keyframes pulse-slow {
-          0%, 100% {
-            opacity: 0.2;
-            transform: scale(1);
-          }
-          50% {
-            opacity: 0.3;
-            transform: scale(1.05);
-          }
-        }
-        
-        .animate-pulse-slow {
-          animation: pulse-slow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-        
-        .hover-lift:hover {
-          transform: translateY(-2px);
-          transition: transform 0.2s ease;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        
-        * {
-          transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
-        }
-        
-        ::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-        
-        ::-webkit-scrollbar-track {
-          background: rgb(51 65 85);
-          border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb {
-          background: rgb(100 116 139);
-          border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-          background: rgb(148 163 184);
-        }
-        
-        @media (max-width: 640px) {
-          .text-xs { font-size: 11px; }
-          .text-sm { font-size: 12px; }
-          .text-lg { font-size: 16px; }
-          .text-xl { font-size: 18px; }
-          .text-2xl { font-size: 20px; }
-        }
-        
-        button, 
-        [role="button"],
-        input[type="submit"],
-        input[type="button"],
-        .cursor-pointer {
-          cursor: pointer;
-        }
-        
-        button:disabled,
-        [role="button"]:disabled {
-          cursor: not-allowed;
-        }
-      `}</style>
     </div>
   );
 };

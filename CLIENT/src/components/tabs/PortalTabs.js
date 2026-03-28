@@ -5,7 +5,7 @@ import { Terminal, Settings } from "lucide-react";
 
 const PortalTabs = ({ userType, setUserType, isMobile, isDark, colors }) => {
   const getPortalColors = (portalType) => {
-    if (portalType === 'admin') {
+    if (portalType === 'system administrator') {
       return {
         color: isDark ? "from-purple-500 to-pink-400" : "from-purple-600 to-pink-500",
       };
@@ -16,7 +16,7 @@ const PortalTabs = ({ userType, setUserType, isMobile, isDark, colors }) => {
   };
 
   const tellerPortal = getPortalColors('teller');
-  const adminPortal = getPortalColors('admin');
+  const adminPortal = getPortalColors('system administrator');
 
   return (
     <div className={`${isMobile ? 'mb-4' : 'mb-8'}`}>
@@ -30,11 +30,11 @@ const PortalTabs = ({ userType, setUserType, isMobile, isDark, colors }) => {
             {isMobile ? "Teller" : "Teller Portal"}
           </TabsTrigger>
           <TabsTrigger
-            value="oracle"
+            value="system administrator"
             className={`${isMobile ? 'rounded-md text-xs py-2' : 'rounded-lg py-2.5'} transition-all duration-200 data-[state=active]:bg-gradient-to-br ${adminPortal.color} data-[state=active]:text-white`}
           >
             <Settings className={`${isMobile ? 'h-3 w-3 mr-1' : 'h-4 w-4 mr-2'}`} />
-            {isMobile ? "oracle" : "Admin Portal"}
+            {isMobile ? "system administrator" : "Admin Portal"}
           </TabsTrigger>
         </TabsList>
       </Tabs>

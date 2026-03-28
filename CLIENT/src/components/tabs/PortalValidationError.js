@@ -5,7 +5,7 @@ import { Ban, AlertTriangle } from "lucide-react";
 
 const PortalValidationError = ({ error, userType, isMobile, isDark, lastAttemptedRole }) => {
   const getErrorStyles = () => {
-    if (userType === "oracle") {
+    if (userType === "system administrator") {
       return {
         border: isDark ? 'border-purple-800/30' : 'border-purple-200',
         bg: isDark ? 'bg-purple-900/20' : 'bg-purple-50',
@@ -55,7 +55,7 @@ const PortalValidationError = ({ error, userType, isMobile, isDark, lastAttempte
                 <AlertTriangle className="h-3 w-3" />
                 <span>
                   Please switch to the <span className="font-semibold">
-                    {lastAttemptedRole === "oracle" ? "Teller Portal" : "Admin Portal"}
+                    {lastAttemptedRole === "system administrator" ? "Teller Portal" : "Admin Portal"}
                   </span> tab above
                 </span>
               </div>

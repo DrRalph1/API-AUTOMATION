@@ -37,7 +37,7 @@ export const useLogin = () => {
     showOtp: false,
     otp: ["", "", "", "", "", ""],
     loginData: null,
-    userType: "postgres",
+    userType: "USER",
     portalValidationError: "",
     lastAttemptedRole: "",
     resendCountdown: 0,
@@ -88,12 +88,12 @@ export const useLogin = () => {
     
     // Ensure role is a string before calling toLowerCase
     if (role && typeof role === 'string') {
-      return role.toLowerCase() === "oracle" ? "oracle" : "postgres";
+      return role.toLowerCase() === "system administrator" ? "system administrator" : "USER";
     }
     
     // If role is not a string, return a safe default
-    console.log("⚠️ getUserRoleForAlert: role is not a string, defaulting to postgres", role);
-    return "postgres"; // Default to postgres for safety
+    console.log("⚠️ getUserRoleForAlert: role is not a string, defaulting to USER", role);
+    return "USER"; // Default to USER for safety
   };
 
   // Alert functions - FIXED to use the safe getUserRoleForAlert
@@ -158,7 +158,7 @@ export const useLogin = () => {
     console.log(`🔍 Normalized: Role = "${normalizedRole}", Portal = "${normalizedPortal}"`);
     
     // Check if role is valid
-    const validRoles = ["oracle", "postgres"];
+    const validRoles = ["system administrator", "USER"];
     if (!validRoles.includes(normalizedRole)) {
       console.log(`❌ Invalid role detected: "${normalizedRole}"`);
       return {
@@ -171,12 +171,12 @@ export const useLogin = () => {
     if (normalizedRole !== normalizedPortal) {
       console.log(`❌ Role/portal mismatch: ${normalizedRole} != ${normalizedPortal}`);
       
-      const attemptedPortal = normalizedPortal === "oracle" ? "Admin Portal" : "postgres Portal";
-      const shouldBePortal = normalizedRole === "oracle" ? "Admin Portal" : "postgres Portal";
+      const attemptedPortal = normalizedPortal === "system administrator" ? "Admin Portal" : "USER Portal";
+      const shouldBePortal = normalizedRole === "system administrator" ? "Admin Portal" : "USER Portal";
 
-      const userType = normalizedRole === "oracle" 
+      const userType = normalizedRole === "system administrator" 
         ? "an ADMINISTRATOR" 
-        : "a postgres";
+        : "a USER";
       
       return {
         valid: false,
@@ -559,10 +559,12 @@ export const useLogin = () => {
 
         setRole(finalUserData.role);
 
-        if (finalUserData.role === "oracle") {
+        // console.log("finalUserData.role:::::::" + finalUserData.role);
+
+        if (finalUserData.role === "system administrator") {
           return navigate("/admin", { replace: true });
-        } else if (finalUserData.role === "postgres") {
-          return navigate("/postgres", { replace: true });
+        } else if (finalUserData.role === "user") {
+          return navigate("/USER", { replace: true });
         } else {
           return navigate("/", { replace: true });
         }

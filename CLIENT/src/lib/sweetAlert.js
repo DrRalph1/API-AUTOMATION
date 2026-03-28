@@ -16,23 +16,23 @@ import { Badge } from "@/components/ui/badge";
 import { AlertCircle, AlertOctagon, CheckCircle, Info, XCircle, AlertTriangle, Loader2, Check } from "lucide-react";
 
 // --- Theme configuration (FIXED: Safe userRole handling) ---
-const getPortalTheme = (isDark, userRole = "oracle") => {
+const getPortalTheme = (isDark, userRole = "system administrator") => {
   // Safe conversion - handle any non-string value
   let role = 'postgres'; // default
   
   if (userRole) {
     if (typeof userRole === 'string') {
-      role = userRole.toLowerCase() === "oracle" ? "oracle" : 'postgres';
+      role = userRole.toLowerCase() === "system administrator" ? "system administrator" : 'postgres';
     } else if (typeof userRole === 'object' && userRole.role) {
       // If userRole is an object with a role property
-      role = String(userRole.role).toLowerCase() === "oracle" ? "oracle" : 'postgres';
+      role = String(userRole.role).toLowerCase() === "system administrator" ? "system administrator" : 'postgres';
     } else {
       // Convert to string as fallback
-      role = String(userRole).toLowerCase() === "oracle" ? "oracle" : 'postgres';
+      role = String(userRole).toLowerCase() === "system administrator" ? "system administrator" : 'postgres';
     }
   }
 
-  if (role === "oracle") {
+  if (role === "system administrator") {
     return {
       gradient: 'from-purple-600 to-pink-500',
       iconColor: '#8b5cf6',
@@ -135,7 +135,7 @@ export function DialogAlertProvider({ children }) {
     setAlerts(prev => prev.filter(alert => alert.id !== id));
   };
   
-  const showSuccess = (title, text = '', userRole = "oracle", options = {}) => {
+  const showSuccess = (title, text = '', userRole = "system administrator", options = {}) => {
     const id = showAlert({
       type: 'success',
       title,
@@ -153,8 +153,8 @@ export function DialogAlertProvider({ children }) {
     return { isConfirmed: true };
   };
   
-  const showError = (title, text = '', userRole = "oracle", options = {}) => {
-    const actualUserRole = (typeof userRole === 'string' && userRole === "oracle") ? "oracle" : 'postgres';
+  const showError = (title, text = '', userRole = "system administrator", options = {}) => {
+    const actualUserRole = (typeof userRole === 'string' && userRole === "system administrator") ? "system administrator" : 'postgres';
     const id = showAlert({
       type: 'error',
       title,
@@ -172,7 +172,7 @@ export function DialogAlertProvider({ children }) {
     return { isConfirmed: true };
   };
   
-  const showWarning = (title, text = '', userRole = "oracle", options = {}) => {
+  const showWarning = (title, text = '', userRole = "system administrator", options = {}) => {
     const id = showAlert({
       type: 'warning',
       title,
@@ -190,7 +190,7 @@ export function DialogAlertProvider({ children }) {
     return { isConfirmed: true };
   };
   
-  const showInfo = (title, text = '', userRole = "oracle", options = {}) => {
+  const showInfo = (title, text = '', userRole = "system administrator", options = {}) => {
     const id = showAlert({
       type: 'info',
       title,
@@ -208,7 +208,7 @@ export function DialogAlertProvider({ children }) {
     return { isConfirmed: true };
   };
   
-  const showConfirm = async (title, text = '', confirmText = 'Confirm', userRole = "oracle", options = {}) => {
+  const showConfirm = async (title, text = '', confirmText = 'Confirm', userRole = "system administrator", options = {}) => {
     return new Promise((resolve) => {
       showAlert({
         type: 'confirm',
@@ -224,7 +224,7 @@ export function DialogAlertProvider({ children }) {
     });
   };
   
-  const showInput = async (title, text, inputType = 'text', placeholder = '', userRole = "oracle", validationMessage = 'Please enter a value!') => {
+  const showInput = async (title, text, inputType = 'text', placeholder = '', userRole = "system administrator", validationMessage = 'Please enter a value!') => {
     return new Promise((resolve) => {
       showAlert({
         type: 'input',
@@ -240,7 +240,7 @@ export function DialogAlertProvider({ children }) {
     });
   };
   
-  const showLoading = (title = 'Loading...', userRole = "oracle") => {
+  const showLoading = (title = 'Loading...', userRole = "system administrator") => {
     const id = showAlert({
       type: 'loading',
       title,
@@ -253,7 +253,7 @@ export function DialogAlertProvider({ children }) {
   };
   
   const showToast = {
-    success: (message, userRole = "oracle") => {
+    success: (message, userRole = "system administrator") => {
       const id = showAlert({
         type: 'toast',
         toastType: 'success',
@@ -266,7 +266,7 @@ export function DialogAlertProvider({ children }) {
       return { close: () => closeAlert(id) };
     },
     
-    error: (message, userRole = "oracle") => {
+    error: (message, userRole = "system administrator") => {
       const id = showAlert({
         type: 'toast',
         toastType: 'error',
@@ -279,7 +279,7 @@ export function DialogAlertProvider({ children }) {
       return { close: () => closeAlert(id) };
     },
     
-    warning: (message, userRole = "oracle") => {
+    warning: (message, userRole = "system administrator") => {
       const id = showAlert({
         type: 'toast',
         toastType: 'warning',
@@ -292,7 +292,7 @@ export function DialogAlertProvider({ children }) {
       return { close: () => closeAlert(id) };
     },
     
-    info: (message, userRole = "oracle") => {
+    info: (message, userRole = "system administrator") => {
       const id = showAlert({
         type: 'toast',
         toastType: 'info',
@@ -306,7 +306,7 @@ export function DialogAlertProvider({ children }) {
     }
   };
   
-  const showCustom = (options = {}, userRole = "oracle") => {
+  const showCustom = (options = {}, userRole = "system administrator") => {
     const id = showAlert({
       type: 'custom',
       userRole,
@@ -371,7 +371,7 @@ function DialogAlertComponent({
   text = '',
   confirmText = 'Confirm',
   cancelText = 'Cancel',
-  userRole = "oracle",
+  userRole = "system administrator",
   onConfirm,
   onCancel,
   onClose,
@@ -423,7 +423,7 @@ function DialogAlertComponent({
         case 'info':
         default: return { 
           Icon: Info, 
-          color: (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "oracle" 
+          color: (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "system administrator" 
             ? 'text-purple-600 dark:text-purple-400' 
             : 'text-blue-600 dark:text-blue-400' 
         };
@@ -440,7 +440,7 @@ function DialogAlertComponent({
       case 'info':
       default: return { 
         Icon: Info, 
-        color: (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "oracle" 
+        color: (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "system administrator" 
           ? 'text-purple-600 dark:text-purple-400' 
           : 'text-blue-600 dark:text-blue-400' 
       };
@@ -485,7 +485,7 @@ function DialogAlertComponent({
             ? `${isDark ? 'bg-red-900/10 border-red-800/30' : 'bg-red-50 border-red-200'}`
             : toastType === 'warning'
             ? `${isDark ? 'bg-yellow-900/10 border-yellow-800/30' : 'bg-yellow-50 border-yellow-200'}`
-            : (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "oracle"
+            : (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "system administrator"
             ? `${isDark ? 'bg-purple-900/10 border-purple-800/30' : 'bg-purple-50 border-purple-200'}`
             : `${isDark ? 'bg-blue-900/10 border-blue-800/30' : 'bg-blue-50 border-blue-200'}`
         }`}>
@@ -536,12 +536,12 @@ function DialogAlertComponent({
                 ? type === 'success' ? 'bg-emerald-900/20 border-emerald-800/40' 
                   : type === 'error' ? 'bg-rose-900/20 border-rose-800/40'
                   : type === 'warning' ? 'bg-amber-900/20 border-amber-800/40'
-                  : (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "oracle" ? 'bg-violet-900/20 border-violet-800/40' 
+                  : (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "system administrator" ? 'bg-violet-900/20 border-violet-800/40' 
                   : 'bg-sky-900/20 border-sky-800/40'
                 : type === 'success' ? 'bg-emerald-50 border-emerald-200'
                   : type === 'error' ? 'bg-rose-50 border-rose-200'
                   : type === 'warning' ? 'bg-amber-50 border-amber-200'
-                  : (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "oracle" ? 'bg-violet-50 border-violet-200'
+                  : (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "system administrator" ? 'bg-violet-50 border-violet-200'
                   : 'bg-sky-50 border-sky-200'
               } 
               border shadow-sm
@@ -678,7 +678,7 @@ function DialogAlertComponent({
 // --- Global export functions (EXACT SAME SIGNATURES AS ORIGINAL) ---
 
 // Success Alert - Compact
-export const showSuccess = (title, text = '', userRole = "oracle", options = {}) => {
+export const showSuccess = (title, text = '', userRole = "system administrator", options = {}) => {
   if (window.__SWEET_ALERT_INSTANCE__) {
     return window.__SWEET_ALERT_INSTANCE__.showSuccess(title, text, userRole, options);
   }
@@ -687,7 +687,7 @@ export const showSuccess = (title, text = '', userRole = "oracle", options = {})
 };
 
 // Error Alert - Compact
-export const showError = (title, text = '', userRole = "oracle", options = {}) => {
+export const showError = (title, text = '', userRole = "system administrator", options = {}) => {
   if (window.__SWEET_ALERT_INSTANCE__) {
     return window.__SWEET_ALERT_INSTANCE__.showError(title, text, userRole, options);
   }
@@ -696,7 +696,7 @@ export const showError = (title, text = '', userRole = "oracle", options = {}) =
 };
 
 // Warning Alert - Compact
-export const showWarning = (title, text = '', userRole = "oracle", options = {}) => {
+export const showWarning = (title, text = '', userRole = "system administrator", options = {}) => {
   if (window.__SWEET_ALERT_INSTANCE__) {
     return window.__SWEET_ALERT_INSTANCE__.showWarning(title, text, userRole, options);
   }
@@ -705,7 +705,7 @@ export const showWarning = (title, text = '', userRole = "oracle", options = {})
 };
 
 // Info Alert - Compact
-export const showInfo = (title, text = '', userRole = "oracle", options = {}) => {
+export const showInfo = (title, text = '', userRole = "system administrator", options = {}) => {
   if (window.__SWEET_ALERT_INSTANCE__) {
     return window.__SWEET_ALERT_INSTANCE__.showInfo(title, text, userRole, options);
   }
@@ -714,7 +714,7 @@ export const showInfo = (title, text = '', userRole = "oracle", options = {}) =>
 };
 
 // Confirmation Dialog - Compact
-export const showConfirm = async (title, text = '', confirmText = 'Confirm', userRole = "oracle", options = {}) => {
+export const showConfirm = async (title, text = '', confirmText = 'Confirm', userRole = "system administrator", options = {}) => {
   if (window.__SWEET_ALERT_INSTANCE__) {
     return window.__SWEET_ALERT_INSTANCE__.showConfirm(title, text, confirmText, userRole, options);
   }
@@ -723,7 +723,7 @@ export const showConfirm = async (title, text = '', confirmText = 'Confirm', use
 };
 
 // Loading Alert - Compact
-export const showLoading = (title = 'Loading...', userRole = "oracle") => {
+export const showLoading = (title = 'Loading...', userRole = "system administrator") => {
   if (window.__SWEET_ALERT_INSTANCE__) {
     return window.__SWEET_ALERT_INSTANCE__.showLoading(title, userRole);
   }
@@ -732,7 +732,7 @@ export const showLoading = (title = 'Loading...', userRole = "oracle") => {
 };
 
 // Form Input Alert - Compact & responsive
-export const showInput = async (title, text, inputType = 'text', placeholder = '', userRole = "oracle", validationMessage = 'Please enter a value!') => {
+export const showInput = async (title, text, inputType = 'text', placeholder = '', userRole = "system administrator", validationMessage = 'Please enter a value!') => {
   if (window.__SWEET_ALERT_INSTANCE__) {
     return window.__SWEET_ALERT_INSTANCE__.showInput(title, text, inputType, placeholder, userRole, validationMessage);
   }
@@ -742,7 +742,7 @@ export const showInput = async (title, text, inputType = 'text', placeholder = '
 
 // Toast-style alerts - responsive layouts and width
 export const showToast = {
-  success: (message, userRole = "oracle") => {
+  success: (message, userRole = "system administrator") => {
     if (window.__SWEET_ALERT_INSTANCE__) {
       return window.__SWEET_ALERT_INSTANCE__.showToast.success(message, userRole);
     }
@@ -750,7 +750,7 @@ export const showToast = {
     return { close: () => {} };
   },
 
-  error: (message, userRole = "oracle") => {
+  error: (message, userRole = "system administrator") => {
     if (window.__SWEET_ALERT_INSTANCE__) {
       return window.__SWEET_ALERT_INSTANCE__.showToast.error(message, userRole);
     }
@@ -758,7 +758,7 @@ export const showToast = {
     return { close: () => {} };
   },
 
-  warning: (message, userRole = "oracle") => {
+  warning: (message, userRole = "system administrator") => {
     if (window.__SWEET_ALERT_INSTANCE__) {
       return window.__SWEET_ALERT_INSTANCE__.showToast.warning(message, userRole);
     }
@@ -766,7 +766,7 @@ export const showToast = {
     return { close: () => {} };
   },
 
-  info: (message, userRole = "oracle") => {
+  info: (message, userRole = "system administrator") => {
     if (window.__SWEET_ALERT_INSTANCE__) {
       return window.__SWEET_ALERT_INSTANCE__.showToast.info(message, userRole);
     }
@@ -776,7 +776,7 @@ export const showToast = {
 };
 
 // Custom Alert with HTML content - responsive
-export const showCustom = (options = {}, userRole = "oracle") => {
+export const showCustom = (options = {}, userRole = "system administrator") => {
   if (window.__SWEET_ALERT_INSTANCE__) {
     return window.__SWEET_ALERT_INSTANCE__.showCustom(options, userRole);
   }

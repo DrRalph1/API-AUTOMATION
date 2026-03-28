@@ -64,7 +64,7 @@ function PublicRoute({ children }) {
   }
 
   if (user) {
-    if (user.role === "oracle") return <Navigate to="/admin" replace />;
+    if (user.role === "system administrator") return <Navigate to="/admin" replace />;
     if (user.role === "user") return <Navigate to="/user" replace />;
     return <Navigate to="/" replace />;
   }
@@ -114,7 +114,7 @@ function RouteRedirect() {
   }
 
   if (user) {
-    if (user.role === "oracle") return <Navigate to="/admin" replace />;
+    if (user.role === "system administrator") return <Navigate to="/admin" replace />;
     if (user.role === "user") return <Navigate to="/user" replace />;
     return <Navigate to="/" replace />;
   }
@@ -134,7 +134,7 @@ function RoutesTree() {
 
       {/* Role-based routes */}
       <Route path="/admin" element={
-        <Protected roles={["oracle"]}>
+        <Protected roles={["system administrator"]}>
             <EntryPage /> {/* Replace with Admin-specific component */}
         </Protected>
       } />

@@ -136,7 +136,7 @@ export default function UserModal({
       showError(
         "Validation Error", 
         "Please fill all required fields correctly before submitting.",
-        "oracle",
+        "system administrator",
         { timer: 5000 }
       );
       return;
@@ -160,7 +160,7 @@ export default function UserModal({
       // Show loading alert
       const loadingAlert = showLoading(
         isEditing ? 'Updating user...' : 'Creating user...',
-        "oracle"
+        "system administrator"
       );
       
       setLocalLoading(true);
@@ -181,7 +181,7 @@ export default function UserModal({
         isEditing 
           ? 'User information has been updated successfully.'
           : 'New user has been created successfully.',
-        "oracle",
+        "system administrator",
         { timer: 3000 }
       );
       
@@ -198,7 +198,7 @@ export default function UserModal({
       showError(
         isEditing ? 'Update Failed' : 'Creation Failed',
         error.message || 'An unexpected error occurred. Please try again.',
-        "oracle",
+        "system administrator",
         { timer: 5000 }
       );
     } finally {
@@ -214,7 +214,7 @@ export default function UserModal({
       'Delete User',
       `Are you sure you want to delete user "${selectedUser.username}"? This action cannot be undone.`,
       'Delete',
-      "oracle",
+      "system administrator",
       { 
         cancelText: 'Cancel',
         timer: false 
@@ -229,7 +229,7 @@ export default function UserModal({
         showSuccess(
           'User Deleted',
           `User "${selectedUser.username}" has been deleted successfully.`,
-          "oracle",
+          "system administrator",
           { timer: 3000 }
         );
         
@@ -238,7 +238,7 @@ export default function UserModal({
         showError(
           'Delete Failed',
           error.message || 'Failed to delete user. Please try again.',
-          "oracle",
+          "system administrator",
           { timer: 5000 }
         );
       }

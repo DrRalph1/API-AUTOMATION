@@ -198,9 +198,9 @@ export default function Login() {
     clearPortalValidationError();
   }, [userType, userId]);
 
-  // Set Oracle as default when component mounts
+  // Set system administrator as default when component mounts
   useEffect(() => {
-    setUserType('oracle');
+    setUserType('system administrator');
   }, []);
 
   return (
