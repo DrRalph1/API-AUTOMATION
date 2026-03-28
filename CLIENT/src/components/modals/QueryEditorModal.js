@@ -1,4 +1,4 @@
-// QueryEditorModal.js (With Try It Out Feature and View Source)
+// QueryEditorModal.js (Complete working version with all constants)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { 
@@ -10,7 +10,7 @@ import {
   GripHorizontal, GripVertical, Maximize, Beaker, ArrowLeft
 } from 'lucide-react';
 
-// Database type configurations (same as before)
+// Database type configurations
 const DATABASE_CONFIGS = {
   postgresql: {
     name: 'PostgreSQL',
@@ -107,7 +107,7 @@ const DATABASE_CONFIGS = {
   },
 };
 
-// Object type templates (same as before)
+// Object type templates
 const OBJECT_TEMPLATES = {
   postgresql: {
     TABLE: (name, schema) => `-- DDL for table ${schema || 'public'}.${name}
@@ -262,15 +262,12 @@ END ${name};
 
 // Extract parameter names from procedure DDL
 const extractProcedureParams = (ddl, procedureName) => {
-  // This is a simple extraction - you may want to enhance this
   const params = {
     input: [],
     output: []
   };
   
-  // Try to extract from the DDL
   try {
-    // Find the procedure signature
     const procPattern = new RegExp(`PROCEDURE\\s+${procedureName}\\s*\\(([^)]+)\\)`, 'i');
     const match = ddl.match(procPattern);
     
@@ -279,7 +276,6 @@ const extractProcedureParams = (ddl, procedureName) => {
       const lines = paramStr.split('\n');
       
       for (let line of lines) {
-        // Match parameter patterns like "acct_link_vvv IN VARCHAR2" or "mess OUT VARCHAR2"
         const inParamMatch = line.match(/(\w+)\s+IN\s+(\w+)/i);
         const outParamMatch = line.match(/(\w+)\s+OUT\s+(\w+)/i);
         const inOutParamMatch = line.match(/(\w+)\s+IN\s+OUT\s+(\w+)/i);
@@ -302,18 +298,12 @@ const extractProcedureParams = (ddl, procedureName) => {
 };
 
 const generateProcedureTestCode = (objectName, schema, databaseType, currentDate, originalDDL = '') => {
-  // Extract parameters from original DDL if available
   const params = extractProcedureParams(originalDDL, objectName);
-  
-  // Create input parameter declarations based on actual parameter names
   let inputDeclarations = '';
-  let inputValues = '';
   let outputDeclarations = '';
-  let outputVariables = '';
   let callParams = '';
   
   if (databaseType === 'oracle') {
-    // Use parameter names from the original procedure if available
     const inputParams = params.input.length > 0 ? params.input : [
       { name: 'acct_link_vvv', type: 'VARCHAR2(20)' },
       { name: 'amt', type: 'NUMBER' },
@@ -337,7 +327,6 @@ const generateProcedureTestCode = (objectName, schema, databaseType, currentDate
       { name: 'batchNumber', type: 'VARCHAR2(20)' }
     ];
     
-    // Build declarations
     inputDeclarations = inputParams.map(p => 
       `    v_${p.name.padEnd(25)} ${p.type} := ${p.name.includes('amt') ? '1000.00' : p.name.includes('doc_ref') ? "'DOC_' || TO_CHAR(SYSDATE, 'YYYYMMDDHH24MISS')" : p.name.includes('link') ? "'000221059466'" : p.name.includes('post_by') ? "'UNIONADMIN'" : p.name.includes('trans_type') ? "'FTR'" : p.name.includes('channel') ? "'MOB'" : p.name.includes('api_secret') ? "'testPC'" : p.name.includes('tel') ? "'233123456789'" : p.name.includes('trans_by') ? "'CUSTOMER001'" : p.name.includes('batch') ? 'NULL' : p.name.includes('terminal') ? "'API'" : `'TEST_VALUE'`};`
     ).join('\n');
@@ -463,22 +452,18 @@ END $$;`;
   return `-- Test code for ${objectName} function`;
 };
 
-// Add this helper function to extract column names from CREATE TABLE DDL
 const extractTableColumns = (ddl) => {
   const columns = [];
   
   try {
-    // Match the column definitions between CREATE TABLE ... ( and );
     const createTableMatch = ddl.match(/CREATE\s+TABLE\s+[\w.]+[\s\S]*?\(([\s\S]*?)\)\s*;/i);
     
     if (createTableMatch && createTableMatch[1]) {
       const columnDefinitions = createTableMatch[1].split(',');
       
       for (let colDef of columnDefinitions) {
-        // Clean up the column definition
         colDef = colDef.trim();
         
-        // Skip constraint definitions (PRIMARY KEY, FOREIGN KEY, etc.)
         if (colDef.toUpperCase().startsWith('PRIMARY KEY') ||
             colDef.toUpperCase().startsWith('FOREIGN KEY') ||
             colDef.toUpperCase().startsWith('CONSTRAINT') ||
@@ -487,7 +472,6 @@ const extractTableColumns = (ddl) => {
           continue;
         }
         
-        // Extract column name (first word, but handle quoted identifiers)
         let columnName = '';
         const quotedMatch = colDef.match(/^"([^"]+)"/);
         const unquotedMatch = colDef.match(/^([a-zA-Z_][a-zA-Z0-9_]*)/);
@@ -499,7 +483,6 @@ const extractTableColumns = (ddl) => {
         }
         
         if (columnName) {
-          // Try to detect data type for generating appropriate test values
           let dataType = 'unknown';
           const typeMatch = colDef.match(/(?:VARCHAR|CHAR|TEXT|INTEGER|BIGINT|BOOLEAN|TIMESTAMP|DATE|JSONB|DOUBLE PRECISION)/i);
           if (typeMatch) {
@@ -522,12 +505,10 @@ const extractTableColumns = (ddl) => {
   return columns;
 };
 
-// Helper to generate appropriate test values based on column data type
 const generateTestValue = (column, index) => {
   const dataType = column.dataType;
   const name = column.name.toLowerCase();
   
-  // Generate meaningful test values based on column name patterns
   if (name.includes('id') && !name.includes('_at')) {
     return `'TEST_${Math.random().toString(36).substring(7).toUpperCase()}'`;
   }
@@ -545,7 +526,7 @@ const generateTestValue = (column, index) => {
   }
   if (name.includes('date') || name.includes('created_at') || name.includes('updated_at')) {
     if (column.hasDefault) {
-      return `DEFAULT`; // Use DEFAULT if column has default
+      return `DEFAULT`;
     }
     return `CURRENT_TIMESTAMP`;
   }
@@ -574,28 +555,19 @@ const generateTestValue = (column, index) => {
     return `'Test value for ${column.name}'`;
   }
   
-  // Default test value
   return `'test_value_${index + 1}'`;
 };
 
-// Updated generateTableTestCode with actual column extraction
 const generateTableTestCode = (objectName, schema, databaseType, currentDate, originalDDL = '') => {
   const columns = extractTableColumns(originalDDL);
   const hasColumns = columns.length > 0;
+  const columnList = hasColumns ? columns.map(col => col.name).join(', ') : '*';
   
-  // Generate column list for SELECT
-  const columnList = hasColumns 
-    ? columns.map(col => col.name).join(', ')
-    : '*';
-  
-  // Generate INSERT statement with actual column names
   let insertColumns = '';
   let insertValues = '';
   
   if (hasColumns) {
-    // Filter out columns with defaults or auto-generated ones
     const insertableColumns = columns.filter(col => {
-      // Skip columns that are auto-generated or have defaults for insert examples
       const nameLower = col.name.toLowerCase();
       return !col.hasDefault && 
              !nameLower.includes('id') && 
@@ -605,24 +577,20 @@ const generateTableTestCode = (objectName, schema, databaseType, currentDate, or
     });
     
     if (insertableColumns.length > 0) {
-      // Use first few columns (max 5) for the example
       const sampleColumns = insertableColumns.slice(0, 5);
       insertColumns = sampleColumns.map(col => col.name).join(', ');
       insertValues = sampleColumns.map((col, idx) => generateTestValue(col, idx)).join(', ');
     } else {
-      // Fallback to first 3 columns if all have defaults
       const sampleColumns = columns.slice(0, 3);
       insertColumns = sampleColumns.map(col => col.name).join(', ');
       insertValues = sampleColumns.map((col, idx) => generateTestValue(col, idx)).join(', ');
     }
   }
   
-  // Generate UPDATE statement with actual column names
   let updateColumn = '';
   let updateValue = '';
   
   if (hasColumns) {
-    // Find a non-ID, non-timestamp column for update example
     const updateableColumn = columns.find(col => {
       const nameLower = col.name.toLowerCase();
       return !nameLower.includes('id') && 
@@ -640,7 +608,6 @@ const generateTableTestCode = (objectName, schema, databaseType, currentDate, or
     }
   }
   
-  // Find a good WHERE condition column
   let whereColumn = 'id';
   let whereValue = "'some_id'";
   
@@ -658,7 +625,6 @@ const generateTableTestCode = (objectName, schema, databaseType, currentDate, or
     }
   }
   
-  // Generate the test code based on database type
   if (databaseType === 'oracle') {
     return `-- Test queries for table ${schema}.${objectName}
 
@@ -698,7 +664,6 @@ ${hasColumns ? `-- Available columns: ${columns.map(c => c.name).join(', ')}` : 
 -- SELECT * FROM ${schema}.${objectName} 
 -- WHERE ${hasColumns ? columns.find(c => c.name.toLowerCase().includes('status'))?.name || columns[0]?.name || 'column_name' : 'column_name'} = 'VALUE';`;
   } else {
-    // PostgreSQL and others
     return `-- Test queries for table ${schema}.${objectName}
 
 -- 1. View all records (first 10 rows)
@@ -742,69 +707,6 @@ ${hasColumns ? `-- Available columns: ${columns.map(c => c.name).join(', ')}` : 
 -- ORDER BY ${hasColumns ? columns.find(c => c.name.toLowerCase().includes('created_at'))?.name || columns.find(c => c.name.toLowerCase().includes('date'))?.name || 'created_at' : 'created_at'} DESC
 -- LIMIT 10;`;
   }
-};
-
-// Update the main generateTestCode function to pass the original DDL
-const generateTestCode = (objectType, objectName, schema, databaseType, originalDDL = '') => {
-  const dbConfig = DATABASE_CONFIGS[databaseType] || DATABASE_CONFIGS.postgresql;
-  const schemaName = schema || dbConfig.defaultSchema;
-  const currentDate = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '');
-  
-  switch(objectType?.toUpperCase()) {
-    case 'PROCEDURE':
-      return generateProcedureTestCode(objectName, schemaName, databaseType, currentDate, originalDDL);
-    case 'FUNCTION':
-      return generateFunctionTestCode(objectName, schemaName, databaseType, currentDate);
-    case 'TABLE':
-      return generateTableTestCode(objectName, schemaName, databaseType, currentDate, originalDDL);
-    case 'VIEW':
-      return generateViewTestCode(objectName, schemaName, databaseType, currentDate);
-    case 'PACKAGE':
-      return generatePackageTestCode(objectName, schemaName, databaseType, currentDate);
-    case 'TRIGGER':
-      return generateTriggerTestCode(objectName, schemaName, databaseType, currentDate);
-    default:
-      return generateGenericTestCode(objectName, schemaName, databaseType, currentDate);
-  }
-};
-
-// Update the handleTryItOut function to pass the DDL
-const handleTryItOut = () => {
-  if (!selectedObject) return;
-  
-  const testCode = generateTestCode(
-    selectedObject.type,
-    selectedObject.name,
-    selectedObject.schema || selectedObject.owner,
-    databaseType,
-    objectInfo?.ddl || ''  // Pass the original DDL
-  );
-  
-  // Save current selection before replacing
-  saveSelection();
-  setEditorContent(testCode);
-  addToHistory(testCode);
-  setIsTestMode(true);
-  
-  // Show a temporary notification with column count for tables
-  let notificationMessage = `✓ Test code generated for ${selectedObject.type}: ${selectedObject.name}`;
-  if (selectedObject.type?.toUpperCase() === 'TABLE') {
-    const columns = extractTableColumns(objectInfo?.ddl || '');
-    if (columns.length > 0) {
-      notificationMessage += ` (${columns.length} columns detected)`;
-    }
-  }
-  
-  setCompilationResult({
-    success: true,
-    message: notificationMessage,
-    output: 'You can now edit the parameters and execute the code. Click "View Source" to go back.',
-    error: null
-  });
-  
-  setTimeout(() => {
-    setCompilationResult(null);
-  }, 3000);
 };
 
 const generateViewTestCode = (objectName, schema, databaseType, currentDate) => {
@@ -879,7 +781,29 @@ databaseType === 'postgresql' ? `\\d+ ${schema}.${objectName}` :
 -- Write your test queries here`;
 };
 
-// Get object type icon
+const generateTestCode = (objectType, objectName, schema, databaseType, originalDDL = '') => {
+  const dbConfig = DATABASE_CONFIGS[databaseType] || DATABASE_CONFIGS.postgresql;
+  const schemaName = schema || dbConfig.defaultSchema;
+  const currentDate = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '');
+  
+  switch(objectType?.toUpperCase()) {
+    case 'PROCEDURE':
+      return generateProcedureTestCode(objectName, schemaName, databaseType, currentDate, originalDDL);
+    case 'FUNCTION':
+      return generateFunctionTestCode(objectName, schemaName, databaseType, currentDate);
+    case 'TABLE':
+      return generateTableTestCode(objectName, schemaName, databaseType, currentDate, originalDDL);
+    case 'VIEW':
+      return generateViewTestCode(objectName, schemaName, databaseType, currentDate);
+    case 'PACKAGE':
+      return generatePackageTestCode(objectName, schemaName, databaseType, currentDate);
+    case 'TRIGGER':
+      return generateTriggerTestCode(objectName, schemaName, databaseType, currentDate);
+    default:
+      return generateGenericTestCode(objectName, schemaName, databaseType, currentDate);
+  }
+};
+
 const getObjectIcon = (type, size = 16) => {
   switch(type?.toUpperCase()) {
     case 'TABLE': return <Table size={size} />;
@@ -919,6 +843,7 @@ const QueryEditorModal = ({
   const [mounted, setMounted] = useState(false);
   const [objectInfo, setObjectInfo] = useState(null);
   const [isTestMode, setIsTestMode] = useState(false);
+  const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
   
   // Modal resize state
   const [modalSize, setModalSize] = useState({
@@ -940,13 +865,16 @@ const QueryEditorModal = ({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [isUndoRedoAction, setIsUndoRedoAction] = useState(false);
   
+  // Refs
   const editorRef = useRef(null);
   const lineNumbersRef = useRef(null);
   const findInputRef = useRef(null);
+  const replaceInputRef = useRef(null);
   const textareaRef = useRef(null);
   const selectionStartRef = useRef(0);
   const selectionEndRef = useRef(0);
   const modalRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
   
   // Get database configuration
   const dbConfig = DATABASE_CONFIGS[databaseType] || DATABASE_CONFIGS.postgresql;
@@ -974,6 +902,158 @@ const QueryEditorModal = ({
     codeBg: theme === 'dark' ? 'rgb(13 17 23)' : '#f1f5f9'
   };
   
+  // Helper function to stop propagation for editor-specific keys
+  const stopPropagationForEditorKeys = (e) => {
+    const editorKeys = ['Tab', 'Enter', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'];
+    if (editorKeys.includes(e.key)) {
+      e.stopPropagation();
+    }
+  };
+  
+  // Perform search - without auto-focusing
+  const performSearch = useCallback((shouldHighlightFirstMatch = true) => {
+    if (!findText) {
+      setSearchMatches([]);
+      setSearchIndex(-1);
+      return;
+    }
+    
+    const content = editorContent;
+    let regex;
+    
+    try {
+      regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
+    } catch (e) {
+      return;
+    }
+    
+    const matches = [];
+    let match;
+    
+    while ((match = regex.exec(content)) !== null) {
+      matches.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        text: match[0]
+      });
+    }
+    
+    setSearchMatches(matches);
+    if (matches.length > 0) {
+      setSearchIndex(0);
+      if (shouldHighlightFirstMatch && !isSearchInputFocused) {
+        highlightMatchWithoutFocus(0);
+      }
+    } else {
+      setSearchIndex(-1);
+    }
+  }, [findText, editorContent, matchCase, isSearchInputFocused]);
+  
+  // Highlight match without stealing focus
+  const highlightMatchWithoutFocus = (index) => {
+    if (index < 0 || index >= searchMatches.length) return;
+    
+    const match = searchMatches[index];
+    if (textareaRef.current) {
+      textareaRef.current.setSelectionRange(match.start, match.end);
+      
+      const lines = editorContent.substring(0, match.start).split('\n');
+      const lineNumber = lines.length;
+      const lineHeight = editorFontSize * 1.5;
+      textareaRef.current.scrollTop = (lineNumber - 3) * lineHeight;
+    }
+  };
+  
+  // Highlight match with focus (for button clicks)
+  const highlightMatchWithFocus = (index) => {
+    if (index < 0 || index >= searchMatches.length) return;
+    
+    const match = searchMatches[index];
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.setSelectionRange(match.start, match.end);
+      
+      const lines = editorContent.substring(0, match.start).split('\n');
+      const lineNumber = lines.length;
+      const lineHeight = editorFontSize * 1.5;
+      textareaRef.current.scrollTop = (lineNumber - 3) * lineHeight;
+    }
+  };
+  
+  // Debounced search
+  const debouncedSearch = useCallback(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      performSearch(false);
+    }, 300);
+  }, [performSearch]);
+  
+  // Handle find text change
+  const handleFindTextChange = (e) => {
+    const newValue = e.target.value;
+    setFindText(newValue);
+    debouncedSearch();
+  };
+  
+  const handleReplaceTextChange = (e) => {
+    setReplaceText(e.target.value);
+  };
+  
+  const findNext = () => {
+    if (searchMatches.length === 0) return;
+    const nextIndex = (searchIndex + 1) % searchMatches.length;
+    setSearchIndex(nextIndex);
+    highlightMatchWithFocus(nextIndex);
+  };
+  
+  const findPrevious = () => {
+    if (searchMatches.length === 0) return;
+    const prevIndex = searchIndex - 1 < 0 ? searchMatches.length - 1 : searchIndex - 1;
+    setSearchIndex(prevIndex);
+    highlightMatchWithFocus(prevIndex);
+  };
+  
+  const replaceCurrent = () => {
+    if (searchIndex < 0 || searchIndex >= searchMatches.length) return;
+    
+    saveSelection();
+    const match = searchMatches[searchIndex];
+    const before = editorContent.substring(0, match.start);
+    const after = editorContent.substring(match.end);
+    const newContent = before + replaceText + after;
+    
+    setEditorContent(newContent);
+    addToHistory(newContent);
+    
+    setTimeout(() => {
+      performSearch(false);
+      restoreSelection();
+    }, 100);
+  };
+  
+  const replaceAll = () => {
+    if (!findText) return;
+    
+    saveSelection();
+    let regex;
+    try {
+      regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
+    } catch (e) {
+      return;
+    }
+    
+    const newContent = editorContent.replace(regex, replaceText);
+    setEditorContent(newContent);
+    addToHistory(newContent);
+    
+    setTimeout(() => {
+      performSearch(false);
+      restoreSelection();
+    }, 100);
+  };
+  
   // Handle modal resize start
   const handleResizeStart = (e, direction) => {
     e.preventDefault();
@@ -998,7 +1078,6 @@ const QueryEditorModal = ({
     let newWidth = resizeStartRef.current.width;
     let newHeight = resizeStartRef.current.height;
     
-    // Handle different resize directions
     if (resizeDirection === 'right') {
       newWidth = Math.min(Math.max(resizeStartRef.current.width + deltaX, 800), window.innerWidth - 100);
     } else if (resizeDirection === 'bottom') {
@@ -1109,15 +1188,14 @@ const QueryEditorModal = ({
     }
   }, [editorContent, showLineNumbers, editorFontSize]);
   
-  // Handle search
+  // Cleanup search timeout
   useEffect(() => {
-    if (findText) {
-      performSearch();
-    } else {
-      setSearchMatches([]);
-      setSearchIndex(-1);
-    }
-  }, [findText, editorContent, matchCase]);
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
   
   // Add to history
   const addToHistory = (content) => {
@@ -1258,110 +1336,6 @@ const QueryEditorModal = ({
     }
   };
   
-  const performSearch = () => {
-    if (!findText) {
-      setSearchMatches([]);
-      setSearchIndex(-1);
-      return;
-    }
-    
-    const content = editorContent;
-    let regex;
-    
-    try {
-      regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
-    } catch (e) {
-      return;
-    }
-    
-    const matches = [];
-    let match;
-    
-    while ((match = regex.exec(content)) !== null) {
-      matches.push({
-        start: match.index,
-        end: match.index + match[0].length,
-        text: match[0]
-      });
-    }
-    
-    setSearchMatches(matches);
-    if (matches.length > 0) {
-      setSearchIndex(0);
-      highlightMatch(0);
-    } else {
-      setSearchIndex(-1);
-    }
-  };
-  
-  const highlightMatch = (index) => {
-    if (index < 0 || index >= searchMatches.length) return;
-    
-    const match = searchMatches[index];
-    if (textareaRef.current) {
-      textareaRef.current.focus();
-      textareaRef.current.setSelectionRange(match.start, match.end);
-      
-      const lines = editorContent.substring(0, match.start).split('\n');
-      const lineNumber = lines.length;
-      const lineHeight = editorFontSize * 1.5;
-      textareaRef.current.scrollTop = (lineNumber - 3) * lineHeight;
-    }
-  };
-  
-  const findNext = () => {
-    if (searchMatches.length === 0) return;
-    const nextIndex = (searchIndex + 1) % searchMatches.length;
-    setSearchIndex(nextIndex);
-    highlightMatch(nextIndex);
-  };
-  
-  const findPrevious = () => {
-    if (searchMatches.length === 0) return;
-    const prevIndex = searchIndex - 1 < 0 ? searchMatches.length - 1 : searchIndex - 1;
-    setSearchIndex(prevIndex);
-    highlightMatch(prevIndex);
-  };
-  
-  const replaceCurrent = () => {
-    if (searchIndex < 0 || searchIndex >= searchMatches.length) return;
-    
-    saveSelection();
-    const match = searchMatches[searchIndex];
-    const before = editorContent.substring(0, match.start);
-    const after = editorContent.substring(match.end);
-    const newContent = before + replaceText + after;
-    
-    setEditorContent(newContent);
-    addToHistory(newContent);
-    
-    setTimeout(() => {
-      performSearch();
-      restoreSelection();
-    }, 100);
-  };
-  
-  const replaceAll = () => {
-    if (!findText) return;
-    
-    saveSelection();
-    let regex;
-    try {
-      regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
-    } catch (e) {
-      return;
-    }
-    
-    const newContent = editorContent.replace(regex, replaceText);
-    setEditorContent(newContent);
-    addToHistory(newContent);
-    
-    setTimeout(() => {
-      performSearch();
-      restoreSelection();
-    }, 100);
-  };
-  
   const loadObjectDDL = async () => {
     if (!authToken || !selectedObject) return;
     
@@ -1477,13 +1451,11 @@ const QueryEditorModal = ({
       objectInfo?.ddl || ''
     );
     
-    // Save current selection before replacing
     saveSelection();
     setEditorContent(testCode);
     addToHistory(testCode);
     setIsTestMode(true);
     
-    // Show a temporary notification
     setCompilationResult({
       success: true,
       message: `✓ Test code generated for ${selectedObject.type}: ${selectedObject.name}`,
@@ -1496,9 +1468,7 @@ const QueryEditorModal = ({
     }, 3000);
   };
   
-  // NEW: Get the SQL to execute based on selection
   const getSQLToExecute = () => {
-    // Check if there's a selection in the textarea
     if (textareaRef.current && 
         textareaRef.current.selectionStart !== textareaRef.current.selectionEnd) {
       
@@ -1506,9 +1476,7 @@ const QueryEditorModal = ({
       const end = textareaRef.current.selectionEnd;
       const selectedText = editorContent.substring(start, end);
       
-      // If the selected text is not empty and has meaningful content
       if (selectedText && selectedText.trim()) {
-        // Show a temporary notification that we're executing selected text
         setCompilationResult({
           success: true,
           message: `ℹ️ Executing selected text (${selectedText.split('\n').length} line(s))`,
@@ -1524,222 +1492,152 @@ const QueryEditorModal = ({
       }
     }
     
-    // No selection or empty selection, execute entire editor content
     return editorContent;
   };
   
   const handleCompile = async () => {
-  if (!authToken) return;
-  
-  const sqlToExecute = getSQLToExecute();
-  
-  if (!sqlToExecute.trim()) {
-    setCompilationResult({
-      success: false,
-      message: 'Execution failed',
-      error: 'No SQL statement to execute. Please select text or ensure the editor has content.',
-      output: ''
-    });
-    return;
-  }
-  
-  setIsCompiling(true);
-  setCompilationResult(null);
-  
-  try {
-    const executeSQL = dbConfig.executeSQL;
-    let trimmedSql = sqlToExecute.trim();
+    if (!authToken) return;
     
-    // Check if this is a SELECT query
-    const isSelectQuery = /^\s*SELECT\b/i.test(trimmedSql);
+    const sqlToExecute = getSQLToExecute();
     
-    // Check if this is a procedure/function definition (CREATE OR REPLACE)
-    const isObjectDefinition = /^\s*CREATE\s+(OR\s+REPLACE\s+)?(PROCEDURE|FUNCTION|PACKAGE|TYPE|TRIGGER|VIEW|MATERIALIZED\s+VIEW)/i.test(trimmedSql);
-    
-    // Check if this is a PL/SQL block (starts with DECLARE or BEGIN)
-    const isPLSQLBlock = /^\s*(DECLARE|BEGIN)/i.test(trimmedSql);
-    
-    // Check if this is a DDL statement
-    const isDDL = /^\s*(CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)/i.test(trimmedSql);
-    
-    // Check if this is a procedure/function without CREATE (just the body)
-    const isProcedureBody = /^\s*PROCEDURE\s+\w+/i.test(trimmedSql) && 
-                            !/^\s*CREATE/i.test(trimmedSql);
-    
-    let finalSql = sqlToExecute;
-    
-    // For procedure/function definitions without CREATE, add CREATE OR REPLACE
-    if (isProcedureBody && selectedObject?.type === 'PROCEDURE') {
-      finalSql = `CREATE OR REPLACE ${sqlToExecute}`;
+    if (!sqlToExecute.trim()) {
+      setCompilationResult({
+        success: false,
+        message: 'Execution failed',
+        error: 'No SQL statement to execute. Please select text or ensure the editor has content.',
+        output: ''
+      });
+      return;
     }
     
-    // For PL/SQL blocks, ensure they are properly terminated
-    if (isPLSQLBlock && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
-      finalSql = sqlToExecute + ';\n/';
-    }
+    setIsCompiling(true);
+    setCompilationResult(null);
     
-    console.log('Executing SQL:', {
-      hasSelection: textareaRef.current && textareaRef.current.selectionStart !== textareaRef.current.selectionEnd,
-      isSelectQuery,
-      isObjectDefinition,
-      isPLSQLBlock,
-      isDDL,
-      isProcedureBody,
-      sqlPreview: finalSql.substring(0, 200)
-    });
-    
-    const response = await executeSQL(authToken, {
-      sql: finalSql,
-      objectType: selectedObject?.type,
-      objectName: selectedObject?.name,
-      owner: selectedObject?.owner,
-      schema: selectedObject?.schema || selectedObject?.owner,
-      databaseType: databaseType,
-      readOnly: false
-    });
-    
-    // Process response for ALL database types
-    let success = false;
-    let message = '';
-    let output = '';
-    let error = null;
-    let rows = [];
-    let columns = [];
-    
-    console.log('Response received:', response);
-    
-    // Check if the response indicates an error structure
-    if (response && typeof response === 'object') {
-      // Check for success field directly in response (PostgreSQL style)
-      if (response.hasOwnProperty('success')) {
-        success = response.success === true;
-        message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
-        
-        // If this is a SELECT query and we have data, format it as JSON array
-        if (isSelectQuery && response.data && response.data.rows) {
-          rows = response.data.rows || [];
-          columns = response.data.columns || [];
+    try {
+      const executeSQL = dbConfig.executeSQL;
+      let trimmedSql = sqlToExecute.trim();
+      
+      const isSelectQuery = /^\s*SELECT\b/i.test(trimmedSql);
+      const isPLSQLBlock = /^\s*(DECLARE|BEGIN)/i.test(trimmedSql);
+      const isProcedureBody = /^\s*PROCEDURE\s+\w+/i.test(trimmedSql) && !/^\s*CREATE/i.test(trimmedSql);
+      
+      let finalSql = sqlToExecute;
+      
+      if (isProcedureBody && selectedObject?.type === 'PROCEDURE') {
+        finalSql = `CREATE OR REPLACE ${sqlToExecute}`;
+      }
+      
+      if (isPLSQLBlock && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
+        finalSql = sqlToExecute + ';\n/';
+      }
+      
+      const response = await executeSQL(authToken, {
+        sql: finalSql,
+        objectType: selectedObject?.type,
+        objectName: selectedObject?.name,
+        owner: selectedObject?.owner,
+        schema: selectedObject?.schema || selectedObject?.owner,
+        databaseType: databaseType,
+        readOnly: false
+      });
+      
+      let success = false;
+      let message = '';
+      let output = '';
+      let error = null;
+      
+      if (response && typeof response === 'object') {
+        if (response.hasOwnProperty('success')) {
+          success = response.success === true;
+          message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
           
-          if (rows.length > 0) {
-            // Format as JSON array like PostgreSQL does
-            output = JSON.stringify(rows, null, 2);
+          if (isSelectQuery && response.data && response.data.rows) {
+            if (response.data.rows.length > 0) {
+              output = JSON.stringify(response.data.rows, null, 2);
+            } else {
+              output = `${message}\n[]`;
+            }
           } else {
-            output = `${message}\n[]`;
+            output = response.output || response.data?.output || '';
           }
-        } else {
-          output = response.output || response.data?.output || '';
-        }
-        error = response.error || response.message || null;
-      }
-      // Check for responseCode field (Oracle style)
-      else if (response.hasOwnProperty('responseCode')) {
-        success = response.responseCode === 200;
-        message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
-        
-        // Extract data based on structure
-        if (response.data) {
-          if (typeof response.data === 'string') {
-            output = response.data;
-          } else if (response.data.ddl) {
-            output = response.data.ddl;
-          } else if (response.data.rows && response.data.rows.length > 0) {
-            // Oracle SELECT query response - format as JSON array
-            rows = response.data.rows;
-            columns = response.data.columns || (rows.length > 0 ? Object.keys(rows[0]) : []);
-            
-            // Format as JSON array like PostgreSQL does
-            output = JSON.stringify(rows, null, 2);
-          } else if (response.data.rows && response.data.rows.length === 0) {
-            // Empty result set
-            output = `${message}\n[]`;
-          } else if (response.data.output) {
-            output = response.data.output;
-          } else if (response.data.rowsAffected !== undefined) {
-            output = `${response.data.rowsAffected} row(s) affected`;
-          } else {
-            output = JSON.stringify(response.data, null, 2);
-          }
-        } else {
-          output = message;
-        }
-        error = response.error || null;
-      }
-      // Check for data object directly with rows/columns (Fallback)
-      else if (response.hasOwnProperty('data') && response.data && (response.data.hasOwnProperty('rows') || response.data.hasOwnProperty('rowCount'))) {
-        success = true;
-        message = response.message || 'Query executed successfully';
-        
-        if (response.data.rows && response.data.rows.length > 0) {
-          rows = response.data.rows;
-          columns = response.data.columns || (rows.length > 0 ? Object.keys(rows[0]) : []);
+          error = response.error || response.message || null;
+        } else if (response.hasOwnProperty('responseCode')) {
+          success = response.responseCode === 200;
+          message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
           
-          // Format as JSON array
-          output = JSON.stringify(rows, null, 2);
-        } else if (response.data.rowCount !== undefined) {
-          output = `${response.data.rowCount} row(s) returned\n[]`;
+          if (response.data) {
+            if (typeof response.data === 'string') {
+              output = response.data;
+            } else if (response.data.rows && response.data.rows.length > 0) {
+              output = JSON.stringify(response.data.rows, null, 2);
+            } else if (response.data.rows && response.data.rows.length === 0) {
+              output = `${message}\n[]`;
+            } else if (response.data.output) {
+              output = response.data.output;
+            } else if (response.data.rowsAffected !== undefined) {
+              output = `${response.data.rowsAffected} row(s) affected`;
+            } else {
+              output = JSON.stringify(response.data, null, 2);
+            }
+          } else {
+            output = message;
+          }
+          error = response.error || null;
+        } else if (response.hasOwnProperty('error') || response.hasOwnProperty('message')) {
+          success = false;
+          message = response.message || 'Execution failed';
+          error = response.error || response.message;
+          output = response.output || '';
         } else {
-          output = 'Query executed successfully\n[]';
+          success = true;
+          message = 'Execution completed successfully';
+          output = JSON.stringify(response, null, 2);
+          error = null;
         }
-        error = null;
-      }
-      // Check for error message in response
-      else if (response.hasOwnProperty('error') || response.hasOwnProperty('message')) {
-        success = false;
-        message = response.message || 'Execution failed';
-        error = response.error || response.message;
-        output = response.output || '';
-      }
-      // Default - try to treat as successful
-      else {
+      } else if (typeof response === 'string') {
         success = true;
         message = 'Execution completed successfully';
-        output = JSON.stringify(response, null, 2);
+        output = response;
+        error = null;
+      } else {
+        success = true;
+        message = 'Execution completed successfully';
+        output = String(response);
         error = null;
       }
-    } else if (typeof response === 'string') {
-      success = true;
-      message = 'Execution completed successfully';
-      output = response;
-      error = null;
-    } else {
-      success = true;
-      message = 'Execution completed successfully';
-      output = String(response);
-      error = null;
-    }
-    
-    setCompilationResult({
-      success: success,
-      message: message,
-      output: output || (success ? 'Statement executed successfully' : ''),
-      error: error
-    });
-    
-  } catch (error) {
-    console.error('Execution error:', error);
-    
-    let errorMessage = error.message || String(error);
-    let errorDetail = null;
-    
-    if (error.response && error.response.data) {
-      if (error.response.data.message) {
-        errorMessage = error.response.data.message;
-        errorDetail = error.response.data.error || error.response.data.detail;
-      } else if (error.response.data.error) {
-        errorMessage = error.response.data.error;
+      
+      setCompilationResult({
+        success: success,
+        message: message,
+        output: output || (success ? 'Statement executed successfully' : ''),
+        error: error
+      });
+      
+    } catch (error) {
+      console.error('Execution error:', error);
+      
+      let errorMessage = error.message || String(error);
+      let errorDetail = null;
+      
+      if (error.response && error.response.data) {
+        if (error.response.data.message) {
+          errorMessage = error.response.data.message;
+          errorDetail = error.response.data.error || error.response.data.detail;
+        } else if (error.response.data.error) {
+          errorMessage = error.response.data.error;
+        }
       }
+      
+      setCompilationResult({
+        success: false,
+        message: 'Execution failed',
+        error: errorMessage,
+        output: errorDetail || ''
+      });
+    } finally {
+      setIsCompiling(false);
     }
-    
-    setCompilationResult({
-      success: false,
-      message: 'Execution failed',
-      error: errorMessage,
-      output: errorDetail || ''
-    });
-  } finally {
-    setIsCompiling(false);
-  }
-};
+  };
   
   const handleSave = async () => {
     if (!authToken || !selectedObject) {
@@ -1899,7 +1797,6 @@ const QueryEditorModal = ({
     ? 'w-full h-full flex flex-col'
     : 'flex flex-col rounded-lg shadow-xl';
   
-  // Calculate editor height based on response panel height
   const editorContainerStyle = compilationResult ? {
     height: `calc(100% - ${responseHeight}px)`
   } : {
@@ -1925,19 +1822,16 @@ const QueryEditorModal = ({
         {/* Resize Handles */}
         {!isFullscreen && (
           <>
-            {/* Right edge handle */}
             <div
               className="absolute right-0 top-0 w-1 h-full cursor-ew-resize hover:bg-blue-500 transition-colors"
               style={{ backgroundColor: isResizing && resizeDirection === 'right' ? themeColors.info : 'transparent' }}
               onMouseDown={(e) => handleResizeStart(e, 'right')}
             />
-            {/* Bottom edge handle */}
             <div
               className="absolute bottom-0 left-0 w-full h-1 cursor-ns-resize hover:bg-blue-500 transition-colors"
               style={{ backgroundColor: isResizing && resizeDirection === 'bottom' ? themeColors.info : 'transparent' }}
               onMouseDown={(e) => handleResizeStart(e, 'bottom')}
             />
-            {/* Bottom-right corner handle */}
             <div
               className="absolute bottom-0 right-0 w-4 h-4 cursor-nw-resize hover:bg-blue-500 transition-colors rounded-bl"
               style={{ backgroundColor: isResizing && resizeDirection === 'bottom-right' ? themeColors.info : 'transparent' }}
@@ -2034,7 +1928,7 @@ const QueryEditorModal = ({
           </div>
         </div>
         
-        {/* Find/Replace Panel */}
+        {/* Find/Replace Panel - FINAL FIXED VERSION */}
         {showFindReplace && (
           <div 
             className="p-4 border-b"
@@ -2048,7 +1942,10 @@ const QueryEditorModal = ({
                     type="text"
                     placeholder="Find..."
                     value={findText}
-                    onChange={(e) => setFindText(e.target.value)}
+                    onChange={handleFindTextChange}
+                    onKeyDown={stopPropagationForEditorKeys}
+                    onFocus={() => setIsSearchInputFocused(true)}
+                    onBlur={() => setIsSearchInputFocused(false)}
                     className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none hover-lift"
                     style={{ 
                       backgroundColor: themeColors.card,
@@ -2057,10 +1954,14 @@ const QueryEditorModal = ({
                     }}
                   />
                   <input
+                    ref={replaceInputRef}
                     type="text"
                     placeholder="Replace with..."
                     value={replaceText}
-                    onChange={(e) => setReplaceText(e.target.value)}
+                    onChange={handleReplaceTextChange}
+                    onKeyDown={stopPropagationForEditorKeys}
+                    onFocus={() => setIsSearchInputFocused(true)}
+                    onBlur={() => setIsSearchInputFocused(false)}
                     className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none hover-lift"
                     style={{ 
                       backgroundColor: themeColors.card,
@@ -2127,7 +2028,7 @@ const QueryEditorModal = ({
           </div>
         )}
         
-        {/* Try It Out Button Bar - Replaces Snippets */}
+        {/* Try It Out Button Bar */}
         <div 
           className="flex items-center justify-between px-6 py-3 border-b overflow-x-auto shrink-0"
           style={{ borderColor: themeColors.border, backgroundColor: themeColors.hover }}
@@ -2209,7 +2110,6 @@ const QueryEditorModal = ({
               </div>
             ) : (
               <div className="flex h-full">
-                {/* Line Numbers */}
                 {showLineNumbers && (
                   <div
                     ref={lineNumbersRef}
@@ -2226,7 +2126,6 @@ const QueryEditorModal = ({
                   />
                 )}
                 
-                {/* Text Editor */}
                 <textarea
                   ref={textareaRef}
                   value={editorContent}
@@ -2257,7 +2156,6 @@ const QueryEditorModal = ({
           {/* Resizable Response Panel */}
           {compilationResult && (
             <>
-              {/* Drag Handle */}
               <div
                 className="flex items-center justify-center cursor-ns-resize hover:bg-opacity-20 transition-colors"
                 style={{
@@ -2276,7 +2174,6 @@ const QueryEditorModal = ({
                 </div>
               </div>
               
-              {/* Response Content */}
               <div
                 style={{
                   height: `${responseHeight}px`,
