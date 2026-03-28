@@ -911,43 +911,46 @@ const QueryEditorModal = ({
   };
   
   // Perform search - without auto-focusing
-  const performSearch = useCallback((shouldHighlightFirstMatch = true) => {
-    if (!findText) {
-      setSearchMatches([]);
-      setSearchIndex(-1);
-      return;
+  // Perform search - without auto-focusing
+const performSearch = useCallback((shouldHighlightFirstMatch = true) => {
+  if (!findText) {
+    setSearchMatches([]);
+    setSearchIndex(-1);
+    return;
+  }
+  
+  const content = editorContent;
+  let regex;
+  
+  try {
+    regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
+  } catch (e) {
+    setSearchMatches([]);
+    setSearchIndex(-1);
+    return;
+  }
+  
+  const matches = [];
+  let match;
+  
+  while ((match = regex.exec(content)) !== null) {
+    matches.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      text: match[0]
+    });
+  }
+  
+  setSearchMatches(matches);
+  if (matches.length > 0) {
+    setSearchIndex(0);
+    if (shouldHighlightFirstMatch && !isSearchInputFocused) {
+      highlightMatchWithoutFocus(0);
     }
-    
-    const content = editorContent;
-    let regex;
-    
-    try {
-      regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
-    } catch (e) {
-      return;
-    }
-    
-    const matches = [];
-    let match;
-    
-    while ((match = regex.exec(content)) !== null) {
-      matches.push({
-        start: match.index,
-        end: match.index + match[0].length,
-        text: match[0]
-      });
-    }
-    
-    setSearchMatches(matches);
-    if (matches.length > 0) {
-      setSearchIndex(0);
-      if (shouldHighlightFirstMatch && !isSearchInputFocused) {
-        highlightMatchWithoutFocus(0);
-      }
-    } else {
-      setSearchIndex(-1);
-    }
-  }, [findText, editorContent, matchCase, isSearchInputFocused]);
+  } else {
+    setSearchIndex(-1);
+  }
+}, [findText, editorContent, matchCase, isSearchInputFocused]);
   
   // Highlight match without stealing focus
   const highlightMatchWithoutFocus = (index) => {
@@ -1015,44 +1018,111 @@ const QueryEditorModal = ({
     highlightMatchWithFocus(prevIndex);
   };
   
-  const replaceCurrent = () => {
-    if (searchIndex < 0 || searchIndex >= searchMatches.length) return;
-    
-    saveSelection();
-    const match = searchMatches[searchIndex];
-    const before = editorContent.substring(0, match.start);
-    const after = editorContent.substring(match.end);
-    const newContent = before + replaceText + after;
-    
-    setEditorContent(newContent);
-    addToHistory(newContent);
-    
-    setTimeout(() => {
-      performSearch(false);
-      restoreSelection();
-    }, 100);
-  };
+ const replaceCurrent = () => {
+  if (searchIndex < 0 || searchIndex >= searchMatches.length) return;
   
-  const replaceAll = () => {
-    if (!findText) return;
+  saveSelection();
+  const match = searchMatches[searchIndex];
+  const before = editorContent.substring(0, match.start);
+  const after = editorContent.substring(match.end);
+  const newContent = before + replaceText + after;
+  
+  setEditorContent(newContent);
+  addToHistory(newContent);
+  
+  // Reset search and perform new search with the updated content
+  setTimeout(() => {
+    // Clear existing matches
+    setSearchMatches([]);
+    setSearchIndex(-1);
     
-    saveSelection();
-    let regex;
-    try {
-      regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
-    } catch (e) {
-      return;
+    // Perform new search with the same find text
+    if (findText) {
+      // Re-calculate matches with the new content
+      let regex;
+      try {
+        regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
+      } catch (e) {
+        return;
+      }
+      
+      const newMatches = [];
+      let match;
+      const content = newContent;
+      
+      while ((match = regex.exec(content)) !== null) {
+        newMatches.push({
+          start: match.index,
+          end: match.index + match[0].length,
+          text: match[0]
+        });
+      }
+      
+      setSearchMatches(newMatches);
+      if (newMatches.length > 0) {
+        setSearchIndex(0);
+        if (!isSearchInputFocused) {
+          highlightMatchWithoutFocus(0);
+        }
+      }
     }
     
-    const newContent = editorContent.replace(regex, replaceText);
-    setEditorContent(newContent);
-    addToHistory(newContent);
+    restoreSelection();
+  }, 50);
+};
+
+const replaceAll = () => {
+  if (!findText) return;
+  
+  saveSelection();
+  let regex;
+  try {
+    regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
+  } catch (e) {
+    return;
+  }
+  
+  const newContent = editorContent.replace(regex, replaceText);
+  setEditorContent(newContent);
+  addToHistory(newContent);
+  
+  // Reset search state
+  setSearchMatches([]);
+  setSearchIndex(-1);
+  
+  // Perform new search with the updated content
+  setTimeout(() => {
+    if (findText) {
+      let newRegex;
+      try {
+        newRegex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
+      } catch (e) {
+        return;
+      }
+      
+      const newMatches = [];
+      let match;
+      
+      while ((match = newRegex.exec(newContent)) !== null) {
+        newMatches.push({
+          start: match.index,
+          end: match.index + match[0].length,
+          text: match[0]
+        });
+      }
+      
+      setSearchMatches(newMatches);
+      if (newMatches.length > 0) {
+        setSearchIndex(0);
+        if (!isSearchInputFocused) {
+          highlightMatchWithoutFocus(0);
+        }
+      }
+    }
     
-    setTimeout(() => {
-      performSearch(false);
-      restoreSelection();
-    }, 100);
-  };
+    restoreSelection();
+  }, 50);
+};
   
   // Handle modal resize start
   const handleResizeStart = (e, direction) => {
