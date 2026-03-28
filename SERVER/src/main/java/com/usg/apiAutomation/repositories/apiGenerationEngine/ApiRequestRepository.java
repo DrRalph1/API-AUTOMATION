@@ -160,6 +160,33 @@ public interface ApiRequestRepository extends JpaRepository<ApiRequestEntity, St
     @Query("SELECT r FROM ApiRequestEntity r WHERE r.retryCount > :threshold")
     List<ApiRequestEntity> findRequestsWithHighRetries(@Param("threshold") Integer threshold);
 
+    // Search with date range
+    @Query("SELECT r FROM ApiRequestEntity r WHERE " +
+            "(LOWER(r.requestName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
+            "LOWER(r.url) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
+            "LOWER(r.correlationId) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
+            "LOWER(r.errorMessage) LIKE LOWER(CONCAT('%', :searchTerm, '%'))) AND " +
+            "r.requestTimestamp BETWEEN :startDate AND :endDate")
+    Page<ApiRequestEntity> searchRequestsWithDateRange(
+            @Param("searchTerm") String searchTerm,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            Pageable pageable);
+
+    // Search by API ID with date range
+    @Query("SELECT r FROM ApiRequestEntity r WHERE " +
+            "r.generatedApi.id = :apiId AND " +
+            "(LOWER(r.requestName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
+            "LOWER(r.url) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
+            "LOWER(r.correlationId) LIKE LOWER(CONCAT('%', :searchTerm, '%'))) AND " +
+            "r.requestTimestamp BETWEEN :startDate AND :endDate")
+    Page<ApiRequestEntity> searchRequestsByApiIdWithDateRange(
+            @Param("apiId") String apiId,
+            @Param("searchTerm") String searchTerm,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            Pageable pageable);
+
     // =====================================================
     // JSONB Queries
     // =====================================================
@@ -303,5 +330,34 @@ public interface ApiRequestRepository extends JpaRepository<ApiRequestEntity, St
     List<ApiRequestEntity> findAllByGeneratedApiId(String apiId);
 
     List<ApiRequestEntity> findAllByRequestStatus(String requestStatus);
+
+
+    /**
+     * Find requests by status within a date range (paginated)
+     */
+    @Query("SELECT r FROM ApiRequestEntity r WHERE r.requestStatus = :requestStatus AND r.requestTimestamp BETWEEN :startDate AND :endDate")
+    Page<ApiRequestEntity> findByRequestStatusAndRequestTimestampBetween(
+            @Param("requestStatus") String requestStatus,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            Pageable pageable);
+
+    /**
+     * Find requests by status within a date range (unpaginated)
+     */
+    @Query("SELECT r FROM ApiRequestEntity r WHERE r.requestStatus = :requestStatus AND r.requestTimestamp BETWEEN :startDate AND :endDate")
+    List<ApiRequestEntity> findByRequestStatusAndRequestTimestampBetween(
+            @Param("requestStatus") String requestStatus,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    /**
+     * Find all requests within a date range (paginated)
+     */
+    @Query("SELECT r FROM ApiRequestEntity r WHERE r.requestTimestamp BETWEEN :startDate AND :endDate ORDER BY r.requestTimestamp DESC")
+    Page<ApiRequestEntity> findByRequestTimestampBetween(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            Pageable pageable);
 
 }

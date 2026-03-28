@@ -373,80 +373,249 @@ public class ApiRequestService {
     public Page<ApiRequestResponseDTO> searchRequests(String requestId, ApiRequestFilterDTO filter) {
         try {
             Pageable pageable = createPageableFromFilter(filter);
-            Page<ApiRequestEntity> requestsPage;
 
-            if (filter.getApiId() != null && !filter.getApiId().isEmpty()) {
-                if (filter.getFromDate() != null && filter.getToDate() != null) {
-                    // Complex query with date range
-                    List<ApiRequestEntity> requests = apiRequestRepository.findApiRequestsByApiIdAndDateRange(
-                            filter.getApiId(),
+            // Check if we have a search term
+            boolean hasSearchTerm = filter.hasSearch();
+
+            // CASE 1: With search term
+            if (hasSearchTerm) {
+                String searchTerm = filter.getSearch().trim();
+
+                // 1a: Search with API ID
+                if (filter.getApiId() != null && !filter.getApiId().isEmpty()) {
+                    if (filter.hasDateRange()) {
+                        // Search with API ID and date range
+                        Page<ApiRequestEntity> searchPage = apiRequestRepository.searchRequestsByApiIdWithDateRange(
+                                filter.getApiId(),
+                                searchTerm,
+                                filter.getFromDate(),
+                                filter.getToDate(),
+                                pageable
+                        );
+
+                        // Get all requests for summary
+                        List<ApiRequestEntity> allRequests = apiRequestRepository.searchRequestsByApiIdWithDateRange(
+                                filter.getApiId(),
+                                searchTerm,
+                                filter.getFromDate(),
+                                filter.getToDate(),
+                                Pageable.unpaged()
+                        ).getContent();
+
+                        ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(allRequests);
+
+                        return searchPage.map(req -> {
+                            ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
+                            dto.setSummary(summary);
+                            return dto;
+                        });
+                    } else {
+                        // Search with API ID only
+                        Page<ApiRequestEntity> searchPage = apiRequestRepository.searchRequestsByApiId(
+                                filter.getApiId(),
+                                searchTerm,
+                                pageable
+                        );
+
+                        // Get all requests for summary
+                        List<ApiRequestEntity> allRequests = apiRequestRepository.searchRequestsByApiId(
+                                filter.getApiId(),
+                                searchTerm,
+                                Pageable.unpaged()
+                        ).getContent();
+
+                        ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(allRequests);
+
+                        return searchPage.map(req -> {
+                            ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
+                            dto.setSummary(summary);
+                            return dto;
+                        });
+                    }
+                }
+                // 1b: Search with date range only
+                else if (filter.hasDateRange()) {
+                    Page<ApiRequestEntity> searchPage = apiRequestRepository.searchRequestsWithDateRange(
+                            searchTerm,
                             filter.getFromDate(),
-                            filter.getToDate()
+                            filter.getToDate(),
+                            pageable
                     );
 
-                    // Calculate summary statistics for all requests (not just paginated)
-                    ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(requests);
+                    // Get all requests for summary
+                    List<ApiRequestEntity> allRequests = apiRequestRepository.searchRequestsWithDateRange(
+                            searchTerm,
+                            filter.getFromDate(),
+                            filter.getToDate(),
+                            Pageable.unpaged()
+                    ).getContent();
 
-                    // Manual pagination
-                    int start = (int) pageable.getOffset();
-                    int end = Math.min(start + pageable.getPageSize(), requests.size());
-                    List<ApiRequestEntity> pagedContent = start < requests.size() ?
-                            requests.subList(start, end) : new ArrayList<>();
+                    ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(allRequests);
 
-                    List<ApiRequestResponseDTO> dtoList = pagedContent.stream()
+                    return searchPage.map(req -> {
+                        ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
+                        dto.setSummary(summary);
+                        return dto;
+                    });
+                }
+                // 1c: Search only (no other filters)
+                else {
+                    Page<ApiRequestEntity> searchPage = apiRequestRepository.searchRequests(searchTerm, pageable);
+
+                    // Get all requests for summary
+                    List<ApiRequestEntity> allRequests = apiRequestRepository.searchRequests(
+                            searchTerm,
+                            Pageable.unpaged()
+                    ).getContent();
+
+                    ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(allRequests);
+
+                    return searchPage.map(req -> {
+                        ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
+                        dto.setSummary(summary);
+                        return dto;
+                    });
+                }
+            }
+
+            // CASE 2: No search term - use existing filtering logic
+            else {
+                // 2a: Filter by API ID with date range
+                if (filter.getApiId() != null && !filter.getApiId().isEmpty()) {
+                    if (filter.hasDateRange()) {
+                        List<ApiRequestEntity> requests = apiRequestRepository.findApiRequestsByApiIdAndDateRange(
+                                filter.getApiId(),
+                                filter.getFromDate(),
+                                filter.getToDate()
+                        );
+
+                        ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(requests);
+
+                        int start = (int) pageable.getOffset();
+                        int end = Math.min(start + pageable.getPageSize(), requests.size());
+                        List<ApiRequestEntity> pagedContent = start < requests.size() ?
+                                requests.subList(start, end) : new ArrayList<>();
+
+                        List<ApiRequestResponseDTO> dtoList = pagedContent.stream()
+                                .map(req -> {
+                                    ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
+                                    dto.setSummary(summary);
+                                    return dto;
+                                })
+                                .collect(Collectors.toList());
+
+                        return new org.springframework.data.domain.PageImpl<>(dtoList, pageable, requests.size());
+                    } else {
+                        Page<ApiRequestEntity> requestsPage = apiRequestRepository.findByGeneratedApiId(filter.getApiId(), pageable);
+
+                        List<ApiRequestEntity> allRequests = apiRequestRepository.findAllByGeneratedApiId(filter.getApiId());
+                        ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(allRequests);
+
+                        return requestsPage.map(req -> {
+                            ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
+                            dto.setSummary(summary);
+                            return dto;
+                        });
+                    }
+                }
+                // 2b: Filter by request status
+                else if (filter.getRequestStatus() != null) {
+                    Page<ApiRequestEntity> requestsPage;
+                    List<ApiRequestEntity> allRequests;
+
+                    if (filter.hasDateRange()) {
+                        // Use status + date range
+                        requestsPage = apiRequestRepository.findByRequestStatusAndRequestTimestampBetween(
+                                filter.getRequestStatus(),
+                                filter.getFromDate(),
+                                filter.getToDate(),
+                                pageable
+                        );
+
+                        allRequests = apiRequestRepository.findByRequestStatusAndRequestTimestampBetween(
+                                filter.getRequestStatus(),
+                                filter.getFromDate(),
+                                filter.getToDate(),
+                                Pageable.unpaged()
+                        ).getContent();
+                    } else {
+                        requestsPage = apiRequestRepository.findByRequestStatus(filter.getRequestStatus(), pageable);
+                        allRequests = apiRequestRepository.findAllByRequestStatus(filter.getRequestStatus());
+                    }
+
+                    ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(allRequests);
+
+                    return requestsPage.map(req -> {
+                        ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
+                        dto.setSummary(summary);
+                        return dto;
+                    });
+                }
+                // 2c: Filter by correlation ID
+                else if (filter.getCorrelationId() != null) {
+                    Optional<ApiRequestEntity> request = apiRequestRepository.findByCorrelationId(filter.getCorrelationId());
+                    List<ApiRequestEntity> requestList = request.map(List::of).orElseGet(List::of);
+
+                    // Apply date range filter to the single request if needed
+                    if (filter.hasDateRange() && request.isPresent()) {
+                        LocalDateTime reqTime = request.get().getRequestTimestamp();
+                        if (reqTime != null && (reqTime.isBefore(filter.getFromDate()) || reqTime.isAfter(filter.getToDate()))) {
+                            requestList = Collections.emptyList();
+                        }
+                    }
+
+                    ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(requestList);
+
+                    List<ApiRequestResponseDTO> dtoList = requestList.stream()
                             .map(req -> {
                                 ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
-                                dto.setSummary(summary); // Set the same summary for all items
+                                dto.setSummary(summary);
                                 return dto;
                             })
                             .collect(Collectors.toList());
 
-                    return new org.springframework.data.domain.PageImpl<>(dtoList, pageable, requests.size());
-                } else {
-                    // Simple query by API ID
-                    requestsPage = apiRequestRepository.findByGeneratedApiId(filter.getApiId(), pageable);
+                    return new org.springframework.data.domain.PageImpl<>(dtoList, pageable, requestList.size());
                 }
-            } else if (filter.getRequestStatus() != null) {
-                requestsPage = apiRequestRepository.findByRequestStatus(filter.getRequestStatus(), pageable);
-            } else if (filter.getCorrelationId() != null) {
-                Optional<ApiRequestEntity> request = apiRequestRepository.findByCorrelationId(filter.getCorrelationId());
-                List<ApiRequestEntity> requestList = request.map(List::of).orElseGet(List::of);
+                // 2d: No specific filters (just date range or all requests)
+                else {
+                    Page<ApiRequestEntity> requestsPage;
+                    List<ApiRequestEntity> allRequests;
 
-                // Calculate summary for single request
-                ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(requestList);
+                    // Check if we have a date range
+                    if (filter.hasDateRange()) {
+                        // Use date range to filter
+                        requestsPage = apiRequestRepository.findByRequestTimestampBetween(
+                                filter.getFromDate(),
+                                filter.getToDate(),
+                                pageable
+                        );
 
-                List<ApiRequestResponseDTO> dtoList = requestList.stream()
-                        .map(req -> {
-                            ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
-                            dto.setSummary(summary);
-                            return dto;
-                        })
-                        .collect(Collectors.toList());
+                        // Get all requests within date range for summary
+                        allRequests = apiRequestRepository.findByRequestTimestampBetween(
+                                filter.getFromDate(),
+                                filter.getToDate(),
+                                Pageable.unpaged()
+                        ).getContent();
+                    } else {
+                        // No date range - get all requests
+                        requestsPage = apiRequestRepository.findAllByOrderByRequestTimestampDesc(pageable);
+                        allRequests = apiRequestRepository.findAll();
+                    }
 
-                return new org.springframework.data.domain.PageImpl<>(dtoList, pageable, requestList.size());
-            } else {
-                requestsPage = apiRequestRepository.findAllByOrderByRequestTimestampDesc(pageable);
+                    ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(allRequests);
+
+                    return requestsPage.map(req -> {
+                        ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
+                        dto.setSummary(summary);
+                        return dto;
+                    });
+                }
             }
-
-            // For paginated results, we need to get all requests to calculate accurate summary
-            // This might be expensive - consider a separate query for summary stats
-            if (requestsPage != null && requestsPage.hasContent()) {
-                // Get all requests for this API/filter to calculate accurate summary
-                List<ApiRequestEntity> allRequests = fetchAllRequestsForSummary(filter);
-                ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(allRequests);
-
-                return requestsPage.map(req -> {
-                    ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
-                    dto.setSummary(summary);
-                    return dto;
-                });
-            }
-
-            return new org.springframework.data.domain.PageImpl<>(new ArrayList<>(), pageable, 0);
 
         } catch (Exception e) {
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Error searching requests: " + e.getMessage());
+            log.error("Error searching requests", e);
             throw new RuntimeException("Failed to search requests: " + e.getMessage(), e);
         }
     }

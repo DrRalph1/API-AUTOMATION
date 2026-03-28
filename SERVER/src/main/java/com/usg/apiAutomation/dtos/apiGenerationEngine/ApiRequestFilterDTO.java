@@ -26,6 +26,9 @@ public class ApiRequestFilterDTO {
     private List<Integer> responseStatusCodes;
     private String correlationId;
 
+    // ADD THIS - Search term for full-text search
+    private String search;  // This will search across requestName, url, correlationId, etc.
+
     // =====================================================
     // Date Range Filters
     // =====================================================
@@ -105,5 +108,10 @@ public class ApiRequestFilterDTO {
 
     public boolean hasSorting() {
         return sortBy != null && !sortBy.isEmpty();
+    }
+
+    // Add helper for search
+    public boolean hasSearch() {
+        return search != null && !search.trim().isEmpty();
     }
 }
