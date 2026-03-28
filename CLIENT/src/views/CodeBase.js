@@ -1024,7 +1024,7 @@ const fetchImplementationDetails = useCallback(async (collectionId, requestId, l
     }
   }, [authToken]);
 
-  // Load all implementations for a request
+ // Load all implementations for a request
 const fetchAllImplementations = useCallback(async (collectionId, requestId) => {
   console.log(`📡 [CodeBase] Fetching all implementations for request ${requestId}`);
   
@@ -1040,25 +1040,53 @@ const fetchAllImplementations = useCallback(async (collectionId, requestId) => {
     const handledResponse = handleCodebaseResponse(response);
     const allImplData = extractAllImplementations(handledResponse);
     
+    console.log('📊 [CodeBase] Extracted all implementations data:', allImplData);
+    
     if (allImplData && allImplData.implementations) {
-      // Transform the data structure - each language has a "main" property
       const transformedImplementations = {};
       
       Object.entries(allImplData.implementations).forEach(([language, implData]) => {
-        // For each language, map its components (like "main") to the component names
+        console.log(`🔄 [CodeBase] Processing language: ${language}`, implData);
         transformedImplementations[language] = {};
         
-        Object.entries(implData).forEach(([componentKey, code]) => {
-          // Map the component key (e.g., "main", "controller", etc.) to the code
-          // If it's "main", we might want to map it to a standard component like "controller"
-          const componentName = componentKey === 'main' ? 'controller' : componentKey;
-          transformedImplementations[language][componentName] = code;
-        });
+        if (typeof implData === 'string') {
+          // Single string implementation - treat as controller
+          transformedImplementations[language]['controller'] = implData;
+        } 
+        else if (typeof implData === 'object' && implData !== null) {
+          Object.entries(implData).forEach(([componentKey, code]) => {
+            // PRESERVE EXISTING BEHAVIOR: If it's already a standard component name, keep it
+            const standardComponents = ['controller', 'service', 'repository', 'model', 'dto', 
+                                        'routes', 'config', 'handler', 'schemas', 'services'];
+            
+            let standardComponent = componentKey;
+            
+            // ONLY map if it's NOT already a standard component name
+            // AND if it contains "api_" (which indicates it's from an updated endpoint)
+            if (!standardComponents.includes(componentKey.toLowerCase()) && componentKey.includes('api_')) {
+              // This is an updated endpoint with generated component name
+              // Map it to "controller" since it's likely the main implementation
+              standardComponent = 'controller';
+              console.log(`📝 [CodeBase] Updated endpoint detected: mapping "${componentKey}" -> "controller" for ${language}`);
+            } 
+            // Keep existing component names as-is (for freshly created endpoints)
+            else {
+              console.log(`✅ [CodeBase] Keeping original component name: ${componentKey} for ${language}`);
+            }
+            
+            transformedImplementations[language][standardComponent] = code;
+          });
+        }
       });
       
+      console.log('✅ [CodeBase] Final implementations:', 
+        Object.keys(transformedImplementations).map(lang => ({
+          language: lang,
+          components: Object.keys(transformedImplementations[lang])
+        }))
+      );
+      
       setAllImplementations(transformedImplementations);
-      console.log('📊 [CodeBase] Loaded and transformed implementations:', 
-        Object.keys(transformedImplementations));
       
       // Update current implementation if we have data for selected language
       if (selectedLanguage && transformedImplementations[selectedLanguage]) {
@@ -1066,12 +1094,30 @@ const fetchAllImplementations = useCallback(async (collectionId, requestId) => {
           ...prev,
           [selectedLanguage]: transformedImplementations[selectedLanguage]
         }));
+        
+        // Check if we have controller implementation (either from mapping or original)
+        if (transformedImplementations[selectedLanguage]['controller']) {
+          console.log(`✅ [CodeBase] Controller implementation available for ${selectedLanguage}`);
+        } else {
+          // If no controller, use the first available component
+          const firstComponent = Object.keys(transformedImplementations[selectedLanguage])[0];
+          if (firstComponent) {
+            console.log(`⚠️ [CodeBase] No controller, using ${firstComponent} instead`);
+            // Optionally map the first component to controller for display
+            setCurrentImplementation(prev => ({
+              ...prev,
+              [selectedLanguage]: {
+                ...prev[selectedLanguage],
+                controller: transformedImplementations[selectedLanguage][firstComponent]
+              }
+            }));
+          }
+        }
       }
     }
     
   } catch (error) {
     console.error('❌ [CodeBase] Error loading all implementations:', error);
-    // Don't show toast for this as it's not critical
   }
 }, [authToken, selectedLanguage]);
 
@@ -1347,37 +1393,26 @@ const handleSelectRequest = async (request, collection, folder) => {
   };
 
   const getAvailableComponents = () => {
-    // First check components from current implementation
-    const implementation = getCurrentImplementation();
-    const componentsFromImpl = Object.keys(implementation);
-    
-    if (componentsFromImpl.length > 0) {
-      return componentsFromImpl;
-    }
-    
-    // Use controller's getSupportedComponents for selected language
-    const supportedComponents = getSupportedComponents(selectedLanguage);
-    
-    if (supportedComponents && supportedComponents.length > 0) {
-      return supportedComponents.map(comp => comp.value);
-    }
-    
-    // Fallback to common components based on language
-    const componentMap = {
-      java: ['controller', 'service', 'repository', 'model', 'dto'],
-      javascript: ['controller', 'service', 'model', 'routes'],
-      python: ['fastapi', 'schemas', 'models', 'routes'],
-      csharp: ['controller', 'service', 'model', 'repository'],
-      php: ['controller', 'service', 'model'],
-      go: ['handler', 'service', 'model'],
-      ruby: ['controller', 'service', 'model'],
-      kotlin: ['controller', 'service', 'model'],
-      swift: ['controller', 'service', 'model'],
-      rust: ['handler', 'service', 'model']
-    };
-    
-    return componentMap[selectedLanguage] || ['controller', 'service', 'model'];
-  };
+  // First check components from current implementation
+  const implementation = getCurrentImplementation();
+  let componentsFromImpl = Object.keys(implementation);
+  
+  // If we have components from implementation, use them
+  if (componentsFromImpl.length > 0) {
+    console.log(`📦 [CodeBase] Available components from implementation:`, componentsFromImpl);
+    return componentsFromImpl;
+  }
+  
+  // Otherwise, use supported components for the language
+  const supportedComponents = getSupportedComponents(selectedLanguage);
+  
+  if (supportedComponents && supportedComponents.length > 0) {
+    return supportedComponents.map(comp => comp.value);
+  }
+  
+  // Fallback components
+  return ['controller', 'service', 'model'];
+};
 
   const getLanguageIcon = (language) => {
     const icons = {

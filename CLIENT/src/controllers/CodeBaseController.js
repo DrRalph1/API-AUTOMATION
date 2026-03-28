@@ -470,16 +470,26 @@ export const extractImplementationDetails = (response) => {
   
   const details = response.data;
   
+  // Determine if this is an updated endpoint or fresh endpoint
+  let componentName = details.component;
+  const standardComponents = ['controller', 'service', 'repository', 'model', 'dto', 'routes', 'config'];
+  
+  // Only map if it's NOT a standard component AND it contains "api_"
+  if (!standardComponents.includes(componentName?.toLowerCase()) && componentName?.includes('api_')) {
+    console.log(`🔄 [Extract] Mapping updated endpoint component "${componentName}" -> "controller"`);
+    componentName = 'controller';
+  }
+  
   return {
     language: details.language,
-    component: details.component,
+    component: componentName,
+    originalComponent: details.component, // Keep for debugging
     requestId: details.requestId,
     collectionId: details.collectionId,
     code: details.code || details.snippet || details.implementation,
     fileName: details.fileName,
     languageInfo: details.languageInfo || {},
     success: details.success !== undefined ? details.success : (details.code !== undefined),
-    // Add these fields to handle the "not found" case
     notFound: details.notFound === true,
     status: details.status,
     fileSize: details.fileSize,
