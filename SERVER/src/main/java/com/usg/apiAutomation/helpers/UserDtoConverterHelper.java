@@ -36,6 +36,7 @@ public class UserDtoConverterHelper {
         dto.setId(userEntity.getUserId());
         dto.setUsername(userEntity.getUsername());
         dto.setEmail(userEntity.getEmailAddress());
+        dto.setPhoneNumber(userEntity.getPhoneNumber());
         dto.setFullName(userEntity.getFullName());
         dto.setRole(roleEntity != null ? roleEntity.getRoleName() : null);
         dto.setStatus(userEntity.getIsActive() ? "active" : "inactive");

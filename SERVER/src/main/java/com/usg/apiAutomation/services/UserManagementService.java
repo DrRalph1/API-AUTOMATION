@@ -175,6 +175,7 @@ public class UserManagementService {
             response.setId(userDto.getId());
             response.setUsername(userDto.getUsername());
             response.setEmail(userDto.getEmail());
+            response.setPhoneNumber(userDto.getPhoneNumber());
             response.setFullName(userDto.getFullName());
             response.setRole(userDto.getRole());
             response.setStatus(userDto.getStatus());
@@ -378,6 +379,7 @@ public class UserManagementService {
             }
 
             user.setLastModifiedDate(LocalDateTime.now());
+            user.setPhoneNumber(request.getPhoneNumber());
             userRepository.save(user);
 
             // Log the update

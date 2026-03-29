@@ -429,6 +429,7 @@ export const extractUserDetails = (response) => {
     id: details.id || details.userId,
     username: details.username,
     email: details.email,
+    phoneNumber: details.phoneNumber,
     fullName: details.fullName,
     roleId: details.roleId || details.role,
     roleName: details.roleName,

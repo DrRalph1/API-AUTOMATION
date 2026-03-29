@@ -13,6 +13,7 @@ public class UserDetailsResponseDTO {
     private String id;
     private String username;
     private String email;
+    private String phoneNumber;
     private String fullName;
     private String role;
     private String status;
