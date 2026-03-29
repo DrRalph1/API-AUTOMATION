@@ -45,6 +45,7 @@ const MOCK_COLLECTIONS = [
       { id: 'core-api-investments', name: 'Investments', description: 'Investment products, portfolio management, and trading operations'},
       { id: 'core-api-accounts', name: 'Accounts', description: 'Deposit accounts, savings, and current accounts' },
       { id: 'core-api-customers', name: 'Customers', description: 'Customer onboarding and profile management' },
+      { id: 'core-api-notifications', name: 'Notifications', description: 'Send and manage user notifications, alerts, and messages' },
       { id: 'core-api-transactions', name: 'Transactions', description: 'Financial transactions and history' },
       { id: 'core-api-cards', name: 'Cards', description: 'Debit and credit card management' },
       { id: 'core-api-trade-finance', name: 'Trade Finance', description: 'Letters of credit, guarantees, and collections' },

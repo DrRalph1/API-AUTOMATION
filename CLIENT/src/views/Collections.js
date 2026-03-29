@@ -2214,8 +2214,23 @@ const deletePathParam = (id) => {
   });
 };
 
-  // Update the renderCollectionsTree function to ensure it displays sorted data
-  const renderCollectionsTree = () => {
+ // Helper function to check if a collection or folder has any endpoints (requests)
+const hasEndpoints = useCallback((item) => {
+  // Check if it's a folder with requests
+  if (item.requests && Array.isArray(item.requests) && item.requests.length > 0) {
+    return true;
+  }
+  
+  // Check if it's a collection with folders that have requests
+  if (item.folders && Array.isArray(item.folders)) {
+    return item.folders.some(folder => hasEndpoints(folder));
+  }
+  
+  return false;
+}, []);
+
+// Updated renderCollectionsTree function - hides collections/folders without endpoints
+const renderCollectionsTree = () => {
   if (loading.collections || loading.initialLoad) {
     return (
       <div className="flex items-center justify-center h-32">
@@ -2252,11 +2267,14 @@ const deletePathParam = (id) => {
     );
   }
 
-  if (collections.length === 0) {
+  // Filter collections to only those with endpoints
+  const collectionsWithEndpoints = filteredCollections.filter(collection => hasEndpoints(collection));
+
+  if (collectionsWithEndpoints.length === 0) {
     return (
       <div className="p-4 text-center">
         <Folder size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-        <p className="text-sm" style={{ color: colors.text }}>No collections found</p>
+        <p className="text-sm" style={{ color: colors.text }}>No collections with endpoints found</p>
         <button 
           type="button"
           onClick={() => setShowCreateModal(true)}
@@ -2273,271 +2291,271 @@ const deletePathParam = (id) => {
   }
 
   // Ensure collections are sorted before rendering
-  const sortedCollections = sortAlphabetically(filteredCollections);
+  const sortedCollections = sortAlphabetically(collectionsWithEndpoints);
   
   return (
     <div className="flex-1 overflow-auto p-2">
-      {sortedCollections.map(collection => (
-        <div key={collection.id} className="mb-3">
-          <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
-            onClick={() => toggleCollection(collection.id)}
-            style={{ backgroundColor: colors.hover }}>
-            {collection.isExpanded ? (
-              <ChevronDown size={12} style={{ color: colors.textSecondary }} />
-            ) : (
-              <ChevronRight size={12} style={{ color: colors.textSecondary }} />
-            )}
-            <button type="button" onClick={(e) => {
-              e.stopPropagation();
-              toggleFavorite(collection.id);
-            }}>
-              {collection.isFavorite ? (
-                <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
+      {sortedCollections.map(collection => {
+        // Filter folders to only those with requests
+        const foldersWithEndpoints = (collection.folders || []).filter(folder => hasEndpoints(folder));
+        
+        // Skip rendering collection if no folders with endpoints after filtering
+        if (foldersWithEndpoints.length === 0 && !hasEndpoints(collection)) {
+          return null;
+        }
+        
+        return (
+          <div key={collection.id} className="mb-3">
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
+              onClick={() => toggleCollection(collection.id)}
+              style={{ backgroundColor: colors.hover }}>
+              {collection.isExpanded ? (
+                <ChevronDown size={12} style={{ color: colors.textSecondary }} />
               ) : (
-                <Star size={12} style={{ color: colors.textSecondary }} />
+                <ChevronRight size={12} style={{ color: colors.textSecondary }} />
               )}
-            </button>
-            
-            {collection.isEditing ? (
-              <input
-                type="text"
-                defaultValue={collection.name}
-                onBlur={(e) => updateCollectionName(collection.id, e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    updateCollectionName(collection.id, e.target.value);
-                  } else if (e.key === 'Escape') {
-                    setCollections(cols => cols.map(col => 
-                      col.id === collection.id ? { ...col, isEditing: false } : col
-                    ));
-                  }
-                }}
-                className="flex-1 text-sm font-medium bg-transparent border-none outline-none"
-                style={{ color: colors.text }}
-                autoFocus
-              />
-            ) : (
-              <span className="text-sm font-medium flex-1" style={{ color: colors.text }}>
-                {collection.name}
-              </span>
-            )}
-            
-            {/* Collection count badge - show total requests in collection */}
-            {collection.requestsCount > 0 && (
-              <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
-                backgroundColor: colors.primaryDark,
-                color: 'white'
+              <button type="button" onClick={(e) => {
+                e.stopPropagation();
+                toggleFavorite(collection.id);
               }}>
-                {collection.requestsCount}
-              </span>
-            )}
-          </div>
+                {collection.isFavorite ? (
+                  <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
+                ) : (
+                  <Star size={12} style={{ color: colors.textSecondary }} />
+                )}
+              </button>
+              
+              {collection.isEditing ? (
+                <input
+                  type="text"
+                  defaultValue={collection.name}
+                  onBlur={(e) => updateCollectionName(collection.id, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      updateCollectionName(collection.id, e.target.value);
+                    } else if (e.key === 'Escape') {
+                      setCollections(cols => cols.map(col => 
+                        col.id === collection.id ? { ...col, isEditing: false } : col
+                      ));
+                    }
+                  }}
+                  className="flex-1 text-sm font-medium bg-transparent border-none outline-none"
+                  style={{ color: colors.text }}
+                  autoFocus
+                />
+              ) : (
+                <span className="text-sm font-medium flex-1" style={{ color: colors.text }}>
+                  {collection.name}
+                </span>
+              )}
+              
+              {/* Collection count badge - show total requests in collection */}
+              {collection.requestsCount > 0 && (
+                <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                  backgroundColor: colors.primaryDark,
+                  color: 'white'
+                }}>
+                  {collection.requestsCount}
+                </span>
+              )}
+            </div>
 
-          {collection.isExpanded && collection.folders && collection.folders.length > 0 && (
-            <>
-              {/* Ensure folders are sorted before rendering */}
-              {sortAlphabetically(collection.folders).map(folder => (
-                <div key={folder.id} className="ml-4 mb-2">
-                  <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
-                    onClick={() => toggleFolder(collection.id, folder.id)}
-                    style={{ backgroundColor: colors.hover }}>
-                    {folder.isExpanded ? (
-                      <ChevronDown size={11} style={{ color: colors.textSecondary }} />
-                    ) : (
-                      <ChevronRight size={11} style={{ color: colors.textSecondary }} />
-                    )}
-                    <FolderOpen size={11} style={{ color: colors.textSecondary }} />
-                    
-                    {folder.isEditing ? (
-                      <input
-                        type="text"
-                        defaultValue={folder.name}
-                        onBlur={(e) => updateFolderName(collection.id, folder.id, e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            updateFolderName(collection.id, folder.id, e.target.value);
-                          } else if (e.key === 'Escape') {
+            {collection.isExpanded && foldersWithEndpoints.length > 0 && (
+              <>
+                {/* Ensure folders are sorted before rendering */}
+                {sortAlphabetically(foldersWithEndpoints).map(folder => {
+                  // Skip rendering folder if it has no requests
+                  if (!folder.requests || folder.requests.length === 0) {
+                    return null;
+                  }
+                  
+                  return (
+                    <div key={folder.id} className="ml-4 mb-2">
+                      <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
+                        onClick={() => toggleFolder(collection.id, folder.id)}
+                        style={{ backgroundColor: colors.hover }}>
+                        {folder.isExpanded ? (
+                          <ChevronDown size={11} style={{ color: colors.textSecondary }} />
+                        ) : (
+                          <ChevronRight size={11} style={{ color: colors.textSecondary }} />
+                        )}
+                        <FolderOpen size={11} style={{ color: colors.textSecondary }} />
+                        
+                        {folder.isEditing ? (
+                          <input
+                            type="text"
+                            defaultValue={folder.name}
+                            onBlur={(e) => updateFolderName(collection.id, folder.id, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                updateFolderName(collection.id, folder.id, e.target.value);
+                              } else if (e.key === 'Escape') {
+                                setCollections(cols => cols.map(col => ({
+                                  ...col,
+                                  folders: col.folders.map(f => 
+                                    f.id === folder.id ? { ...f, isEditing: false } : f
+                                  )
+                                })));
+                              }
+                            }}
+                            className="flex-1 text-sm bg-transparent border-none outline-none"
+                            style={{ color: colors.text }}
+                            autoFocus
+                          />
+                        ) : (
+                          <span className="text-sm flex-1" style={{ color: colors.text }}>
+                            {folder.name}
+                          </span>
+                        )}
+                        
+                        {/* Folder count badge - show number of requests in this folder */}
+                        {folder.requests && folder.requests.length > 0 && (
+                          <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                            backgroundColor: colors.primaryDark,
+                            color: 'white'
+                          }}>
+                            {folder.requests.length}
+                          </span>
+                        )}
+                        
+                        <button 
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setCollections(cols => cols.map(col => ({
                               ...col,
                               folders: col.folders.map(f => 
-                                f.id === folder.id ? { ...f, isEditing: false } : f
+                                f.id === folder.id ? { ...f, isEditing: true } : f
                               )
                             })));
-                          }
-                        }}
-                        className="flex-1 text-sm bg-transparent border-none outline-none"
-                        style={{ color: colors.text }}
-                        autoFocus
-                      />
-                    ) : (
-                      <span className="text-sm flex-1" style={{ color: colors.text }}>
-                        {folder.name}
-                      </span>
-                    )}
-                    
-                    {/* Folder count badge - show number of requests in this folder */}
-                    {folder.requests && folder.requests.length > 0 && (
-                      <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
-                        backgroundColor: colors.primaryDark,
-                        color: 'white'
-                      }}>
-                        {folder.requests.length}
-                      </span>
-                    )}
-                    
-                    <button 
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCollections(cols => cols.map(col => ({
-                          ...col,
-                          folders: col.folders.map(f => 
-                            f.id === folder.id ? { ...f, isEditing: true } : f
-                          )
-                        })));
-                      }}
-                      className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all hover-lift"
-                      style={{ backgroundColor: colors.card }}>
-                      <Edit2 size={10} style={{ color: colors.textSecondary }} />
-                    </button>
-                  </div>
+                          }}
+                          className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all hover-lift"
+                          style={{ backgroundColor: colors.card }}>
+                          <Edit2 size={10} style={{ color: colors.textSecondary }} />
+                        </button>
+                      </div>
 
-                  {folder.isExpanded && folder.requests && folder.requests.length > 0 && (
-                    <>
-                      {/* Ensure requests are sorted before rendering */}
-                      {sortAlphabetically(folder.requests).map(request => (
-                        <div key={request.id} className="flex items-center gap-2 ml-6 mb-1.5 group">
-                          <button
-                            type="button"
-                            onClick={() => handleSelectRequest(request, collection.id, folder.id)}
-                            className="flex items-center gap-2 text-sm text-left transition-colors hover:text-opacity-80 flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
-                            style={{ 
-                              color: selectedRequest?.id === request.id ? colors.primary : colors.text,
-                              backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
-                            }}
-                            disabled={loading.request}
-                          >
-                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
-                              backgroundColor: getMethodColor(request.method)
-                            }} />
-                            
-                            {request.isEditing ? (
-                              <input
-                                type="text"
-                                defaultValue={request.name}
-                                onBlur={(e) => updateRequestName(collection.id, folder.id, request.id, e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    updateRequestName(collection.id, folder.id, request.id, e.target.value);
-                                  } else if (e.key === 'Escape') {
+                      {folder.isExpanded && folder.requests && folder.requests.length > 0 && (
+                        <>
+                          {/* Ensure requests are sorted before rendering */}
+                          {sortAlphabetically(folder.requests).map(request => (
+                            <div key={request.id} className="flex items-center gap-2 ml-6 mb-1.5 group">
+                              <button
+                                type="button"
+                                onClick={() => handleSelectRequest(request, collection.id, folder.id)}
+                                className="flex items-center gap-2 text-sm text-left transition-colors hover:text-opacity-80 flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
+                                style={{ 
+                                  color: selectedRequest?.id === request.id ? colors.primary : colors.text,
+                                  backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
+                                }}
+                                disabled={loading.request}
+                              >
+                                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
+                                  backgroundColor: getMethodColor(request.method)
+                                }} />
+                                
+                                {request.isEditing ? (
+                                  <input
+                                    type="text"
+                                    defaultValue={request.name}
+                                    onBlur={(e) => updateRequestName(collection.id, folder.id, request.id, e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        updateRequestName(collection.id, folder.id, request.id, e.target.value);
+                                      } else if (e.key === 'Escape') {
+                                        setCollections(cols => cols.map(col => ({
+                                          ...col,
+                                          folders: col.folders.map(f => 
+                                            f.id === folder.id ? {
+                                              ...f,
+                                              requests: f.requests.map(r => 
+                                                r.id === request.id ? { ...r, isEditing: false } : r
+                                              )
+                                            } : f
+                                          )
+                                        })));
+                                      }
+                                    }}
+                                    className="flex-1 bg-transparent border-none outline-none"
+                                    style={{ color: selectedRequest?.id === request.id ? colors.primary : colors.text }}
+                                    autoFocus
+                                  />
+                                ) : (
+                                  <span className="truncate">{request.name}</span>
+                                )}
+                              </button>
+                              
+                              {!request.isEditing && (
+                                <button 
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setCollections(cols => cols.map(col => ({
                                       ...col,
                                       folders: col.folders.map(f => 
                                         f.id === folder.id ? {
                                           ...f,
                                           requests: f.requests.map(r => 
-                                            r.id === request.id ? { ...r, isEditing: false } : r
+                                            r.id === request.id ? { ...r, isEditing: true } : r
                                           )
                                         } : f
                                       )
                                     })));
-                                  }
-                                }}
-                                className="flex-1 bg-transparent border-none outline-none"
-                                style={{ color: selectedRequest?.id === request.id ? colors.primary : colors.text }}
-                                autoFocus
-                              />
-                            ) : (
-                              <span className="truncate">{request.name}</span>
-                            )}
+                                  }}
+                                  className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all mr-2 hover-lift"
+                                  style={{ backgroundColor: colors.card }}>
+                                  <Edit2 size={10} style={{ color: colors.textSecondary }} />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => addNewRequest(collection.id, folder.id)}
+                            className="ml-6 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
+                            style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+                            disabled={loading.request}
+                          >
+                            <Plus size={10} />
+                            Add Request
                           </button>
-                          
-                          {!request.isEditing && (
-                            <button 
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCollections(cols => cols.map(col => ({
-                                  ...col,
-                                  folders: col.folders.map(f => 
-                                    f.id === folder.id ? {
-                                      ...f,
-                                      requests: f.requests.map(r => 
-                                        r.id === request.id ? { ...r, isEditing: true } : r
-                                      )
-                                    } : f
-                                  )
-                                })));
-                              }}
-                              className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all mr-2 hover-lift"
-                              style={{ backgroundColor: colors.card }}>
-                              <Edit2 size={10} style={{ color: colors.textSecondary }} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => addNewRequest(collection.id, folder.id)}
-                        className="ml-6 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
-                        style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
-                        disabled={loading.request}
-                      >
-                        <Plus size={10} />
-                        Add Request
-                      </button>
-                    </>
-                  )}
-                  
-                  {/* Show "No requests" message when folder is expanded but has no requests */}
-                  {folder.isExpanded && (!folder.requests || folder.requests.length === 0) && (
-                    <div className="ml-6 py-2 text-center">
-                      <p className="text-xs" style={{ color: colors.textTertiary }}>No requests in this folder</p>
-                      <button
-                        type="button"
-                        onClick={() => addNewRequest(collection.id, folder.id)}
-                        className="mt-1 px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 hover-lift"
-                        style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
-                        disabled={loading.request}
-                      >
-                        <Plus size={10} />
-                        Add your first request
-                      </button>
+                        </>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => addNewFolder(collection.id)}
-                className="ml-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
-                style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
-                disabled={loading.request}
-              >
-                <Plus size={10} />
-                Add Folder
-              </button>
-            </>
-          )}
-          
-          {/* Show "No folders" message when collection is expanded but has no folders */}
-          {collection.isExpanded && (!collection.folders || collection.folders.length === 0) && (
-            <div className="ml-4 py-2 text-center">
-              <p className="text-xs" style={{ color: colors.textTertiary }}>No folders in this collection</p>
-              <button
-                type="button"
-                onClick={() => addNewFolder(collection.id)}
-                className="mt-1 px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 hover-lift"
-                style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
-                disabled={loading.request}
-              >
-                <Plus size={10} />
-                Add your first folder
-              </button>
-            </div>
-          )}
-        </div>
-      ))}
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => addNewFolder(collection.id)}
+                  className="ml-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
+                  style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+                  disabled={loading.request}
+                >
+                  <Plus size={10} />
+                  Add Folder
+                </button>
+              </>
+            )}
+            
+            {/* Show message when collection has no folders with endpoints */}
+            {collection.isExpanded && foldersWithEndpoints.length === 0 && (
+              <div className="ml-4 py-2 text-center">
+                <p className="text-xs" style={{ color: colors.textTertiary }}>No endpoints in this collection</p>
+                <button
+                  type="button"
+                  onClick={() => addNewFolder(collection.id)}
+                  className="mt-1 px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 hover-lift"
+                  style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+                  disabled={loading.request}
+                >
+                  <Plus size={10} />
+                  Add your first folder
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
       
       {sortedCollections.length === 0 && searchQuery && (
         <div className="text-center p-4" style={{ color: colors.textSecondary }}>

@@ -1530,11 +1530,11 @@ export default function EntryPage() {
                   <DatabaseZap className={`h-6 w-6 ${isDark ? 'text-orange-400' : 'text-orange-600'}`} />
                 </div>
                 <div>
-                  <h1 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                    API Automation Platform
+                  <h1 className={`text-md uppercase font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    API Generation Platform
                   </h1>
                   <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                    Oracle Schema to API Endpoint
+                    Database Object to API Endpoint
                   </p>
                 </div>
               </div>
