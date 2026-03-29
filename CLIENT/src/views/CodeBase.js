@@ -1858,7 +1858,7 @@ const renderImplementationContent = () => {
           <>
 
           {/* Display Headers */}
-              {selectedRequest.headers && selectedRequest.headers.length > 0 && (
+              {/* {selectedRequest.headers && selectedRequest.headers.length > 0 && (
                 <div className="mb-6 p-4 rounded-lg" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
                   <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Request Headers</h3>
                   <div className="space-y-2">
@@ -1889,7 +1889,7 @@ const renderImplementationContent = () => {
                     ))}
                   </div>
                 </div>
-              )}
+              )} */}
               
             {/* Language & Framework Selection */}
             <div className="mb-8 p-6 rounded-xl border hover-lift" style={{ 
@@ -1897,7 +1897,7 @@ const renderImplementationContent = () => {
               borderColor: colors.border
             }}>
               <h2 className="text-lg font-semibold mb-4" style={{ color: colors.text }}>Select Implementation Language</h2>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                 {availableLanguages.map(lang => (
                   <button
                     key={lang.id}
