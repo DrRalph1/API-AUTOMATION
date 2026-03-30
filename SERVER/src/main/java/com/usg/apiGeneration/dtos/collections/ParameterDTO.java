@@ -1,0 +1,16 @@
+package com.usg.apiGeneration.dtos.collections;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class ParameterDTO {
+    private String id;
+    private String key;
+    private String value;
+    private String description;
+    private boolean enabled;
+}

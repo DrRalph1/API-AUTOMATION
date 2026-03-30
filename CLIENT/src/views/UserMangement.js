@@ -150,7 +150,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   const [selectedRole, setSelectedRole] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const [usersPerPage, setUsersPerPage] = useState(10);
+  const [usersPerPage, setUsersPerPage] = useState(7);
   const [sortField, setSortField] = useState('lastActive');
   const [sortDirection, setSortDirection] = useState('desc');
   const [selectedUsers, setSelectedUsers] = useState([]);
@@ -161,6 +161,12 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   const [roles, setRoles] = useState([]);
   const [rolesLoading, setRolesLoading] = useState(false);
   const [rolesError, setRolesError] = useState(false);
+  
+  // Pagination states from API
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [apiCurrentPage, setApiCurrentPage] = useState(1);
+  
   const [stats, setStats] = useState({
     totalUsers: 0,
     activeUsers: 0,
@@ -200,7 +206,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     } else {
       console.warn('No auth token available');
     }
-  }, [authToken]);
+  }, [authToken, currentPage, usersPerPage, sortField, sortDirection, selectedRole, selectedStatus, searchQuery]);
 
   // Load roles from API - NO STATIC FALLBACKS
   const loadRoles = async (showLoading = false) => {
@@ -269,7 +275,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     return getRoleColor(roleId);
   };
 
-  // Load users with filters
+  // Load users with filters - UPDATED to handle pagination from API
   const loadUsers = async (filters = {}) => {
     const authHeader = authToken;
     if (!authHeader) {
@@ -280,17 +286,46 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     setLoading(true);
     try {
       const response = await getUsersList(authHeader, {
-        searchQuery: filters.searchQuery || searchQuery,
-        roleFilter: filters.roleFilter || selectedRole,
-        statusFilter: filters.statusFilter || selectedStatus,
-        sortField: filters.sortField || sortField,
-        sortDirection: filters.sortDirection || sortDirection,
-        page: filters.page || currentPage,
-        pageSize: filters.pageSize || usersPerPage
+        searchQuery: filters.searchQuery !== undefined ? filters.searchQuery : searchQuery,
+        roleFilter: filters.roleFilter !== undefined ? filters.roleFilter : selectedRole,
+        statusFilter: filters.statusFilter !== undefined ? filters.statusFilter : selectedStatus,
+        sortField: filters.sortField !== undefined ? filters.sortField : sortField,
+        sortDirection: filters.sortDirection !== undefined ? filters.sortDirection : sortDirection,
+        page: filters.page !== undefined ? filters.page : currentPage - 1, // API uses 0-based index
+        pageSize: filters.pageSize !== undefined ? filters.pageSize : usersPerPage
       });
       
       const processedResponse = handleUserManagementResponse(response);
       const userList = extractUsersList(processedResponse);
+      
+      // Extract pagination info from response
+      // Adjust this based on your actual API response structure
+      const paginationData = processedResponse?.data?.pagination || 
+                            processedResponse?.pagination || 
+                            processedResponse?.data || 
+                            {};
+      
+      // Try to get total items from various possible locations
+      const totalElements = paginationData.totalElements || 
+                           paginationData.totalCount || 
+                           paginationData.total || 
+                           processedResponse?.data?.totalElements ||
+                           processedResponse?.totalElements ||
+                           userList.length;
+      
+      // Try to get total pages
+      const totalPagesFromApi = paginationData.totalPages || 
+                                paginationData.total || 
+                                Math.ceil(totalElements / usersPerPage);
+      
+      // Get current page from API
+      const currentPageFromApi = (paginationData.pageNumber !== undefined ? paginationData.pageNumber : 
+                                 paginationData.number !== undefined ? paginationData.number : 
+                                 currentPage - 1);
+      
+      setTotalItems(totalElements);
+      setTotalPages(totalPagesFromApi);
+      setApiCurrentPage(currentPageFromApi + 1); // Convert to 1-based for UI
       
       // Map role IDs to role names for display
       const mappedUserList = userList.map(user => ({
@@ -301,9 +336,18 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       
       setUsers(mappedUserList || []);
       
+      // If the current page is beyond total pages, reset to last page
+      if (currentPageFromApi + 1 > totalPagesFromApi && totalPagesFromApi > 0) {
+        setCurrentPage(totalPagesFromApi);
+      }
+      
     } catch (error) {
       console.error('Error loading users:', error);
       showToast('error', error.message || 'Failed to load users');
+      // Reset to empty array on error
+      setUsers([]);
+      setTotalItems(0);
+      setTotalPages(0);
     } finally {
       setLoading(false);
     }
@@ -383,6 +427,8 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       
       if (result.success) {
         showToast('success', result.message || 'User created successfully');
+        // Reset to first page to show the new user
+        setCurrentPage(1);
         loadUsers();
         loadStatistics();
         return true;
@@ -451,7 +497,13 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       if (result.success) {
         showToast('success', result.message || 'User deleted successfully');
         setSelectedUsers(prev => prev.filter(id => id !== user.id));
-        loadUsers();
+        
+        // Check if we need to go to previous page
+        if (users.length === 1 && currentPage > 1) {
+          setCurrentPage(currentPage - 1);
+        } else {
+          loadUsers();
+        }
         loadStatistics();
       } else {
         showToast('error', result.message || 'Failed to delete user');
@@ -504,12 +556,19 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
         if (result.failedCount > 0) {
           showToast('warning', `${result.failedCount} user(s) failed: ${result.failedUsers?.join(', ') || 'Unknown'}`);
         }
-        loadUsers();
-        loadStatistics();
         
+        // Check if we need to go to previous page after bulk delete
         if (action === 'delete') {
           setSelectedUsers([]);
+          if (users.length === selectedUsers.length && currentPage > 1) {
+            setCurrentPage(currentPage - 1);
+          } else {
+            loadUsers();
+          }
+        } else {
+          loadUsers();
         }
+        loadStatistics();
       } else {
         showToast('error', 'No users were processed');
       }
@@ -573,6 +632,8 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       }));
       
       setUsers(mappedResults);
+      setTotalItems(mappedResults.length);
+      setTotalPages(1); // Search results are typically not paginated or we handle differently
       setCurrentPage(1);
       
     } catch (error) {
@@ -599,6 +660,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       
       if (result.status === 'completed') {
         showToast('success', `Imported ${result.importedCount} users successfully`);
+        setCurrentPage(1); // Reset to first page after import
         loadUsers();
         loadStatistics();
         return true;
@@ -888,48 +950,10 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     return modalStack[modalStack.length - 1];
   };
 
-  // Filter and sort users
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = searchQuery === '' || 
-      (user.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.fullName?.toLowerCase().includes(searchQuery.toLowerCase()));
-    
-    const matchesRole = selectedRole === 'all' || (user.role === selectedRole) || (user.roleId === selectedRole);
-    const matchesStatus = selectedStatus === 'all' || user.status === selectedStatus;
-    
-    return matchesSearch && matchesRole && matchesStatus;
-  });
-
-  const sortedUsers = [...filteredUsers].sort((a, b) => {
-    if (sortField === 'lastActive') {
-      return sortDirection === 'asc' 
-        ? new Date(a.lastActive || 0) - new Date(b.lastActive || 0)
-        : new Date(b.lastActive || 0) - new Date(a.lastActive || 0);
-    }
-    if (sortField === 'fullName') {
-      return sortDirection === 'asc'
-        ? (a.fullName || '').localeCompare(b.fullName || '')
-        : (b.fullName || '').localeCompare(a.fullName || '');
-    }
-    if (sortField === 'joinedDate') {
-      return sortDirection === 'asc'
-        ? new Date(a.joinedDate || 0) - new Date(b.joinedDate || 0)
-        : new Date(b.joinedDate || 0) - new Date(a.joinedDate || 0);
-    }
-    return 0;
-  });
-
-  // Pagination
-  const totalPages = Math.ceil(sortedUsers.length / usersPerPage);
-  const indexOfLastUser = currentPage * usersPerPage;
-  const indexOfFirstUser = indexOfLastUser - usersPerPage;
-  const currentUsers = sortedUsers.slice(indexOfFirstUser, indexOfLastUser);
-
   // Handlers
   const handleSelectAll = (e) => {
     if (e.target.checked) {
-      setSelectedUsers(currentUsers.map(user => user.id));
+      setSelectedUsers(users.map(user => user.id));
     } else {
       setSelectedUsers([]);
     }
@@ -944,6 +968,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   };
 
   const handleRefresh = async () => {
+    setCurrentPage(1); // Reset to first page on refresh
     await loadUsers();
     await loadStatistics();
     await loadRoles(true);
@@ -953,42 +978,74 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     if (sortField === field) {
       const newDirection = sortDirection === 'asc' ? 'desc' : 'asc';
       setSortDirection(newDirection);
+      setCurrentPage(1); // Reset to first page when sorting
       
       loadUsers({
         sortField: field,
-        sortDirection: newDirection
+        sortDirection: newDirection,
+        page: 0
       });
     } else {
       setSortField(field);
       setSortDirection('asc');
+      setCurrentPage(1); // Reset to first page when sorting
       
       loadUsers({
         sortField: field,
-        sortDirection: 'asc'
+        sortDirection: 'asc',
+        page: 0
       });
     }
   };
 
   const handleSearchChange = (value) => {
     setSearchQuery(value);
+    setCurrentPage(1); // Reset to first page when searching
     clearTimeout(window.searchTimeout);
     window.searchTimeout = setTimeout(() => {
       if (value.trim()) {
         handleSearchUsers({ query: value });
       } else {
-        loadUsers({ searchQuery: '' });
+        loadUsers({ searchQuery: '', page: 0 });
       }
     }, 500);
   };
 
   const handleRoleFilterChange = (value) => {
     setSelectedRole(value);
-    loadUsers({ roleFilter: value });
+    setCurrentPage(1); // Reset to first page when changing filters
+    loadUsers({ roleFilter: value, page: 0 });
   };
 
   const handleStatusFilterChange = (value) => {
     setSelectedStatus(value);
-    loadUsers({ statusFilter: value });
+    setCurrentPage(1); // Reset to first page when changing filters
+    loadUsers({ statusFilter: value, page: 0 });
+  };
+
+  // Pagination handlers - UPDATED
+  const goToFirstPage = () => {
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+    }
+  };
+
+  const goToPreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const goToNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const goToLastPage = () => {
+    if (currentPage !== totalPages && totalPages > 0) {
+      setCurrentPage(totalPages);
+    }
   };
 
   // FIXED: Debounced view user details to prevent multiple API calls
@@ -1024,11 +1081,11 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       showToast('error', error.message || 'Failed to load user details');
     } finally {
       // Clear states after a delay to prevent rapid clicking
-      // setTimeout(() => {
-      //   setOpeningModalForUserId(null);
-      //   setIsOpeningModal(false);
-      //   pendingRequestRef.current = null;
-      // }, 500);
+      setTimeout(() => {
+        setOpeningModalForUserId(null);
+        setIsOpeningModal(false);
+        pendingRequestRef.current = null;
+      }, 500);
     }
   }, 300); // 300ms debounce
 
@@ -1064,6 +1121,13 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       return 14;
     }
     return 14;
+  };
+
+  // Calculate the range of items being displayed
+  const getDisplayRange = () => {
+    const start = ((currentPage - 1) * usersPerPage) + 1;
+    const end = Math.min(currentPage * usersPerPage, totalItems);
+    return { start, end };
   };
 
   // Side Navigation Component
@@ -1202,14 +1266,19 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                         if (subItem.id === 'all-users') {
                           setSelectedRole('all');
                           setSelectedStatus('all');
+                          setCurrentPage(1);
                         } else if (subItem.id === 'active-users') {
                           setSelectedStatus('active');
+                          setCurrentPage(1);
                         } else if (subItem.id === 'inactive-users') {
                           setSelectedStatus('inactive');
+                          setCurrentPage(1);
                         } else if (subItem.id === 'pending-users') {
                           setSelectedStatus('pending');
+                          setCurrentPage(1);
                         } else if (subItem.id === 'suspended-users') {
                           setSelectedStatus('suspended');
+                          setCurrentPage(1);
                         }
                       }}
                       className="w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors hover:bg-opacity-50 ml-2 mt-0.5 hover-lift"
@@ -1400,47 +1469,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                   </div>
                 </div>
               </div>
-
-              {/* <div>
-                <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
-                  <Shield size={16} />
-                  Security
-                </h5>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck size={14} style={{ color: colors.textSecondary }} />
-                      <span className="text-sm" style={{ color: colors.text }}>MFA Enabled</span>
-                    </div>
-                    {userDetails?.mfaEnabled ? (
-                      <CheckCircle size={14} style={{ color: colors.success }} />
-                    ) : (
-                      <XCircle size={14} style={{ color: colors.error }} />
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Key size={14} style={{ color: colors.textSecondary }} />
-                      <span className="text-sm" style={{ color: colors.text }}>API Keys</span>
-                    </div>
-                    <span className="text-sm font-medium" style={{ color: colors.text }}>{userDetails?.apiKeys || 0}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Database size={14} style={{ color: colors.textSecondary }} />
-                      <span className="text-sm" style={{ color: colors.text }}>API Access Count</span>
-                    </div>
-                    <span className="text-sm font-medium" style={{ color: colors.text }}>{userDetails?.apiAccessCount || 0}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Server size={14} style={{ color: colors.textSecondary }} />
-                      <span className="text-sm" style={{ color: colors.text }}>Active Sessions</span>
-                    </div>
-                    <span className="text-sm font-medium" style={{ color: colors.text }}>{userDetails?.activeSessions || 0}</span>
-                  </div>
-                </div>
-              </div> */}
             </div>
 
             <div className="space-y-4">
@@ -1520,29 +1548,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
               </div>
             </div>
           </div>
-
-          {/* {userDetails?.permissions && userDetails.permissions.length > 0 && (
-            <div>
-              <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
-                <KeyRound size={16} />
-                Permissions
-              </h5>
-              <div className="flex flex-wrap gap-2">
-                {userDetails.permissions.map((permission, index) => (
-                  <div 
-                    key={index}
-                    className="px-3 py-1 rounded-full text-xs font-medium"
-                    style={{ 
-                      backgroundColor: `${getPermissionColor(permission)}20`,
-                      color: getPermissionColor(permission)
-                    }}
-                  >
-                    {permission}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )} */}
 
           {userDetails?.tags && userDetails.tags.length > 0 && (
             <div>
@@ -1646,551 +1651,536 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   };
 
   // Edit User Modal - NO STATIC FALLBACKS
-  // Edit User Modal - Fixed role selection
-const EditUserModal = ({ data: user }) => {
-  const [formData, setFormData] = useState({
-    username: user?.username || '',
-    email: user?.email || '',
-    phoneNumber: user?.phoneNumber || '',
-    fullName: user?.fullName || '',
-    roleId: user?.roleId || user?.role || '', // Make sure this isn't undefined
-    status: user?.status || 'pending',
-    department: user?.department || '',
-    location: user?.location || '',
-    mfaEnabled: user?.mfaEnabled || false,
-    emailVerified: user?.emailVerified || false,
-    phoneVerified: user?.phoneVerified || false,
-    tags: user?.tags || []
-  });
+  const EditUserModal = ({ data: user }) => {
+    const [formData, setFormData] = useState({
+      username: user?.username || '',
+      email: user?.email || '',
+      phoneNumber: user?.phoneNumber || '',
+      fullName: user?.fullName || '',
+      roleId: user?.roleId || user?.role || '',
+      status: user?.status || 'pending',
+      department: user?.department || '',
+      location: user?.location || '',
+      mfaEnabled: user?.mfaEnabled || false,
+      emailVerified: user?.emailVerified || false,
+      phoneVerified: user?.phoneVerified || false,
+      tags: user?.tags || []
+    });
 
-  const [validationResult, setValidationResult] = useState(null);
-  const [localRoles, setLocalRoles] = useState([]);
-  const [rolesLoading, setRolesLoading] = useState(false);
-  const [rolesError, setRolesError] = useState(false);
+    const [validationResult, setValidationResult] = useState(null);
+    const [localRoles, setLocalRoles] = useState([]);
+    const [rolesLoading, setRolesLoading] = useState(false);
+    const [rolesError, setRolesError] = useState(false);
 
-  // Fetch roles when modal opens - NO STATIC FALLBACKS
-  useEffect(() => {
-    const fetchRoles = async () => {
-      if (!authToken) {
-        setRolesError(true);
+    // Fetch roles when modal opens - NO STATIC FALLBACKS
+    useEffect(() => {
+      const fetchRoles = async () => {
+        if (!authToken) {
+          setRolesError(true);
+          return;
+        }
+        
+        setRolesLoading(true);
+        setRolesError(false);
+        
+        try {
+          const response = await getAllRoles(authToken, { page: 0, size: 100 });
+          
+          if (response && response.responseCode === 200 && response.data) {
+            const content = response.data.content || [];
+            
+            const mappedRoles = content.map(role => ({
+              id: role.roleId,
+              roleId: role.roleId,
+              roleName: role.roleName,
+              description: role.description || ''
+            }));
+            
+            setLocalRoles(mappedRoles);
+            
+            // Debug: Log loaded roles and current user role
+            console.log('Loaded roles:', mappedRoles);
+            console.log('User role ID:', user?.roleId || user?.role);
+            
+            // IMPORTANT FIX: If user has a role but it's not in the loaded roles yet,
+            // we need to manually add it or set it after roles load
+            const userRoleId = user?.roleId || user?.role;
+            if (userRoleId && userRoleId !== 'new') {
+              // Check if the user's role exists in the loaded roles
+              const roleExists = mappedRoles.some(role => 
+                role.roleId === userRoleId || role.id === userRoleId
+              );
+              
+              if (!roleExists && userRoleId) {
+                console.log('User role not found in loaded roles, adding manually');
+                // Add the user's role to the list if it doesn't exist
+                setLocalRoles(prev => [
+                  ...prev,
+                  {
+                    id: userRoleId,
+                    roleId: userRoleId,
+                    roleName: getRoleDisplayName(userRoleId) || 'Unknown Role'
+                  }
+                ]);
+              }
+              
+              // Ensure formData has the correct roleId
+              setFormData(prev => ({
+                ...prev,
+                roleId: userRoleId
+              }));
+            }
+            
+            if (mappedRoles.length === 0) {
+              setRolesError(true);
+            }
+          } else {
+            console.error('Invalid API response:', response);
+            setRolesError(true);
+            setLocalRoles([]);
+          }
+        } catch (error) {
+          console.error('Error loading roles:', error);
+          setRolesError(true);
+          setLocalRoles([]);
+        } finally {
+          setRolesLoading(false);
+        }
+      };
+      
+      fetchRoles();
+    }, [authToken, user]);
+
+    // FIX: Ensure roleId is set when the component mounts
+    useEffect(() => {
+      // If we have a user with a role, make sure it's selected
+      if (user && (user.roleId || user.role)) {
+        const userRoleId = user.roleId || user.role;
+        setFormData(prev => ({
+          ...prev,
+          roleId: userRoleId
+        }));
+      }
+    }, [user]);
+
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      
+      // Debug: Check what roleId is being used
+      console.log('Selected roleId:', formData.roleId);
+      
+      if (!formData.roleId) {
+        showToast('error', 'Please select a role');
         return;
       }
       
-      setRolesLoading(true);
-      setRolesError(false);
-      
-      try {
-        const response = await getAllRoles(authToken, { page: 0, size: 100 });
+      if (user?.id === 'new') {
+        // Create new user
+        const createData = {
+          username: formData.username,
+          email: formData.email,
+          phoneNumber: formData.phoneNumber,
+          fullName: formData.fullName,
+          roleId: formData.roleId,
+          password: 'TemporaryPassword123!',
+          department: formData.department || 'Engineering',
+          location: formData.location || 'New York, NY',
+          mfaEnabled: formData.mfaEnabled,
+          status: formData.status || 'pending'
+        };
         
-        if (response && response.responseCode === 200 && response.data) {
-          const content = response.data.content || [];
-          
-          const mappedRoles = content.map(role => ({
-            id: role.roleId,
-            roleId: role.roleId,
-            roleName: role.roleName,
-            description: role.description || ''
-          }));
-          
-          setLocalRoles(mappedRoles);
-          
-          // Debug: Log loaded roles and current user role
-          console.log('Loaded roles:', mappedRoles);
-          console.log('User role ID:', user?.roleId || user?.role);
-          
-          // IMPORTANT FIX: If user has a role but it's not in the loaded roles yet,
-          // we need to manually add it or set it after roles load
-          const userRoleId = user?.roleId || user?.role;
-          if (userRoleId && userRoleId !== 'new') {
-            // Check if the user's role exists in the loaded roles
-            const roleExists = mappedRoles.some(role => 
-              role.roleId === userRoleId || role.id === userRoleId
-            );
-            
-            if (!roleExists && userRoleId) {
-              console.log('User role not found in loaded roles, adding manually');
-              // Add the user's role to the list if it doesn't exist
-              setLocalRoles(prev => [
-                ...prev,
-                {
-                  id: userRoleId,
-                  roleId: userRoleId,
-                  roleName: getRoleDisplayName(userRoleId) || 'Unknown Role'
-                }
-              ]);
-            }
-            
-            // Ensure formData has the correct roleId
-            setFormData(prev => ({
-              ...prev,
-              roleId: userRoleId
-            }));
-          }
-          
-          if (mappedRoles.length === 0) {
-            setRolesError(true);
-          }
-        } else {
-          console.error('Invalid API response:', response);
-          setRolesError(true);
-          setLocalRoles([]);
+        console.log('Creating user with data:', createData);
+        const success = await handleCreateUser(createData);
+        
+        if (success) {
+          closeModal();
         }
-      } catch (error) {
-        console.error('Error loading roles:', error);
-        setRolesError(true);
-        setLocalRoles([]);
-      } finally {
-        setRolesLoading(false);
+      } else {
+        // Update existing user
+        const success = await handleUpdateUser(user.id, {
+          fullName: formData.fullName,
+          roleId: formData.roleId,
+          status: formData.status,
+          department: formData.department,
+          location: formData.location,
+          mfaEnabled: formData.mfaEnabled,
+          phoneNumber: formData.phoneNumber,
+          emailVerified: formData.emailVerified,
+          phoneVerified: formData.phoneVerified,
+          tags: formData.tags
+        });
+        
+        if (success) {
+          closeModal();
+        }
       }
     };
-    
-    fetchRoles();
-  }, [authToken, user]);
 
-  // FIX: Ensure roleId is set when the component mounts
-  useEffect(() => {
-    // If we have a user with a role, make sure it's selected
-    if (user && (user.roleId || user.role)) {
-      const userRoleId = user.roleId || user.role;
+    const handleTagInput = (e) => {
+      if (e.key === 'Enter' && e.target.value.trim()) {
+        const newTag = e.target.value.trim();
+        if (!formData.tags.includes(newTag)) {
+          setFormData(prev => ({
+            ...prev,
+            tags: [...prev.tags, newTag]
+          }));
+        }
+        e.target.value = '';
+      }
+    };
+
+    const removeTag = (tagToRemove) => {
       setFormData(prev => ({
         ...prev,
-        roleId: userRoleId
+        tags: prev.tags.filter(tag => tag !== tagToRemove)
       }));
-    }
-  }, [user]);
+    };
 
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    // Debug: Check what roleId is being used
-    console.log('Selected roleId:', formData.roleId);
-    
-    if (!formData.roleId) {
-      showToast('error', 'Please select a role');
-      return;
-    }
-    
-    if (user?.id === 'new') {
-      // Create new user
-      const createData = {
-        username: formData.username,
-        email: formData.email,
-        phoneNumber: formData.phoneNumber,
-        fullName: formData.fullName,
-        roleId: formData.roleId,
-        password: 'TemporaryPassword123!',
-        department: formData.department || 'Engineering',
-        location: formData.location || 'New York, NY',
-        mfaEnabled: formData.mfaEnabled,
-        status: formData.status || 'pending'
-      };
-      
-      console.log('Creating user with data:', createData);
-      const success = await handleCreateUser(createData);
-      
-      if (success) {
-        closeModal();
-      }
-    } else {
-      // Update existing user
-      const success = await handleUpdateUser(user.id, {
-        fullName: formData.fullName,
-        roleId: formData.roleId,
-        status: formData.status,
-        department: formData.department,
-        location: formData.location,
-        mfaEnabled: formData.mfaEnabled,
-        phoneNumber: formData.phoneNumber,
-        emailVerified: formData.emailVerified,
-        phoneVerified: formData.phoneVerified,
-        tags: formData.tags
-      });
-      
-      if (success) {
-        closeModal();
-      }
-    }
-  };
-
-  const handleTagInput = (e) => {
-    if (e.key === 'Enter' && e.target.value.trim()) {
-      const newTag = e.target.value.trim();
-      if (!formData.tags.includes(newTag)) {
-        setFormData(prev => ({
-          ...prev,
-          tags: [...prev.tags, newTag]
-        }));
-      }
-      e.target.value = '';
-    }
-  };
-
-  const removeTag = (tagToRemove) => {
-    setFormData(prev => ({
-      ...prev,
-      tags: prev.tags.filter(tag => tag !== tagToRemove)
-    }));
-  };
-
-  return (
-    <MobileModal 
-      title={user?.id === 'new' ? "Add New User" : "Edit User"} 
-      onClose={closeModal}
-      showBackButton={modalStack.length > 1}
-      onBack={closeModal}
-    >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {validationResult && !validationResult.valid && (
-          <div className="p-3 rounded border" style={{ 
-            borderColor: colors.error,
-            backgroundColor: `${colors.error}20`
-          }}>
-            <div className="text-sm font-medium mb-1" style={{ color: colors.error }}>
-              Validation Issues
+    return (
+      <MobileModal 
+        title={user?.id === 'new' ? "Add New User" : "Edit User"} 
+        onClose={closeModal}
+        showBackButton={modalStack.length > 1}
+        onBack={closeModal}
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {validationResult && !validationResult.valid && (
+            <div className="p-3 rounded border" style={{ 
+              borderColor: colors.error,
+              backgroundColor: `${colors.error}20`
+            }}>
+              <div className="text-sm font-medium mb-1" style={{ color: colors.error }}>
+                Validation Issues
+              </div>
+              <ul className="text-xs space-y-1">
+                {validationResult.issues.map((issue, index) => (
+                  <li key={index} style={{ color: colors.textSecondary }}>
+                    • {issue.field}: {issue.message}
+                  </li>
+                ))}
+              </ul>
             </div>
-            <ul className="text-xs space-y-1">
-              {validationResult.issues.map((issue, index) => (
-                <li key={index} style={{ color: colors.textSecondary }}>
-                  • {issue.field}: {issue.message}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+          )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-              Full Name *
-            </label>
-            <input
-              type="text"
-              value={formData.fullName}
-              onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
-              className="w-full px-3 py-2 rounded border text-sm"
-              style={{ 
-                backgroundColor: colors.inputBg,
-                borderColor: colors.inputBorder,
-                color: colors.text
-              }}
-              required
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-              Username *
-            </label>
-            <input
-              type="text"
-              value={formData.username}
-              onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
-              className="w-full px-3 py-2 rounded border text-sm"
-              style={{ 
-                backgroundColor: colors.inputBg,
-                borderColor: colors.inputBorder,
-                color: colors.text
-              }}
-              required={user?.id === 'new'}
-              disabled={user?.id !== 'new'}
-            />
-            {/* {user?.id !== 'new' && (
-              <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-                Username cannot be changed
-              </div>
-            )} */}
-          </div>
-          <div>
-            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-              Email *
-            </label>
-            <input
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-              className="w-full px-3 py-2 rounded border text-sm"
-              style={{ 
-                backgroundColor: colors.inputBg,
-                borderColor: colors.inputBorder,
-                color: colors.text
-              }}
-              required={user?.id === 'new'}
-              disabled={user?.id !== 'new'}
-            />
-            {/* {user?.id !== 'new' && (
-              <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-                Email cannot be changed
-              </div>
-            )} */}
-          </div>
-          <div>
-            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-              Access Type *
-            </label>
-            {rolesError ? (
-              <div 
-                className="w-full px-3 py-2 rounded border text-sm flex items-center justify-between"
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+                Full Name *
+              </label>
+              <input
+                type="text"
+                value={formData.fullName}
+                onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
                 style={{ 
-                  backgroundColor: `${colors.error}20`,
-                  borderColor: colors.error,
-                  color: colors.error
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
                 }}
-              >
-                <span>Failed to load roles</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRolesError(false);
-                    setRolesLoading(true);
-                    const fetchRoles = async () => {
-                      try {
-                        const response = await getAllRoles(authToken, { page: 0, size: 100 });
-                        if (response && response.responseCode === 200 && response.data) {
-                          const content = response.data.content || [];
-                          const mappedRoles = content.map(role => ({
-                            id: role.roleId,
-                            roleId: role.roleId,
-                            roleName: role.roleName
-                          }));
-                          setLocalRoles(mappedRoles);
-                          
-                          // Re-set the user's role after reload
-                          const userRoleId = user?.roleId || user?.role;
-                          if (userRoleId && userRoleId !== 'new') {
-                            setFormData(prev => ({ ...prev, roleId: userRoleId }));
-                          }
-                          
-                          if (mappedRoles.length > 0) {
-                            setRolesError(false);
-                          }
-                        }
-                      } catch (error) {
-                        console.error('Error retrying roles:', error);
-                      } finally {
-                        setRolesLoading(false);
-                      }
-                    };
-                    fetchRoles();
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+                Username *
+              </label>
+              <input
+                type="text"
+                value={formData.username}
+                onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+                required={user?.id === 'new'}
+                disabled={user?.id !== 'new'}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+                Email *
+              </label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+                required={user?.id === 'new'}
+                disabled={user?.id !== 'new'}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+                Access Type *
+              </label>
+              {rolesError ? (
+                <div 
+                  className="w-full px-3 py-2 rounded border text-sm flex items-center justify-between"
+                  style={{ 
+                    backgroundColor: `${colors.error}20`,
+                    borderColor: colors.error,
+                    color: colors.error
                   }}
-                  className="p-1 rounded hover:bg-opacity-50"
-                  style={{ backgroundColor: `${colors.error}30` }}
                 >
-                  <RefreshCw size={14} className={rolesLoading ? 'animate-spin' : ''} />
-                </button>
-              </div>
-            ) : (
-              <select
-                key={`role-select-${formData.roleId || 'empty'}`} // Force re-render when roleId changes
-                value={formData.roleId || ''}
-                onChange={(e) => {
-                  console.log('Role selected:', e.target.value);
-                  setFormData(prev => ({ ...prev, roleId: e.target.value }));
+                  <span>Failed to load roles</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRolesError(false);
+                      setRolesLoading(true);
+                      const fetchRoles = async () => {
+                        try {
+                          const response = await getAllRoles(authToken, { page: 0, size: 100 });
+                          if (response && response.responseCode === 200 && response.data) {
+                            const content = response.data.content || [];
+                            const mappedRoles = content.map(role => ({
+                              id: role.roleId,
+                              roleId: role.roleId,
+                              roleName: role.roleName
+                            }));
+                            setLocalRoles(mappedRoles);
+                            
+                            // Re-set the user's role after reload
+                            const userRoleId = user?.roleId || user?.role;
+                            if (userRoleId && userRoleId !== 'new') {
+                              setFormData(prev => ({ ...prev, roleId: userRoleId }));
+                            }
+                            
+                            if (mappedRoles.length > 0) {
+                              setRolesError(false);
+                            }
+                          }
+                        } catch (error) {
+                          console.error('Error retrying roles:', error);
+                        } finally {
+                          setRolesLoading(false);
+                        }
+                      };
+                      fetchRoles();
+                    }}
+                    className="p-1 rounded hover:bg-opacity-50"
+                    style={{ backgroundColor: `${colors.error}30` }}
+                  >
+                    <RefreshCw size={14} className={rolesLoading ? 'animate-spin' : ''} />
+                  </button>
+                </div>
+              ) : (
+                <select
+                  key={`role-select-${formData.roleId || 'empty'}`}
+                  value={formData.roleId || ''}
+                  onChange={(e) => {
+                    console.log('Role selected:', e.target.value);
+                    setFormData(prev => ({ ...prev, roleId: e.target.value }));
+                  }}
+                  className="w-full px-3 py-2 rounded border text-sm uppercase"
+                  style={{ 
+                    backgroundColor: colors.bg,
+                    borderColor: colors.inputBorder,
+                    color: colors.text,
+                    opacity: rolesLoading ? 0.7 : 1
+                  }}
+                  required
+                  disabled={rolesLoading || localRoles.length === 0}
+                >
+                  <option value="">
+                    {rolesLoading ? 'Loading access types...' : 
+                     localRoles.length === 0 ? 'No access types available' : 'Select Access Type'}
+                  </option>
+                  {localRoles.map(role => (
+                    <option 
+                      key={role.roleId} 
+                      value={role.roleId}
+                      selected={formData.roleId === role.roleId}
+                    >
+                      {role.roleName}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {rolesLoading && (
+                <div className="flex items-center gap-2 text-xs mt-1" style={{ color: colors.textSecondary }}>
+                  <RefreshCw size={12} className="animate-spin" />
+                  <span>Loading roles from server...</span>
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+                Phone Number *
+              </label>
+              <input
+                type="text"
+                value={formData.phoneNumber}
+                onChange={(e) => setFormData(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
                 }}
-                className="w-full px-3 py-2 rounded border text-sm uppercase"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+                Staff Id
+              </label>
+              <input
+                type="text"
+                value={formData.department}
+                onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+                Location
+              </label>
+              <input
+                type="text"
+                value={formData.location}
+                onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+              />
+            </div>
+            
+            <div>
+              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+                Status *
+              </label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
                 style={{ 
                   backgroundColor: colors.bg,
                   borderColor: colors.inputBorder,
-                  color: colors.text,
-                  opacity: rolesLoading ? 0.7 : 1
+                  color: colors.text
                 }}
                 required
-                disabled={rolesLoading || localRoles.length === 0}
               >
-                <option value="">
-                  {rolesLoading ? 'Loading access types...' : 
-                   localRoles.length === 0 ? 'No access types available' : 'Select Access Type'}
-                </option>
-                {localRoles.map(role => (
-                  <option 
-                    key={role.roleId} 
-                    value={role.roleId}
-                    selected={formData.roleId === role.roleId} // Explicit selected attribute
-                  >
-                    {role.roleName}
-                  </option>
-                ))}
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="pending">Pending</option>
+                <option value="suspended">Suspended</option>
               </select>
-            )}
-            {rolesLoading && (
-              <div className="flex items-center gap-2 text-xs mt-1" style={{ color: colors.textSecondary }}>
-                <RefreshCw size={12} className="animate-spin" />
-                <span>Loading roles from server...</span>
-              </div>
-            )}
-            {/* Debug display - remove in production */}
-            {/* <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-              Selected role ID: {formData.roleId || 'None'}
-            </div> */}
+            </div>
           </div>
-           <div>
-            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-              Phone Number *
-            </label>
-            <input
-              type="text"
-              value={formData.phoneNumber}
-              onChange={(e) => setFormData(prev => ({ ...prev, phoneNumber: e.target.value }))}
-              className="w-full px-3 py-2 rounded border text-sm"
-              style={{ 
-                backgroundColor: colors.inputBg,
-                borderColor: colors.inputBorder,
-                color: colors.text
-              }}
-              required
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-              Staff Id
-            </label>
-            <input
-              type="text"
-              value={formData.department}
-              onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
-              className="w-full px-3 py-2 rounded border text-sm"
-              style={{ 
-                backgroundColor: colors.inputBg,
-                borderColor: colors.inputBorder,
-                color: colors.text
-              }}
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-              Location
-            </label>
-            <input
-              type="text"
-              value={formData.location}
-              onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-              className="w-full px-3 py-2 rounded border text-sm"
-              style={{ 
-                backgroundColor: colors.inputBg,
-                borderColor: colors.inputBorder,
-                color: colors.text
-              }}
-            />
-          </div>
-          
-          <div>
-            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-              Status *
-            </label>
-            <select
-              value={formData.status}
-              onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
-              className="w-full px-3 py-2 rounded border text-sm"
-              style={{ 
-                backgroundColor: colors.bg,
-                borderColor: colors.inputBorder,
-                color: colors.text
-              }}
-              required
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="pending">Pending</option>
-              <option value="suspended">Suspended</option>
-            </select>
-          </div>
-        </div>
 
-        <div>
-          <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-            Tags
-          </label>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {formData.tags.map((tag, index) => (
-              <div 
-                key={index}
-                className="px-2 py-1 rounded flex items-center gap-1 text-xs"
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Tags
+            </label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {formData.tags.map((tag, index) => (
+                <div 
+                  key={index}
+                  className="px-2 py-1 rounded flex items-center gap-1 text-xs"
+                  style={{ 
+                    backgroundColor: colors.hover,
+                    color: colors.textSecondary
+                  }}
+                >
+                  {tag}
+                  <button
+                    type="button"
+                    onClick={() => removeTag(tag)}
+                    className="p-0.5 rounded hover:bg-opacity-50 transition-colors"
+                    style={{ backgroundColor: colors.hover }}
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <input
+              type="text"
+              placeholder="Type tag and press Enter..."
+              onKeyDown={handleTagInput}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="mfaEnabled"
+                checked={formData.mfaEnabled}
+                onChange={(e) => setFormData(prev => ({ ...prev, mfaEnabled: e.target.checked }))}
+                className="rounded"
+              />
+              <label htmlFor="mfaEnabled" className="text-sm" style={{ color: colors.text }}>
+                MFA Enabled
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="emailVerified"
+                checked={formData.emailVerified}
+                onChange={(e) => setFormData(prev => ({ ...prev, emailVerified: e.target.checked }))}
+                className="rounded"
+              />
+              <label htmlFor="emailVerified" className="text-sm" style={{ color: colors.text }}>
+                Email Verified
+              </label>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button 
+                type="submit"
+                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.success,
+                  color: 'white'
+                }}
+                disabled={(validationResult && !validationResult.valid) || rolesLoading || localRoles.length === 0}
+              >
+                {user?.id === 'new' ? 'Create User' : 'Update User'}
+              </button>
+              <button 
+                type="button"
+                onClick={closeModal}
+                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
                 style={{ 
                   backgroundColor: colors.hover,
-                  color: colors.textSecondary
+                  color: colors.text
                 }}
               >
-                {tag}
-                <button
-                  type="button"
-                  onClick={() => removeTag(tag)}
-                  className="p-0.5 rounded hover:bg-opacity-50 transition-colors"
-                  style={{ backgroundColor: colors.hover }}
-                >
-                  <X size={10} />
-                </button>
-              </div>
-            ))}
+                Cancel
+              </button>
+            </div>
           </div>
-          <input
-            type="text"
-            placeholder="Type tag and press Enter..."
-            onKeyDown={handleTagInput}
-            className="w-full px-3 py-2 rounded border text-sm"
-            style={{ 
-              backgroundColor: colors.inputBg,
-              borderColor: colors.inputBorder,
-              color: colors.text
-            }}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="mfaEnabled"
-              checked={formData.mfaEnabled}
-              onChange={(e) => setFormData(prev => ({ ...prev, mfaEnabled: e.target.checked }))}
-              className="rounded"
-            />
-            <label htmlFor="mfaEnabled" className="text-sm" style={{ color: colors.text }}>
-              MFA Enabled
-            </label>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="emailVerified"
-              checked={formData.emailVerified}
-              onChange={(e) => setFormData(prev => ({ ...prev, emailVerified: e.target.checked }))}
-              className="rounded"
-            />
-            <label htmlFor="emailVerified" className="text-sm" style={{ color: colors.text }}>
-              Email Verified
-            </label>
-          </div>
-        </div>
-
-        <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <button 
-              type="submit"
-              className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-              style={{ 
-                backgroundColor: colors.success,
-                color: 'white'
-              }}
-              disabled={(validationResult && !validationResult.valid) || rolesLoading || localRoles.length === 0}
-            >
-              {user?.id === 'new' ? 'Create User' : 'Update User'}
-            </button>
-            <button 
-              type="button"
-              onClick={closeModal}
-              className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-              style={{ 
-                backgroundColor: colors.hover,
-                color: colors.text
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </form>
-    </MobileModal>
-  );
-};
+        </form>
+      </MobileModal>
+    );
+  };
 
   // Reset Password Modal
   const ResetPasswordModal = ({ data: user }) => {
@@ -2903,13 +2893,10 @@ const EditUserModal = ({ data: user }) => {
   // Loading Overlay
   const LoadingOverlay = () => {
     // Check if any loading state is active
-    const isLoading = loading || 
-                    rolesLoading || 
-                    loading.initialLoad;
+    const isLoading = loading || rolesLoading;
     
     // Determine loading message based on what's loading
     const getLoadingMessage = () => {
-      if (loading.initialLoad) return 'Initializing User Management...';
       if (loading && rolesLoading) return 'Loading users and roles...';
       if (loading) return 'Loading users...';
       if (rolesLoading) return 'Loading roles...';
@@ -2919,10 +2906,10 @@ const EditUserModal = ({ data: user }) => {
     // Determine loading tips based on context
     const getLoadingTip = () => {
       if (loading && rolesLoading) {
-        return `Loading ${stats.totalUsers || ''} users and role configurations...`;
+        return `Loading ${totalItems || ''} users and role configurations...`;
       }
       if (loading) {
-        return `Loading ${stats.totalUsers || ''} users...`;
+        return `Loading ${totalItems || ''} users...`;
       }
       if (rolesLoading) {
         return 'Loading access types and permissions...';
@@ -2950,9 +2937,6 @@ const EditUserModal = ({ data: user }) => {
           <p className="text-xs mb-1" style={{ color: colors.textTertiary }}>
             {getLoadingTip()}
           </p>
-          {/* <p className="text-xs" style={{ color: colors.textTertiary }}>
-            This won't take long
-          </p> */}
         </div>
       </div>
     );
@@ -2970,7 +2954,7 @@ const EditUserModal = ({ data: user }) => {
         }}
       >
         <div className="flex items-center justify-between mb-2">
-          <div className="text-sm font-medium truncate" style={{ color: colors.textSecondary }}>
+          <div className="text-xs font-medium truncate" style={{ color: colors.textSecondary }}>
             {title}
           </div>
           <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: `${color}20` }}>
@@ -2978,7 +2962,7 @@ const EditUserModal = ({ data: user }) => {
           </div>
         </div>
         <div className="flex items-end justify-between">
-          <div className="text-xl font-bold truncate" style={{ color: colors.text }}>
+          <div className="text-lg font-bold truncate" style={{ color: colors.text }}>
             {value}
           </div>
           {change && (
@@ -3143,8 +3127,10 @@ const EditUserModal = ({ data: user }) => {
     );
   };
 
-  // Pagination Component
+  // Pagination Component - UPDATED with full pagination controls
   const Pagination = () => {
+    const { start, end } = getDisplayRange();
+    
     const renderPageNumbers = () => {
       const pages = [];
       const maxVisiblePages = 5;
@@ -3176,15 +3162,24 @@ const EditUserModal = ({ data: user }) => {
       return pages;
     };
 
+    if (totalItems === 0) {
+      return (
+        <div className="p-4 text-center text-sm" style={{ color: colors.textSecondary }}>
+          No users found
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t" style={{ borderColor: colors.border }}>
         <div className="text-xs" style={{ color: colors.textSecondary }}>
-          Showing {indexOfFirstUser + 1} - {Math.min(indexOfLastUser, sortedUsers.length)} of {sortedUsers.length} users
+          Showing {start} - {end} of {totalItems} users
         </div>
         
         <div className="flex items-center gap-1">
+          {/* First Page Button */}
           <button
-            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            onClick={goToFirstPage}
             disabled={currentPage === 1}
             className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
             style={{ 
@@ -3192,10 +3187,27 @@ const EditUserModal = ({ data: user }) => {
               color: colors.text,
               cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
             }}
+            title="First Page"
+          >
+            <ChevronsLeft size={14} />
+          </button>
+          
+          {/* Previous Page Button */}
+          <button
+            onClick={goToPreviousPage}
+            disabled={currentPage === 1}
+            className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+            style={{ 
+              backgroundColor: currentPage === 1 ? 'transparent' : colors.hover,
+              color: colors.text,
+              cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+            }}
+            title="Previous Page"
           >
             <ChevronLeft size={14} />
           </button>
           
+          {/* Page Numbers */}
           <div className="flex items-center gap-1">
             {renderPageNumbers().map((page, index) => (
               page === '...' ? (
@@ -3206,10 +3218,11 @@ const EditUserModal = ({ data: user }) => {
                 <button
                   key={index}
                   onClick={() => setCurrentPage(page)}
-                  className="w-6 h-6 rounded text-xs font-medium transition-colors"
+                  className="w-7 h-7 rounded text-xs font-medium transition-colors hover-lift"
                   style={{ 
                     backgroundColor: currentPage === page ? colors.selected : 'transparent',
-                    color: currentPage === page ? colors.primaryDark : colors.textSecondary
+                    color: currentPage === page ? colors.primaryDark : colors.textSecondary,
+                    border: currentPage === page ? `1px solid ${colors.primaryDark}` : 'none'
                   }}
                 >
                   {page}
@@ -3218,18 +3231,65 @@ const EditUserModal = ({ data: user }) => {
             ))}
           </div>
           
+          {/* Next Page Button */}
           <button
-            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-            disabled={currentPage === totalPages}
+            onClick={goToNextPage}
+            disabled={currentPage === totalPages || totalPages === 0}
             className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
             style={{ 
-              backgroundColor: currentPage === totalPages ? 'transparent' : colors.hover,
+              backgroundColor: currentPage === totalPages || totalPages === 0 ? 'transparent' : colors.hover,
               color: colors.text,
-              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+              cursor: currentPage === totalPages || totalPages === 0 ? 'not-allowed' : 'pointer'
             }}
+            title="Next Page"
           >
             <ChevronRight size={14} />
           </button>
+          
+          {/* Last Page Button */}
+          <button
+            onClick={goToLastPage}
+            disabled={currentPage === totalPages || totalPages === 0}
+            className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+            style={{ 
+              backgroundColor: currentPage === totalPages || totalPages === 0 ? 'transparent' : colors.hover,
+              color: colors.text,
+              cursor: currentPage === totalPages || totalPages === 0 ? 'not-allowed' : 'pointer'
+            }}
+            title="Last Page"
+          >
+            <ChevronsRight size={14} />
+          </button>
+        </div>
+
+        {/* Page Size Selector */}
+        <div className="flex items-center gap-2">
+          <label className="text-xs" style={{ color: colors.textSecondary }}>
+            Show:
+          </label>
+          <select
+            value={usersPerPage}
+            onChange={(e) => {
+              const newSize = parseInt(e.target.value);
+              setUsersPerPage(newSize);
+              setCurrentPage(1); // Reset to first page when changing page size
+              loadUsers({ pageSize: newSize, page: 0 });
+            }}
+            className="px-2 py-1 rounded border text-xs"
+            style={{ 
+              backgroundColor: colors.bg,
+              borderColor: colors.inputBorder,
+              color: colors.text
+            }}
+            disabled={loading}
+          >
+            <option value="5">5</option>
+            <option value="7">7</option>
+            <option value="10">10</option>
+            <option value="15">15</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+          </select>
         </div>
       </div>
     );
@@ -3366,30 +3426,6 @@ const EditUserModal = ({ data: user }) => {
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  {/* <button 
-                    onClick={handleRefresh}
-                    className="p-2 rounded-lg hover-lift transition-all duration-200"
-                    style={{ 
-                      backgroundColor: colors.hover,
-                      color: colors.text
-                    }}
-                    title="Refresh"
-                    disabled={loading}
-                  >
-                    <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-                  </button>
-                  <button 
-                    onClick={handleExportClick}
-                    className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
-                    style={{ 
-                      backgroundColor: colors.hover,
-                      color: colors.text
-                    }}
-                    disabled={loading}
-                  >
-                    <Download size={14} />
-                    <span className="hidden sm:inline">Export</span>
-                  </button> */}
                   <button 
                     onClick={handleImportUsers}
                     className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
@@ -3436,7 +3472,7 @@ const EditUserModal = ({ data: user }) => {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                 <StatCard
                   title="Total Users"
-                  value={stats.totalUsers}
+                  value={totalItems}
                   icon={Users}
                   color={colors.primary}
                 />
@@ -3646,7 +3682,7 @@ const EditUserModal = ({ data: user }) => {
                         <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
                           <input
                             type="checkbox"
-                            checked={selectedUsers.length === currentUsers.length && currentUsers.length > 0}
+                            checked={selectedUsers.length === users.length && users.length > 0}
                             onChange={handleSelectAll}
                             className="rounded border-gray-300"
                             style={{ borderColor: colors.border }}
@@ -3695,10 +3731,10 @@ const EditUserModal = ({ data: user }) => {
                         <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
                           Actions
                         </th>
-                      </tr>
+                       </tr>
                     </thead>
                     <tbody>
-                      {currentUsers.map(user => (
+                      {users.map(user => (
                         <tr 
                           key={user.id}
                           className="border-t hover-lift transition-colors"

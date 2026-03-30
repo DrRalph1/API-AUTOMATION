@@ -1,0 +1,18 @@
+package com.usg.apiGeneration.dtos.documentation;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.util.Map;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class ExportCollectionRequestDTO {
+    private String collectionId;
+    private String format; // json, yaml, markdown, postman
+    private boolean includeExamples;
+    private boolean includeMockData;
+    private Map<String, String> options;
+}
