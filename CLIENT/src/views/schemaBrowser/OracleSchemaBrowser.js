@@ -4880,7 +4880,7 @@ const renderTabContent = () => {
         <button 
           onClick={() => setShowQueryEditor(true)}
           className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:opacity-90 font-medium"
-          style={{ backgroundColor: colors.error, color: colors.white }}
+          style={{ backgroundColor: colors.info, color: colors.white }}
         >
           <Pencil size={16} />
           Query Editor

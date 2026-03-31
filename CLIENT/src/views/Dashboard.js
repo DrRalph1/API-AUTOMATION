@@ -1196,7 +1196,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                   onClick={() => setShowQueryEditor(true)}
                   className="hidden md:flex px-3 py-2 rounded text-sm font-medium hover:translate-y-[-2px] transition-transform flex items-center gap-2"
                   disabled={loading.refresh}
-                  style={{ backgroundColor: colors.error, color: colors.white }}
+                  style={{ backgroundColor: colors.info, color: colors.white }}
                 >
                   <Pencil size={16} className={loading.refresh ? 'animate-spin' : ''} />
                   Query Editor
