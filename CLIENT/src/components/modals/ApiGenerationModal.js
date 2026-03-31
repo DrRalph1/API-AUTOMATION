@@ -5036,7 +5036,7 @@ useEffect(() => {
 return ReactDOM.createPortal(
   <>
     {/* Main Modal */}
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[1000] p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[1500] p-4">
       <div className="rounded-xl shadow-2xl w-5xl max-w-5xl max-h-[90vh] overflow-y-scroll flex flex-col" style={{ 
         backgroundColor: themeColors.bg,
         border: `1px solid ${themeColors.modalBorder}`

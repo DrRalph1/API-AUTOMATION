@@ -11,13 +11,14 @@ import {
   Minimize2, MoreHorizontal, Send, CheckCircle, XCircle, Info, Layers,
   Box, FolderPlus, FilePlus, GitBranch, Bold, Italic, Image, Table as TableIcon,
   ExternalLink, UploadCloud, DownloadCloud, ShieldCheck, LayoutDashboard,
-  BookOpen, Zap, History, Terminal as TerminalIcon,
+  BookOpen, Zap, History, Terminal as TerminalIcon, Pencil,
   ChevronsLeft, ChevronsRight, GripVertical, Circle, Dot, Type as TypeIcon,
   FileCode, ChevronsUp, ChevronsDown, AlertTriangle, Menu, Loader, Tag,
   GitBranch as DependencyIcon
 } from 'lucide-react';
 import ApiGenerationModal from '@/components/modals/ApiGenerationModal.js';
 // Add this import at the top with your other imports
+import PreviewDDLModal from '@/components/modals/PreviewDDLModal.js';
 import QueryEditorModal from '@/components/modals/QueryEditorModal.js';
 
 // Import PostgreSQLSchemaController
@@ -1261,7 +1262,7 @@ const PostgreSQLSchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   // State
   const [showApiModal, setShowApiModal] = useState(false);
   const [showQueryEditor, setShowQueryEditor] = useState(false);
-
+  const [showPreviewDDL, setShowPreviewDDL] = useState(false);
   const [selectedForApiGeneration, setSelectedForApiGeneration] = useState(null);
   const [isLeftSidebarVisible, setIsLeftSidebarVisible] = useState(false);
   const [filterQuery, setFilterQuery] = useState('');
@@ -5749,10 +5750,19 @@ const renderColumnsTab = () => {
        <div className="flex items-center gap-3">
         <button 
           onClick={() => setShowQueryEditor(true)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:opacity-90 font-medium"
+          style={{ backgroundColor: colors.error, color: colors.white }}
+        >
+          <Pencil size={16} />
+          Query Editor
+        </button>
+
+        <button 
+          onClick={() => setShowPreviewDDL(true)}
           className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-gradient-to-r from-green-500 via-green-600 to-green-700 hover:opacity-90 font-medium text-white"
         >
           <Database size={16} />
-          Query Editor
+          Preview DDL
         </button>
 
         <button 
@@ -5760,7 +5770,7 @@ const renderColumnsTab = () => {
           className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 hover:opacity-90 font-medium text-white"
         >
           <PlusCircle size={16} />
-          Generate New API
+          Generate API
         </button>
       </div>
       </div>
@@ -5941,11 +5951,22 @@ const renderColumnsTab = () => {
         />
       )}
 
+      {showPreviewDDL && (
+        <PreviewDDLModal
+          isOpen={showPreviewDDL}
+          onClose={() => setShowPreviewDDL(false)}
+          selectedObject={selectedForApiGeneration || activeObject}
+          colors={colors}
+          theme={theme}
+          authToken={authToken}
+          databaseType="postgresql"
+        />
+      )}
+
       {showQueryEditor && (
         <QueryEditorModal
           isOpen={showQueryEditor}
           onClose={() => setShowQueryEditor(false)}
-          selectedObject={selectedForApiGeneration || activeObject}
           colors={colors}
           theme={theme}
           authToken={authToken}

@@ -1,7 +1,7 @@
 // Dashboard.jsx - MOBILE RESPONSIVE (Fixed duplicate navigation)
 import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense, useRef } from 'react';
 import {
-  Database, FileCode, Activity, Zap, Settings,
+  Database, FileCode, Activity, Zap, Settings, Pencil,
   Search, RefreshCw, Plus, CheckCircle, AlertCircle, Users, Minus,
   Shield, Download, Edit, Trash2, X, AlertTriangle, Edit2, Copy,
   Table, Code, Loader, BookOpen, UserCog, Rocket, TrendingDown, TrendingUp,
@@ -22,6 +22,9 @@ import {
   getGeneratedApiDetails,
   handleDashboardResponse 
 } from "../controllers/DashboardController.js";
+
+
+import QueryEditorModal from '@/components/modals/QueryEditorModal.js';
 
 // ============ CONSTANTS & CONFIG ============
 const STAT_CARDS = [
@@ -534,6 +537,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
   const [tableLoading, setTableLoading] = useState(false); // New state for table loading
   const [apiSearchQuery, setApiSearchQuery] = useState('');
   const [showApiModal, setShowApiModal] = useState(false);
+  const [showQueryEditor, setShowQueryEditor] = useState(false);
   const [selectedForApiGeneration, setSelectedForApiGeneration] = useState(null);
   
   // Stats state
@@ -1189,12 +1193,13 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                 
                 {/* Desktop buttons */}
                 <button 
-                  onClick={handleRefresh} 
-                  className="hidden md:flex px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded text-sm font-medium text-white hover:translate-y-[-2px] transition-transform flex items-center gap-2"
+                  onClick={() => setShowQueryEditor(true)}
+                  className="hidden md:flex px-3 py-2 rounded text-sm font-medium hover:translate-y-[-2px] transition-transform flex items-center gap-2"
                   disabled={loading.refresh}
+                  style={{ backgroundColor: colors.error, color: colors.white }}
                 >
-                  <RefreshCw size={16} className={loading.refresh ? 'animate-spin' : ''} />
-                  Refresh
+                  <Pencil size={16} className={loading.refresh ? 'animate-spin' : ''} />
+                  Query Editor
                 </button>
                 <button 
                   onClick={() => handleNavigate('schema-browser')} 
@@ -1202,6 +1207,14 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                 >
                   <Database size={16} />
                   Schema Browser
+                </button>
+                
+                <button 
+                  onClick={handleRefresh} 
+                  className="hidden md:flex px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded text-sm font-medium text-white hover:translate-y-[-2px] transition-transform flex items-center gap-2"
+                  disabled={loading.refresh}
+                >
+                  <RefreshCw size={16} className={loading.refresh ? 'animate-spin' : ''} />
                 </button>
                 
                 {/* Mobile refresh button */}
@@ -1420,6 +1433,17 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
             isEditing={!!selectedForApiGeneration?.data?.id}
           />
         </Suspense>
+      )}
+
+      {showQueryEditor && (
+        <QueryEditorModal
+          isOpen={showQueryEditor}
+          onClose={() => setShowQueryEditor(false)}
+          colors={colors}
+          theme={theme}
+          authToken={authToken}
+          databaseType="all"
+        />
       )}
     </div>
   );

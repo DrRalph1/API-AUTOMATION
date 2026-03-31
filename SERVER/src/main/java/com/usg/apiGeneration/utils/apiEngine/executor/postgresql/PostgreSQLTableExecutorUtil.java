@@ -58,6 +58,98 @@ public class PostgreSQLTableExecutorUtil {
     }
 
     /**
+     * Build SELECT clause with field selection
+     * Supports:
+     * 1. fields parameter in request (comma-separated string or array)
+     * 2. Response mappings for default field selection
+     * 3. Aliases for fields (apiField -> dbColumn)
+     */
+    private String buildSelectClause(GeneratedApiEntity api, Map<String, Object> params,
+                                     Map<String, String> apiToDbColumnMap) {
+        // Priority 1: Check if fields are specified in the request
+        if (params != null && params.containsKey("fields")) {
+            Object fieldsObj = params.get("fields");
+            if (fieldsObj != null) {
+                List<String> selectedFields = new ArrayList<>();
+
+                // Handle comma-separated string
+                if (fieldsObj instanceof String) {
+                    String fields = (String) fieldsObj;
+                    for (String field : fields.split(",")) {
+                        field = field.trim();
+                        if (!field.isEmpty()) {
+                            selectedFields.add(field);
+                        }
+                    }
+                }
+                // Handle array/list
+                else if (fieldsObj instanceof List) {
+                    for (Object field : (List<?>) fieldsObj) {
+                        if (field != null) {
+                            selectedFields.add(field.toString().trim());
+                        }
+                    }
+                }
+
+                if (!selectedFields.isEmpty()) {
+                    List<String> mappedFields = new ArrayList<>();
+                    for (String field : selectedFields) {
+                        // Check if we have response mapping for this field (for alias)
+                        boolean found = false;
+                        if (api.getResponseMappings() != null) {
+                            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                                if (mapping.getApiField() != null &&
+                                        mapping.getApiField().equalsIgnoreCase(field) &&
+                                        mapping.getDbColumn() != null) {
+                                    // Use dbColumn with apiField alias (PostgreSQL uses double quotes for identifiers)
+                                    mappedFields.add("\"" + mapping.getDbColumn() + "\" AS \"" + mapping.getApiField() + "\"");
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // If no mapping found, use field name as is (might be a direct column name)
+                        if (!found) {
+                            // Try to find in API to DB mapping
+                            String dbColumn = apiToDbColumnMap.getOrDefault(field.toLowerCase(), field);
+                            // Quote column name to preserve case sensitivity
+                            mappedFields.add("\"" + dbColumn + "\"");
+                        }
+                    }
+                    return String.join(", ", mappedFields);
+                }
+            }
+        }
+
+        // Priority 2: Use response mappings to determine fields
+        if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+            List<String> selectedFields = new ArrayList<>();
+
+            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                if (Boolean.TRUE.equals(mapping.getIncludeInResponse()) && mapping.getDbColumn() != null) {
+                    String dbColumn = mapping.getDbColumn();
+                    String apiField = mapping.getApiField();
+
+                    // Use alias if apiField is different from dbColumn
+                    if (apiField != null && !apiField.isEmpty() && !apiField.equals(dbColumn)) {
+                        selectedFields.add("\"" + dbColumn + "\" AS \"" + apiField + "\"");
+                    } else {
+                        selectedFields.add("\"" + dbColumn + "\"");
+                    }
+                }
+            }
+
+            if (!selectedFields.isEmpty()) {
+                return String.join(", ", selectedFields);
+            }
+        }
+
+        // Priority 3: Return all columns
+        return "*";
+    }
+
+    /**
      * Get connection with timeout settings
      */
     private Connection getConnectionWithTimeout() throws SQLException {
@@ -204,23 +296,6 @@ public class PostgreSQLTableExecutorUtil {
         Map<String, Object> noticeResult = new HashMap<>();
 
         try (Connection conn = getConnectionWithTimeout()) {
-            StringBuilder sql = new StringBuilder("SELECT * FROM ");
-            if (schema != null && !schema.isEmpty()) {
-                sql.append(schema).append(".");
-            }
-            sql.append(tableName);
-
-            List<Object> paramValues = new ArrayList<>();
-            List<String> whereClauses = new ArrayList<>();
-
-            log.info("=== TABLE SELECT DEBUG ===");
-            log.info("Table: {}.{}", schema, tableName);
-            log.info("All incoming params: {}", params);
-            log.info("Capture notices: {}", captureNotices);
-
-            // Build a clean parameter map
-            Map<String, Object> cleanParams = new HashMap<>();
-
             // Build parameter mapping
             Map<String, String> apiToDbColumnMap = new HashMap<>();
             if (configuredParamDTOs != null) {
@@ -238,6 +313,30 @@ public class PostgreSQLTableExecutorUtil {
                     }
                 }
             }
+
+            // Build SELECT clause with field selection
+            String selectClause = buildSelectClause(api, params, apiToDbColumnMap);
+
+            // Build SQL with selected fields
+            StringBuilder sql = new StringBuilder("SELECT ");
+            sql.append(selectClause);
+            sql.append(" FROM ");
+            if (schema != null && !schema.isEmpty()) {
+                sql.append(schema).append(".");
+            }
+            sql.append(tableName);
+
+            List<Object> paramValues = new ArrayList<>();
+            List<String> whereClauses = new ArrayList<>();
+
+            log.info("=== TABLE SELECT DEBUG ===");
+            log.info("Table: {}.{}", schema, tableName);
+            log.info("Select clause: {}", selectClause);
+            log.info("All incoming params: {}", params);
+            log.info("Capture notices: {}", captureNotices);
+
+            // Build a clean parameter map
+            Map<String, Object> cleanParams = new HashMap<>();
 
             // Process XML/JSON body if present
             String body = null;
@@ -257,6 +356,7 @@ public class PostgreSQLTableExecutorUtil {
                             Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, true);
                             if (!extractedParams.isEmpty()) {
                                 cleanParams.putAll(extractedParams);
+                                log.info("✅ Extracted {} parameters from XML and added to cleanParams", extractedParams.size());
                             }
                         }
                     }
@@ -274,6 +374,7 @@ public class PostgreSQLTableExecutorUtil {
                             Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, false);
                             if (!extractedParams.isEmpty()) {
                                 cleanParams.putAll(extractedParams);
+                                log.info("✅ Extracted {} parameters from JSON and added to cleanParams", extractedParams.size());
                             }
                         }
                     }
@@ -284,10 +385,17 @@ public class PostgreSQLTableExecutorUtil {
             if (params != null) {
                 for (Map.Entry<String, Object> entry : params.entrySet()) {
                     String key = entry.getKey();
+                    // Skip the _xml/_json keys as they're already processed
                     if ("_xml".equals(key) || "_json".equals(key)) {
                         continue;
                     }
 
+                    // Skip fields parameter as it's already used for SELECT clause
+                    if ("fields".equals(key)) {
+                        continue;
+                    }
+
+                    // Map the key to database column name if mapping exists
                     String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
                     cleanParams.put(dbColumnName, entry.getValue());
                 }
@@ -299,6 +407,7 @@ public class PostgreSQLTableExecutorUtil {
                         try {
                             int position = Integer.parseInt(key.substring(5)) - 1;
                             cleanParams.put("position_" + position, entry.getValue());
+                            log.info("Mapped numbered param {} to position {}", key, position);
                         } catch (NumberFormatException e) {
                             // Ignore
                         }
@@ -310,16 +419,21 @@ public class PostgreSQLTableExecutorUtil {
 
             // Build WHERE clause
             if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                log.info("Processing {} configured parameters", api.getParameters().size());
+
                 for (ApiParameterEntity configuredParam : api.getParameters()) {
                     String paramKey = configuredParam.getKey();
                     String dbColumn = configuredParam.getDbColumn();
                     String paramType = configuredParam.getParameterType();
 
+                    // Default to "query" if paramType is null
                     if (paramType == null) {
                         paramType = "query";
+                        log.debug("Parameter {} has null paramType, defaulting to 'query'", paramKey);
                     }
 
                     if (dbColumn == null || dbColumn.isEmpty()) {
+                        log.debug("Parameter {} has no dbColumn mapping, skipping", paramKey);
                         continue;
                     }
 
@@ -328,63 +442,98 @@ public class PostgreSQLTableExecutorUtil {
                             "body".equals(paramType);
 
                     if (isValidForFiltering) {
+                        log.info("Processing parameter: key='{}', dbColumn='{}', paramType='{}', required={}",
+                                paramKey, dbColumn, paramType, configuredParam.getRequired());
+
                         Object value = null;
 
+                        // Try to find value by direct key match
                         if (cleanParams.containsKey(paramKey)) {
                             value = cleanParams.get(paramKey);
+                            log.info("  Found exact match for key '{}' with value: {}", paramKey, value);
                         }
 
+                        // Try case-insensitive match
                         if (value == null) {
                             for (Map.Entry<String, Object> entry : cleanParams.entrySet()) {
                                 if (entry.getKey().equalsIgnoreCase(paramKey)) {
                                     value = entry.getValue();
+                                    log.info("  Found case-insensitive match for key '{}' with value: {}", paramKey, value);
                                     break;
                                 }
                             }
                         }
 
+                        // Try to find by position if this is a path parameter
                         if (value == null && "path".equals(paramType)) {
                             Integer position = configuredParam.getPosition();
                             if (position != null) {
                                 String positionKey = "position_" + position;
                                 if (cleanParams.containsKey(positionKey)) {
                                     value = cleanParams.get(positionKey);
+                                    log.info("  Found by position {} with value: {}", position, value);
                                 }
                             }
                         }
 
                         if (value != null) {
+                            // Handle collection/array values
                             if (value instanceof List || value.getClass().isArray()) {
                                 Collection<?> collection = value instanceof List ?
                                         (List<?>) value : Arrays.asList((Object[]) value);
+
                                 if (!collection.isEmpty()) {
                                     value = collection.iterator().next();
+                                    log.info("  Converted collection to single value: {}", value);
                                 } else {
                                     value = null;
                                 }
                             }
 
                             if (value != null && !value.toString().trim().isEmpty()) {
-                                whereClauses.add(dbColumn + " = ?");
+                                whereClauses.add("\"" + dbColumn + "\" = ?");
                                 paramValues.add(value);
-                                log.info("ADDED FILTER: {} = ? with value: {}", dbColumn, value);
-                            } else if (Boolean.TRUE.equals(configuredParam.getRequired())) {
+                                log.info("  ADDED FILTER: {} = ? with value: {}", dbColumn, value);
+                            } else {
+                                if (Boolean.TRUE.equals(configuredParam.getRequired())) {
+                                    throw new ValidationException(
+                                            String.format("Required parameter '%s' cannot be empty", paramKey)
+                                    );
+                                }
+                                log.info("Optional parameter {} not provided or empty, skipping filter", paramKey);
+                            }
+                        } else {
+                            if (Boolean.TRUE.equals(configuredParam.getRequired())) {
+                                // Better error message showing all available params
                                 throw new ValidationException(
-                                        String.format("Required parameter '%s' cannot be empty", paramKey)
+                                        String.format("Required parameter '%s' is missing. Available params: %s. Request params: %s",
+                                                paramKey, cleanParams.keySet(), params.keySet())
                                 );
                             }
-                        } else if (Boolean.TRUE.equals(configuredParam.getRequired())) {
-                            throw new ValidationException(
-                                    String.format("Required parameter '%s' is missing. Available params: %s",
-                                            paramKey, cleanParams.keySet())
-                            );
+                            log.info("Optional parameter {} not provided, skipping filter", paramKey);
                         }
+                    } else {
+                        log.info("Parameter {} with type '{}' is not for filtering, skipping", paramKey, paramType);
                     }
                 }
             }
 
             if (!whereClauses.isEmpty()) {
                 sql.append(" WHERE ").append(String.join(" AND ", whereClauses));
+            }
+
+            // Handle ORDER BY if specified
+            if (params != null && params.containsKey("sort")) {
+                String sortColumn = params.get("sort").toString();
+                String order = "ASC";
+                if (params.containsKey("order")) {
+                    order = params.get("order").toString().toUpperCase();
+                    if (!"ASC".equals(order) && !"DESC".equals(order)) {
+                        order = "ASC";
+                    }
+                }
+                sql.append(" ORDER BY \"").append(sortColumn).append("\" ").append(order);
+                log.info("Added ORDER BY: {} {}", sortColumn, order);
             }
 
             // Handle pagination
@@ -398,6 +547,7 @@ public class PostgreSQLTableExecutorUtil {
                     try {
                         page = Integer.parseInt(params.get("page").toString());
                         if (page < 1) page = 1;
+                        log.info("Page parameter found: {}", page);
                     } catch (NumberFormatException e) {
                         log.warn("Invalid page parameter, using default: 1");
                     }
@@ -407,6 +557,7 @@ public class PostgreSQLTableExecutorUtil {
                 sql.append(" OFFSET ? LIMIT ?");
                 paramValues.add(offset);
                 paramValues.add(pageSize);
+                log.info("Added pagination: offset={}, pageSize={}", offset, pageSize);
             }
 
             log.info("Final SQL: {} with {} parameters", sql.toString(), paramValues.size());
@@ -532,7 +683,7 @@ public class PostgreSQLTableExecutorUtil {
                 throw new ValidationException("Invalid parameter format. Please check the data types of your parameters.");
             }
 
-            throw new RuntimeException(detailedError, e);
+            throw new RuntimeException("Failed to execute SELECT operation: " + detailedError, e);
         }
     }
 
@@ -700,7 +851,7 @@ public class PostgreSQLTableExecutorUtil {
                         columns.append(", ");
                         values.append(", ");
                     }
-                    columns.append(entry.getKey());
+                    columns.append("\"").append(entry.getKey()).append("\"");
                     values.append("?");
                     paramValues.add(entry.getValue());
                     log.debug("Column: {} = {} (type: {})", entry.getKey(), entry.getValue(),
@@ -827,6 +978,7 @@ public class PostgreSQLTableExecutorUtil {
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
 
         // Store captured notices only if enabled
+        List<String> capturedNotices = captureNotices ? new ArrayList<>() : null;
         Map<String, Object> noticeResult = new HashMap<>();
 
         if (params == null || params.isEmpty()) {
@@ -882,6 +1034,7 @@ public class PostgreSQLTableExecutorUtil {
                         Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, true);
                         if (!extractedParams.isEmpty()) {
                             processedParams.putAll(extractedParams);
+                            log.info("✅ Extracted {} parameters from XML for UPDATE", extractedParams.size());
                         }
                     }
                 }
@@ -899,6 +1052,7 @@ public class PostgreSQLTableExecutorUtil {
                         Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, false);
                         if (!extractedParams.isEmpty()) {
                             processedParams.putAll(extractedParams);
+                            log.info("✅ Extracted {} parameters from JSON for UPDATE", extractedParams.size());
                         }
                     }
                 }
@@ -923,6 +1077,7 @@ public class PostgreSQLTableExecutorUtil {
                             (List<?>) value : Arrays.asList((Object[]) value);
                     if (!collection.isEmpty()) {
                         processedParams.put(entry.getKey(), collection.iterator().next());
+                        log.info("Converted collection parameter '{}' to single value for UPDATE", entry.getKey());
                     } else {
                         processedParams.put(entry.getKey(), null);
                     }
@@ -946,13 +1101,13 @@ public class PostgreSQLTableExecutorUtil {
                     } else {
                         whereClause.append(" WHERE ");
                     }
-                    whereClause.append(key).append(" = ?");
+                    whereClause.append("\"").append(key).append("\" = ?");
                     whereValues.add(entry.getValue());
                 } else {
                     if (setClause.length() > 0) {
                         setClause.append(", ");
                     }
-                    setClause.append(key).append(" = ?");
+                    setClause.append("\"").append(key).append("\" = ?");
                     setValues.add(entry.getValue());
                 }
             }
@@ -967,6 +1122,9 @@ public class PostgreSQLTableExecutorUtil {
             List<Object> allParams = new ArrayList<>(setValues);
             allParams.addAll(whereValues);
 
+            log.info("Final UPDATE SQL: {}", sql);
+            log.info("UPDATE parameters: {}", allParams);
+
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 // Set parameters
                 for (int i = 0; i < allParams.size(); i++) {
@@ -977,11 +1135,12 @@ public class PostgreSQLTableExecutorUtil {
                 pstmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
 
                 // Capture warnings if enabled
-                if (captureNotices) {
+                if (captureNotices && capturedNotices != null) {
                     SQLWarning warning = pstmt.getWarnings();
                     while (warning != null) {
                         String warningMessage = warning.getMessage();
                         if (warningMessage != null) {
+                            capturedNotices.add(warningMessage);
                             log.debug("Captured warning/notice: {}", warningMessage);
                         }
                         warning = warning.getNextWarning();
@@ -989,6 +1148,35 @@ public class PostgreSQLTableExecutorUtil {
                 }
 
                 int rowsAffected = pstmt.executeUpdate();
+
+                // Process captured notices
+                if (captureNotices && capturedNotices != null && !capturedNotices.isEmpty()) {
+                    log.info("Captured {} NOTICE messages from update execution", capturedNotices.size());
+
+                    for (String notice : capturedNotices) {
+                        log.debug("Processing notice: {}", notice);
+
+                        if (notice != null && notice.contains("Result: ")) {
+                            String jsonPart = extractJsonFromNotice(notice);
+                            if (jsonPart != null) {
+                                try {
+                                    Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                            new TypeReference<Map<String, Object>>() {});
+                                    noticeResult.putAll(jsonResult);
+                                    log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
+                                } catch (Exception e) {
+                                    log.warn("Failed to parse JSON from notice: {} - {}", jsonPart, e.getMessage());
+                                    noticeResult.put("notice", notice);
+                                }
+                            } else {
+                                noticeResult.put("notice", notice);
+                            }
+                        } else if (notice != null) {
+                            noticeResult.put("notice", notice);
+                            log.info("Captured notice: {}", notice);
+                        }
+                    }
+                }
 
                 Map<String, Object> result = new HashMap<>();
                 result.put("rowsAffected", rowsAffected);
@@ -1030,6 +1218,7 @@ public class PostgreSQLTableExecutorUtil {
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
 
         // Store captured notices only if enabled
+        List<String> capturedNotices = captureNotices ? new ArrayList<>() : null;
         Map<String, Object> noticeResult = new HashMap<>();
 
         if (params == null || params.isEmpty()) {
@@ -1076,6 +1265,7 @@ public class PostgreSQLTableExecutorUtil {
                         Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, true);
                         if (!extractedParams.isEmpty()) {
                             processedParams.putAll(extractedParams);
+                            log.info("✅ Extracted {} parameters from XML for DELETE", extractedParams.size());
                         }
                     }
                 }
@@ -1093,6 +1283,7 @@ public class PostgreSQLTableExecutorUtil {
                         Map<String, Object> extractedParams = parseBodyParameters(body, configuredParamDTOs, apiToDbColumnMap, false);
                         if (!extractedParams.isEmpty()) {
                             processedParams.putAll(extractedParams);
+                            log.info("✅ Extracted {} parameters from JSON for DELETE", extractedParams.size());
                         }
                     }
                 }
@@ -1117,6 +1308,7 @@ public class PostgreSQLTableExecutorUtil {
                             (List<?>) value : Arrays.asList((Object[]) value);
                     if (!collection.isEmpty()) {
                         processedParams.put(entry.getKey(), collection.iterator().next());
+                        log.info("Converted collection parameter '{}' to single value for DELETE", entry.getKey());
                     } else {
                         processedParams.put(entry.getKey(), null);
                     }
@@ -1134,11 +1326,14 @@ public class PostgreSQLTableExecutorUtil {
                 } else {
                     whereClause.append(" WHERE ");
                 }
-                whereClause.append(entry.getKey()).append(" = ?");
+                whereClause.append("\"").append(entry.getKey()).append("\" = ?");
                 whereValues.add(entry.getValue());
             }
 
             String sql = "DELETE FROM " + (schema != null && !schema.isEmpty() ? schema + "." : "") + tableName + whereClause;
+
+            log.info("Final DELETE SQL: {}", sql);
+            log.info("DELETE parameters: {}", whereValues);
 
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 // Set parameters
@@ -1150,11 +1345,12 @@ public class PostgreSQLTableExecutorUtil {
                 pstmt.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
 
                 // Capture warnings if enabled
-                if (captureNotices) {
+                if (captureNotices && capturedNotices != null) {
                     SQLWarning warning = pstmt.getWarnings();
                     while (warning != null) {
                         String warningMessage = warning.getMessage();
                         if (warningMessage != null) {
+                            capturedNotices.add(warningMessage);
                             log.debug("Captured warning/notice: {}", warningMessage);
                         }
                         warning = warning.getNextWarning();
@@ -1162,6 +1358,35 @@ public class PostgreSQLTableExecutorUtil {
                 }
 
                 int rowsAffected = pstmt.executeUpdate();
+
+                // Process captured notices
+                if (captureNotices && capturedNotices != null && !capturedNotices.isEmpty()) {
+                    log.info("Captured {} NOTICE messages from delete execution", capturedNotices.size());
+
+                    for (String notice : capturedNotices) {
+                        log.debug("Processing notice: {}", notice);
+
+                        if (notice != null && notice.contains("Result: ")) {
+                            String jsonPart = extractJsonFromNotice(notice);
+                            if (jsonPart != null) {
+                                try {
+                                    Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                            new TypeReference<Map<String, Object>>() {});
+                                    noticeResult.putAll(jsonResult);
+                                    log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
+                                } catch (Exception e) {
+                                    log.warn("Failed to parse JSON from notice: {} - {}", jsonPart, e.getMessage());
+                                    noticeResult.put("notice", notice);
+                                }
+                            } else {
+                                noticeResult.put("notice", notice);
+                            }
+                        } else if (notice != null) {
+                            noticeResult.put("notice", notice);
+                            log.info("Captured notice: {}", notice);
+                        }
+                    }
+                }
 
                 Map<String, Object> result = new HashMap<>();
                 result.put("rowsAffected", rowsAffected);

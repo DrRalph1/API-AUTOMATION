@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Database, Table, FileText, Code, Package, Hash, Link, Type,
-  Search, Filter, ChevronDown, ChevronRight, ChevronLeft,
+  Search, Filter, ChevronDown, ChevronRight, ChevronLeft, Pencil,
   MoreVertical, Settings, User, Moon, Sun, RefreshCw, Plus, X, Check,
   Eye, EyeOff, Copy, Download, Upload, Share2, Edit2, Trash2, Play,
   Save, Folder, FolderOpen, Server, Activity, BarChart, Terminal,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import ApiGenerationModal from '@/components/modals/ApiGenerationModal.js';
 // Add this import at the top with your other imports
+import PreviewDDLModal from '@/components/modals/PreviewDDLModal.js';
 import QueryEditorModal from '@/components/modals/QueryEditorModal.js';
 
 // Import OracleSchemaController
@@ -1239,6 +1240,7 @@ const OracleSchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   // State
   const [showApiModal, setShowApiModal] = useState(false);
   const [showQueryEditor, setShowQueryEditor] = useState(false);
+  const [showPreviewDDL, setShowPreviewDDL] = useState(false);
   const [selectedForApiGeneration, setSelectedForApiGeneration] = useState(null);
   const [isLeftSidebarVisible, setIsLeftSidebarVisible] = useState(false);
   const [filterQuery, setFilterQuery] = useState('');
@@ -4877,10 +4879,19 @@ const renderTabContent = () => {
        <div className="flex items-center gap-3">
         <button 
           onClick={() => setShowQueryEditor(true)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:opacity-90 font-medium"
+          style={{ backgroundColor: colors.error, color: colors.white }}
+        >
+          <Pencil size={16} />
+          Query Editor
+        </button>
+
+        <button 
+          onClick={() => setShowPreviewDDL(true)}
           className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-gradient-to-r from-green-500 via-green-600 to-green-700 hover:opacity-90 font-medium text-white"
         >
           <Database size={16} />
-          Query Editor
+          Preview DDL
         </button>
 
         <button 
@@ -4888,7 +4899,7 @@ const renderTabContent = () => {
           className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 hover:opacity-90 font-medium text-white"
         >
           <PlusCircle size={16} />
-          Generate New API
+          Generate API
         </button>
       </div>
       </div>
@@ -5092,11 +5103,22 @@ const renderTabContent = () => {
       )}
 
 
+      {showPreviewDDL && (
+        <PreviewDDLModal
+          isOpen={showPreviewDDL}
+          onClose={() => setShowPreviewDDL(false)}
+          selectedObject={selectedForApiGeneration || activeObject}
+          colors={colors}
+          theme={theme}
+          authToken={authToken}
+          databaseType="oracle"
+        />
+      )}
+
       {showQueryEditor && (
         <QueryEditorModal
           isOpen={showQueryEditor}
           onClose={() => setShowQueryEditor(false)}
-          selectedObject={selectedForApiGeneration || activeObject}
           colors={colors}
           theme={theme}
           authToken={authToken}

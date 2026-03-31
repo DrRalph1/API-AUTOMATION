@@ -81,6 +81,17 @@ public class PostgreSQLViewExecutorUtil {
         return conn;
     }
 
+    /**
+     * Build SELECT clause with field selection - passes through to TableExecutorUtil
+     */
+    private void addFieldSelectionToParams(Map<String, Object> params, ExecuteApiRequestDTO request) {
+        // Check if fields are specified in query parameters
+        if (request.getQueryParams() != null && request.getQueryParams().containsKey("fields")) {
+            params.put("fields", request.getQueryParams().get("fields"));
+            log.info("Added fields parameter for field selection: {}", request.getQueryParams().get("fields"));
+        }
+    }
+
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String viewName, String schema, ExecuteApiRequestDTO request,
                           List<ApiParameterDTO> configuredParamDTOs) throws SQLException {
@@ -257,6 +268,10 @@ public class PostgreSQLViewExecutorUtil {
             }
         }
 
+        // ============ ADD FIELD SELECTION SUPPORT ============
+        // Add fields parameter to dbParams for field selection
+        addFieldSelectionToParams(dbParams, request);
+
         // ============ HANDLE COLLECTION/ARRAY PARAMETERS ============
         for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
             Object value = entry.getValue();
@@ -324,7 +339,7 @@ public class PostgreSQLViewExecutorUtil {
                 boolean isConfigured = configuredParamKeys.contains(key);
                 if (isConfigured || "page".equals(key) || "pagesize".equals(key) ||
                         "sort".equals(key) || "order".equals(key) ||
-                        "where_condition".equals(key)) {
+                        "where_condition".equals(key) || "fields".equals(key)) {
                     queryParamsForValidation.put(key, entry.getValue());
                 }
             }
@@ -922,7 +937,7 @@ public class PostgreSQLViewExecutorUtil {
                     // Skip special parameters that aren't view columns
                     if ("page".equals(paramName) || "pagesize".equals(paramName) ||
                             "sort".equals(paramName) || "order".equals(paramName) ||
-                            "where_condition".equals(paramName)) {
+                            "where_condition".equals(paramName) || "fields".equals(paramName)) {
                         continue;
                     }
 
