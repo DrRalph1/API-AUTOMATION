@@ -7,7 +7,7 @@ import {
   Database, Layers, Eye, EyeOff, ChevronRight, Info,
   Check, Zap, Sparkles, Folder, FolderOpen, Settings, Wrench,
   GripHorizontal, GripVertical, Maximize, History, BookOpen, Trash2,
-  FileCode, Brain, Wind, Coffee, Server, Cloud
+  FileCode, Brain, Wind, Coffee, Server, Cloud, ChevronDown
 } from 'lucide-react';
 
 // Database type configurations
@@ -44,7 +44,6 @@ const DATABASE_CONFIGS = {
     defaultSchema: null,
     quoteIdentifier: (name) => name,
     executeSQL: async (authToken, params) => {
-      // For 'all' type, you might want to show a message or handle differently
       throw new Error('Please select a specific database type to execute queries');
     }
   }
@@ -52,9 +51,6 @@ const DATABASE_CONFIGS = {
 
 // Helper function to get database display name
 const getDatabaseDisplayName = (databaseType) => {
-  if (databaseType === 'all') {
-    return 'Multi-Database';
-  }
   const config = DATABASE_CONFIGS[databaseType];
   return config ? config.displayName : 'Database';
 };
@@ -93,10 +89,6 @@ const SQL_TEMPLATES = {
     { name: 'Table Structure', sql: "SELECT \n  COLUMN_NAME,\n  DATA_TYPE,\n  IS_NULLABLE,\n  COLUMN_DEFAULT\nFROM INFORMATION_SCHEMA.COLUMNS \nWHERE TABLE_NAME = 'your_table_name'\nORDER BY ORDINAL_POSITION;" },
     { name: 'List All Tables', sql: "SELECT \n  TABLE_SCHEMA,\n  TABLE_NAME\nFROM INFORMATION_SCHEMA.TABLES \nWHERE TABLE_TYPE = 'BASE TABLE'\nORDER BY TABLE_SCHEMA, TABLE_NAME;" },
     { name: 'Current Database Info', sql: "SELECT \n  DB_NAME() as database_name,\n  SUSER_NAME() as current_user,\n  @@VERSION as sql_version;" }
-  ],
-  all: [
-    { name: 'Note: Select a database', sql: '-- Please select a specific database type (PostgreSQL or Oracle) from the dropdown to execute queries.' },
-    { name: 'View Available Databases', sql: '-- Switch to PostgreSQL or Oracle to see their specific templates' }
   ]
 };
 
@@ -156,7 +148,7 @@ const QueryEditorModal = ({
   databaseType = 'postgresql',
   initialQuery = '',
   onQueryExecute,
-  onDatabaseTypeChange // Optional callback for when database type changes
+  onDatabaseTypeChange // Optional callback for when database type changes (only when type is 'all')
 }) => {
   const [editorContent, setEditorContent] = useState(initialQuery || '');
   const [isCompiling, setIsCompiling] = useState(false);
@@ -176,8 +168,15 @@ const QueryEditorModal = ({
   const [queryHistory, setQueryHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
+  
+  // Only show database selector when databaseType is 'all'
   const [showDatabaseSelector, setShowDatabaseSelector] = useState(false);
-  const [selectedDatabaseType, setSelectedDatabaseType] = useState(databaseType);
+  const [selectedDatabaseType, setSelectedDatabaseType] = useState(
+    databaseType === 'all' ? 'postgresql' : databaseType
+  );
+  
+  // Determine the actual database type to use for queries
+  const activeDatabaseType = databaseType === 'all' ? selectedDatabaseType : databaseType;
   
   // Modal resize state
   const [modalSize, setModalSize] = useState({
@@ -209,11 +208,11 @@ const QueryEditorModal = ({
   const modalRef = useRef(null);
   const searchTimeoutRef = useRef(null);
   
-  // Get database configuration
-  const dbConfig = DATABASE_CONFIGS[selectedDatabaseType] || DATABASE_CONFIGS.postgresql;
+  // Get database configuration for the active database type
+  const dbConfig = DATABASE_CONFIGS[activeDatabaseType] || DATABASE_CONFIGS.postgresql;
   
-  // Get templates for current database
-  const templates = SQL_TEMPLATES[selectedDatabaseType] || SQL_TEMPLATES.postgresql;
+  // Get templates for the active database type
+  const templates = SQL_TEMPLATES[activeDatabaseType] || SQL_TEMPLATES.postgresql;
   
   // Theme colors
   const themeColors = colors || {
@@ -235,39 +234,35 @@ const QueryEditorModal = ({
     codeBg: theme === 'dark' ? 'rgb(13 17 23)' : '#f1f5f9'
   };
   
-  // Load query history from localStorage
+  // Load query history from localStorage based on active database type
   useEffect(() => {
-    if (selectedDatabaseType !== 'all') {
-      const savedHistory = localStorage.getItem(`sql_history_${selectedDatabaseType}`);
-      if (savedHistory) {
-        try {
-          setQueryHistory(JSON.parse(savedHistory).slice(0, 50));
-        } catch (e) {
-          console.warn('Failed to load query history', e);
-        }
+    const savedHistory = localStorage.getItem(`sql_history_${activeDatabaseType}`);
+    if (savedHistory) {
+      try {
+        setQueryHistory(JSON.parse(savedHistory).slice(0, 50));
+      } catch (e) {
+        console.warn('Failed to load query history', e);
       }
-    } else {
-      setQueryHistory([]);
     }
-  }, [selectedDatabaseType]);
+  }, [activeDatabaseType]);
   
   // Save query to history
   const saveToHistory = (query) => {
-    if (!query || query.trim() === '' || selectedDatabaseType === 'all') return;
+    if (!query || query.trim() === '') return;
     
     const newHistory = [
-      { query, timestamp: new Date().toISOString(), databaseType: selectedDatabaseType },
+      { query, timestamp: new Date().toISOString(), databaseType: activeDatabaseType },
       ...queryHistory.filter(h => h.query !== query)
     ].slice(0, 100);
     
     setQueryHistory(newHistory);
-    localStorage.setItem(`sql_history_${selectedDatabaseType}`, JSON.stringify(newHistory));
+    localStorage.setItem(`sql_history_${activeDatabaseType}`, JSON.stringify(newHistory));
   };
   
   // Clear history
   const clearHistory = () => {
     setQueryHistory([]);
-    localStorage.removeItem(`sql_history_${selectedDatabaseType}`);
+    localStorage.removeItem(`sql_history_${activeDatabaseType}`);
     setShowHistory(false);
     setCompilationResult({
       success: true,
@@ -287,39 +282,21 @@ const QueryEditorModal = ({
   
   // Apply template
   const applyTemplate = (template) => {
-    if (selectedDatabaseType === 'all') {
-      setCompilationResult({
-        success: false,
-        message: 'Cannot apply template',
-        error: 'Please select a specific database type (PostgreSQL or Oracle) to use templates.',
-        output: ''
-      });
-      setTimeout(() => setCompilationResult(null), 3000);
-      return;
-    }
     setEditorContent(template.sql);
     addToHistory(template.sql);
     setSelectedTemplate(template.name);
     setShowTemplates(false);
   };
   
-  // Handle database type change
+  // Handle database type change (only when in 'all' mode)
   const handleDatabaseTypeChange = (newType) => {
     setSelectedDatabaseType(newType);
     if (onDatabaseTypeChange) {
       onDatabaseTypeChange(newType);
     }
     
-    // Show a message when switching to 'all' type
-    if (newType === 'all') {
-      setCompilationResult({
-        success: false,
-        message: 'Database selector mode',
-        error: 'Please select a specific database type (PostgreSQL or Oracle) to execute queries.',
-        output: 'The SQL Console is in Multi-Database mode. Select PostgreSQL or Oracle from the dropdown to start writing queries.'
-      });
-      setTimeout(() => setCompilationResult(null), 4000);
-    }
+    // Clear any previous compilation result
+    setCompilationResult(null);
   };
   
   // Helper function to stop propagation for editor-specific keys
@@ -810,17 +787,6 @@ const QueryEditorModal = ({
   };
   
   const handleExecute = async () => {
-    // Check if database type is 'all'
-    if (selectedDatabaseType === 'all') {
-      setCompilationResult({
-        success: false,
-        message: 'Execution not available',
-        error: 'Please select a specific database type (PostgreSQL or Oracle) from the dropdown to execute queries.',
-        output: 'The SQL Console is in Multi-Database mode. Click the database name in the header and select PostgreSQL or Oracle to start writing and executing queries.'
-      });
-      return;
-    }
-    
     if (!authToken) {
       setCompilationResult({
         success: false,
@@ -855,13 +821,13 @@ const QueryEditorModal = ({
       
       let finalSql = sqlToExecute;
       
-      if (isPLSQLBlock && selectedDatabaseType === 'oracle' && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
+      if (isPLSQLBlock && activeDatabaseType === 'oracle' && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
         finalSql = sqlToExecute + ';\n/';
       }
       
       const response = await executeSQL(authToken, {
         sql: finalSql,
-        databaseType: selectedDatabaseType,
+        databaseType: activeDatabaseType,
         readOnly: false
       });
       
@@ -978,8 +944,7 @@ const QueryEditorModal = ({
   
   const handleDownload = () => {
     const extension = 'sql';
-    const dbPrefix = selectedDatabaseType === 'all' ? 'sql' : selectedDatabaseType;
-    const filename = `${dbPrefix}_query_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.${extension}`;
+    const filename = `${activeDatabaseType}_query_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.${extension}`;
     
     const blob = new Blob([editorContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -1026,27 +991,27 @@ const QueryEditorModal = ({
   
   // Get the appropriate console title based on database type
   const getConsoleTitle = () => {
-    if (selectedDatabaseType === 'all') {
+    if (databaseType === 'all') {
       return 'Multi-Database SQL Console';
     }
-    const displayName = getDatabaseDisplayName(selectedDatabaseType);
+    const displayName = getDatabaseDisplayName(activeDatabaseType);
     return `${displayName} SQL Console`;
   };
   
   // Get the appropriate subtitle based on database type
   const getConsoleSubtitle = () => {
-    if (selectedDatabaseType === 'all') {
-      return 'Select a database type to start writing queries • PostgreSQL | Oracle | MySQL | SQL Server';
+    if (databaseType === 'all') {
+      return 'Select a database type from the dropdown to start writing queries';
     }
-    const displayName = getDatabaseDisplayName(selectedDatabaseType);
+    const displayName = getDatabaseDisplayName(activeDatabaseType);
     return `Free SQL query editor • Execute ${displayName} statements`;
   };
   
   // Get placeholder text based on database type
   const getPlaceholderText = () => {
-    if (selectedDatabaseType === 'all') {
+    if (databaseType === 'all') {
       return `-- Multi-Database SQL Console
--- Please select a database type from the dropdown above
+-- Select a database type from the dropdown above to get started
 -- Available: PostgreSQL, Oracle, MySQL, SQL Server
 
 -- Example for PostgreSQL:
@@ -1055,10 +1020,10 @@ const QueryEditorModal = ({
 -- Example for Oracle:
 -- SELECT * FROM your_table_name WHERE ROWNUM <= 10;
 
--- Click the database name in the header to switch types`;
+-- Once you select a database type, templates and history will be available`;
     }
     
-    const displayName = getDatabaseDisplayName(selectedDatabaseType);
+    const displayName = getDatabaseDisplayName(activeDatabaseType);
     return `-- ${displayName} SQL Console
 -- Write your SQL queries here
 -- Use Ctrl/Cmd + Enter to execute
@@ -1130,7 +1095,7 @@ SELECT * FROM your_table_name LIMIT 10;`;
         >
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.primary + '20' }}>
-              {getDatabaseIcon(selectedDatabaseType, 20)}
+              {getDatabaseIcon(activeDatabaseType, 20)}
             </div>
             <div>
               <h2 className="text-lg font-bold" style={{ color: themeColors.text }}>
@@ -1142,52 +1107,64 @@ SELECT * FROM your_table_name LIMIT 10;`;
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Database Type Selector */}
-            <div className="relative">
-              <button
-                onClick={() => setShowDatabaseSelector(!showDatabaseSelector)}
-                className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-2"
-                style={{ 
-                  backgroundColor: themeColors.info + '20',
-                  border: `1px solid ${themeColors.info}40`,
-                  color: themeColors.info
-                }}
-              >
-                {getDatabaseIcon(selectedDatabaseType, 14)}
-                <span>{getDatabaseDisplayName(selectedDatabaseType)}</span>
-                <ChevronRight size={12} className="transform rotate-90" />
-              </button>
-              
-              {showDatabaseSelector && (
-                <div 
-                  className="absolute top-full right-0 mt-1 rounded-lg shadow-lg z-50 min-w-[160px]"
+            {/* Only show database selector when databaseType is 'all' */}
+            {databaseType === 'all' && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowDatabaseSelector(!showDatabaseSelector)}
+                  className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-2"
                   style={{ 
-                    backgroundColor: themeColors.card,
-                    border: `1px solid ${themeColors.border}`
+                    backgroundColor: themeColors.info + '20',
+                    border: `1px solid ${themeColors.info}40`,
+                    color: themeColors.info
                   }}
                 >
-                  {Object.keys(DATABASE_CONFIGS).map(dbType => (
-                    <button
-                      key={dbType}
-                      onClick={() => {
-                        handleDatabaseTypeChange(dbType);
-                        setShowDatabaseSelector(false);
-                      }}
-                      className={`w-full px-3 py-2 text-left text-sm hover-lift transition-colors flex items-center gap-2 ${
-                        selectedDatabaseType === dbType ? 'bg-opacity-20' : ''
-                      }`}
-                      style={{ 
-                        backgroundColor: selectedDatabaseType === dbType ? `${themeColors.info}20` : 'transparent',
-                        color: themeColors.text
-                      }}
-                    >
-                      {getDatabaseIcon(dbType, 14)}
-                      <span>{DATABASE_CONFIGS[dbType]?.displayName || dbType.toUpperCase()}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+                  {getDatabaseIcon(selectedDatabaseType, 14)}
+                  <span>{getDatabaseDisplayName(selectedDatabaseType)}</span>
+                  <ChevronDown size={12} />
+                </button>
+                
+                {showDatabaseSelector && (
+                  <div 
+                    className="absolute top-full right-0 mt-1 rounded-lg shadow-lg z-50 min-w-[160px]"
+                    style={{ 
+                      backgroundColor: themeColors.card,
+                      border: `1px solid ${themeColors.border}`
+                    }}
+                  >
+                    {Object.keys(DATABASE_CONFIGS).filter(dbType => dbType !== 'all').map(dbType => (
+                      <button
+                        key={dbType}
+                        onClick={() => {
+                          handleDatabaseTypeChange(dbType);
+                          setShowDatabaseSelector(false);
+                        }}
+                        className={`w-full px-3 py-2 text-left text-sm hover-lift transition-colors flex items-center gap-2 ${
+                          selectedDatabaseType === dbType ? 'bg-opacity-20' : ''
+                        }`}
+                        style={{ 
+                          backgroundColor: selectedDatabaseType === dbType ? `${themeColors.info}20` : 'transparent',
+                          color: themeColors.text
+                        }}
+                      >
+                        {getDatabaseIcon(dbType, 14)}
+                        <span>{DATABASE_CONFIGS[dbType]?.displayName || dbType.toUpperCase()}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Only show database badge when NOT in 'all' mode */}
+            {databaseType !== 'all' && (
+              <span className="text-xs px-2 py-1 rounded" style={{ 
+                backgroundColor: themeColors.info + '20',
+                color: themeColors.info
+              }}>
+                {getDatabaseDisplayName(activeDatabaseType)}
+              </span>
+            )}
             
             <button
               onClick={() => setShowTemplates(!showTemplates)}
@@ -1264,7 +1241,7 @@ SELECT * FROM your_table_name LIMIT 10;`;
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-medium" style={{ color: themeColors.text }}>
                 <FileCode size={14} className="inline mr-2" />
-                SQL Templates {selectedDatabaseType !== 'all' && `(${getDatabaseDisplayName(selectedDatabaseType)})`}
+                SQL Templates ({getDatabaseDisplayName(activeDatabaseType)})
               </h3>
               <button
                 onClick={() => setShowTemplates(false)}
@@ -1274,30 +1251,22 @@ SELECT * FROM your_table_name LIMIT 10;`;
                 <X size={14} />
               </button>
             </div>
-            {selectedDatabaseType === 'all' ? (
-              <div className="p-4 text-center rounded-lg" style={{ backgroundColor: themeColors.warning + '10' }}>
-                <p className="text-sm" style={{ color: themeColors.warning }}>
-                  Please select a specific database type (PostgreSQL or Oracle) from the dropdown to view templates.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                {templates.map((template, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => applyTemplate(template)}
-                    className="px-3 py-2 rounded-lg text-left text-sm hover-lift transition-colors"
-                    style={{ 
-                      backgroundColor: themeColors.card,
-                      border: `1px solid ${themeColors.border}`,
-                      color: themeColors.text
-                    }}
-                  >
-                    {template.name}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {templates.map((template, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => applyTemplate(template)}
+                  className="px-3 py-2 rounded-lg text-left text-sm hover-lift transition-colors"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    border: `1px solid ${themeColors.border}`,
+                    color: themeColors.text
+                  }}
+                >
+                  {template.name}
+                </button>
+              ))}
+            </div>
           </div>
         )}
         
@@ -1310,7 +1279,7 @@ SELECT * FROM your_table_name LIMIT 10;`;
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-medium" style={{ color: themeColors.text }}>
                 <History size={14} className="inline mr-2" />
-                Query History {selectedDatabaseType !== 'all' && `(${getDatabaseDisplayName(selectedDatabaseType)})`}
+                Query History ({getDatabaseDisplayName(activeDatabaseType)})
               </h3>
               <div className="flex gap-2">
                 {queryHistory.length > 0 && (
@@ -1335,13 +1304,7 @@ SELECT * FROM your_table_name LIMIT 10;`;
                 </button>
               </div>
             </div>
-            {selectedDatabaseType === 'all' ? (
-              <div className="p-4 text-center rounded-lg" style={{ backgroundColor: themeColors.info + '10' }}>
-                <p className="text-sm" style={{ color: themeColors.info }}>
-                  History is saved per database type. Select PostgreSQL or Oracle to view your saved queries.
-                </p>
-              </div>
-            ) : queryHistory.length === 0 ? (
+            {queryHistory.length === 0 ? (
               <p className="text-sm text-center py-4" style={{ color: themeColors.textSecondary }}>
                 No query history yet. Execute some queries to see them here.
               </p>
@@ -1524,14 +1487,6 @@ SELECT * FROM your_table_name LIMIT 10;`;
             </button>
           </div>
           <div className="flex items-center gap-2">
-            {selectedDatabaseType !== 'all' && (
-              <span className="text-xs px-2 py-1 rounded" style={{ 
-                backgroundColor: themeColors.info + '20',
-                color: themeColors.info
-              }}>
-                {getDatabaseDisplayName(selectedDatabaseType)}
-              </span>
-            )}
             <button
               onClick={handleUndo}
               disabled={historyIndex <= 0}
@@ -1682,13 +1637,7 @@ SELECT * FROM your_table_name LIMIT 10;`;
               onClick={handleExecute}
               disabled={isCompiling}
               className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
-              style={{ 
-                backgroundColor: selectedDatabaseType === 'all' ? themeColors.warning : themeColors.primary, 
-                color: themeColors.white,
-                opacity: selectedDatabaseType === 'all' ? 0.7 : 1,
-                cursor: selectedDatabaseType === 'all' ? 'not-allowed' : 'pointer'
-              }}
-              title={selectedDatabaseType === 'all' ? 'Select a specific database type to execute queries' : 'Execute query'}
+              style={{ backgroundColor: themeColors.primary, color: themeColors.white }}
             >
               {isCompiling ? <Loader size={14} className="animate-spin" /> : <Play size={14} />}
               Execute

@@ -477,7 +477,7 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken, dat
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[1100] p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[1600] p-4">
       <div className="rounded-xl shadow-2xl w-3xl max-w-3xl max-h-[80vh] flex flex-col" style={{ 
         backgroundColor: colors.bg,
         width: "650px",
@@ -3317,11 +3317,26 @@ const populateFormFromObject = useCallback((object) => {
   }, [isOpen, fromDashboard, selectedObject]);
 
   // Show object selector when modal opens from dashboard AND no object is selected
-  useEffect(() => {
-    if (isOpen && fromDashboard && !selectedObject && !isEditing && !selectedDbObject) {
-      setShowObjectSelector(true);
-    }
-  }, [isOpen, fromDashboard, selectedObject, isEditing, selectedDbObject]);
+  // Add this debug log
+useEffect(() => {
+  console.log('🔍 Object selector check:', {
+    isOpen,
+    fromDashboard,
+    selectedObject: selectedObject,
+    selectedObjectIsNull: !selectedObject,
+    isEditing,
+    isEditingValue: isEditing,
+    notEditing: !isEditing,
+    selectedDbObject,
+    selectedDbObjectIsNull: !selectedDbObject,
+    shouldShow: isOpen && fromDashboard && !selectedObject && !isEditing && !selectedDbObject
+  });
+  
+  if (isOpen && fromDashboard && !selectedObject && !isEditing && !selectedDbObject) {
+    console.log('🎯 Showing object selector modal');
+    setShowObjectSelector(true);
+  }
+}, [isOpen, fromDashboard, selectedObject, isEditing, selectedDbObject]);
 
   // Initialize parameters and mappings based on selected object - FIXED VERSION
   useEffect(() => {
