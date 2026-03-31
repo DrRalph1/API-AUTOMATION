@@ -1,5 +1,5 @@
 // services/schemaBrowser/DatabaseSchemaService.java
-package com.usg.apiGeneration.services.schemaBrowser;
+package com.usg.apiGeneration.interfaces;
 
 import com.usg.apiGeneration.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiGeneration.enums.DatabaseTypeEnum;

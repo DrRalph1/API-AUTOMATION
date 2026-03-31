@@ -1321,6 +1321,154 @@ export const getRecentApiActivity = async (authorizationHeader, limit = 10) => {
     });
 };
 
+
+/**
+ * Generate an API from SQL statement
+ * @param {string} authToken - Bearer token or user object with token
+ * @param {Object} requestData - API generation request data
+ * @param {string} requestData.apiCode - Unique API code
+ * @param {string} requestData.apiName - API display name
+ * @param {string} requestData.description - API description
+ * @param {string} requestData.version - API version
+ * @param {string} requestData.databaseType - Database type (oracle, postgresql, mysql, sqlserver)
+ * @param {string} requestData.sql - SQL statement to generate API from
+ * @param {string} requestData.authType - Authentication type (NONE, API_KEY, BEARER, BASIC, JWT)
+ * @param {number} requestData.rateLimit - Rate limit per minute
+ * @param {Array<string>} requestData.tags - API tags for categorization
+ * @param {string} requestData.collectionId - Collection ID for organization
+ * @param {string} requestData.collectionName - Collection name
+ * @param {string} requestData.folderId - Folder ID within collection
+ * @param {string} requestData.folderName - Folder name
+ * @returns {Promise<Object>} API response with generated API details
+ */
+export const generateAPIFromSQL = async (authToken, requestData) => {
+    const requestId = generateRequestId();
+    
+    // Extract token from authToken object if needed
+    const token = typeof authToken === 'string' 
+        ? authToken.replace('Bearer ', '') 
+        : authToken?.token || authToken?.accessToken || '';
+    
+    // Validate required fields
+    if (!requestData.apiCode || !requestData.apiCode.trim()) {
+        throw new Error('API Code is required');
+    }
+    
+    if (!requestData.apiName || !requestData.apiName.trim()) {
+        throw new Error('API Name is required');
+    }
+    
+    if (!requestData.sql || !requestData.sql.trim()) {
+        throw new Error('SQL statement is required');
+    }
+    
+    if (!requestData.databaseType) {
+        throw new Error('Database type is required');
+    }
+    
+    // Prepare request body with defaults
+    const preparedRequestData = {
+        ...requestData,
+        apiCode: requestData.apiCode.trim().toLowerCase().replace(/\s+/g, '_'),
+        apiName: requestData.apiName.trim(),
+        version: requestData.version || '1.0',
+        authType: requestData.authType || 'NONE',
+        rateLimit: requestData.rateLimit || 60,
+        tags: requestData.tags || [],
+        collectionId: requestData.collectionId || `sql_collection_${Date.now()}`,
+        collectionName: requestData.collectionName || `SQL_APIs_${new Date().toISOString().slice(0, 10)}`,
+        folderId: requestData.folderId || `sql_folder_${Date.now()}`,
+        folderName: requestData.folderName || requestData.apiName || 'Generated APIs'
+    };
+    
+    // Build query parameters if needed (none for POST, but keeping pattern consistent)
+    const queryParams = buildQueryParams({});
+    
+    return apiCallWithTokenRefresh(
+        authToken,
+        (authHeader) => apiCall(`/api/sql-generation/generate?${queryParams.toString()}`, {
+            method: 'POST',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            body: JSON.stringify(preparedRequestData),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformGenerateAPIResponse(response);
+    }).catch(error => {
+        console.error('Error generating API from SQL:', error);
+        
+        // Handle specific error cases
+        let errorMessage = error.message || 'Failed to generate API from SQL';
+        
+        if (error.response?.status === 400) {
+            errorMessage = error.response.data?.message || 'Invalid request. Please check your SQL syntax and API parameters.';
+        } else if (error.response?.status === 409) {
+            errorMessage = 'API code already exists. Please choose a different API code.';
+        } else if (error.response?.status === 401) {
+            errorMessage = 'Authentication required. Please log in again.';
+        } else if (error.response?.status === 403) {
+            errorMessage = 'You do not have permission to generate APIs.';
+        } else if (error.response?.status === 500) {
+            errorMessage = 'Server error while generating API. Please try again later.';
+        }
+        
+        throw new Error(errorMessage);
+    });
+};
+
+/**
+ * Transform generate API response to consistent format
+ * @param {Object} response - Raw API response
+ * @returns {Object} Transformed response
+ */
+const transformGenerateAPIResponse = (response) => {
+    // If response already has the expected structure
+    if (response && response.id && response.apiCode) {
+        return {
+            success: true,
+            id: response.id,
+            apiCode: response.apiCode,
+            apiName: response.apiName,
+            endpointPath: response.endpointPath,
+            httpMethod: response.httpMethod,
+            description: response.description,
+            version: response.version,
+            status: response.status || 'DRAFT',
+            createdAt: response.createdAt,
+            message: `API "${response.apiName}" generated successfully`,
+            responseCode: 200
+        };
+    }
+    
+    // Handle wrapped response format
+    if (response && response.data) {
+        const data = response.data;
+        return {
+            success: response.success !== false,
+            id: data.id,
+            apiCode: data.apiCode,
+            apiName: data.apiName,
+            endpointPath: data.endpointPath,
+            httpMethod: data.httpMethod,
+            description: data.description,
+            version: data.version,
+            status: data.status || 'DRAFT',
+            createdAt: data.createdAt,
+            message: response.message || `API generated successfully`,
+            responseCode: response.responseCode || 200
+        };
+    }
+    
+    // Return as-is with success flag
+    return {
+        success: true,
+        ...response,
+        message: response.message || 'API generated successfully',
+        responseCode: response.responseCode || 200
+    };
+};
+
+
 /**
  * Get API usage summary
  * @param {string} authorizationHeader - Bearer token

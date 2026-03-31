@@ -2,7 +2,7 @@
 package com.usg.apiGeneration.factories;
 
 import com.usg.apiGeneration.enums.DatabaseTypeEnum;
-import com.usg.apiGeneration.services.schemaBrowser.DatabaseSchemaService;
+import com.usg.apiGeneration.interfaces.DatabaseSchemaService;
 import com.usg.apiGeneration.services.schemaBrowser.OracleSchemaService;
 import com.usg.apiGeneration.services.schemaBrowser.PostgreSQLSchemaService;
 import lombok.extern.slf4j.Slf4j;

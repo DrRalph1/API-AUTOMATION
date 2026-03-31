@@ -88,6 +88,15 @@ public class GeneratedApiEntity {
     @Column(name = "database_type", length = 50)
     private String databaseType; // "oracle", "postgresql", "mysql", etc.
 
+    @Column(columnDefinition = "TEXT")
+    private String sourceSql;  // The SQL statement used to generate the API
+
+    @Column
+    private String sqlOperationType; // SELECT, INSERT, UPDATE, DELETE
+
+    @Column(columnDefinition = "TEXT")
+    private String sqlParsedStructure; // JSON of parsed SQL structure
+
     // =====================================================
     // Audit & Metrics
     // =====================================================

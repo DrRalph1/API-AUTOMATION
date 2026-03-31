@@ -3,7 +3,7 @@ package com.usg.apiGeneration.helpers;
 
 import com.usg.apiGeneration.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiGeneration.enums.DatabaseTypeEnum;
-import com.usg.apiGeneration.services.schemaBrowser.DatabaseSchemaService;
+import com.usg.apiGeneration.interfaces.DatabaseSchemaService;
 
 import java.util.List;
 import java.util.Map;

@@ -11,7 +11,7 @@ import com.usg.apiGeneration.helpers.ApiAnalyticsHelper;
 import com.usg.apiGeneration.helpers.DatabaseMetadataHelper;
 import com.usg.apiGeneration.repositories.apiGenerationEngine.ApiExecutionLogRepository;
 import com.usg.apiGeneration.repositories.schemaBrowser.postgresql.*;
-import com.usg.apiGeneration.services.schemaBrowser.DatabaseSchemaService;
+import com.usg.apiGeneration.interfaces.DatabaseSchemaService;
 import com.usg.apiGeneration.services.schemaBrowser.PostgreSQLSchemaService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;

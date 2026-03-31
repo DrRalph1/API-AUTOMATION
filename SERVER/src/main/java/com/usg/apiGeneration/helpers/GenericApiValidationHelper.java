@@ -5,7 +5,7 @@ import com.usg.apiGeneration.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiGeneration.dtos.apiGenerationEngine.CollectionInfoDTO;
 import com.usg.apiGeneration.enums.DatabaseTypeEnum;
 import com.usg.apiGeneration.repositories.apiGenerationEngine.GeneratedAPIRepository;
-import com.usg.apiGeneration.services.schemaBrowser.DatabaseSchemaService;
+import com.usg.apiGeneration.interfaces.DatabaseSchemaService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

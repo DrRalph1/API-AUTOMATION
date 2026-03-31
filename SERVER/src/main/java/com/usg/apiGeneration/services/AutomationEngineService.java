@@ -20,7 +20,7 @@ import com.usg.apiGeneration.repositories.collections.HeaderRepository;
 import com.usg.apiGeneration.repositories.collections.ParameterRepository;
 import com.usg.apiGeneration.repositories.documentation.*;
 import com.usg.apiGeneration.helpers.apiEngine.*;
-import com.usg.apiGeneration.services.schemaBrowser.DatabaseSchemaService;
+import com.usg.apiGeneration.interfaces.DatabaseSchemaService;
 import com.usg.apiGeneration.services.schemaBrowser.OracleSchemaService;
 import com.usg.apiGeneration.services.schemaBrowser.PostgreSQLSchemaService;
 import com.usg.apiGeneration.utils.apiEngine.*;

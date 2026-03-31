@@ -3,6 +3,7 @@ package com.usg.apiGeneration.services.schemaBrowser;
 import com.usg.apiGeneration.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiGeneration.enums.DatabaseTypeEnum;
 import com.usg.apiGeneration.enums.OracleSqlStatementTypeEnum;
+import com.usg.apiGeneration.interfaces.DatabaseSchemaService;
 import com.usg.apiGeneration.repositories.schemaBrowser.oracle.*;
 import com.usg.apiGeneration.utils.LoggerUtil;
 import jakarta.servlet.http.HttpServletRequest;
