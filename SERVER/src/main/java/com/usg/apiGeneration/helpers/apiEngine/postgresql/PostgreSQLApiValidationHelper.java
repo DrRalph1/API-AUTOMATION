@@ -162,123 +162,123 @@ public class PostgreSQLApiValidationHelper implements DatabaseValidationHelper {
 
     public Map<String, String> validateRequiredParameters(GeneratedApiEntity api,
                                                           Map<String, Object> allParams) {
-        System.out.println("=== Starting validateRequiredParameters ===");
+        // System.out.println("=== Starting validateRequiredParameters ===");
         Map<String, String> errors = new HashMap<>();
-        System.out.println("Initialized empty errors map");
+        // System.out.println("Initialized empty errors map");
 
         try {
-            System.out.println("Checking if api or its parameters are null/empty");
+            // System.out.println("Checking if api or its parameters are null/empty");
             if (api == null || api.getParameters() == null || api.getParameters().isEmpty()) {
-                System.out.println("api is null OR parameters is null OR parameters is empty - returning empty errors");
+                // System.out.println("api is null OR parameters is null OR parameters is empty - returning empty errors");
                 return errors;
             }
-            System.out.println("api has parameters, continuing validation");
+            // System.out.println("api has parameters, continuing validation");
 
-            System.out.println("Checking if allParams is null");
+            // System.out.println("Checking if allParams is null");
             if (allParams == null) {
                 allParams = new HashMap<>();
-                System.out.println("allParams was null, initialized as empty HashMap");
+                // System.out.println("allParams was null, initialized as empty HashMap");
             } else {
-                System.out.println("allParams is not null, size: " + allParams.size());
+                // System.out.println("allParams is not null, size: " + allParams.size());
             }
 
             log.debug("validateRequiredParameters: Processing {} parameters", api.getParameters().size());
-            System.out.println("Processing " + api.getParameters().size() + " parameters");
+            // System.out.println("Processing " + api.getParameters().size() + " parameters");
 
             for (ApiParameterEntity param : api.getParameters()) {
-                System.out.println("\n--- Processing parameter ---");
+                // System.out.println("\n--- Processing parameter ---");
 
                 if (param == null || param.getKey() == null) {
-                    System.out.println("Parameter or parameter key is null - skipping");
+                    // System.out.println("Parameter or parameter key is null - skipping");
                     continue;
                 }
-                System.out.println("Parameter key: " + param.getKey());
+                // System.out.println("Parameter key: " + param.getKey());
 
                 Boolean required = param.getRequired();
-                System.out.println("Required flag: " + required);
+                // System.out.println("Required flag: " + required);
 
                 if (required == null || !required) {
-                    System.out.println("Parameter is not required - skipping");
+                    // System.out.println("Parameter is not required - skipping");
                     continue;
                 }
 
                 String paramKey = param.getKey();
                 boolean found = false;
-                System.out.println("Checking for required parameter: " + paramKey);
+                // System.out.println("Checking for required parameter: " + paramKey);
 
                 if (allParams.containsKey(paramKey)) {
-                    System.out.println("Parameter key found in allParams");
+                    // System.out.println("Parameter key found in allParams");
                     Object value = allParams.get(paramKey);
-                    System.out.println("Parameter value type: " + (value != null ? value.getClass().getName() : "null"));
+                    // System.out.println("Parameter value type: " + (value != null ? value.getClass().getName() : "null"));
 
                     if (value != null) {
-                        System.out.println("Parameter value is not null");
+                        // System.out.println("Parameter value is not null");
 
                         if (value instanceof List || value.getClass().isArray()) {
-                            System.out.println("Parameter value is a List or Array");
+                            // System.out.println("Parameter value is a List or Array");
 
                             Collection<?> collection = value instanceof List ?
                                     (List<?>) value : Arrays.asList((Object[]) value);
-                            System.out.println("Collection size: " + collection.size());
+                            // System.out.println("Collection size: " + collection.size());
 
                             if (!collection.isEmpty()) {
-                                System.out.println("Collection is not empty");
+                                // System.out.println("Collection is not empty");
                                 Object firstValue = collection.iterator().next();
-                                System.out.println("First value in collection: " + firstValue);
+                                // System.out.println("First value in collection: " + firstValue);
 
                                 found = firstValue != null && !firstValue.toString().trim().isEmpty();
-                                System.out.println("After checking first value, found = " + found);
+                                // System.out.println("After checking first value, found = " + found);
                             } else {
-                                System.out.println("Collection is empty - parameter not found");
+                                // System.out.println("Collection is empty - parameter not found");
                             }
                         } else {
-                            System.out.println("Parameter value is a single value (not collection)");
-                            System.out.println("Value as string: '" + value.toString() + "'");
+                            // System.out.println("Parameter value is a single value (not collection)");
+                            // System.out.println("Value as string: '" + value.toString() + "'");
 
                             found = !value.toString().trim().isEmpty();
-                            System.out.println("After trimming and checking emptiness, found = " + found);
+                            // System.out.println("After trimming and checking emptiness, found = " + found);
                         }
                     } else {
-                        System.out.println("Parameter value is null - parameter not found");
+                        // System.out.println("Parameter value is null - parameter not found");
                     }
                 } else {
                     // Try case-insensitive match for PostgreSQL
-                    System.out.println("Parameter key NOT found in allParams, trying case-insensitive match");
+                    // System.out.println("Parameter key NOT found in allParams, trying case-insensitive match");
                     for (Map.Entry<String, Object> entry : allParams.entrySet()) {
                         if (entry.getKey().equalsIgnoreCase(paramKey)) {
-                            System.out.println("Found case-insensitive match: " + entry.getKey());
+                            // System.out.println("Found case-insensitive match: " + entry.getKey());
                             Object value = entry.getValue();
                             if (value != null) {
                                 found = !value.toString().trim().isEmpty();
-                                System.out.println("After case-insensitive check, found = " + found);
+                                // System.out.println("After case-insensitive check, found = " + found);
                             }
                             break;
                         }
                     }
 
                     if (!found) {
-                        System.out.println("Parameter key NOT found in allParams");
+                        // System.out.println("Parameter key NOT found in allParams");
                     }
                 }
 
                 if (!found) {
-                    System.out.println("Required parameter [" + paramKey + "] not found or empty - adding to errors");
+                    // System.out.println("Required parameter [" + paramKey + "] not found or empty - adding to errors");
                     log.debug("Required parameter [{}] not found or empty", paramKey);
                     errors.put(paramKey, "Required parameter '" + paramKey + "' is missing or empty");
                 } else {
-                    System.out.println("Required parameter [" + paramKey + "] found and has valid value");
+                    // System.out.println("Required parameter [" + paramKey + "] found and has valid value");
                 }
             }
 
         } catch (Exception e) {
-            System.out.println("EXCEPTION occurred: " + e.getMessage());
+            // System.out.println("EXCEPTION occurred: " + e.getMessage());
             e.printStackTrace();
             log.error("validateRequiredParameters: Exception: {}", e.getMessage(), e);
             errors.put("validation", "Error validating parameters: " + e.getMessage());
-            System.out.println("Added validation error to errors map");
+            // System.out.println("Added validation error to errors map");
         }
 
-        System.out.println("\n=== Returning errors map with " + errors.size() + " entries ===");
+        // System.out.println("\n=== Returning errors map with " + errors.size() + " entries ===");
         return errors;
     }
 

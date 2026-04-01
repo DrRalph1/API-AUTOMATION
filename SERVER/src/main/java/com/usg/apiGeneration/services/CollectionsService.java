@@ -188,8 +188,8 @@ public class CollectionsService {
         RequestEntity request = requestRepository.findById(requestIdParam)
                 .orElseThrow(() -> new EntityNotFoundException("Request not found: " + requestIdParam));
 
-        System.out.println("collectionId:::::" + collectionId);
-        System.out.println("requestIdParam::::::" + requestIdParam);
+        // System.out.println("collectionId:::::" + collectionId);
+        // System.out.println("requestIdParam::::::" + requestIdParam);
 
         // ============= FIXED: Handle non-unique result gracefully =============
         Optional<GeneratedApiEntity> generatedApiOpt = Optional.empty();
@@ -246,7 +246,7 @@ public class CollectionsService {
             }
         }
 
-        System.out.println("generatedApiOpt1111111111111::::" + generatedApiOpt);
+        // System.out.println("generatedApiOpt1111111111111::::" + generatedApiOpt);
 
         // Create GenerateApiRequestDTO - all fields are flattened in the DTO
         GenerateApiRequestDTO generateApiRequest = new GenerateApiRequestDTO();
@@ -338,7 +338,7 @@ public class CollectionsService {
         // ============= 4. REQUEST PARAMETERS =============
         List<ApiParameterDTO> parameters = new ArrayList<>();
 
-        System.out.println("requestIdParam::::::::::" + requestIdParam);
+        // System.out.println("requestIdParam::::::::::" + requestIdParam);
 
         try {
             // Try from collections parameters first
@@ -434,7 +434,7 @@ public class CollectionsService {
         if (!isApiKeyAuth) {
             try {
                 Optional<AuthConfigEntity> authConfigEntityOpt = authConfigRepository.findByRequestId(requestIdParam);
-                System.out.println("authConfigEntityOpt:::::::::" + authConfigEntityOpt);
+                // System.out.println("authConfigEntityOpt:::::::::" + authConfigEntityOpt);
                 if (authConfigEntityOpt.isPresent() && "apiKey".equals(authConfigEntityOpt.get().getType())) {
                     isApiKeyAuth = true;
                 }
@@ -476,11 +476,11 @@ public class CollectionsService {
 
         generateApiRequest.setHeaders(headers.isEmpty() ? null : headers);
 
-        System.out.println("generatedApiOpt22222222:::::" + generatedApiOpt);
+        // System.out.println("generatedApiOpt22222222:::::" + generatedApiOpt);
 
         // ============= 7. REQUEST BODY =============
         if (generatedApiOpt.isPresent()) {
-            System.out.println("adey here cool...");
+            // System.out.println("adey here cool...");
             try {
                 String apiId = generatedApiOpt.get().getId();
                 Optional<ApiRequestConfigEntity> requestConfigOpt = generatedAPIRepository.findRequestConfigByApiId(apiId);
@@ -505,14 +505,14 @@ public class CollectionsService {
             }
         }
 
-        System.out.println("generateApiRequest:::::" + generateApiRequest);
-        System.out.println("generateApiRequest.getRequestBody() is: " + generateApiRequest.getRequestBody());
-        System.out.println("request.getBody() is: " + request.getBody());
-        System.out.println("request.getBody() empty? " + (request.getBody() == null || request.getBody().isEmpty()));
+        // System.out.println("generateApiRequest:::::" + generateApiRequest);
+        // System.out.println("generateApiRequest.getRequestBody() is: " + generateApiRequest.getRequestBody());
+        // System.out.println("request.getBody() is: " + request.getBody());
+        // System.out.println("request.getBody() empty? " + (request.getBody() == null || request.getBody().isEmpty()));
 
         // If no request config from GeneratedApi, use request body from collections module
         if (generateApiRequest.getRequestBody() == null && request.getBody() != null && !request.getBody().isEmpty()) {
-            System.out.println("case eeiii...");
+            // System.out.println("case eeiii...");
             ApiRequestConfigDTO requestBody = new ApiRequestConfigDTO();
             requestBody.setBodyType("json");
             requestBody.setSample(request.getBody());
@@ -2064,7 +2064,7 @@ public class CollectionsService {
         java.append("            while ((responseLine = br.readLine()) != null) {\n");
         java.append("                response.append(responseLine.trim());\n");
         java.append("            }\n");
-        java.append("            System.out.println(response.toString());\n");
+        java.append("            // System.out.println(response.toString());\n");
         java.append("        }\n");
         java.append("    }\n");
         java.append("}");

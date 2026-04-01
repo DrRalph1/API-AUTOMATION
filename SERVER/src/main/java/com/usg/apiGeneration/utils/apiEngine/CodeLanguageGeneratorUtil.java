@@ -484,7 +484,7 @@ public class CodeLanguageGeneratorUtil {
         } else {
             java.append("        String url = BASE_URL;\n");
         }
-        java.append("        System.out.println(\"Making request to: \" + url);\n\n");
+        java.append("        // System.out.println(\"Making request to: \" + url);\n\n");
 
         java.append("        HttpRequest.Builder builder = buildRequest(url);\n\n");
 
@@ -498,18 +498,18 @@ public class CodeLanguageGeneratorUtil {
                 java.append("new HashMap<>()");
             }
             java.append("\n        );\n");
-            java.append("        System.out.println(\"Request body: \" + requestBodyJson);\n");
+            java.append("        // System.out.println(\"Request body: \" + requestBodyJson);\n");
             java.append("        builder = builder.").append(api.getHttpMethod().toLowerCase()).append("(HttpRequest.BodyPublishers.ofString(requestBodyJson));\n\n");
         } else {
             java.append("        builder = builder.GET();\n\n");
         }
 
         java.append("        HttpRequest request = builder.build();\n\n");
-        java.append("        System.out.println(\"Sending request...\");\n");
+        java.append("        // System.out.println(\"Sending request...\");\n");
         java.append("        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());\n\n");
-        java.append("        System.out.println(\"Status Code: \" + response.statusCode());\n");
-        java.append("        System.out.println(\"Response Headers: \" + response.headers());\n");
-        java.append("        System.out.println(\"Response Body: \" + response.body());\n\n");
+        java.append("        // System.out.println(\"Status Code: \" + response.statusCode());\n");
+        java.append("        // System.out.println(\"Response Headers: \" + response.headers());\n");
+        java.append("        // System.out.println(\"Response Body: \" + response.body());\n\n");
         java.append("        return response;\n");
         java.append("    }\n\n");
 

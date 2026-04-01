@@ -696,7 +696,7 @@ public class DocumentationService {
                     log.info("Request ID: {}, Checking GeneratedApi auth config for API ID: {}", requestId, apiId);
 
                     Optional<ApiAuthConfigEntity> authConfigOpt = generatedAPIRepository.findAuthConfigByApiId(apiId);
-                    System.out.println("authConfigOpt from GeneratedApi:::::::::" + authConfigOpt);
+                    // System.out.println("authConfigOpt from GeneratedApi:::::::::" + authConfigOpt);
 
                     if (authConfigOpt.isPresent()) {
                         log.info("Request ID: {}, Found auth config with type: {}", requestId, authConfigOpt.get().getAuthType());
@@ -739,7 +739,7 @@ public class DocumentationService {
 
                             // Now try to find auth config by this request ID (EXACTLY like getRequestDetails)
                             Optional<AuthConfigEntity> authConfigEntityOpt = authConfigRepository.findByRequestId(sourceRequestId);
-                            System.out.println("authConfigEntityOpt from sourceRequestId:::::::::" + authConfigEntityOpt);
+                            // System.out.println("authConfigEntityOpt from sourceRequestId:::::::::" + authConfigEntityOpt);
 
                             if (authConfigEntityOpt.isPresent()) {
                                 log.info("Request ID: {}, Found auth config with type: {}",

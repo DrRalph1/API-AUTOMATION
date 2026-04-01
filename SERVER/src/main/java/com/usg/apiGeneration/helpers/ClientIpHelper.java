@@ -30,7 +30,7 @@ public class ClientIpHelper {
         // ---------------------------------
         if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
             loggerUtil.log("api-automation", "[Swagger Client IP Validation] ❌ Missing API key or secret.");
-            System.out.println("[Swagger Client IP Validation] ❌ Missing API key or secret.");
+            // System.out.println("[Swagger Client IP Validation] ❌ Missing API key or secret.");
             return false;
         }
 
@@ -41,7 +41,7 @@ public class ClientIpHelper {
         } catch (Exception ex) {
             serverIp = "unknown";
             loggerUtil.log("api-automation", "[Swagger Client IP Validation] ⚠ Unable to resolve server IP: " + ex.getMessage());
-            System.out.println("[Swagger Client IP Validation] ⚠ Unable to resolve server IP: " + ex.getMessage());
+            // System.out.println("[Swagger Client IP Validation] ⚠ Unable to resolve server IP: " + ex.getMessage());
         }
 
         try {
@@ -55,14 +55,14 @@ public class ClientIpHelper {
 
             if (isValid) {
                 loggerUtil.log("api-automation", "[Swagger Client IP Validation] ✅ Client IP validated successfully | apiKey=" + apiKey + " | IP=" + serverIp);
-                System.out.println("[Swagger Client IP Validation] ✅ Client IP validated successfully | apiKey=" + apiKey + " | IP=" + serverIp);
+                // System.out.println("[Swagger Client IP Validation] ✅ Client IP validated successfully | apiKey=" + apiKey + " | IP=" + serverIp);
             } else {
-                System.out.println("query::::::" + query);
-                System.out.println("serverIP:::::::" + serverIp);
-                System.out.println("apiKey:::::::" + apiKey);
-                System.out.println("apiSecret:::::::" + apiSecret);
+                // System.out.println("query::::::" + query);
+                // System.out.println("serverIP:::::::" + serverIp);
+                // System.out.println("apiKey:::::::" + apiKey);
+                // System.out.println("apiSecret:::::::" + apiSecret);
                 loggerUtil.log("api-automation", "[Swagger Client IP Validation] ❌ Invalid client IP | apiKey=" + apiKey + " | IP=" + serverIp);
-                System.out.println("[Swagger Client IP Validation] ❌ Invalid client IP | apiKey=" + apiKey + " | IP=" + serverIp);
+                // System.out.println("[Swagger Client IP Validation] ❌ Invalid client IP | apiKey=" + apiKey + " | IP=" + serverIp);
             }
 
             return isValid;
@@ -70,8 +70,8 @@ public class ClientIpHelper {
         } catch (Exception e) {
             loggerUtil.log("api-automation", "[Swagger Client IP Validation] 🚨 Error validating client IP | apiKey=" + apiKey +
                     " | IP=" + serverIp + " | error=" + e.getMessage());
-            System.out.println("[Swagger Client IP Validation] 🚨 Error validating client IP | apiKey=" + apiKey +
-                    " | IP=" + serverIp + " | error=" + e.getMessage());
+//             System.out.println("[Swagger Client IP Validation] 🚨 Error validating client IP | apiKey=" + apiKey +
+//                    " | IP=" + serverIp + " | error=" + e.getMessage());
             return false;
         }
     }
@@ -84,7 +84,7 @@ public class ClientIpHelper {
         // ---------------------------------
         if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
             loggerUtil.log("api-automation", "[API Client IP Validation] ❌ Missing API key or secret.");
-            System.out.println("[API Client IP Validation] ❌ Missing API key or secret.");
+            // System.out.println("[API Client IP Validation] ❌ Missing API key or secret.");
             return false;
         }
 
@@ -95,7 +95,7 @@ public class ClientIpHelper {
         } catch (Exception ex) {
             serverIp = "unknown";
             loggerUtil.log("api-automation", "[API Client IP Validation] ⚠ Unable to resolve server IP: " + ex.getMessage());
-            System.out.println("[API Client IP Validation] ⚠ Unable to resolve server IP: " + ex.getMessage());
+            // System.out.println("[API Client IP Validation] ⚠ Unable to resolve server IP: " + ex.getMessage());
         }
 
         try {
@@ -109,10 +109,10 @@ public class ClientIpHelper {
 
             if (isValid) {
                 loggerUtil.log("api-automation", "[API Client IP Validation] ✅ Client IP validated successfully | apiKey=" + apiKey + " | IP=" + serverIp);
-                System.out.println("[API Client IP Validation] ✅ Client IP validated successfully | apiKey=" + apiKey + " | IP=" + serverIp);
+                // System.out.println("[API Client IP Validation] ✅ Client IP validated successfully | apiKey=" + apiKey + " | IP=" + serverIp);
             } else {
                 loggerUtil.log("api-automation", "[API Client IP Validation] ❌ Invalid client IP | apiKey=" + apiKey + " | IP=" + serverIp);
-                System.out.println("[API Client IP Validation] ❌ Invalid client IP | apiKey=" + apiKey + " | IP=" + serverIp);
+                // System.out.println("[API Client IP Validation] ❌ Invalid client IP | apiKey=" + apiKey + " | IP=" + serverIp);
             }
 
             return isValid;
@@ -120,8 +120,8 @@ public class ClientIpHelper {
         } catch (Exception e) {
             loggerUtil.log("api-automation", "[API Client IP Validation] 🚨 Error validating client IP | apiKey=" + apiKey +
                     " | IP=" + serverIp + " | error=" + e.getMessage());
-            System.out.println("[API Client IP Validation] 🚨 Error validating client IP | apiKey=" + apiKey +
-                    " | IP=" + serverIp + " | error=" + e.getMessage());
+//             System.out.println("[API Client IP Validation] 🚨 Error validating client IP | apiKey=" + apiKey +
+//                    " | IP=" + serverIp + " | error=" + e.getMessage());
             return false;
         }
     }

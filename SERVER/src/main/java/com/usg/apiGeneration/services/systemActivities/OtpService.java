@@ -62,7 +62,7 @@ public class OtpService {
 //        UserOtpEntity savedOtp = saveOtp(userId, "000000");
         UserOtpEntity savedOtp = saveOtp(userId, otp);
 
-        System.out.println("Your OTP is: " + otp);
+        // System.out.println("Your OTP is: " + otp);
 
         // Send OTP via SMS
         if (phoneNumber != null && !phoneNumber.isBlank()) {

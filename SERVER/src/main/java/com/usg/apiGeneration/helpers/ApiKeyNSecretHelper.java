@@ -31,7 +31,7 @@ public class ApiKeyNSecretHelper {
         // ---------------------------------
         if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
             loggerUtil.log("api-automation", "[Swagger Validation] ❌ Missing API key or secret.");
-            System.out.println("[Swagger Validation] ❌ Missing API key or secret.");
+            // System.out.println("[Swagger Validation] ❌ Missing API key or secret.");
             return false;
         }
 
@@ -46,10 +46,10 @@ public class ApiKeyNSecretHelper {
 
             if (isValid) {
                 loggerUtil.log("api-automation", "[Swagger Validation] ✅ API key & secret validated successfully | apiKey=" + apiKey);
-                System.out.println("[Swagger Validation] ✅ API key & secret validated successfully | apiKey=" + apiKey);
+                // System.out.println("[Swagger Validation] ✅ API key & secret validated successfully | apiKey=" + apiKey);
             } else {
                 loggerUtil.log("api-automation", "[Swagger Validation] ❌ Invalid API key or secret | apiKey=" + apiKey);
-                System.out.println("[Swagger Validation] ❌ Invalid API key or secret | apiKey=" + apiKey);
+                // System.out.println("[Swagger Validation] ❌ Invalid API key or secret | apiKey=" + apiKey);
             }
 
             return isValid;
@@ -57,8 +57,8 @@ public class ApiKeyNSecretHelper {
         } catch (Exception e) {
             loggerUtil.log("api-automation", "[Swagger Validation] 🚨 Error during validation | apiKey=" + apiKey +
                     " | error=" + e.getMessage());
-            System.out.println("[Swagger Validation] 🚨 Error during validation | apiKey=" + apiKey +
-                    " | error=" + e.getMessage());
+//            System.out.println("[Swagger Validation] 🚨 Error during validation | apiKey=" + apiKey +
+//                    " | error=" + e.getMessage());
             return false;
         }
     }
@@ -71,7 +71,7 @@ public class ApiKeyNSecretHelper {
         // ---------------------------------
         if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
             loggerUtil.log("api-automation", "[API Validation] ❌ Missing API key or secret.");
-            System.out.println("[API Validation] ❌ Missing API key or secret.");
+            // System.out.println("[API Validation] ❌ Missing API key or secret.");
             return false;
         }
 
@@ -86,10 +86,10 @@ public class ApiKeyNSecretHelper {
 
             if (isValid) {
                 loggerUtil.log("api-automation", "[API Validation] ✅ API key & secret validated successfully | apiKey=" + apiKey);
-                System.out.println("[API Validation] ✅ API key & secret validated successfully | apiKey=" + apiKey);
+                // System.out.println("[API Validation] ✅ API key & secret validated successfully | apiKey=" + apiKey);
             } else {
                 loggerUtil.log("api-automation", "[API Validation] ❌ Invalid API key or secret | apiKey=" + apiKey);
-                System.out.println("[API Validation] ❌ Invalid API key or secret | apiKey=" + apiKey);
+                // System.out.println("[API Validation] ❌ Invalid API key or secret | apiKey=" + apiKey);
             }
 
             return isValid;
@@ -97,8 +97,8 @@ public class ApiKeyNSecretHelper {
         } catch (Exception e) {
             loggerUtil.log("api-automation", "[API Validation] 🚨 Error during validation | apiKey=" + apiKey +
                     " | error=" + e.getMessage());
-            System.out.println("[API Validation] 🚨 Error during validation | apiKey=" + apiKey +
-                    " | error=" + e.getMessage());
+//             System.out.println("[API Validation] 🚨 Error during validation | apiKey=" + apiKey +
+//                    " | error=" + e.getMessage());
             return false;
         }
     }

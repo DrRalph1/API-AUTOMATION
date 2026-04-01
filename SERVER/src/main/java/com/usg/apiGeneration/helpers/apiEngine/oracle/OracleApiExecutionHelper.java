@@ -547,7 +547,7 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
         // Create consolidated params map for the executors
         Map<String, Object> consolidatedParams = createConsolidatedParams(request);
 
-        System.out.println("operation::::" + operation);
+        // System.out.println("operation::::" + operation);
 
         switch (targetType) {
             case "TABLE":

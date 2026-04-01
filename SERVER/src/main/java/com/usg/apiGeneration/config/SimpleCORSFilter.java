@@ -24,12 +24,12 @@ public class SimpleCORSFilter implements Filter {
 
         String origin = request.getHeader("Origin");
 
-        System.out.println("=== CORS FILTER DEBUG ===");
-        System.out.println("Origin: " + origin);
-        System.out.println("Method: " + request.getMethod());
-        System.out.println("Request URI: " + request.getRequestURI());
-        System.out.println("Remote Address: " + request.getRemoteAddr());
-        System.out.println("Remote Host: " + request.getRemoteHost());
+        // System.out.println("=== CORS FILTER DEBUG ===");
+        // System.out.println("Origin: " + origin);
+        // System.out.println("Method: " + request.getMethod());
+        // System.out.println("Request URI: " + request.getRequestURI());
+        // System.out.println("Remote Address: " + request.getRemoteAddr());
+        // System.out.println("Remote Host: " + request.getRemoteHost());
 
         // Always set CORS headers regardless of origin
         if (origin != null && !origin.isEmpty()) {
@@ -47,7 +47,7 @@ public class SimpleCORSFilter implements Filter {
 
         // Handle preflight requests
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
-            System.out.println("Handling OPTIONS preflight request");
+            // System.out.println("Handling OPTIONS preflight request");
             response.setStatus(HttpServletResponse.SC_OK);
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD");
             response.setHeader("Access-Control-Allow-Headers", "*");
@@ -58,7 +58,7 @@ public class SimpleCORSFilter implements Filter {
 
         try {
             chain.doFilter(req, res);
-            System.out.println("Request completed successfully");
+            // System.out.println("Request completed successfully");
         } catch (Exception e) {
             System.err.println("Error in filter: " + e.getMessage());
             e.printStackTrace();

@@ -39,7 +39,7 @@ public class ApiKeyNSecretInterceptor implements HandlerInterceptor {
 
         // ============== CRITICAL FIX: Allow all OPTIONS requests for CORS preflight ==============
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
-            System.out.println("[DEBUG] OPTIONS request detected - allowing without authentication");
+            // System.out.println("[DEBUG] OPTIONS request detected - allowing without authentication");
 
             // Set CORS headers for preflight response
             String origin = request.getHeader("Origin");
@@ -60,7 +60,7 @@ public class ApiKeyNSecretInterceptor implements HandlerInterceptor {
             return false; // Return false to stop further processing for OPTIONS requests
         }
 
-        System.out.println("[DEBUG] ApiKeyNSecretInterceptor triggered for path: " + request.getRequestURI() + ", method: " + request.getMethod());
+        // System.out.println("[DEBUG] ApiKeyNSecretInterceptor triggered for path: " + request.getRequestURI() + ", method: " + request.getMethod());
 
         // Wrap request to cache body for multiple reads
         CachedBodyHttpServletRequest cachedRequest = (request instanceof CachedBodyHttpServletRequest)

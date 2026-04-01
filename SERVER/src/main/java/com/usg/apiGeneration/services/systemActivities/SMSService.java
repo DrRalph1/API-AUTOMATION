@@ -16,7 +16,7 @@ public class SMSService {
     public SMSService(Environment environment, SMSRequestHelper smsRequestHelper) {
         this.environment = environment;
         this.smsRequestHelper = smsRequestHelper;
-        System.out.println("[SMSService] Initialized.");
+        // System.out.println("[SMSService] Initialized.");
     }
 
     @Transactional
@@ -46,11 +46,11 @@ public class SMSService {
      * Core SMS sending logic
      */
     public void sendSms(String destination, String message) {
-        System.out.println("[SMSService] Preparing to send SMS to: " + destination);
+        // System.out.println("[SMSService] Preparing to send SMS to: " + destination);
 
         try {
             Map<String, Object> result = smsRequestHelper.sendSMSUNION(destination, message);
-            System.out.println("[SMSService] SMS send result: " + result);
+            // System.out.println("[SMSService] SMS send result: " + result);
         } catch (Exception e) {
             System.err.println("[SMSService] Failed to send SMS: " + e.getMessage());
             smsRequestHelper.saveMessagetoFile(destination + " " + message);
