@@ -688,7 +688,7 @@ function ApiPreviewModal({
   );
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4" style={{ zIndex: 1002 }}>
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[1560] p-4" style={{ zIndex: 1560 }}>
       <div className="rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" style={{ 
         backgroundColor: themeColors.bg,
         border: `1px solid ${themeColors.modalBorder}`
@@ -1206,7 +1206,7 @@ function ApiLoadingModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50" style={{ zIndex: 1003 }}>
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[1570]" style={{ zIndex: 1570 }}>
       <div className="rounded-xl shadow-2xl w-full max-w-md p-6" style={{ 
         backgroundColor: themeColors.bg,
         border: `1px solid ${themeColors.modalBorder}`
@@ -1285,7 +1285,7 @@ function ApiConfirmationModal({
   // Show loader
   if (showLoader) {
     return (
-      <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50" style={{ zIndex: 1001 }}>
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center [z-1550]" style={{ zIndex: 1550 }}>
         <div className="rounded-xl shadow-2xl w-full max-w-md p-6" style={{ 
           backgroundColor: themeColors.bg,
           border: `1px solid ${themeColors.modalBorder}`
@@ -1311,7 +1311,7 @@ function ApiConfirmationModal({
   // Show error
   if (error) {
     return (
-      <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4" style={{ zIndex: 1001 }}>
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center [z-1565] p-4" style={{ zIndex: 1565 }}>
         <div className="rounded-xl shadow-2xl w-full max-w-md p-6" style={{ 
           backgroundColor: themeColors.bg,
           border: `1px solid ${themeColors.modalBorder}`
@@ -1396,7 +1396,7 @@ function ApiConfirmationModal({
     };
 
     return (
-      <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4" style={{ zIndex: 1001 }}>
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[1565] p-4" style={{ zIndex: 1565 }}>
         <div className="rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" style={{ 
           backgroundColor: themeColors.bg,
           border: `1px solid ${themeColors.modalBorder}`
