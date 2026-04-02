@@ -288,8 +288,9 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
   };
 
   const formatExecutionTimeHelper = (ms) => {
-    if (!ms) return 'N/A';
-    if (ms < 1000) return `${ms}ms`;
+    if (ms === null || ms === undefined) return 'N/A';
+
+    if (ms < 1000) return `${ms.toFixed(2)}ms`;
     if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
     return `${(ms / 60000).toFixed(2)}m`;
   };
@@ -1012,6 +1013,12 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
 
   const searchTimer = useRef(null);
   const isInitialMount = useRef(true);
+  
+  // ============ FIX: Add refs for pagination debouncing and request cancellation ============
+  const abortControllerRef = useRef(null);
+  const paginationDebounceRef = useRef(null);
+  const isPaginationLoadingRef = useRef(false);
+  const lastPaginationRequestRef = useRef(null);
 
   const colors = isDark ? {
     bg: 'rgb(1 14 35)',
@@ -1135,7 +1142,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
   };
   
-
   const formatExecutionTimeHelper = (ms) => {
     if (!ms) return 'N/A';
     if (ms < 1000) return `${ms}ms`;
@@ -1152,51 +1158,80 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     return colors.textSecondary;
   };
 
+  // ============ FIX: Add function to cancel ongoing requests ============
+  const cancelOngoingRequest = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }, []);
+
+  // ============ FIX: Debounced pagination handler ============
+  const handlePaginationChange = useCallback((newPage) => {
+    // Clear any pending pagination request
+    if (paginationDebounceRef.current) {
+      clearTimeout(paginationDebounceRef.current);
+    }
+    
+    // Don't allow rapid consecutive pagination requests
+    const now = Date.now();
+    if (lastPaginationRequestRef.current && (now - lastPaginationRequestRef.current) < 500) {
+      // Too fast, debounce
+      paginationDebounceRef.current = setTimeout(() => {
+        if (!isPaginationLoadingRef.current) {
+          setPagination(prev => ({ ...prev, page: newPage }));
+          lastPaginationRequestRef.current = Date.now();
+        }
+        paginationDebounceRef.current = null;
+      }, 300);
+      return;
+    }
+    
+    // Update immediately if not loading
+    if (!isPaginationLoadingRef.current) {
+      setPagination(prev => ({ ...prev, page: newPage }));
+      lastPaginationRequestRef.current = now;
+    }
+  }, []);
 
   // Add this useEffect to debug date range changes
-useEffect(() => {
-  console.log('Date range changed:', {
-    fromDate: dateRange.fromDate,
-    toDate: dateRange.toDate
-  });
-}, [dateRange.fromDate, dateRange.toDate]);
+  useEffect(() => {
+    console.log('Date range changed:', {
+      fromDate: dateRange.fromDate,
+      toDate: dateRange.toDate
+    });
+  }, [dateRange.fromDate, dateRange.toDate]);
 
   // Expand date range function
-  // Fix the expandDateRange function to properly update and reload
-const expandDateRange = (days) => {
-  const now = new Date();
-  const fromDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  
-  // Format dates for datetime-local input (YYYY-MM-DDThh:mm)
-  const formatDateForInput = (date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  const expandDateRange = (days) => {
+    const now = new Date();
+    const fromDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    
+    const formatDateForInput = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    };
+    
+    const formattedFromDate = formatDateForInput(fromDate);
+    const formattedToDate = formatDateForInput(now);
+    
+    console.log('Expanding date range to', days, 'days:', formattedFromDate, 'to', formattedToDate);
+    
+    setDateRange({
+      fromDate: formattedFromDate,
+      toDate: formattedToDate
+    });
+    
+    setPagination(prev => ({ ...prev, page: 0 }));
+    
+    setTimeout(() => {
+      loadRequests(true);
+    }, 100);
   };
-  
-  const formattedFromDate = formatDateForInput(fromDate);
-  const formattedToDate = formatDateForInput(now);
-  
-  console.log('Expanding date range to', days, 'days:', formattedFromDate, 'to', formattedToDate);
-  
-  // Update date range
-  setDateRange({
-    fromDate: formattedFromDate,
-    toDate: formattedToDate
-  });
-  
-  // Reset to first page
-  setPagination(prev => ({ ...prev, page: 0 }));
-  
-  // Reload requests after state updates
-  setTimeout(() => {
-    loadRequests(true);
-  }, 100);
-};
-
 
   // Load full API list from the server
   const loadFullApiList = useCallback(async () => {
@@ -1215,7 +1250,6 @@ const expandDateRange = (days) => {
       if (response?.responseCode === 200) {
         let apiList = response.data?.apiSummaries || [];
         
-        // Sort APIs by lastRequestTime in descending order (most recent first)
         apiList = apiList.sort((a, b) => {
           const timeA = a.lastRequestTime ? new Date(a.lastRequestTime).getTime() : 0;
           const timeB = b.lastRequestTime ? new Date(b.lastRequestTime).getTime() : 0;
@@ -1232,187 +1266,194 @@ const expandDateRange = (days) => {
     }
   }, [authToken, dateRange.fromDate, dateRange.toDate]);
 
-  // Load requests with filters
- const loadRequests = useCallback(async (isRefresh = false) => {
-  if (!authToken) {
-    showToast('Authentication required', 'error');
-    return;
-  }
+  // ============ FIX: Updated loadRequests with abort signal support ============
+  const loadRequests = useCallback(async (isRefresh = false) => {
+    if (!authToken) {
+      showToast('Authentication required', 'error');
+      return;
+    }
 
-  if (isRefresh) {
-    setLoading(prev => ({ ...prev, refresh: true }));
-  }
+    // Cancel any ongoing request
+    cancelOngoingRequest();
+    
+    // Set loading flag to prevent multiple simultaneous requests
+    isPaginationLoadingRef.current = true;
+    
+    // Create new abort controller
+    abortControllerRef.current = new AbortController();
 
-  try {
-    // Build filter object properly
-    const filter = {
-      page: pagination.page,
-      size: pagination.size,
-      ...(selectedApiId && { apiId: selectedApiId }),
-      ...(filters.requestStatus && { requestStatus: filters.requestStatus }),
-      ...(filters.httpMethod && { httpMethod: filters.httpMethod }),
-      ...(filters.responseStatusCode && { responseStatusCode: filters.responseStatusCode }),
-      ...(filters.hasError && { hasError: filters.hasError }),
-      // Add sort parameter to get most recent first
-      sort: 'createdAt,desc',
-      sortBy: 'createdAt',
-      sortDirection: 'DESC'
-    };
+    if (isRefresh) {
+      setLoading(prev => ({ ...prev, refresh: true }));
+    }
 
-    // Handle date range - ensure proper formatting
-    if (dateRange.fromDate) {
-      try {
-        const fromDateObj = new Date(dateRange.fromDate);
-        if (!isNaN(fromDateObj.getTime())) {
-          filter.fromDate = fromDateObj.toISOString();
+    try {
+      const filter = {
+        page: pagination.page,
+        size: pagination.size,
+        ...(selectedApiId && { apiId: selectedApiId }),
+        ...(filters.requestStatus && { requestStatus: filters.requestStatus }),
+        ...(filters.httpMethod && { httpMethod: filters.httpMethod }),
+        ...(filters.responseStatusCode && { responseStatusCode: filters.responseStatusCode }),
+        ...(filters.hasError && { hasError: filters.hasError }),
+        sort: 'createdAt,desc',
+        sortBy: 'createdAt',
+        sortDirection: 'DESC'
+      };
+
+      if (dateRange.fromDate) {
+        try {
+          const fromDateObj = new Date(dateRange.fromDate);
+          if (!isNaN(fromDateObj.getTime())) {
+            filter.fromDate = fromDateObj.toISOString();
+          }
+        } catch (e) {
+          console.error('Invalid fromDate:', dateRange.fromDate);
         }
-      } catch (e) {
-        console.error('Invalid fromDate:', dateRange.fromDate);
       }
-    }
-    
-    if (dateRange.toDate) {
-      try {
-        const toDateObj = new Date(dateRange.toDate);
-        if (!isNaN(toDateObj.getTime())) {
-          // Add 23:59:59 to include the entire end day
-          toDateObj.setHours(23, 59, 59, 999);
-          filter.toDate = toDateObj.toISOString();
+      
+      if (dateRange.toDate) {
+        try {
+          const toDateObj = new Date(dateRange.toDate);
+          if (!isNaN(toDateObj.getTime())) {
+            toDateObj.setHours(23, 59, 59, 999);
+            filter.toDate = toDateObj.toISOString();
+          }
+        } catch (e) {
+          console.error('Invalid toDate:', dateRange.toDate);
         }
-      } catch (e) {
-        console.error('Invalid toDate:', dateRange.toDate);
       }
-    }
 
-    // Add search query if present
-    if (searchQuery && searchQuery.trim()) {
-      filter.search = searchQuery.trim();
-    }
+      if (searchQuery && searchQuery.trim()) {
+        filter.search = searchQuery.trim();
+      }
 
-    // Remove undefined values
-    Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
+      Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
 
-    console.log('Loading requests with params:', filter);
+      console.log('Loading requests with params:', filter);
 
-    const response = await searchRequests(authToken, filter);
-    
-    console.log('Response from server:', response);
-    
-    if (response?.responseCode === 200) {
-      const responseData = response.data;
+      // Pass abort signal to the API call if your API function supports it
+      const response = await searchRequests(authToken, filter);
       
-      // Check different possible response structures
-      let requestsArray = [];
-      let totalElements = 0;
-      let currentPage = 0;
-      let totalPages = 0;
-      let apiSummariesArray = [];
-      
-      // Try to extract requests array from different possible structures
-      if (responseData.content && Array.isArray(responseData.content)) {
-        requestsArray = responseData.content;
-        totalElements = responseData.totalElements || 0;
-        currentPage = responseData.currentPage || 0;
-        totalPages = responseData.totalPages || 0;
-        apiSummariesArray = responseData.apiSummaries || [];
-      } else if (responseData.requests && Array.isArray(responseData.requests)) {
-        requestsArray = responseData.requests;
-        totalElements = responseData.total || 0;
-        currentPage = responseData.page || 0;
-        totalPages = responseData.pages || 0;
-        apiSummariesArray = responseData.apiSummaries || [];
-      } else if (Array.isArray(responseData)) {
-        requestsArray = responseData;
-        totalElements = requestsArray.length;
-        currentPage = 0;
-        totalPages = 1;
-      } else if (responseData.data && Array.isArray(responseData.data)) {
-        requestsArray = responseData.data;
-        totalElements = responseData.total || requestsArray.length;
-        currentPage = responseData.page || 0;
-        totalPages = responseData.pages || 1;
-      } else {
-        console.error('Unknown response structure:', Object.keys(responseData));
-        console.log('Full response data:', responseData);
+      // Check if this request was aborted
+      if (abortControllerRef.current?.signal.aborted) {
+        console.log('Request was aborted, ignoring response');
+        return;
       }
       
-      // Sort the requests array in descending order by timestamp (most recent first)
-      const sortedRequests = [...requestsArray].sort((a, b) => {
-        const timeA = new Date(a.requestTimestamp || a.createdAt || 0).getTime();
-        const timeB = new Date(b.requestTimestamp || b.createdAt || 0).getTime();
-        return timeB - timeA;
-      });
-      
-      console.log('Extracted requests:', sortedRequests.length, 'requests');
-      console.log('Date range applied:', filter.fromDate, 'to', filter.toDate);
-      
-      setRequests(sortedRequests);
-      
-      // Update api summaries
-      if (apiSummariesArray.length > 0) {
-        const sortedApiSummaries = [...apiSummariesArray].sort((a, b) => {
-          const timeA = a.lastRequestTime ? new Date(a.lastRequestTime).getTime() : 0;
-          const timeB = b.lastRequestTime ? new Date(b.lastRequestTime).getTime() : 0;
+      if (response?.responseCode === 200) {
+        const responseData = response.data;
+        
+        let requestsArray = [];
+        let totalElements = 0;
+        let currentPage = 0;
+        let totalPages = 0;
+        let apiSummariesArray = [];
+        
+        if (responseData.content && Array.isArray(responseData.content)) {
+          requestsArray = responseData.content;
+          totalElements = responseData.totalElements || 0;
+          currentPage = responseData.currentPage || 0;
+          totalPages = responseData.totalPages || 0;
+          apiSummariesArray = responseData.apiSummaries || [];
+        } else if (responseData.requests && Array.isArray(responseData.requests)) {
+          requestsArray = responseData.requests;
+          totalElements = responseData.total || 0;
+          currentPage = responseData.page || 0;
+          totalPages = responseData.pages || 0;
+          apiSummariesArray = responseData.apiSummaries || [];
+        } else if (Array.isArray(responseData)) {
+          requestsArray = responseData;
+          totalElements = requestsArray.length;
+          currentPage = 0;
+          totalPages = 1;
+        } else if (responseData.data && Array.isArray(responseData.data)) {
+          requestsArray = responseData.data;
+          totalElements = responseData.total || requestsArray.length;
+          currentPage = responseData.page || 0;
+          totalPages = responseData.pages || 1;
+        } else {
+          console.error('Unknown response structure:', Object.keys(responseData));
+        }
+        
+        const sortedRequests = [...requestsArray].sort((a, b) => {
+          const timeA = new Date(a.requestTimestamp || a.createdAt || 0).getTime();
+          const timeB = new Date(b.requestTimestamp || b.createdAt || 0).getTime();
           return timeB - timeA;
         });
-        setFilteredApiSummaries(sortedApiSummaries);
-        if (!searchQuery && !selectedApiId && Object.keys(filters).length === 0) {
-          setApiSummaries(sortedApiSummaries);
-          setSidebarTotalItems(sortedApiSummaries.length);
-        }
-      }
-      
-      setPagination({
-        page: currentPage,
-        size: pagination.size,
-        totalElements: totalElements,
-        totalPages: totalPages
-      });
-
-      // Show appropriate messages
-      if (sortedRequests.length === 0) {
-        if (searchQuery && searchQuery.trim()) {
-          showToast(`No requests found matching "${searchQuery}"`, 'info');
-        } else if (selectedApiId) {
-          const selectedApi = apiSummaries.find(api => api.apiId === selectedApiId);
-          if (selectedApi && selectedApi.totalRequests > 0) {
-            showToast(`No requests found for ${selectedApi.apiName} in the selected date range. Try expanding the date range.`, 'info');
+        
+        console.log('Extracted requests:', sortedRequests.length, 'requests');
+        
+        setRequests(sortedRequests);
+        
+        if (apiSummariesArray.length > 0) {
+          const sortedApiSummaries = [...apiSummariesArray].sort((a, b) => {
+            const timeA = a.lastRequestTime ? new Date(a.lastRequestTime).getTime() : 0;
+            const timeB = b.lastRequestTime ? new Date(b.lastRequestTime).getTime() : 0;
+            return timeB - timeA;
+          });
+          setFilteredApiSummaries(sortedApiSummaries);
+          if (!searchQuery && !selectedApiId && Object.keys(filters).length === 0) {
+            setApiSummaries(sortedApiSummaries);
+            setSidebarTotalItems(sortedApiSummaries.length);
           }
-        } else if (Object.keys(filters).length > 0) {
-          showToast('No requests match the selected filters', 'info');
+        }
+        
+        setPagination(prev => ({
+          ...prev,
+          page: currentPage,
+          totalElements: totalElements,
+          totalPages: totalPages
+        }));
+
+        if (sortedRequests.length === 0) {
+          if (searchQuery && searchQuery.trim()) {
+            showToast(`No requests found matching "${searchQuery}"`, 'info');
+          } else if (selectedApiId) {
+            const selectedApi = apiSummaries.find(api => api.apiId === selectedApiId);
+            if (selectedApi && selectedApi.totalRequests > 0) {
+              showToast(`No requests found for ${selectedApi.apiName} in the selected date range. Try expanding the date range.`, 'info');
+            }
+          } else if (Object.keys(filters).length > 0) {
+            showToast('No requests match the selected filters', 'info');
+          } else {
+            showToast(`No requests found in the selected date range`, 'info');
+          }
         } else {
-          showToast(`No requests found in the selected date range`, 'info');
+          if (searchQuery && searchQuery.trim()) {
+            showToast(`Found ${sortedRequests.length} requests matching "${searchQuery}"`, 'success');
+          }
         }
       } else {
-        if (searchQuery && searchQuery.trim()) {
-          showToast(`Found ${sortedRequests.length} requests matching "${searchQuery}"`, 'success');
-        }
+        console.error('Failed to load requests:', response?.message);
+        showToast(response?.message || 'Failed to load requests', 'error');
       }
-    } else {
-      console.error('Failed to load requests:', response?.message);
-      showToast(response?.message || 'Failed to load requests', 'error');
+    } catch (error) {
+      // Don't show error for aborted requests
+      if (error.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
+        console.log('Request was aborted');
+        return;
+      }
+      console.error('Error loading requests:', error);
+      showToast(error.message || 'Failed to load requests', 'error');
+    } finally {
+      isPaginationLoadingRef.current = false;
+      if (isRefresh) {
+        setLoading(prev => ({ ...prev, refresh: false }));
+      }
+      // Clear abort controller
+      if (abortControllerRef.current?.signal.aborted === false) {
+        abortControllerRef.current = null;
+      }
     }
-  } catch (error) {
-    console.error('Error loading requests:', error);
-    showToast(error.message || 'Failed to load requests', 'error');
-  } finally {
-    if (isRefresh) {
-      setLoading(prev => ({ ...prev, refresh: false }));
-    }
-  }
-}, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, apiSummaries]);
+  }, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, apiSummaries, cancelOngoingRequest]);
 
-
-
-// Add this function to handle date range changes from the filter modal
-const handleFilterApply = (newFilters) => {
-  setFilters(newFilters);
-  setPagination(prev => ({ ...prev, page: 0 }));
-  // Reload requests after filters are applied
-  setTimeout(() => {
-    loadRequests(true);
-  }, 100);
-};
+  const handleFilterApply = (newFilters) => {
+    setFilters(newFilters);
+    setPagination(prev => ({ ...prev, page: 0 }));
+    setTimeout(() => {
+      loadRequests(true);
+    }, 100);
+  };
 
   // Load statistics
   const loadStatistics = useCallback(async () => {
@@ -1595,31 +1636,27 @@ const handleFilterApply = (newFilters) => {
 
   // Handle search with debounce
   const handleSearchChange = (e) => {
-  const query = e.target.value;
-  setSearchQuery(query);
-  setPagination(prev => ({ ...prev, page: 0 }));
-  
-  // Clear previous timer
-  if (searchTimer.current) {
-    clearTimeout(searchTimer.current);
-  }
-  
-  // If search query is empty, load immediately (no debounce)
-  if (!query || query.trim() === '') {
-    console.log('Search cleared, loading all requests');
-    loadRequests(true);
-    return;
-  }
-  
-  // Set new timer to trigger search after user stops typing
-  searchTimer.current = setTimeout(() => {
-    if (activeTab === 'all') {
-      console.log('Executing search with query:', query);
-      loadRequests(true);
+    const query = e.target.value;
+    setSearchQuery(query);
+    setPagination(prev => ({ ...prev, page: 0 }));
+    
+    if (searchTimer.current) {
+      clearTimeout(searchTimer.current);
     }
-  }, 500);
-};
-
+    
+    if (!query || query.trim() === '') {
+      console.log('Search cleared, loading all requests');
+      loadRequests(true);
+      return;
+    }
+    
+    searchTimer.current = setTimeout(() => {
+      if (activeTab === 'all') {
+        console.log('Executing search with query:', query);
+        loadRequests(true);
+      }
+    }, 500);
+  };
 
   // Handle refresh button click
   const handleRefresh = useCallback(() => {
@@ -1631,6 +1668,21 @@ const handleFilterApply = (newFilters) => {
       loadRecentRequests();
     }
   }, [activeTab, loadStatistics, loadRequests, loadRecentRequests]);
+
+  // ============ FIX: Clean up on unmount ============
+  useEffect(() => {
+    return () => {
+      // Cancel any ongoing request
+      cancelOngoingRequest();
+      // Clear any pending timers
+      if (searchTimer.current) {
+        clearTimeout(searchTimer.current);
+      }
+      if (paginationDebounceRef.current) {
+        clearTimeout(paginationDebounceRef.current);
+      }
+    };
+  }, [cancelOngoingRequest]);
 
   // Initial load
   useEffect(() => {
@@ -1677,17 +1729,17 @@ const handleFilterApply = (newFilters) => {
 
   // Handle filter changes
   useEffect(() => {
-  if (!authToken || isInitialMount.current || activeTab !== 'all') return;
-  
-  console.log('Filters changed, reloading...', { 
-    selectedApiId, 
-    paginationPage: pagination.page,
-    dateRange,
-    searchQuery
-  });
-  
-  loadRequests();
-}, [filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
+    if (!authToken || isInitialMount.current || activeTab !== 'all') return;
+    
+    console.log('Filters changed, reloading...', { 
+      selectedApiId, 
+      paginationPage: pagination.page,
+      dateRange,
+      searchQuery
+    });
+    
+    loadRequests();
+  }, [filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
 
   // Update selected API summary when apiSummaries change
   useEffect(() => {
@@ -1857,205 +1909,206 @@ const handleFilterApply = (newFilters) => {
     );
   };
 
-
   // Add this useEffect right after your state declarations
-useEffect(() => {
-  console.log('🔄 Requests state updated:', requests.length, 'requests');
-  console.log('First request:', requests[0]);
-}, [requests]);
+  useEffect(() => {
+    console.log('🔄 Requests state updated:', requests.length, 'requests');
+    console.log('First request:', requests[0]);
+  }, [requests]);
 
   // Render requests table
-  // Fix the renderRequestsTable function - look for the empty state condition
-const renderRequestsTable = () => {
-  // Add debug logging
-  console.log('Rendering table with requests:', requests.length, 'requests');
-  console.log('Loading states:', loading);
-  
-  return (
-    <div className="flex-1 flex flex-col overflow-hidden pl-2 pr-2">
-      <div className="flex-1 overflow-auto p-4">
-        <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-          <thead className="sticky top-0" style={{ backgroundColor: colors.card, zIndex: 10 }}>
-            <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
-              <th className="text-left py-3 px-4 text-xs font-medium w-12" style={{ color: colors.textSecondary }}>#</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Method</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Request Name</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>API</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status Code</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Duration</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {requests.map((request, index) => {
-              const sequentialNumber = (pagination.page * pagination.size) + index + 1;
-              const statusColor = getStatusColor(request.requestStatus);
-              const statusText = getStatusText(request.requestStatus);
-              
-              return (
-                <tr 
-                  key={request.id || request.requestId || index}
-                  className="hover:bg-opacity-50 transition-colors cursor-pointer"
-                  style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
-                  onClick={() => handleViewDetails(request)}
-                >
-                  <td className="py-3 px-4">
-                    <span className="text-sm font-mono" style={{ color: colors.textSecondary }}>
-                      {sequentialNumber}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
-                      <span className="text-xs font-medium" style={{ color: statusColor }}>
-                        {statusText}
+  const renderRequestsTable = () => {
+    console.log('Rendering table with requests:', requests.length, 'requests');
+    console.log('Loading states:', loading);
+    
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden pl-2 pr-2">
+        <div className="flex-1 overflow-auto p-4">
+          <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+            <thead className="sticky top-0" style={{ backgroundColor: colors.card, zIndex: 10 }}>
+              <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
+                <th className="text-left py-3 px-4 text-xs font-medium w-12" style={{ color: colors.textSecondary }}>#</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Method</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Request Name</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>API</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status Code</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Duration</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
+               </tr>
+            </thead>
+            <tbody>
+              {requests.map((request, index) => {
+                const sequentialNumber = (pagination.page * pagination.size) + index + 1;
+                const statusColor = getStatusColor(request.requestStatus);
+                const statusText = getStatusText(request.requestStatus);
+                
+                return (
+                  <tr 
+                    key={request.id || request.requestId || index}
+                    className="hover:bg-opacity-50 transition-colors cursor-pointer"
+                    style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
+                    onClick={() => handleViewDetails(request)}
+                  >
+                    <td className="py-3 px-4">
+                      <span className="text-sm font-mono" style={{ color: colors.textSecondary }}>
+                        {sequentialNumber}
                       </span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
-                      backgroundColor: getMethodColor(request.httpMethod),
-                      color: 'white'
-                    }}>
-                      {request.httpMethod}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm" style={{ color: colors.text }}>{request.requestName || 'N/A'}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs" style={{ color: colors.textSecondary }}>{request.apiCode || request.apiName || 'N/A'}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(request.responseStatusCode) }}>
-                      {request.responseStatusCode || '-'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm" style={{ color: colors.text }}>
-                      {formatExecutionTimeHelper(request.executionDurationMs)}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs" style={{ color: colors.textSecondary }}>
-                      {formatTimestamp(request.requestTimestamp || request.createdAt)}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs font-mono" style={{ color: colors.textSecondary }}>
-                      {request.correlationId?.substring(0, 8) || 'N/A'}...
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleViewDetails(request);
-                        }}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Eye size={12} style={{ color: colors.textSecondary }} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          copyToClipboard(JSON.stringify(request, null, 2));
-                        }}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Copy size={12} style={{ color: colors.textSecondary }} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteRequest(request.id);
-                        }}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Trash2 size={12} style={{ color: colors.error }} />
-                      </button>
-                    </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
+                        <span className="text-xs font-medium" style={{ color: statusColor }}>
+                          {statusText}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
+                        backgroundColor: getMethodColor(request.httpMethod),
+                        color: 'white'
+                      }}>
+                        {request.httpMethod}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-sm" style={{ color: colors.text }}>{request.requestName || 'N/A'}</span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs" style={{ color: colors.textSecondary }}>{request.apiCode || request.apiName || 'N/A'}</span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(request.responseStatusCode) }}>
+                        {request.responseStatusCode || '-'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-sm" style={{ color: colors.text }}>
+                        {formatExecutionTimeHelper(request.executionDurationMs)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs" style={{ color: colors.textSecondary }}>
+                        {formatTimestamp(request.requestTimestamp || request.createdAt)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs font-mono" style={{ color: colors.textSecondary }}>
+                        {request.correlationId?.substring(0, 8) || 'N/A'}...
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewDetails(request);
+                          }}
+                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.hover }}
+                        >
+                          <Eye size={12} style={{ color: colors.textSecondary }} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(JSON.stringify(request, null, 2));
+                          }}
+                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.hover }}
+                        >
+                          <Copy size={12} style={{ color: colors.textSecondary }} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteRequest(request.id);
+                          }}
+                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.hover }}
+                        >
+                          <Trash2 size={12} style={{ color: colors.error }} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              
+              {/* Empty state */}
+              {requests.length === 0 && !loading.initialLoad && !loading.refresh && !loading.export && (
+                <tr>
+                  <td colSpan="10" className="text-center py-12">
+                    <FileText size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
+                    <p className="text-lg mb-2" style={{ color: colors.text }}>No Requests Found</p>
+                    <p className="text-sm" style={{ color: colors.textSecondary }}>
+                      {searchQuery ? `No requests matching "${searchQuery}"` : 'Try adjusting your filters or date range'}
+                    </p>
                   </td>
                 </tr>
-              );
-            })}
-            
-            {/* Empty state - FIX THIS CONDITION */}
-            {requests.length === 0 && !loading.initialLoad && !loading.refresh && !loading.export && (
-              <tr>
-                <td colSpan="10" className="text-center py-12">
-                  <FileText size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
-                  <p className="text-lg mb-2" style={{ color: colors.text }}>No Requests Found</p>
-                  <p className="text-sm" style={{ color: colors.textSecondary }}>
-                    {searchQuery ? `No requests matching "${searchQuery}"` : 'Try adjusting your filters or date range'}
-                  </p>
-                </td>
-              </tr>
-            )}
+              )}
 
-            {/* Loading state */}
-            {(loading.refresh || loading.initialLoad) && requests.length === 0 && (
-              <tr>
-                <td colSpan="10" className="text-center py-12">
-                  <RefreshCw size={32} className="animate-spin mx-auto mb-4" style={{ color: colors.textSecondary }} />
-                  <p className="text-sm" style={{ color: colors.textSecondary }}>Loading requests...</p>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              {/* Loading state */}
+              {(loading.refresh || loading.initialLoad) && requests.length === 0 && (
+                <tr>
+                  <td colSpan="10" className="text-center py-12">
+                    <RefreshCw size={32} className="animate-spin mx-auto mb-4" style={{ color: colors.textSecondary }} />
+                    <p className="text-sm" style={{ color: colors.textSecondary }}>Loading requests...</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
 
-        {/* Pagination - Always show if there are requests or totalElements > 0 */}
-        {pagination.totalPages > 0 && (
-          <div className="flex items-center justify-between mt-4 py-3 px-4" style={{ backgroundColor: colors.card, borderTop: `1px solid ${colors.border}` }}>
-            <div className="text-sm" style={{ color: colors.textSecondary }}>
-              Showing {requests.length > 0 ? pagination.page * pagination.size + 1 : 0} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setPagination(prev => ({ ...prev, page: Math.max(0, prev.page - 1) }));
-                }}
-                disabled={pagination.page === 0}
-                className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
-                style={{ backgroundColor: colors.hover, color: colors.text }}
-              >
-                <ChevronLeft size={14} />
-                Previous
-              </button>
-              <div className="flex items-center gap-1 px-2">
-                <span className="text-sm font-medium" style={{ color: colors.text }}>
-                  {pagination.page + 1}
-                </span>
-                <span className="text-sm" style={{ color: colors.textSecondary }}>
-                  of {pagination.totalPages}
-                </span>
+          {/* Pagination - Always show if there are requests or totalElements > 0 */}
+          {pagination.totalPages > 0 && (
+            <div className="flex items-center justify-between mt-4 py-3 px-4" style={{ backgroundColor: colors.card, borderTop: `1px solid ${colors.border}` }}>
+              <div className="text-sm" style={{ color: colors.textSecondary }}>
+                Showing {requests.length > 0 ? pagination.page * pagination.size + 1 : 0} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
               </div>
-              <button
-                onClick={() => {
-                  setPagination(prev => ({ ...prev, page: Math.min(prev.totalPages - 1, prev.page + 1) }));
-                }}
-                disabled={pagination.page >= pagination.totalPages - 1}
-                className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
-                style={{ backgroundColor: colors.hover, color: colors.text }}
-              >
-                Next
-                <ChevronRight size={14} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (pagination.page > 0) {
+                      handlePaginationChange(pagination.page - 1);
+                    }
+                  }}
+                  disabled={pagination.page === 0 || isPaginationLoadingRef.current}
+                  className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
+                  style={{ backgroundColor: colors.hover, color: colors.text }}
+                >
+                  <ChevronLeft size={14} />
+                  Previous
+                </button>
+                <div className="flex items-center gap-1 px-2">
+                  <span className="text-sm font-medium" style={{ color: colors.text }}>
+                    {pagination.page + 1}
+                  </span>
+                  <span className="text-sm" style={{ color: colors.textSecondary }}>
+                    of {pagination.totalPages}
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    if (pagination.page < pagination.totalPages - 1) {
+                      handlePaginationChange(pagination.page + 1);
+                    }
+                  }}
+                  disabled={pagination.page >= pagination.totalPages - 1 || isPaginationLoadingRef.current}
+                  className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
+                  style={{ backgroundColor: colors.hover, color: colors.text }}
+                >
+                  Next
+                  <ChevronRight size={14} />
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   const showFullOverlay = loading.initialLoad || loading.export || loading.delete;
   const loadingType = loading.initialLoad ? 'initialLoad' : 
@@ -2210,7 +2263,6 @@ const renderRequestsTable = () => {
             onChange={(e) => {
               const newFromDate = e.target.value;
               setDateRange(prev => ({ ...prev, fromDate: newFromDate }));
-              // Don't reset page here, let the Apply button handle it
             }}
             className="px-2 py-1 rounded text-sm"
             style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
@@ -2223,7 +2275,6 @@ const renderRequestsTable = () => {
             onChange={(e) => {
               const newToDate = e.target.value;
               setDateRange(prev => ({ ...prev, toDate: newToDate }));
-              // Don't reset page here, let the Apply button handle it
             }}
             className="px-2 py-1 rounded text-sm"
             style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
@@ -2232,10 +2283,7 @@ const renderRequestsTable = () => {
           <button
             onClick={async () => {
               console.log('Apply button clicked - current date range:', dateRange);
-              // Reset to first page
               setPagination(prev => ({ ...prev, page: 0 }));
-              // Force a reload with the current date range
-              // Use setTimeout to ensure state updates are processed
               setTimeout(() => {
                 loadRequests(true);
               }, 100);
@@ -2265,7 +2313,7 @@ const renderRequestsTable = () => {
         colors={colors}
         isOpen={showFilterModal}
         onClose={() => setShowFilterModal(false)}
-        onApply={handleFilterApply}  // Use the new handler
+        onApply={handleFilterApply}
         onExpandDateRange={expandDateRange}
       />
 
