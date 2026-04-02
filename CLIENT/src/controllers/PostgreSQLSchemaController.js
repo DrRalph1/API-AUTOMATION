@@ -2361,6 +2361,7 @@ export const executeQuery = async (authorizationHeader, queryRequest = {}) => {
             requestId: requestId
         })
     ).then(response => {
+        // Pass the full response to transformQueryResponse
         return transformQueryResponse(response);
     });
 };
@@ -2368,11 +2369,25 @@ export const executeQuery = async (authorizationHeader, queryRequest = {}) => {
 
 
 /**
- * Transform query response
+ * Transform query response - PRESERVES CALL STATEMENT STRUCTURE
  */
 const transformQueryResponse = (response) => {
     const data = response.data || {};
     
+    // Check if this is a CALL statement response (has statementType)
+    if (data.statementType === 'CALL') {
+        // For CALL statements, return the FULL response as-is
+        // The response already has the correct structure with data field containing the procedure response
+        return response;
+    }
+    
+    // Check if response itself has statementType (from executeDirectCall)
+    if (response.statementType === 'CALL') {
+        // For CALL statements, return the FULL response as-is
+        return response;
+    }
+    
+    // For SELECT/INSERT/UPDATE/DELETE statements, transform as before
     const transformedData = {
         rows: data.rows || [],
         columns: data.columns || [],
@@ -2407,11 +2422,14 @@ export const executeSQL = async (authorizationHeader, params = {}) => {
 
     console.log('📊 executeSQL called with:', { sql: sql?.substring(0, 100), ...params });
     
-    return executeQuery(authorizationHeader, {
+    const result = await executeQuery(authorizationHeader, {
         query: sql,
         timeoutSeconds,
         readOnly
     });
+    
+    console.log('📊 executeSQL result:', result);
+    return result;
 };
 
 // ============================================================

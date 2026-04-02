@@ -1,5 +1,6 @@
 package com.usg.apiGeneration.repositories.schemaBrowser.postgresql;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiGeneration.enums.PostgreSQLSqlStatementTypeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.BadSqlGrammarException;
@@ -8,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import java.sql.*;
 import java.util.*;
 import java.util.Date;
+import java.util.logging.LogRecord;
 
 @Slf4j
 @Repository
@@ -941,12 +943,6 @@ public class PostgreSQLExecuteRepository extends PostgreSQLRepository {
             log.info("Executing stored program: {}, type: {}", program, programType);
             long startTime = System.currentTimeMillis();
 
-            Connection conn = getJdbcTemplate().getDataSource().getConnection();
-
-            if (timeoutSeconds > 0) {
-                conn.setNetworkTimeout(null, timeoutSeconds * 1000);
-            }
-
             // For CREATE PROCEDURE/FUNCTION, execute as DDL
             if (programType == PostgreSQLSqlStatementTypeEnum.PROCEDURE ||
                     programType == PostgreSQLSqlStatementTypeEnum.FUNCTION) {
@@ -981,43 +977,17 @@ public class PostgreSQLExecuteRepository extends PostgreSQLRepository {
             return result;
 
         } catch (BadSqlGrammarException e) {
-            // Extract root cause and format user-friendly error
-            Throwable rootCause = e;
-            while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
-                rootCause = rootCause.getCause();
-            }
-
-            String errorMessage = rootCause.getMessage();
+            // Remove the connection handling code that's causing leaks
+            // Just rethrow with a proper message
+            String errorMessage = e.getMostSpecificCause().getMessage();
             String cleanErrorMessage = extractPostgreSQLError(errorMessage);
 
-            // Check for insufficient privileges
-            if (errorMessage != null && (errorMessage.contains("permission denied") ||
-                    errorMessage.contains("ERROR: permission denied"))) {
-                String userFriendlyError = "Insufficient privileges (Permission denied): You don't have permission to execute this operation.\n\n" +
-                        "Please contact your database administrator to grant the required privileges.\n" +
-                        "Required privileges may include: EXECUTE on the function/procedure, CREATE on the schema.";
-                throw new RuntimeException(userFriendlyError, e);
-            }
-            // Check for function/procedure does not exist
-            else if (errorMessage != null && (errorMessage.contains("does not exist") ||
-                    errorMessage.contains("function") && errorMessage.contains("does not exist"))) {
-                String userFriendlyError = "Function or procedure does not exist: " + cleanErrorMessage;
-                throw new RuntimeException(userFriendlyError, e);
-            }
-            // Check for argument mismatch
-            else if (errorMessage != null && (errorMessage.contains("function") && errorMessage.contains("does not match"))) {
-                String userFriendlyError = "Function/procedure argument mismatch: " + cleanErrorMessage + "\n\n" +
-                        "Please check the number and types of parameters.";
-                throw new RuntimeException(userFriendlyError, e);
-            }
-            // Generic PostgreSQL error
-            else if (errorMessage != null && (errorMessage.contains("ERROR:") || errorMessage.contains("PG::"))) {
-                String userFriendlyError = "PostgreSQL error: " + cleanErrorMessage;
-                throw new RuntimeException(userFriendlyError, e);
-            }
-            // Unknown error
-            else {
-                throw new RuntimeException("Failed to execute stored program: " + e.getMessage(), e);
+            if (errorMessage != null && errorMessage.contains("permission denied")) {
+                throw new RuntimeException("Insufficient privileges to execute this operation", e);
+            } else if (errorMessage != null && errorMessage.contains("does not exist")) {
+                throw new RuntimeException("Function or procedure does not exist: " + cleanErrorMessage, e);
+            } else {
+                throw new RuntimeException("Failed to execute stored program: " + cleanErrorMessage, e);
             }
         } catch (Exception e) {
             log.error("Error executing stored program: {}", e.getMessage(), e);
@@ -1110,70 +1080,592 @@ public class PostgreSQLExecuteRepository extends PostgreSQLRepository {
     /**
      * Execute direct CALL or EXEC statement with proper error handling
      */
-    public Map<String, Object> executeDirectCall(String callStatement, int timeoutSeconds) {
+    public Map<String, Object> executeDirectCall(String callStatement, int timeoutSeconds, String requestId) {
+        Connection conn = null;
+        Statement stmt = null;
+
         try {
             log.info("Executing direct call: {}", callStatement);
             long startTime = System.currentTimeMillis();
 
-            Connection conn = getJdbcTemplate().getDataSource().getConnection();
+            conn = getJdbcTemplate().getDataSource().getConnection();
+
             if (timeoutSeconds > 0) {
-                conn.setNetworkTimeout(null, timeoutSeconds * 1000);
+                stmt = conn.createStatement();
+                stmt.setQueryTimeout(timeoutSeconds);
+            } else {
+                stmt = conn.createStatement();
             }
 
-            // Format the call properly for PostgreSQL
-            String executableCall = callStatement;
-            if (callStatement.toUpperCase().startsWith("EXEC") ||
-                    callStatement.toUpperCase().startsWith("EXECUTE")) {
-                String procedureCall = callStatement.substring(4).trim();
-                executableCall = "CALL " + procedureCall;
+            // Execute the call
+            stmt.execute(callStatement);
+
+            // Capture warnings (this is where RAISE NOTICE messages go!)
+            java.sql.SQLWarning warning = stmt.getWarnings();
+            String resultJson = null;
+
+            while (warning != null) {
+                String message = warning.getMessage();
+
+                // Look for our Result: JSON
+                if (message != null && message.contains("Result:")) {
+                    int resultIndex = message.indexOf("Result:");
+                    if (resultIndex >= 0) {
+                        resultJson = message.substring(resultIndex + 7).trim();
+                        break; // Found it, no need to continue
+                    }
+                }
+
+                warning = warning.getNextWarning();
             }
 
-            getJdbcTemplate().execute(executableCall);
+            // Build the result map
+            Map<String, Object> result = new LinkedHashMap<>();
 
-            long executionTime = System.currentTimeMillis() - startTime;
+            if (resultJson != null) {
+                try {
+                    resultJson = resultJson.trim();
+                    Map<String, Object> responseData = parseJsonToMap(resultJson);
 
-            Map<String, Object> result = new HashMap<>();
-            result.put("executionTime", executionTime);
-            result.put("success", true);
-            result.put("message", "Call executed successfully");
-            result.put("rowCount", 0);
+                    // Check if responseData has a "data" field that contains another object
+                    if (responseData.containsKey("data")) {
+                        Object dataObj = responseData.get("data");
+
+                        // If dataObj is a Map, use it directly as the data field
+                        if (dataObj instanceof Map) {
+                            result.put("data", dataObj);
+                        }
+                        // If dataObj is a String that contains JSON, parse it
+                        else if (dataObj instanceof String) {
+                            String dataStr = (String) dataObj;
+                            if (dataStr.startsWith("{") || dataStr.startsWith("[")) {
+                                result.put("data", parseJsonValue(dataStr));
+                            } else {
+                                result.put("data", dataStr);
+                            }
+                        }
+                        else {
+                            result.put("data", dataObj);
+                        }
+                    } else {
+                        // If no data field, use the entire response as data
+                        result.put("data", responseData);
+                    }
+
+                } catch (Exception e) {
+                    log.error("Failed to parse response JSON: {}", e.getMessage());
+                    result.put("data", null);
+                }
+            } else {
+                // If no notice was found, provide a default response
+                result.put("data", null);
+            }
+
+            // Clear warnings to avoid memory issues
+            if (stmt != null) {
+                stmt.clearWarnings();
+            }
 
             return result;
 
-        } catch (BadSqlGrammarException e) {
-            // Extract root cause and format user-friendly error
-            Throwable rootCause = e;
-            while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
-                rootCause = rootCause.getCause();
-            }
-
-            String errorMessage = rootCause.getMessage();
-            String cleanErrorMessage = extractPostgreSQLError(errorMessage);
-
-            // Check for procedure does not exist
-            if (errorMessage != null && (errorMessage.contains("does not exist") ||
-                    errorMessage.contains("procedure") && errorMessage.contains("does not exist"))) {
-                String userFriendlyError = "Procedure does not exist: " + cleanErrorMessage;
-                throw new RuntimeException(userFriendlyError, e);
-            }
-            // Check for argument mismatch
-            else if (errorMessage != null && (errorMessage.contains("procedure") && errorMessage.contains("does not match"))) {
-                String userFriendlyError = "Procedure argument mismatch: " + cleanErrorMessage;
-                throw new RuntimeException(userFriendlyError, e);
-            }
-            // Generic PostgreSQL error
-            else if (errorMessage != null && (errorMessage.contains("ERROR:") || errorMessage.contains("PG::"))) {
-                String userFriendlyError = "PostgreSQL error: " + cleanErrorMessage;
-                throw new RuntimeException(userFriendlyError, e);
-            }
-            // Unknown error
-            else {
-                throw new RuntimeException("Failed to execute call: " + e.getMessage(), e);
-            }
         } catch (Exception e) {
             log.error("Error executing direct call: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to execute call: " + e.getMessage(), e);
+        } finally {
+            closeResources(null, stmt, conn);
         }
+    }
+
+    // Helper method to parse JSON string to Map
+    private Map<String, Object> parseJsonToMap(String json) {
+        try {
+            Object result = parseJsonValue(json);
+            if (result instanceof Map) {
+                return (Map<String, Object>) result;
+            } else {
+                Map<String, Object> wrapper = new LinkedHashMap<>();
+                wrapper.put("value", result);
+                return wrapper;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse JSON: {}", e.getMessage());
+            Map<String, Object> errorMap = new LinkedHashMap<>();
+            errorMap.put("raw", json);
+            errorMap.put("error", e.getMessage());
+            return errorMap;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object parseJsonValue(String json) {
+        json = json.trim();
+
+        if (json.startsWith("{")) {
+            // Parse JSON object
+            Map<String, Object> map = new LinkedHashMap<>();
+            json = json.substring(1, json.length() - 1).trim();
+
+            if (!json.isEmpty()) {
+                StringBuilder current = new StringBuilder();
+                boolean inString = false;
+                boolean escaped = false;
+                int braceDepth = 0;
+                int bracketDepth = 0;
+
+                for (int i = 0; i < json.length(); i++) {
+                    char c = json.charAt(i);
+
+                    if (escaped) {
+                        current.append(c);
+                        escaped = false;
+                    } else if (c == '\\') {
+                        escaped = true;
+                        current.append(c);
+                    } else if (c == '"') {
+                        inString = !inString;
+                        current.append(c);
+                    } else if (!inString && c == '{') {
+                        braceDepth++;
+                        current.append(c);
+                    } else if (!inString && c == '}') {
+                        braceDepth--;
+                        current.append(c);
+                    } else if (!inString && c == '[') {
+                        bracketDepth++;
+                        current.append(c);
+                    } else if (!inString && c == ']') {
+                        bracketDepth--;
+                        current.append(c);
+                    } else if (!inString && c == ',' && braceDepth == 0 && bracketDepth == 0) {
+                        // Found a top-level comma, process the pair
+                        String pair = current.toString().trim();
+                        int colonIndex = findColonSeparator(pair);
+                        if (colonIndex > 0) {
+                            String key = pair.substring(0, colonIndex).trim();
+                            String value = pair.substring(colonIndex + 1).trim();
+                            // Remove quotes from key
+                            if (key.startsWith("\"") && key.endsWith("\"")) {
+                                key = key.substring(1, key.length() - 1);
+                            }
+                            map.put(key, parseJsonValue(value));
+                        }
+                        current = new StringBuilder();
+                    } else {
+                        current.append(c);
+                    }
+                }
+
+                // Process the last pair
+                if (current.length() > 0) {
+                    String pair = current.toString().trim();
+                    int colonIndex = findColonSeparator(pair);
+                    if (colonIndex > 0) {
+                        String key = pair.substring(0, colonIndex).trim();
+                        String value = pair.substring(colonIndex + 1).trim();
+                        if (key.startsWith("\"") && key.endsWith("\"")) {
+                            key = key.substring(1, key.length() - 1);
+                        }
+                        map.put(key, parseJsonValue(value));
+                    }
+                }
+            }
+            return map;
+
+        } else if (json.startsWith("[")) {
+            // Parse JSON array
+            List<Object> list = new ArrayList<>();
+            json = json.substring(1, json.length() - 1).trim();
+
+            if (!json.isEmpty()) {
+                StringBuilder current = new StringBuilder();
+                boolean inString = false;
+                boolean escaped = false;
+                int braceDepth = 0;
+                int bracketDepth = 0;
+
+                for (int i = 0; i < json.length(); i++) {
+                    char c = json.charAt(i);
+
+                    if (escaped) {
+                        current.append(c);
+                        escaped = false;
+                    } else if (c == '\\') {
+                        escaped = true;
+                        current.append(c);
+                    } else if (c == '"') {
+                        inString = !inString;
+                        current.append(c);
+                    } else if (!inString && c == '{') {
+                        braceDepth++;
+                        current.append(c);
+                    } else if (!inString && c == '}') {
+                        braceDepth--;
+                        current.append(c);
+                    } else if (!inString && c == '[') {
+                        bracketDepth++;
+                        current.append(c);
+                    } else if (!inString && c == ']') {
+                        bracketDepth--;
+                        current.append(c);
+                    } else if (!inString && c == ',' && braceDepth == 0 && bracketDepth == 0) {
+                        list.add(parseJsonValue(current.toString().trim()));
+                        current = new StringBuilder();
+                    } else {
+                        current.append(c);
+                    }
+                }
+
+                if (current.length() > 0) {
+                    list.add(parseJsonValue(current.toString().trim()));
+                }
+            }
+            return list;
+
+        } else if (json.startsWith("\"") && json.endsWith("\"")) {
+            // String value
+            return json.substring(1, json.length() - 1);
+
+        } else if ("null".equalsIgnoreCase(json)) {
+            return null;
+
+        } else if ("true".equalsIgnoreCase(json)) {
+            return true;
+
+        } else if ("false".equalsIgnoreCase(json)) {
+            return false;
+
+        } else {
+            // Try to parse as number
+            try {
+                if (json.contains(".")) {
+                    return Double.parseDouble(json);
+                } else {
+                    return Long.parseLong(json);
+                }
+            } catch (NumberFormatException e) {
+                return json;
+            }
+        }
+    }
+
+    private int findColonSeparator(String pair) {
+        boolean inString = false;
+        int braceDepth = 0;
+        int bracketDepth = 0;
+
+        for (int i = 0; i < pair.length(); i++) {
+            char c = pair.charAt(i);
+            if (c == '"') {
+                inString = !inString;
+            } else if (!inString && c == '{') {
+                braceDepth++;
+            } else if (!inString && c == '}') {
+                braceDepth--;
+            } else if (!inString && c == '[') {
+                bracketDepth++;
+            } else if (!inString && c == ']') {
+                bracketDepth--;
+            } else if (!inString && braceDepth == 0 && bracketDepth == 0 && c == ':') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Extract procedure name from CALL statement
+     */
+    private String extractProcedureName(String callStatement) {
+        if (callStatement == null) return null;
+        String upperCall = callStatement.toUpperCase();
+        int callIndex = upperCall.indexOf("CALL");
+        if (callIndex >= 0) {
+            String afterCall = callStatement.substring(callIndex + 4).trim();
+            int parenIndex = afterCall.indexOf('(');
+            if (parenIndex > 0) {
+                return afterCall.substring(0, parenIndex).trim();
+            }
+            return afterCall.trim();
+        }
+        return null;
+    }
+
+    /**
+     * Register OUT parameter based on data type
+     */
+    private void registerOutParameter(CallableStatement cstmt, int index, String dataType) throws SQLException {
+        if (dataType == null) {
+            cstmt.registerOutParameter(index, Types.VARCHAR);
+            return;
+        }
+
+        String upperType = dataType.toUpperCase();
+        switch (upperType) {
+            case "VARCHAR":
+            case "TEXT":
+            case "CHAR":
+            case "BPCHAR":
+                cstmt.registerOutParameter(index, Types.VARCHAR);
+                break;
+            case "INTEGER":
+            case "INT":
+            case "INT4":
+                cstmt.registerOutParameter(index, Types.INTEGER);
+                break;
+            case "BIGINT":
+            case "INT8":
+                cstmt.registerOutParameter(index, Types.BIGINT);
+                break;
+            case "SMALLINT":
+            case "INT2":
+                cstmt.registerOutParameter(index, Types.SMALLINT);
+                break;
+            case "NUMERIC":
+            case "DECIMAL":
+                cstmt.registerOutParameter(index, Types.DECIMAL);
+                break;
+            case "BOOLEAN":
+            case "BOOL":
+                cstmt.registerOutParameter(index, Types.BOOLEAN);
+                break;
+            case "DATE":
+                cstmt.registerOutParameter(index, Types.DATE);
+                break;
+            case "TIMESTAMP":
+                cstmt.registerOutParameter(index, Types.TIMESTAMP);
+                break;
+            case "JSON":
+            case "JSONB":
+                cstmt.registerOutParameter(index, Types.VARCHAR);
+                break;
+            default:
+                cstmt.registerOutParameter(index, Types.VARCHAR);
+        }
+    }
+
+    /**
+     * Extract procedure name from CALL statement
+     */
+    private String extractProcedureNameFromCall(String callStatement) {
+        String upperCall = callStatement.toUpperCase();
+        int callIndex = upperCall.indexOf("CALL");
+        if (callIndex >= 0) {
+            String afterCall = callStatement.substring(callIndex + 4).trim();
+            int parenIndex = afterCall.indexOf('(');
+            if (parenIndex > 0) {
+                return afterCall.substring(0, parenIndex).trim();
+            }
+            return afterCall.trim();
+        }
+        return null;
+    }
+
+    /**
+     * Get procedure parameter information from database
+     */
+    private List<Map<String, Object>> getProcedureParameterInfo(String procedureName) {
+        if (procedureName == null) {
+            return new ArrayList<>();
+        }
+
+        try {
+            String sql = "SELECT " +
+                    "    p.proname as procedure_name, " +
+                    "    pg_catalog.pg_get_function_identity_arguments(p.oid) as argument_signature, " +
+                    "    unnest(p.proargnames) as parameter_name, " +
+                    "    unnest(p.proargmodes) as parameter_mode, " +
+                    "    pg_catalog.format_type(p.proargtypes[i], NULL) as data_type " +
+                    "FROM pg_proc p " +
+                    "CROSS JOIN LATERAL unnest(p.proargmodes) WITH ORDINALITY AS m(mode, i) " +
+                    "WHERE p.proname = ? " +
+                    "AND p.prokind = 'p' " +
+                    "ORDER BY i";
+
+            // Try to get parameter info
+            List<Map<String, Object>> params = new ArrayList<>();
+            try {
+                // Simpler query that works for most PostgreSQL versions
+                String simpleSql = "SELECT " +
+                        "    proname, " +
+                        "    pronargs, " +
+                        "    proargnames, " +
+                        "    proargmodes, " +
+                        "    proargtypes " +
+                        "FROM pg_proc " +
+                        "WHERE proname = ? AND prokind = 'p'";
+
+                Map<String, Object> procInfo = getJdbcTemplate().queryForMap(simpleSql, procedureName);
+
+                // Parse arrays if they exist
+                Object[] argNames = (Object[]) procInfo.get("proargnames");
+                Object[] argModes = (Object[]) procInfo.get("proargmodes");
+
+                if (argNames != null && argModes != null) {
+                    for (int i = 0; i < argModes.length; i++) {
+                        Map<String, Object> param = new HashMap<>();
+                        param.put("parameter_name", i < argNames.length ? argNames[i] : "param" + (i + 1));
+                        param.put("parameter_mode", argModes[i]);
+                        param.put("data_type", "VARCHAR"); // Default type
+                        params.add(param);
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Could not get detailed procedure info: {}", e.getMessage());
+            }
+
+            return params;
+        } catch (Exception e) {
+            log.debug("Error getting procedure parameter info: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Parse parameter values from CALL statement
+     */
+    private List<Object> parseCallParameterValues(String callStatement) {
+        List<Object> values = new ArrayList<>();
+
+        try {
+            int startParen = callStatement.indexOf('(');
+            int endParen = callStatement.lastIndexOf(')');
+
+            if (startParen >= 0 && endParen > startParen) {
+                String paramsStr = callStatement.substring(startParen + 1, endParen);
+
+                // Parse parameters, handling quoted strings and nested structures
+                List<String> paramTokens = parseParameterTokens(paramsStr);
+
+                for (String token : paramTokens) {
+                    values.add(parseParameterValue(token.trim()));
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Error parsing parameter values: {}", e.getMessage());
+        }
+
+        return values;
+    }
+
+    /**
+     * Parse parameter tokens handling quotes and parentheses
+     */
+    private List<String> parseParameterTokens(String paramsStr) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inQuote = false;
+        boolean inCast = false;
+        int parenDepth = 0;
+
+        for (int i = 0; i < paramsStr.length(); i++) {
+            char c = paramsStr.charAt(i);
+
+            if (c == '\'' && (i == 0 || paramsStr.charAt(i - 1) != '\\')) {
+                inQuote = !inQuote;
+                current.append(c);
+            } else if (!inQuote && c == '(') {
+                parenDepth++;
+                current.append(c);
+            } else if (!inQuote && c == ')') {
+                parenDepth--;
+                current.append(c);
+            } else if (!inQuote && c == ',' && parenDepth == 0) {
+                tokens.add(current.toString());
+                current = new StringBuilder();
+            } else if (!inQuote && c == ':' && i + 1 < paramsStr.length() && paramsStr.charAt(i + 1) == ':') {
+                inCast = true;
+                current.append(c);
+            } else {
+                current.append(c);
+            }
+        }
+
+        if (current.length() > 0) {
+            tokens.add(current.toString());
+        }
+
+        return tokens;
+    }
+
+    /**
+     * Parse individual parameter value
+     */
+    private Object parseParameterValue(String token) {
+        if (token == null || token.trim().isEmpty()) {
+            return null;
+        }
+
+        String trimmed = token.trim();
+
+        // Handle string literals
+        if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
+            return trimmed.substring(1, trimmed.length() - 1);
+        }
+
+        // Handle NULL
+        if ("NULL".equalsIgnoreCase(trimmed)) {
+            return null;
+        }
+
+        // Handle boolean
+        if ("TRUE".equalsIgnoreCase(trimmed)) {
+            return true;
+        }
+        if ("FALSE".equalsIgnoreCase(trimmed)) {
+            return false;
+        }
+
+        // Handle numbers
+        try {
+            if (trimmed.contains(".")) {
+                return Double.parseDouble(trimmed);
+            } else {
+                return Long.parseLong(trimmed);
+            }
+        } catch (NumberFormatException e) {
+            // Not a number, return as string
+        }
+
+        // Handle JSON cast (value::jsonb)
+        if (trimmed.contains("::")) {
+            String[] parts = trimmed.split("::");
+            return parseParameterValue(parts[0].trim());
+        }
+
+        return trimmed;
+    }
+
+    /**
+     * Convert CALL statement to format suitable for CallableStatement
+     */
+    private String convertToCallableStatement(String callStatement, List<Map<String, Object>> procedureInfo) {
+        String procedureName = extractProcedureNameFromCall(callStatement);
+        if (procedureName == null) {
+            return "{call " + callStatement.replace("CALL", "").trim() + "}";
+        }
+
+        int paramCount = procedureInfo.size();
+        StringBuilder callable = new StringBuilder("{call ");
+        callable.append(procedureName).append("(");
+
+        for (int i = 0; i < paramCount; i++) {
+            if (i > 0) callable.append(",");
+            callable.append("?");
+        }
+
+        callable.append(")}");
+        return callable.toString();
+    }
+
+    /**
+     * Extract procedure call body
+     */
+    private String extractProcedureCall(String callStatement) {
+        String upper = callStatement.toUpperCase();
+        if (upper.startsWith("CALL")) {
+            return callStatement.substring(4).trim();
+        }
+        return callStatement;
     }
 
     /**

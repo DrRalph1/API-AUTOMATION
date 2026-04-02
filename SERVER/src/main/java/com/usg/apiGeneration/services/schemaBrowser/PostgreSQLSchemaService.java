@@ -1943,8 +1943,43 @@ public class PostgreSQLSchemaService implements DatabaseSchemaService {
 
                 case CALL:
                 case EXECUTE:
-                    queryResults = postgreSQLExecuteRepository.executeDirectCall(trimmedQuery, timeoutSeconds);
-                    break;
+                    queryResults = postgreSQLExecuteRepository.executeDirectCall(trimmedQuery, timeoutSeconds, requestId);
+
+                    Map<String, Object> callResult = new LinkedHashMap<>();
+
+                    // The queryResults already contains the parsed response from the procedure
+                    // It should have responseCode, message, and data fields
+                    String responseCode = "200";
+                    String responseMessage = "Statement executed successfully";
+                    Object dataObject = null;
+
+                    // Check if queryResults has the responseCode at the top level
+                    if (queryResults.containsKey("responseCode")) {
+                        responseCode = String.valueOf(queryResults.get("responseCode"));
+                    }
+
+                    if (queryResults.containsKey("message")) {
+                        responseMessage = (String) queryResults.get("message");
+                    }
+
+                    if (queryResults.containsKey("data")) {
+                        dataObject = queryResults.get("data");
+                    }
+
+                    // Put the data field (the inner data object from procedure)
+                    // callResult.put("data", dataObject);
+
+                    // Add metadata using the procedure's actual response
+                    callResult.put("requestId", requestId);
+                    callResult.put("statementType", statementType.toString());
+                    callResult.put("message", responseMessage);
+                    callResult.put("responseCode", Integer.parseInt(responseCode));
+                    callResult.put("timestamp", java.time.Instant.now().toString());
+
+                    log.info("RequestEntity ID: {}, {} executed successfully with response code: {}",
+                            requestId, statementType, responseCode);
+
+                    return callResult;
 
                 case VIEW_QUERY:
                     queryResults = postgreSQLExecuteRepository.executeQuery(query, timeoutSeconds, readOnly);

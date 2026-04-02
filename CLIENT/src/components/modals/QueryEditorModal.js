@@ -786,150 +786,269 @@ const QueryEditorModal = ({
     return editorContent;
   };
   
+
+  
+
   const handleExecute = async () => {
-    if (!authToken) {
-      setCompilationResult({
-        success: false,
-        message: 'Execution failed',
-        error: 'Authentication required. Please log in.',
-        output: ''
-      });
-      return;
+  if (!authToken) {
+    setCompilationResult({
+      success: false,
+      message: 'Execution failed',
+      error: 'Authentication required. Please log in.',
+      output: ''
+    });
+    return;
+  }
+  
+  const sqlToExecute = getSQLToExecute();
+  
+  if (!sqlToExecute.trim()) {
+    setCompilationResult({
+      success: false,
+      message: 'Execution failed',
+      error: 'No SQL statement to execute. Please enter a query or select text.',
+      output: ''
+    });
+    return;
+  }
+  
+  setIsCompiling(true);
+  setCompilationResult(null);
+  
+  try {
+    const executeSQL = dbConfig.executeSQL;
+    let trimmedSql = sqlToExecute.trim();
+    
+    const isSelectQuery = /^\s*SELECT\b/i.test(trimmedSql);
+    const isCallStatement = /^\s*CALL\b/i.test(trimmedSql);
+    const isPLSQLBlock = /^\s*(DECLARE|BEGIN)/i.test(trimmedSql);
+    
+    let finalSql = sqlToExecute;
+    
+    if (isPLSQLBlock && activeDatabaseType === 'oracle' && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
+      finalSql = sqlToExecute + ';\n/';
     }
     
-    const sqlToExecute = getSQLToExecute();
+    const response = await executeSQL(authToken, {
+      sql: finalSql,
+      databaseType: activeDatabaseType,
+      readOnly: false
+    });
     
-    if (!sqlToExecute.trim()) {
-      setCompilationResult({
-        success: false,
-        message: 'Execution failed',
-        error: 'No SQL statement to execute. Please enter a query or select text.',
-        output: ''
-      });
-      return;
-    }
+    let success = false;
+    let message = '';
+    let output = '';
+    let error = null;
     
-    setIsCompiling(true);
-    setCompilationResult(null);
+    console.log('Full response:', response); // Debug log
     
-    try {
-      const executeSQL = dbConfig.executeSQL;
-      let trimmedSql = sqlToExecute.trim();
-      
-      const isSelectQuery = /^\s*SELECT\b/i.test(trimmedSql);
-      const isPLSQLBlock = /^\s*(DECLARE|BEGIN)/i.test(trimmedSql);
-      
-      let finalSql = sqlToExecute;
-      
-      if (isPLSQLBlock && activeDatabaseType === 'oracle' && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
-        finalSql = sqlToExecute + ';\n/';
-      }
-      
-      const response = await executeSQL(authToken, {
-        sql: finalSql,
-        databaseType: activeDatabaseType,
-        readOnly: false
-      });
-      
-      let success = false;
-      let message = '';
-      let output = '';
-      let error = null;
-      
-      if (response && typeof response === 'object') {
-        if (response.hasOwnProperty('success')) {
-          success = response.success === true;
-          message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
-          
-          if (isSelectQuery && response.data && response.data.rows) {
-            if (response.data.rows.length > 0) {
-              output = JSON.stringify(response.data.rows, null, 2);
-            } else {
-              output = 'No rows returned.';
-            }
-          } else {
-            output = response.output || response.data?.output || '';
-          }
-          error = response.error || response.message || null;
-        } else if (response.hasOwnProperty('responseCode')) {
-          success = response.responseCode === 200;
-          message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
-          
-          if (response.data) {
-            if (typeof response.data === 'string') {
-              output = response.data;
-            } else if (response.data.rows && response.data.rows.length > 0) {
-              output = JSON.stringify(response.data.rows, null, 2);
-            } else if (response.data.rows && response.data.rows.length === 0) {
-              output = 'No rows returned.';
-            } else if (response.data.output) {
-              output = response.data.output;
-            } else if (response.data.rowsAffected !== undefined) {
-              output = `${response.data.rowsAffected} row(s) affected`;
-            } else {
+    if (response && typeof response === 'object') {
+      // Handle CALL statement responses (has statementType === 'CALL')
+      if (response.statementType === 'CALL') {
+        success = response.responseCode === 200;
+        message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
+        
+        // Extract the actual data from the response.data field
+        if (response.data) {
+          if (typeof response.data === 'string') {
+            output = response.data;
+          } else if (response.data.error || response.data.message || response.data.traceId) {
+            // This is the actual procedure response - show it nicely
+            output = JSON.stringify(response.data, null, 2);
+          } else if (Array.isArray(response.data)) {
+            if (response.data.length > 0) {
               output = JSON.stringify(response.data, null, 2);
+            } else {
+              output = 'No rows returned.';
+            }
+          } else if (Object.keys(response.data).length > 0) {
+            output = JSON.stringify(response.data, null, 2);
+          } else {
+            output = 'Statement executed successfully';
+          }
+        } else {
+          output = 'Statement executed successfully';
+        }
+        
+        error = response.error || null;
+      }
+      // Handle SELECT query responses with rows
+      else if (response.data && response.data.rows !== undefined) {
+        success = response.responseCode === 200;
+        message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
+        
+        if (response.data.rows && response.data.rows.length > 0) {
+          output = JSON.stringify(response.data.rows, null, 2);
+        } else {
+          output = 'No rows returned.';
+        }
+        error = null;
+      }
+      // Handle response with 'success' property
+      else if (response.hasOwnProperty('success')) {
+        success = response.success === true;
+        message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
+        
+        if (isSelectQuery && response.data && response.data.rows) {
+          if (response.data.rows.length > 0) {
+            output = JSON.stringify(response.data.rows, null, 2);
+          } else {
+            output = 'No rows returned.';
+          }
+        } else if (response.data) {
+          if (typeof response.data === 'string') {
+            output = response.data;
+          } else if (response.data.output) {
+            output = response.data.output;
+          } else if (response.data.rowsAffected !== undefined) {
+            output = `${response.data.rowsAffected} row(s) affected`;
+          } else if (response.data.data) {
+            // Handle nested data structure
+            if (typeof response.data.data === 'object') {
+              output = JSON.stringify(response.data.data, null, 2);
+            } else {
+              output = String(response.data.data);
             }
           } else {
-            output = message;
+            output = JSON.stringify(response.data, null, 2);
           }
-          error = response.error || null;
+        } else if (response.output) {
+          output = response.output;
         } else {
-          success = true;
-          message = 'Query executed successfully';
+          output = success ? 'Statement executed successfully' : '';
+        }
+        
+        error = response.error || null;
+      }
+      // Handle response with 'responseCode' property
+      else if (response.hasOwnProperty('responseCode')) {
+        success = response.responseCode === 200;
+        message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
+        
+        if (response.data) {
+          if (typeof response.data === 'string') {
+            output = response.data;
+          } else if (response.data.rows && response.data.rows.length > 0) {
+            output = JSON.stringify(response.data.rows, null, 2);
+          } else if (response.data.rows && response.data.rows.length === 0) {
+            output = 'No rows returned.';
+          } else if (response.data.output) {
+            output = response.data.output;
+          } else if (response.data.rowsAffected !== undefined) {
+            output = `${response.data.rowsAffected} row(s) affected`;
+          } else if (response.data.data) {
+            // Handle nested data (for CALL statements)
+            if (typeof response.data.data === 'object') {
+              output = JSON.stringify(response.data.data, null, 2);
+            } else {
+              output = String(response.data.data);
+            }
+          } else {
+            output = JSON.stringify(response.data, null, 2);
+          }
+        } else {
+          output = message;
+        }
+        
+        error = response.error || null;
+      }
+      // Handle response with 'data' property directly
+      else if (response.hasOwnProperty('data')) {
+        success = true;
+        message = 'Query executed successfully';
+        
+        if (response.data.rows && response.data.rows.length > 0) {
+          output = JSON.stringify(response.data.rows, null, 2);
+        } else if (response.data.rows && response.data.rows.length === 0) {
+          output = 'No rows returned.';
+        } else if (response.data.output) {
+          output = response.data.output;
+        } else if (response.data.rowsAffected !== undefined) {
+          output = `${response.data.rowsAffected} row(s) affected`;
+        } else if (response.data.data) {
+          output = JSON.stringify(response.data.data, null, 2);
+        } else {
+          output = JSON.stringify(response.data, null, 2);
+        }
+        
+        error = null;
+      }
+      // Default case - treat as successful response
+      else {
+        success = true;
+        message = 'Query executed successfully';
+        
+        if (typeof response === 'string') {
+          output = response;
+        } else if (response.rows && response.rows.length > 0) {
+          output = JSON.stringify(response.rows, null, 2);
+        } else {
           output = JSON.stringify(response, null, 2);
-          error = null;
         }
-      } else if (typeof response === 'string') {
-        success = true;
-        message = 'Query executed successfully';
-        output = response;
-        error = null;
-      } else {
-        success = true;
-        message = 'Query executed successfully';
-        output = String(response);
+        
         error = null;
       }
-      
-      setCompilationResult({
-        success: success,
-        message: message,
-        output: output || (success ? 'Statement executed successfully' : ''),
-        error: error
-      });
-      
-      if (success && sqlToExecute.trim()) {
-        saveToHistory(sqlToExecute);
-        if (onQueryExecute) {
-          onQueryExecute(sqlToExecute, response);
-        }
-      }
-      
-    } catch (error) {
-      console.error('Execution error:', error);
-      
-      let errorMessage = error.message || String(error);
-      let errorDetail = null;
-      
-      if (error.response && error.response.data) {
-        if (error.response.data.message) {
-          errorMessage = error.response.data.message;
-          errorDetail = error.response.data.error || error.response.data.detail;
-        } else if (error.response.data.error) {
-          errorMessage = error.response.data.error;
-        }
-      }
-      
-      setCompilationResult({
-        success: false,
-        message: 'Execution failed',
-        error: errorMessage,
-        output: errorDetail || ''
-      });
-    } finally {
-      setIsCompiling(false);
+    } 
+    // Handle string response
+    else if (typeof response === 'string') {
+      success = true;
+      message = 'Query executed successfully';
+      output = response;
+      error = null;
+    } 
+    // Handle other response types
+    else {
+      success = true;
+      message = 'Query executed successfully';
+      output = String(response);
+      error = null;
     }
-  };
+    
+    // Ensure output is never empty for successful operations
+    if (success && !output) {
+      output = 'Statement executed successfully';
+    }
+    
+    setCompilationResult({
+      success: success,
+      message: message,
+      output: output,
+      error: error
+    });
+    
+    if (success && sqlToExecute.trim()) {
+      saveToHistory(sqlToExecute);
+      if (onQueryExecute) {
+        onQueryExecute(sqlToExecute, response);
+      }
+    }
+    
+  } catch (error) {
+    console.error('Execution error:', error);
+    
+    let errorMessage = error.message || String(error);
+    let errorDetail = null;
+    
+    if (error.response && error.response.data) {
+      if (error.response.data.message) {
+        errorMessage = error.response.data.message;
+        errorDetail = error.response.data.error || error.response.data.detail;
+      } else if (error.response.data.error) {
+        errorMessage = error.response.data.error;
+      }
+    }
+    
+    setCompilationResult({
+      success: false,
+      message: 'Execution failed',
+      error: errorMessage,
+      output: errorDetail || ''
+    });
+  } finally {
+    setIsCompiling(false);
+  }
+};
+
   
   const handleCopy = () => {
     navigator.clipboard.writeText(editorContent);
