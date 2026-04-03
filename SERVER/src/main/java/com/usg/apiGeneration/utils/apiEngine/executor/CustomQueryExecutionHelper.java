@@ -1,5 +1,6 @@
 package com.usg.apiGeneration.utils.apiEngine.executor;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiGeneration.dtos.apiGenerationEngine.ApiParameterDTO;
 import com.usg.apiGeneration.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiGeneration.dtos.apiGenerationEngine.ExecuteApiRequestDTO;
@@ -22,13 +23,11 @@ import java.util.regex.Pattern;
 public class CustomQueryExecutionHelper {
 
     private final CustomQueryParserUtil queryParserUtil;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     // Pattern to remove SQL single-line comments (-- comment)
     private static final Pattern SQL_COMMENT_PATTERN = Pattern.compile("--[^\n\r]*");
-    // Pattern to remove Oracle hints (/*+ ... */) - preserve as they might be needed
-    private static final Pattern ORACLE_HINT_PATTERN = Pattern.compile("/\\*\\+.*?\\*/");
-    // Pattern to remove multi-line comments (/* ... */) but preserve hints
-    private static final Pattern MULTI_LINE_COMMENT_PATTERN = Pattern.compile("/\\*[^*].*?\\*/", Pattern.DOTALL);
+    private static final Pattern MULTI_LINE_COMMENT_PATTERN = Pattern.compile("/\\*.*?\\*/", Pattern.DOTALL);
 
     /**
      * Execute a custom SELECT statement
@@ -66,6 +65,11 @@ public class CustomQueryExecutionHelper {
             // Execute the query
             List<Map<String, Object>> results = namedTemplate.queryForList(cleanedQuery, parameterSource);
 
+            // Parse any JSON string fields in the results
+            for (Map<String, Object> row : results) {
+                parseJsonFields(row);
+            }
+
             log.info("Custom query executed successfully, returned {} rows", results.size());
 
             // Apply pagination if configured
@@ -82,10 +86,32 @@ public class CustomQueryExecutionHelper {
     }
 
     /**
+     * Parse JSON string fields into objects
+     */
+    private void parseJsonFields(Map<String, Object> row) {
+        for (Map.Entry<String, Object> entry : row.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof String) {
+                String stringValue = (String) value;
+                // Check if the string looks like JSON (starts with [ or {)
+                stringValue = stringValue.trim();
+                if ((stringValue.startsWith("[") && stringValue.endsWith("]")) ||
+                        (stringValue.startsWith("{") && stringValue.endsWith("}"))) {
+                    try {
+                        // Try to parse as JSON
+                        Object parsedJson = objectMapper.readValue(stringValue, Object.class);
+                        entry.setValue(parsedJson);
+                    } catch (Exception e) {
+                        // Not valid JSON, leave as is
+                        log.debug("Field {} is not valid JSON: {}", entry.getKey(), e.getMessage());
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Clean SQL query by removing comments and trailing semicolons
-     *
-     * @param sql The original SQL query
-     * @return Cleaned SQL query ready for execution
      */
     private String cleanSqlQuery(String sql) {
         if (sql == null || sql.trim().isEmpty()) {
@@ -94,28 +120,11 @@ public class CustomQueryExecutionHelper {
 
         String cleaned = sql;
 
-        // First, preserve Oracle hints (/*+ ... */) by temporarily replacing them
-        // This is optional - if you want to keep Oracle hints
-        java.util.Map<String, String> hintPlaceholders = new java.util.HashMap<>();
-        java.util.regex.Matcher hintMatcher = ORACLE_HINT_PATTERN.matcher(cleaned);
-        int hintCounter = 0;
-        while (hintMatcher.find()) {
-            String hint = hintMatcher.group();
-            String placeholder = "__HINT_" + (hintCounter++) + "__";
-            hintPlaceholders.put(placeholder, hint);
-            cleaned = cleaned.replace(hint, placeholder);
-        }
-
         // Remove single-line comments (-- comment)
         cleaned = SQL_COMMENT_PATTERN.matcher(cleaned).replaceAll("");
 
         // Remove multi-line comments (/* ... */)
         cleaned = MULTI_LINE_COMMENT_PATTERN.matcher(cleaned).replaceAll("");
-
-        // Restore Oracle hints
-        for (java.util.Map.Entry<String, String> entry : hintPlaceholders.entrySet()) {
-            cleaned = cleaned.replace(entry.getKey(), entry.getValue());
-        }
 
         // Remove trailing semicolon if present
         cleaned = cleaned.trim();
@@ -123,7 +132,7 @@ public class CustomQueryExecutionHelper {
             cleaned = cleaned.substring(0, cleaned.length() - 1).trim();
         }
 
-        // Clean up any extra whitespace and newlines that might cause issues
+        // Clean up any extra whitespace
         cleaned = cleaned.replaceAll("\\s+", " ").trim();
 
         return cleaned;
