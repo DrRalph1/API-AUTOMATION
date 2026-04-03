@@ -290,9 +290,13 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
   const formatExecutionTimeHelper = (ms) => {
     if (ms === null || ms === undefined) return 'N/A';
 
-    if (ms < 1000) return `${ms.toFixed(2)}ms`;
-    if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
-    return `${(ms / 60000).toFixed(2)}m`;
+    const time = Number(ms); // 🔥 force conversion
+
+    if (isNaN(time)) return 'N/A';
+
+    if (time < 1000) return `${time.toFixed(2)}ms`;
+    if (time < 60000) return `${(time / 1000).toFixed(2)}s`;
+    return `${(time / 60000).toFixed(2)}m`;
   };
 
   const copyToClipboard = (text) => {
