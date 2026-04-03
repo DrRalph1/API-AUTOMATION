@@ -590,7 +590,7 @@ public class CollectionsGeneratorUtil {
 
         // Create variables for dev environment
         List<EnvironmentVariableEntity> devVariables = Arrays.asList(
-                createEnvironmentVariable(savedDevEnv, "baseUrl", "http://197.168.0.127:4789", "string", true, generatedApiId),
+                createEnvironmentVariable(savedDevEnv, "baseUrl", "http://10.203.14.33:8182/apiGeneration", "string", true, generatedApiId),
                 createEnvironmentVariable(savedDevEnv, "apiKey", "dev-api-key-123", "string", true, generatedApiId),
                 createEnvironmentVariable(savedDevEnv, "timeout", "30000", "number", true, generatedApiId)
         );

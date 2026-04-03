@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -21,6 +22,13 @@ import java.util.Map;
 public class CustomQueryExecutionHelper {
 
     private final CustomQueryParserUtil queryParserUtil;
+
+    // Pattern to remove SQL single-line comments (-- comment)
+    private static final Pattern SQL_COMMENT_PATTERN = Pattern.compile("--[^\n\r]*");
+    // Pattern to remove Oracle hints (/*+ ... */) - preserve as they might be needed
+    private static final Pattern ORACLE_HINT_PATTERN = Pattern.compile("/\\*\\+.*?\\*/");
+    // Pattern to remove multi-line comments (/* ... */) but preserve hints
+    private static final Pattern MULTI_LINE_COMMENT_PATTERN = Pattern.compile("/\\*[^*].*?\\*/", Pattern.DOTALL);
 
     /**
      * Execute a custom SELECT statement
@@ -39,11 +47,15 @@ public class CustomQueryExecutionHelper {
         }
 
         log.info("Executing custom SELECT query for API: {}", api.getApiCode());
-        log.debug("Query: {}", selectStatement);
+        log.debug("Original Query: {}", selectStatement);
 
         try {
+            // Clean the SQL query before execution
+            String cleanedQuery = cleanSqlQuery(selectStatement);
+            log.debug("Cleaned Query: {}", cleanedQuery);
+
             // Validate the SELECT statement
-            queryParserUtil.validateSelectStatement(selectStatement);
+            queryParserUtil.validateSelectStatement(cleanedQuery);
 
             // Create named parameter template for easier parameter handling
             NamedParameterJdbcTemplate namedTemplate = new NamedParameterJdbcTemplate(jdbcTemplate);
@@ -52,7 +64,7 @@ public class CustomQueryExecutionHelper {
             MapSqlParameterSource parameterSource = buildParameterSource(executeRequest, configuredParamDTOs);
 
             // Execute the query
-            List<Map<String, Object>> results = namedTemplate.queryForList(selectStatement, parameterSource);
+            List<Map<String, Object>> results = namedTemplate.queryForList(cleanedQuery, parameterSource);
 
             log.info("Custom query executed successfully, returned {} rows", results.size());
 
@@ -67,6 +79,54 @@ public class CustomQueryExecutionHelper {
             log.error("Error executing custom query: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to execute custom SELECT statement: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Clean SQL query by removing comments and trailing semicolons
+     *
+     * @param sql The original SQL query
+     * @return Cleaned SQL query ready for execution
+     */
+    private String cleanSqlQuery(String sql) {
+        if (sql == null || sql.trim().isEmpty()) {
+            return sql;
+        }
+
+        String cleaned = sql;
+
+        // First, preserve Oracle hints (/*+ ... */) by temporarily replacing them
+        // This is optional - if you want to keep Oracle hints
+        java.util.Map<String, String> hintPlaceholders = new java.util.HashMap<>();
+        java.util.regex.Matcher hintMatcher = ORACLE_HINT_PATTERN.matcher(cleaned);
+        int hintCounter = 0;
+        while (hintMatcher.find()) {
+            String hint = hintMatcher.group();
+            String placeholder = "__HINT_" + (hintCounter++) + "__";
+            hintPlaceholders.put(placeholder, hint);
+            cleaned = cleaned.replace(hint, placeholder);
+        }
+
+        // Remove single-line comments (-- comment)
+        cleaned = SQL_COMMENT_PATTERN.matcher(cleaned).replaceAll("");
+
+        // Remove multi-line comments (/* ... */)
+        cleaned = MULTI_LINE_COMMENT_PATTERN.matcher(cleaned).replaceAll("");
+
+        // Restore Oracle hints
+        for (java.util.Map.Entry<String, String> entry : hintPlaceholders.entrySet()) {
+            cleaned = cleaned.replace(entry.getKey(), entry.getValue());
+        }
+
+        // Remove trailing semicolon if present
+        cleaned = cleaned.trim();
+        if (cleaned.endsWith(";")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1).trim();
+        }
+
+        // Clean up any extra whitespace and newlines that might cause issues
+        cleaned = cleaned.replaceAll("\\s+", " ").trim();
+
+        return cleaned;
     }
 
     /**
