@@ -200,13 +200,24 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
   // Load users on component mount
   useEffect(() => {
-    if (authToken) {
+  if (authToken) {
+    // Use a ref to track if this is the initial load
+    const isInitialMount = isInitialMountRef.current;
+    if (isInitialMount) {
+      isInitialMountRef.current = false;
       loadUsers();
       loadStatistics();
     } else {
-      console.warn('No auth token available');
+      // For subsequent changes, load with current page
+      loadUsers({ page: currentPage });
     }
-  }, [authToken, currentPage, usersPerPage, sortField, sortDirection, selectedRole, selectedStatus, searchQuery]);
+  } else {
+    console.warn('No auth token available');
+  }
+}, [authToken, currentPage, usersPerPage, sortField, sortDirection, selectedRole, selectedStatus]);
+
+// Add this ref at the top of your component
+const isInitialMountRef = useRef(true);
 
   // Load roles from API - NO STATIC FALLBACKS
   const loadRoles = async (showLoading = false) => {
@@ -275,83 +286,75 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     return getRoleColor(roleId);
   };
 
-  // Load users with filters - UPDATED to handle pagination from API
-  const loadUsers = async (filters = {}) => {
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
-      return;
-    }
+  // Load users with filters - FIXED to handle pagination from your backend
+const loadUsers = async (filters = {}) => {
+  const authHeader = authToken;
+  if (!authHeader) {
+    showToast('error', 'Authentication required. Please log in.');
+    return;
+  }
 
-    setLoading(true);
-    try {
-      const response = await getUsersList(authHeader, {
-        searchQuery: filters.searchQuery !== undefined ? filters.searchQuery : searchQuery,
-        roleFilter: filters.roleFilter !== undefined ? filters.roleFilter : selectedRole,
-        statusFilter: filters.statusFilter !== undefined ? filters.statusFilter : selectedStatus,
-        sortField: filters.sortField !== undefined ? filters.sortField : sortField,
-        sortDirection: filters.sortDirection !== undefined ? filters.sortDirection : sortDirection,
-        page: filters.page !== undefined ? filters.page : currentPage - 1, // API uses 0-based index
-        pageSize: filters.pageSize !== undefined ? filters.pageSize : usersPerPage
-      });
-      
-      const processedResponse = handleUserManagementResponse(response);
-      const userList = extractUsersList(processedResponse);
-      
-      // Extract pagination info from response
-      // Adjust this based on your actual API response structure
-      const paginationData = processedResponse?.data?.pagination || 
-                            processedResponse?.pagination || 
-                            processedResponse?.data || 
-                            {};
-      
-      // Try to get total items from various possible locations
-      const totalElements = paginationData.totalElements || 
-                           paginationData.totalCount || 
-                           paginationData.total || 
-                           processedResponse?.data?.totalElements ||
-                           processedResponse?.totalElements ||
-                           userList.length;
-      
-      // Try to get total pages
-      const totalPagesFromApi = paginationData.totalPages || 
-                                paginationData.total || 
-                                Math.ceil(totalElements / usersPerPage);
-      
-      // Get current page from API
-      const currentPageFromApi = (paginationData.pageNumber !== undefined ? paginationData.pageNumber : 
-                                 paginationData.number !== undefined ? paginationData.number : 
-                                 currentPage - 1);
-      
-      setTotalItems(totalElements);
-      setTotalPages(totalPagesFromApi);
-      setApiCurrentPage(currentPageFromApi + 1); // Convert to 1-based for UI
-      
-      // Map role IDs to role names for display
-      const mappedUserList = userList.map(user => ({
-        ...user,
-        roleDisplayName: getRoleDisplayName(user.role || user.roleId),
-        roleDisplayColor: getRoleColorFromId(user.role || user.roleId)
-      }));
-      
-      setUsers(mappedUserList || []);
-      
-      // If the current page is beyond total pages, reset to last page
-      if (currentPageFromApi + 1 > totalPagesFromApi && totalPagesFromApi > 0) {
-        setCurrentPage(totalPagesFromApi);
-      }
-      
-    } catch (error) {
-      console.error('Error loading users:', error);
-      showToast('error', error.message || 'Failed to load users');
-      // Reset to empty array on error
-      setUsers([]);
-      setTotalItems(0);
-      setTotalPages(0);
-    } finally {
-      setLoading(false);
+  setLoading(true);
+  try {
+    // IMPORTANT: Your backend expects 1-based page numbers
+    const pageToSend = filters.page !== undefined ? filters.page : currentPage;
+    
+    const response = await getUsersList(authHeader, {
+      searchQuery: filters.searchQuery !== undefined ? filters.searchQuery : searchQuery,
+      roleFilter: filters.roleFilter !== undefined ? filters.roleFilter : selectedRole,
+      statusFilter: filters.statusFilter !== undefined ? filters.statusFilter : selectedStatus,
+      sortField: filters.sortField !== undefined ? filters.sortField : sortField,
+      sortDirection: filters.sortDirection !== undefined ? filters.sortDirection : sortDirection,
+      page: pageToSend,  // Send 1-based page number
+      pageSize: filters.pageSize !== undefined ? filters.pageSize : usersPerPage
+    });
+    
+    const processedResponse = handleUserManagementResponse(response);
+    const userList = extractUsersList(processedResponse);
+    
+    // FIXED: Your backend returns pagination data directly in response.data
+    // UsersListResponseDTO has fields: total, page, pageSize, totalPages, hasNext, hasPrevious
+    const usersData = processedResponse?.data || {};
+    
+    // Extract pagination fields from the correct location
+    const totalElements = usersData.total || userList.length;
+    const totalPagesFromApi = usersData.totalPages || Math.ceil(totalElements / usersPerPage);
+    const currentPageFromApi = usersData.page || pageToSend;
+    
+    // Update pagination state
+    setTotalItems(totalElements);
+    setTotalPages(totalPagesFromApi);
+    
+    // Sync currentPage with API if needed (previes infinite loop)
+    if (currentPage !== currentPageFromApi && currentPageFromApi > 0 && !filters.page) {
+      setCurrentPage(currentPageFromApi);
     }
-  };
+    
+    // Map role IDs to role names for display
+    const mappedUserList = (userList || []).map(user => ({
+      ...user,
+      roleDisplayName: getRoleDisplayName(user.role || user.roleId),
+      roleDisplayColor: getRoleColorFromId(user.role || user.roleId)
+    }));
+    
+    setUsers(mappedUserList);
+    
+    // If current page is beyond total pages, reset to last page
+    if (currentPageFromApi > totalPagesFromApi && totalPagesFromApi > 0) {
+      setCurrentPage(totalPagesFromApi);
+    }
+    
+  } catch (error) {
+    console.error('Error loading users:', error);
+    showToast('error', error.message || 'Failed to load users');
+    setUsers([]);
+    setTotalItems(0);
+    setTotalPages(0);
+  } finally {
+    setLoading(false);
+  }
+};
+  
 
   // Load statistics
   const loadStatistics = async () => {
@@ -1027,6 +1030,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   const goToFirstPage = () => {
     if (currentPage !== 1) {
       setCurrentPage(1);
+      // loadUsers will be triggered by the useEffect
     }
   };
 
@@ -3273,7 +3277,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
               const newSize = parseInt(e.target.value);
               setUsersPerPage(newSize);
               setCurrentPage(1); // Reset to first page when changing page size
-              loadUsers({ pageSize: newSize, page: 0 });
+              // loadUsers will be triggered by the useEffect
             }}
             className="px-2 py-1 rounded border text-xs"
             style={{ 

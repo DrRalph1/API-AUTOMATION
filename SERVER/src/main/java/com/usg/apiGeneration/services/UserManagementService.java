@@ -19,6 +19,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -97,25 +98,12 @@ public class UserManagementService {
 
     private Page<UserEntity> findUsersWithFilters(String searchQuery, String roleFilter,
                                                   String statusFilter, Pageable pageable) {
-        // This is a simplified version - in production, use Specification for complex queries
-        Page<UserEntity> users;
+        // Handle empty/null values for proper query execution
+        String search = (searchQuery != null && !searchQuery.trim().isEmpty()) ? searchQuery : null;
+        String role = (roleFilter != null && !"all".equalsIgnoreCase(roleFilter)) ? roleFilter : null;
+        String status = (statusFilter != null && !"all".equalsIgnoreCase(statusFilter)) ? statusFilter : null;
 
-        if (searchQuery != null && !searchQuery.trim().isEmpty()) {
-            // Search in username, email, fullName
-            users = userRepository.findAll((root, query, cb) -> {
-                String pattern = "%" + searchQuery.toLowerCase() + "%";
-                return cb.or(
-                        cb.like(cb.lower(root.get("username")), pattern),
-                        cb.like(cb.lower(root.get("emailAddress")), pattern),
-                        cb.like(cb.lower(root.get("fullName")), pattern)
-                );
-            }, pageable);
-        } else {
-            users = userRepository.findAll(pageable);
-        }
-
-        // Apply role and status filters on the result (in production, add to Specification)
-        return users;
+        return userRepository.findUsersWithFilters(search, role, status, pageable);
     }
 
     private UserDTO buildUserDto(UserEntity userEntity) {

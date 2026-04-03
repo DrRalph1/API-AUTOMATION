@@ -2,6 +2,8 @@ package com.usg.apiGeneration.repositories;
 
 import com.usg.apiGeneration.dtos.systemActivities.user.UserDTO;
 import com.usg.apiGeneration.entities.postgres.UserEntity;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
@@ -55,6 +57,25 @@ public interface AppUserRepository extends JpaRepository<UserEntity, String>,
             @Param("userId") String userId,
             @Param("newPassword") String newPassword,
             @Param("updatedAt") LocalDateTime updatedAt);
+
+
+    // In AppUserRepository.java
+    // In AppUserRepository.java
+    @Query(value = "SELECT u FROM UserEntity u WHERE " +
+            "(:searchQuery IS NULL OR :searchQuery = '' OR " +
+            "LOWER(u.username) LIKE LOWER(CONCAT('%', :searchQuery, '%')) OR " +
+            "LOWER(u.emailAddress) LIKE LOWER(CONCAT('%', :searchQuery, '%')) OR " +
+            "LOWER(u.fullName) LIKE LOWER(CONCAT('%', :searchQuery, '%'))) AND " +
+            "(:roleFilter IS NULL OR :roleFilter = 'all' OR CAST(u.role.roleId AS string) = :roleFilter) AND " +
+            "(:statusFilter IS NULL OR :statusFilter = 'all' OR " +
+            "(:statusFilter = 'active' AND u.isActive = true) OR " +
+            "(:statusFilter = 'inactive' AND u.isActive = false))")
+    Page<UserEntity> findUsersWithFilters(
+            @Param("searchQuery") String searchQuery,
+            @Param("roleFilter") String roleFilter,
+            @Param("statusFilter") String statusFilter,
+            Pageable pageable
+    );
 
 
     @Query("SELECT u.phoneNumber FROM UserEntity u WHERE u.userId = :userId")
