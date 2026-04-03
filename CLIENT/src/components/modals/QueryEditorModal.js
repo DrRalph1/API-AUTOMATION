@@ -164,6 +164,24 @@ const extractQueryParameters = (sqlQuery) => {
   }));
 };
 
+// Helper function to get statement type
+const getStatementType = (sql) => {
+  const trimmed = sql.trim().toUpperCase();
+  if (/^SELECT\b/i.test(trimmed)) return 'SELECT';
+  if (/^INSERT\b/i.test(trimmed)) return 'INSERT';
+  if (/^UPDATE\b/i.test(trimmed)) return 'UPDATE';
+  if (/^DELETE\b/i.test(trimmed)) return 'DELETE';
+  if (/^CREATE\b/i.test(trimmed)) return 'DDL';
+  if (/^ALTER\b/i.test(trimmed)) return 'DDL';
+  if (/^DROP\b/i.test(trimmed)) return 'DDL';
+  if (/^TRUNCATE\b/i.test(trimmed)) return 'DDL';
+  if (/^CALL\b/i.test(trimmed)) return 'CALL';
+  if (/^EXEC(UTE)?\b/i.test(trimmed)) return 'EXECUTE';
+  if (/^BEGIN\b/i.test(trimmed)) return 'PLSQL';
+  if (/^DECLARE\b/i.test(trimmed)) return 'PLSQL';
+  return 'UNKNOWN';
+};
+
 const QueryEditorModal = ({ 
   isOpen, 
   onClose, 
@@ -171,12 +189,13 @@ const QueryEditorModal = ({
   theme,
   authToken,
   databaseType = 'postgresql',
+  selectedDatabaseType: propSelectedDatabaseType,  // ← ADD THIS
+  onDatabaseTypeChange,  // ← ADD THIS
   initialQuery = '',
   onQueryExecute,
-  onDatabaseTypeChange,
   onGenerateApiFromQuery,
   showGenerateApiButton = true,
-  onRefreshApis  // ← ADD THIS
+  onRefreshApis
 }) => {
   const [editorContent, setEditorContent] = useState(initialQuery || '');
   const [isCompiling, setIsCompiling] = useState(false);
@@ -203,11 +222,23 @@ const QueryEditorModal = ({
   const [extractedParamsForApi, setExtractedParamsForApi] = useState([]);
   const [currentSqlForApi, setCurrentSqlForApi] = useState('');
   
-  // Only show database selector when databaseType is 'all'
   const [showDatabaseSelector, setShowDatabaseSelector] = useState(false);
-  const [selectedDatabaseType, setSelectedDatabaseType] = useState(
-    databaseType === 'all' ? 'postgresql' : databaseType
+
+  // Only show database selector when databaseType is 'all'
+    const [selectedDatabaseType, setSelectedDatabaseType] = useState(
+    propSelectedDatabaseType || (databaseType === 'all' ? 'postgresql' : databaseType)
   );
+  
+  // Update the handleDatabaseTypeChange to call the parent callback
+  const handleDatabaseTypeChange = (newType) => {
+    setSelectedDatabaseType(newType);
+    if (onDatabaseTypeChange) {
+      onDatabaseTypeChange(newType);
+    }
+    
+    // Clear any previous compilation result
+    setCompilationResult(null);
+  };
   
   // Determine the actual database type to use for queries
   const activeDatabaseType = databaseType === 'all' ? selectedDatabaseType : databaseType;
@@ -320,17 +351,6 @@ const QueryEditorModal = ({
     addToHistory(template.sql);
     setSelectedTemplate(template.name);
     setShowTemplates(false);
-  };
-  
-  // Handle database type change (only when in 'all' mode)
-  const handleDatabaseTypeChange = (newType) => {
-    setSelectedDatabaseType(newType);
-    if (onDatabaseTypeChange) {
-      onDatabaseTypeChange(newType);
-    }
-    
-    // Clear any previous compilation result
-    setCompilationResult(null);
   };
   
   // Helper function to stop propagation for editor-specific keys
@@ -822,40 +842,49 @@ const QueryEditorModal = ({
   
   // NEW: Generate API from current query
   const handleGenerateApiFromQuery = () => {
-    const sqlToGenerate = getSQLToExecute().trim();
-    
-    if (!sqlToGenerate) {
-      setCompilationResult({
-        success: false,
-        message: 'Cannot generate API',
-        error: 'No SQL statement to generate API from. Please enter a query or select text.',
-        output: ''
-      });
-      setTimeout(() => setCompilationResult(null), 3000);
-      return;
-    }
-    
-    const trimmedSql = sqlToGenerate;
-    if (!/^\s*SELECT\b/i.test(trimmedSql)) {
-      setCompilationResult({
-        success: false,
-        message: 'Cannot generate API',
-        error: 'Only SELECT statements can be used to generate APIs. Please use a SELECT query.',
-        output: ''
-      });
-      setTimeout(() => setCompilationResult(null), 3000);
-      return;
-    }
-    
-    // Extract parameters from the query
-    const params = extractQueryParameters(trimmedSql);
-    
-    setCurrentSqlForApi(trimmedSql);
-    setCustomQueryForApi(trimmedSql);
-    setExtractedParamsForApi(params);
-    setShowApiModal(true);
-  };
+  const sqlToGenerate = getSQLToExecute().trim();
   
+  if (!sqlToGenerate) {
+    setCompilationResult({
+      success: false,
+      message: 'Cannot generate API',
+      error: 'No SQL statement to generate API from. Please enter a query or select text.',
+      output: ''
+    });
+    setTimeout(() => setCompilationResult(null), 3000);
+    return;
+  }
+  
+  const trimmed = sqlToGenerate.trim();
+  const queryType = getStatementType(trimmed);
+  
+  // Log which database type will be used
+  console.log('📦 Generating API for database type:', activeDatabaseType);
+  console.log('📝 Query type:', queryType);
+  console.log('📝 SQL:', trimmed.substring(0, 200));
+  
+  // Allow ALL valid SQL types - just reject UNKNOWN
+  if (queryType === 'UNKNOWN') {
+    setCompilationResult({
+      success: false,
+      message: 'Cannot generate API',
+      error: 'Invalid or unsupported SQL statement. Please enter a valid SQL query (SELECT, INSERT, UPDATE, DELETE, DDL, CALL, EXECUTE, or PL/SQL block).',
+      output: ''
+    });
+    setTimeout(() => setCompilationResult(null), 3000);
+    return;
+  }
+  
+  // Extract parameters from the query
+  const params = extractQueryParameters(trimmed);
+  
+  setCurrentSqlForApi(trimmed);
+  setCustomQueryForApi(trimmed);
+  setExtractedParamsForApi(params);
+  setShowApiModal(true);
+};
+  
+  // FIXED: handleExecute - Now supports ALL SQL operations including EXECUTE/CALL
   const handleExecute = async () => {
     if (!authToken) {
       setCompilationResult({
@@ -886,12 +915,16 @@ const QueryEditorModal = ({
       const executeSQL = dbConfig.executeSQL;
       let trimmedSql = sqlToExecute.trim();
       
-      const isSelectQuery = /^\s*SELECT\b/i.test(trimmedSql);
-      const isCallStatement = /^\s*CALL\b/i.test(trimmedSql);
-      const isPLSQLBlock = /^\s*(DECLARE|BEGIN)/i.test(trimmedSql);
+      const statementType = getStatementType(trimmedSql);
+      const isSelectQuery = statementType === 'SELECT';
+      const isCallStatement = statementType === 'CALL' || statementType === 'EXECUTE';
+      const isPLSQLBlock = statementType === 'PLSQL';
+      const isDML = statementType === 'INSERT' || statementType === 'UPDATE' || statementType === 'DELETE';
+      const isDDL = statementType === 'DDL';
       
       let finalSql = sqlToExecute;
       
+      // Oracle specific formatting
       if (isPLSQLBlock && activeDatabaseType === 'oracle' && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
         finalSql = sqlToExecute + ';\n/';
       }
@@ -907,36 +940,29 @@ const QueryEditorModal = ({
       let output = '';
       let error = null;
       
-      console.log('Full response:', response); // Debug log
+      console.log('Full response:', response);
       
       if (response && typeof response === 'object') {
-        // Handle CALL statement responses (has statementType === 'CALL')
-        if (response.statementType === 'CALL') {
+        // Handle CALL/EXECUTE statement responses
+        if (response.statementType === 'CALL' || isCallStatement) {
           success = response.responseCode === 200 || response.success === true;
-          message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
+          message = response.message || (success ? 'Procedure/Function executed successfully' : 'Execution failed');
           
-          // Extract the actual data from the response.data field
           if (response.data) {
             if (typeof response.data === 'string') {
               output = response.data;
             } else if (response.data.error || response.data.message || response.data.traceId) {
-              // This is the actual procedure response - show it nicely
               output = JSON.stringify(response.data, null, 2);
             } else if (Array.isArray(response.data)) {
-              if (response.data.length > 0) {
-                output = JSON.stringify(response.data, null, 2);
-              } else {
-                output = 'No rows returned.';
-              }
+              output = response.data.length > 0 ? JSON.stringify(response.data, null, 2) : 'No data returned.';
             } else if (Object.keys(response.data).length > 0) {
               output = JSON.stringify(response.data, null, 2);
             } else {
               output = 'Statement executed successfully';
             }
           } else {
-            output = 'Statement executed successfully';
+            output = 'Procedure/Function executed successfully';
           }
-          
           error = response.error || null;
         }
         // Handle SELECT query responses with rows
@@ -949,6 +975,20 @@ const QueryEditorModal = ({
           } else {
             output = 'No rows returned.';
           }
+          error = null;
+        }
+        // Handle DML (INSERT/UPDATE/DELETE) with rowsAffected
+        else if (isDML && response.data && response.data.rowsAffected !== undefined) {
+          success = response.responseCode === 200 || response.success === true;
+          message = response.message || (success ? `${statementType} executed successfully` : 'Execution failed');
+          output = `${response.data.rowsAffected} row(s) affected.`;
+          error = null;
+        }
+        // Handle DDL (CREATE/ALTER/DROP/TRUNCATE)
+        else if (isDDL) {
+          success = response.responseCode === 200 || response.success === true;
+          message = response.message || (success ? 'DDL statement executed successfully' : 'DDL execution failed');
+          output = 'Statement executed successfully.';
           error = null;
         }
         // Handle response with 'success' property
@@ -970,7 +1010,6 @@ const QueryEditorModal = ({
             } else if (response.data.rowsAffected !== undefined) {
               output = `${response.data.rowsAffected} row(s) affected`;
             } else if (response.data.data) {
-              // Handle nested data structure
               if (typeof response.data.data === 'object') {
                 output = JSON.stringify(response.data.data, null, 2);
               } else {
@@ -984,7 +1023,6 @@ const QueryEditorModal = ({
           } else {
             output = success ? 'Statement executed successfully' : '';
           }
-          
           error = response.error || null;
         }
         // Handle response with 'responseCode' property
@@ -1004,7 +1042,6 @@ const QueryEditorModal = ({
             } else if (response.data.rowsAffected !== undefined) {
               output = `${response.data.rowsAffected} row(s) affected`;
             } else if (response.data.data) {
-              // Handle nested data (for CALL statements)
               if (typeof response.data.data === 'object') {
                 output = JSON.stringify(response.data.data, null, 2);
               } else {
@@ -1016,7 +1053,6 @@ const QueryEditorModal = ({
           } else {
             output = message;
           }
-          
           error = response.error || null;
         }
         // Handle response with 'data' property directly
@@ -1037,13 +1073,12 @@ const QueryEditorModal = ({
           } else {
             output = JSON.stringify(response.data, null, 2);
           }
-          
           error = null;
         }
         // Default case - treat as successful response
         else {
           success = true;
-          message = 'Query executed successfully';
+          message = 'Statement executed successfully';
           
           if (typeof response === 'string') {
             output = response;
@@ -1052,21 +1087,20 @@ const QueryEditorModal = ({
           } else {
             output = JSON.stringify(response, null, 2);
           }
-          
           error = null;
         }
       } 
       // Handle string response
       else if (typeof response === 'string') {
         success = true;
-        message = 'Query executed successfully';
+        message = 'Statement executed successfully';
         output = response;
         error = null;
       } 
       // Handle other response types
       else {
         success = true;
-        message = 'Query executed successfully';
+        message = 'Statement executed successfully';
         output = String(response);
         error = null;
       }
@@ -1204,6 +1238,8 @@ const QueryEditorModal = ({
 
 -- Example for Oracle:
 -- SELECT * FROM your_table_name WHERE ROWNUM <= 10;
+-- EXECUTE your_procedure_name(param1, param2);
+-- BEGIN your_procedure_name(param1, param2); END; /
 
 -- Once you select a database type, templates and history will be available`;
     }
@@ -1211,13 +1247,19 @@ const QueryEditorModal = ({
     const displayName = getDatabaseDisplayName(activeDatabaseType);
     return `-- ${displayName} SQL Console
 -- Write your SQL queries here
+-- Supports: SELECT, INSERT, UPDATE, DELETE, DDL, CALL/EXECUTE, PL/SQL
 -- Use Ctrl/Cmd + Enter to execute
 
 SELECT * FROM your_table_name LIMIT 10;`;
   };
   
   // Check if current query is a SELECT statement
-  const isSelectQuery = /^\s*SELECT\b/i.test(editorContent.trim());
+  const trimmed = editorContent.trim();
+
+  // const queryRegex = /^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|CALL|EXEC(UTE)?|BEGIN|DECLARE)\b/i;
+  const queryRegex = /^(SELECT|INSERT|UPDATE|DELETE|CALL|EXEC(UTE)?)\b/i;
+
+  const isQuery = queryRegex.test(trimmed);
   
   if (typeof window === 'undefined') return null;
   if (!mounted) return null;
@@ -1822,8 +1864,8 @@ SELECT * FROM your_table_name LIMIT 10;`;
             </div>
             
             <div className="flex items-center gap-2">
-              {/* NEW: Generate API button - only show for SELECT queries */}
-              {isSelectQuery && (
+              {/* Generate API button - only show for SELECT queries */}
+              {isQuery && (
                 <button
                   onClick={handleGenerateApiFromQuery}
                   className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
@@ -1874,7 +1916,7 @@ SELECT * FROM your_table_name LIMIT 10;`;
             colors={themeColors}
             theme={theme}
             authToken={authToken}
-            databaseType={activeDatabaseType}
+            databaseType={activeDatabaseType}  // ← CHANGE: Use activeDatabaseType instead of the prop
             isCustomQuery={true}
             customQueryText={customQueryForApi}
             extractedParams={extractedParamsForApi}

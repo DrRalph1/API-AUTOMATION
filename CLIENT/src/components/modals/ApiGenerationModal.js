@@ -1828,11 +1828,12 @@ export default function ApiGenerationModal({
   const [originalCustomQuery, setOriginalCustomQuery] = useState('');
 
   // ============ DETECT CUSTOM QUERY IN EDIT MODE ============
-  // This effect runs when editing an existing API to check if it's a custom query
-  useEffect(() => {
+// This effect runs when editing an existing API to check if it's a custom query
+useEffect(() => {
   if (isEditing && selectedObject && !isCustomQuery) {
     // Check if the selected object has custom query data
     const sourceObj = selectedObject.sourceObject || selectedObject;
+    const apiData = selectedObject.data || selectedObject;
     
     // Check various places where custom query might be stored
     const hasCustomQuery = 
@@ -1844,7 +1845,9 @@ export default function ApiGenerationModal({
       sourceObj?.query ||
       selectedObject?.sourceObject?.customSelectStatement ||
       selectedObject?.isCustomQuery === 'true' ||
-      selectedObject?.data?.isCustomQuery === true;
+      selectedObject?.data?.isCustomQuery === true ||
+      apiData?.isCustomQuery === true ||
+      apiData?.useCustomQuery === true;
     
     if (hasCustomQuery) {
       console.log('🔍 Editing existing custom query API detected');
@@ -1859,6 +1862,7 @@ export default function ApiGenerationModal({
         sourceObj?.query ||
         selectedObject?.customQueryText ||
         selectedObject?.data?.customSelectStatement ||
+        selectedObject?.data?.sourceObject?.customSelectStatement ||
         '';
       
       setOriginalCustomQuery(extractedQuery);
@@ -1866,9 +1870,39 @@ export default function ApiGenerationModal({
       
       console.log('📝 Extracted custom query:', extractedQuery.substring(0, 100));
       
+      // Extract database type from the API data
+      const dbType = selectedObject?.databaseType || 
+                     selectedObject?.data?.databaseType ||
+                     selectedObject?.sourceObject?.databaseType ||
+                     sourceObj?.databaseType ||
+                     databaseType || 
+                     'oracle';
+      
+      // Set the current database type for custom query
+      setCurrentDatabaseType(dbType);
+      console.log('📦 Database type for custom query:', dbType);
+      
       // Extract parameters if available
       if (selectedObject?.parameters && selectedObject.parameters.length > 0) {
         const extractedParamsList = selectedObject.parameters.map((param, index) => ({
+          id: param.id || `param-${Date.now()}-${index}`,
+          key: param.key,
+          dbColumn: param.dbColumn || param.key,
+          oracleType: param.oracleType || 'VARCHAR2',
+          apiType: param.apiType || 'string',
+          parameterLocation: param.parameterLocation || 'query',
+          required: param.required !== undefined ? param.required : true,
+          description: param.description || `Parameter: ${param.key}`,
+          example: param.example || '',
+          validationPattern: param.validationPattern || '',
+          defaultValue: param.defaultValue || '',
+          inBody: param.parameterLocation === 'body',
+          isPrimaryKey: param.isPrimaryKey || false,
+          paramMode: param.paramMode || 'IN'
+        }));
+        setParameters(extractedParamsList);
+      } else if (selectedObject?.data?.parameters && selectedObject.data.parameters.length > 0) {
+        const extractedParamsList = selectedObject.data.parameters.map((param, index) => ({
           id: param.id || `param-${Date.now()}-${index}`,
           key: param.key,
           dbColumn: param.dbColumn || param.key,
@@ -1896,9 +1930,17 @@ export default function ApiGenerationModal({
           description: `API generated from custom query: ${extractedQuery.substring(0, 100)}...`
         }));
       }
+      
+      // Also populate response mappings if they exist
+      if (selectedObject?.responseMappings && selectedObject.responseMappings.length > 0) {
+        setResponseMappings(selectedObject.responseMappings);
+      } else if (selectedObject?.data?.responseMappings && selectedObject.data.responseMappings.length > 0) {
+        setResponseMappings(selectedObject.data.responseMappings);
+      }
     }
   }
-}, [isEditing, selectedObject, isCustomQuery]);
+}, [isEditing, selectedObject, isCustomQuery, databaseType]);
+
 
   // Initialize extracted parameters when in custom query mode (for new APIs)
   useEffect(() => {
@@ -2952,7 +2994,8 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
   }
 }, [authToken, populateFormFromObject]);
 
-  const populateFormFromApiData = useCallback(async (apiData) => {
+ // In populateFormFromApiData function, update the custom query detection section
+const populateFormFromApiData = useCallback(async (apiData) => {
   console.log('📝 populateFormFromApiData called with:', apiData);
   
   // ============ CHECK FOR CUSTOM QUERY FIRST ============
@@ -2981,6 +3024,14 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
       setOriginalCustomQuery(customQueryText);
       console.log('📝 Set custom query:', customQueryText.substring(0, 100));
     }
+    
+    // ============ CRITICAL: Set database type for custom query ============
+    const customQueryDbType = apiData?.databaseType || 
+                              apiData?.sourceObject?.databaseType ||
+                              databaseType || 
+                              'oracle';
+    setCurrentDatabaseType(customQueryDbType);
+    console.log('📦 Database type for custom query:', customQueryDbType);
   } else {
     // Reset custom query states if not a custom query
     setIsEditingCustomQuery(false);

@@ -113,7 +113,7 @@ public class CustomQueryParserUtil {
     }
 
     /**
-     * Extract column metadata using JDBC - FIXED to use correct template based on database type
+     * Extract column metadata using JDBC - FIXED to handle parameterized queries
      */
     private List<QueryColumnDTO> extractColumnMetadata(String query, String databaseType) {
         List<QueryColumnDTO> columns = new ArrayList<>();
@@ -127,8 +127,12 @@ public class CustomQueryParserUtil {
             return extractColumnsFromQuery(query);
         }
 
+        // Remove named parameters (e.g., :paramName) and replace with NULL values for metadata extraction
+        String queryForMetadata = removeNamedParametersForMetadata(query);
+        log.debug("Query for metadata: {}", queryForMetadata);
+
         // Wrap the query to get metadata without executing
-        String metadataQuery = "SELECT * FROM (" + query + ") WHERE 1=0";
+        String metadataQuery = "SELECT * FROM (" + queryForMetadata + ") t WHERE 1=0";
 
         try (Connection conn = templateToUse.getDataSource().getConnection();
              PreparedStatement stmt = conn.prepareStatement(metadataQuery);
@@ -160,6 +164,293 @@ public class CustomQueryParserUtil {
         }
 
         return columns;
+    }
+
+    /**
+     * Remove named parameters for metadata extraction
+     * Replaces :paramName with appropriate NULL values or default values
+     */
+    private String removeNamedParametersForMetadata(String query) {
+        String result = query;
+        Matcher matcher = PARAMETER_PATTERN.matcher(result);
+
+        // Find all parameters and replace them with NULL (or appropriate default)
+        Set<String> params = new HashSet<>();
+        while (matcher.find()) {
+            params.add(matcher.group(1));
+        }
+
+        // Replace each parameter with NULL
+        for (String param : params) {
+            result = result.replaceAll(":" + param + "\\b", "NULL");
+        }
+
+        return result;
+    }
+
+    /**
+     * Get column types for SELECT queries by parsing the query and extracting from database schema
+     */
+    public Map<String, String> getColumnTypeMapForSelect(String query, String databaseType) {
+        Map<String, String> columnTypes = new HashMap<>();
+
+        try {
+            // Extract table name from query
+            String tableName = extractTableNameFromSelect(query);
+            if (tableName == null) {
+                log.warn("Could not extract table name from SELECT query: {}", query);
+                return columnTypes;
+            }
+
+            columnTypes.putAll(getAllColumnTypesForTable(tableName, databaseType));
+            log.debug("Extracted column types for table {}: {}", tableName, columnTypes);
+
+        } catch (Exception e) {
+            log.warn("Could not extract column types from information_schema: {}", e.getMessage());
+        }
+
+        return columnTypes;
+    }
+
+    /**
+     * Get all column types for a given table
+     */
+    private Map<String, String> getAllColumnTypesForTable(String tableName, String databaseType) {
+        Map<String, String> columnTypes = new HashMap<>();
+
+        JdbcTemplate templateToUse = "postgresql".equalsIgnoreCase(databaseType) ?
+                postgresqlJdbcTemplate : oracleJdbcTemplate;
+
+        if (templateToUse == null) {
+            return columnTypes;
+        }
+
+        try {
+            String typeQuery;
+            if ("postgresql".equalsIgnoreCase(databaseType)) {
+                typeQuery = "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = ?";
+            } else {
+                typeQuery = "SELECT column_name, data_type FROM all_tab_columns WHERE table_name = ?";
+            }
+
+            List<Map<String, Object>> columns = templateToUse.queryForList(typeQuery, tableName.toLowerCase());
+            for (Map<String, Object> column : columns) {
+                String columnName = ((String) column.get("column_name")).toLowerCase();
+                String dataType = ((String) column.get("data_type")).toUpperCase();
+                columnTypes.put(columnName, dataType);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to get column types for table {}: {}", tableName, e.getMessage());
+        }
+
+        return columnTypes;
+    }
+
+    /**
+     * Extract table name from SELECT query
+     */
+    private String extractTableNameFromSelect(String query) {
+        // Remove comments and normalize
+        String normalized = query.replaceAll("--[^\n]*", "").replaceAll("/\\*.*?\\*/", "");
+
+        // Pattern to match FROM clause and extract table name
+        Pattern fromPattern = Pattern.compile("\\bFROM\\s+([\\w]+)", Pattern.CASE_INSENSITIVE);
+        Matcher matcher = fromPattern.matcher(normalized);
+
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract table name from INSERT/UPDATE/DELETE query
+     */
+    private String extractTableNameFromDML(String query) {
+        String upperQuery = query.toUpperCase().trim();
+
+        if (upperQuery.startsWith("INSERT")) {
+            Pattern pattern = Pattern.compile("INSERT\\s+INTO\\s+(\\w+)", Pattern.CASE_INSENSITIVE);
+            Matcher matcher = pattern.matcher(query);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+        } else if (upperQuery.startsWith("UPDATE")) {
+            Pattern pattern = Pattern.compile("UPDATE\\s+(\\w+)", Pattern.CASE_INSENSITIVE);
+            Matcher matcher = pattern.matcher(query);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+        } else if (upperQuery.startsWith("DELETE")) {
+            Pattern pattern = Pattern.compile("DELETE\\s+FROM\\s+(\\w+)", Pattern.CASE_INSENSITIVE);
+            Matcher matcher = pattern.matcher(query);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract all column names from UPDATE statement (both SET and WHERE clauses)
+     */
+    private Set<String> extractAllColumnNamesFromUpdate(String query) {
+        Set<String> columns = new HashSet<>();
+
+        // Extract columns from SET clause
+        Pattern setPattern = Pattern.compile("SET\\s+(.+?)(?:WHERE|$)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher setMatcher = setPattern.matcher(query);
+        if (setMatcher.find()) {
+            String setClause = setMatcher.group(1);
+            String[] assignments = setClause.split(",");
+            for (String assignment : assignments) {
+                String columnName = assignment.split("=")[0].trim();
+                columns.add(columnName.toLowerCase());
+            }
+        }
+
+        // Extract columns from WHERE clause
+        Pattern wherePattern = Pattern.compile("WHERE\\s+(.+)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher whereMatcher = wherePattern.matcher(query);
+        if (whereMatcher.find()) {
+            String whereClause = whereMatcher.group(1);
+            // Extract column names from conditions (e.g., user_id = :user_id)
+            Pattern conditionPattern = Pattern.compile("(\\w+)\\s*[=<>!]+");
+            Matcher conditionMatcher = conditionPattern.matcher(whereClause);
+            while (conditionMatcher.find()) {
+                columns.add(conditionMatcher.group(1).toLowerCase());
+            }
+        }
+
+        return columns;
+    }
+
+    /**
+     * Extract all column names from DELETE statement (WHERE clause)
+     */
+    private Set<String> extractAllColumnNamesFromDelete(String query) {
+        Set<String> columns = new HashSet<>();
+
+        // Extract columns from WHERE clause
+        Pattern wherePattern = Pattern.compile("WHERE\\s+(.+)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher whereMatcher = wherePattern.matcher(query);
+        if (whereMatcher.find()) {
+            String whereClause = whereMatcher.group(1);
+            // Extract column names from conditions (e.g., user_id = :user_id)
+            Pattern conditionPattern = Pattern.compile("(\\w+)\\s*[=<>!]+");
+            Matcher conditionMatcher = conditionPattern.matcher(whereClause);
+            while (conditionMatcher.find()) {
+                columns.add(conditionMatcher.group(1).toLowerCase());
+            }
+        }
+
+        return columns;
+    }
+
+    /**
+     * Get column types for UPDATE statement
+     */
+    public Map<String, String> getColumnTypeMapForUpdate(String query, String databaseType) {
+        Map<String, String> columnTypes = new HashMap<>();
+
+        try {
+            String tableName = extractTableNameFromDML(query);
+            if (tableName == null) {
+                log.warn("Could not extract table name from UPDATE query");
+                return columnTypes;
+            }
+
+            // Get all column types for the table
+            Map<String, String> allColumnTypes = getAllColumnTypesForTable(tableName, databaseType);
+
+            // Extract all column names used in the UPDATE statement
+            Set<String> usedColumns = extractAllColumnNamesFromUpdate(query);
+
+            // Only return types for columns used in the query
+            for (String column : usedColumns) {
+                if (allColumnTypes.containsKey(column)) {
+                    columnTypes.put(column, allColumnTypes.get(column));
+                }
+            }
+
+            log.debug("Extracted column types for UPDATE on table {}: {}", tableName, columnTypes);
+
+        } catch (Exception e) {
+            log.warn("Could not extract column types for UPDATE: {}", e.getMessage());
+        }
+
+        return columnTypes;
+    }
+
+    /**
+     * Get column types for DELETE statement
+     */
+    public Map<String, String> getColumnTypeMapForDelete(String query, String databaseType) {
+        Map<String, String> columnTypes = new HashMap<>();
+
+        try {
+            String tableName = extractTableNameFromDML(query);
+            if (tableName == null) {
+                log.warn("Could not extract table name from DELETE query");
+                return columnTypes;
+            }
+
+            // Get all column types for the table
+            Map<String, String> allColumnTypes = getAllColumnTypesForTable(tableName, databaseType);
+
+            // Extract all column names used in the DELETE statement (WHERE clause)
+            Set<String> usedColumns = extractAllColumnNamesFromDelete(query);
+
+            // Only return types for columns used in the query
+            for (String column : usedColumns) {
+                if (allColumnTypes.containsKey(column)) {
+                    columnTypes.put(column, allColumnTypes.get(column));
+                }
+            }
+
+            log.debug("Extracted column types for DELETE on table {}: {}", tableName, columnTypes);
+
+        } catch (Exception e) {
+            log.warn("Could not extract column types for DELETE: {}", e.getMessage());
+        }
+
+        return columnTypes;
+    }
+
+    /**
+     * Get column types for INSERT statement
+     */
+    public Map<String, String> getColumnTypeMapForInsert(String query, String databaseType) {
+        Map<String, String> columnTypes = new HashMap<>();
+
+        try {
+            // Extract table name and column names from INSERT INTO table (col1, col2, ...)
+            Pattern insertPattern = Pattern.compile("INSERT\\s+INTO\\s+(\\w+)\\s*\\(([^)]+)\\)", Pattern.CASE_INSENSITIVE);
+            Matcher matcher = insertPattern.matcher(query);
+
+            if (matcher.find()) {
+                String tableName = matcher.group(1);
+                String columnsStr = matcher.group(2);
+                String[] columns = columnsStr.split(",");
+
+                Map<String, String> allColumnTypes = getAllColumnTypesForTable(tableName, databaseType);
+
+                for (String column : columns) {
+                    String columnName = column.trim().toLowerCase();
+                    if (allColumnTypes.containsKey(columnName)) {
+                        columnTypes.put(columnName, allColumnTypes.get(columnName));
+                    }
+                }
+
+                log.debug("Extracted column types for INSERT on table {}: {}", tableName, columnTypes);
+            }
+        } catch (Exception e) {
+            log.warn("Could not extract column types from INSERT statement: {}", e.getMessage());
+        }
+
+        return columnTypes;
     }
 
     /**
@@ -441,5 +732,27 @@ public class CustomQueryParserUtil {
                     "Only SELECT statements are allowed. Query must start with SELECT."
             );
         }
+    }
+
+    public Map<String, String> getColumnTypeMap(String query, String databaseType) {
+        // For SELECT queries, use the information_schema approach
+        return getColumnTypeMapForSelect(query, databaseType);
+    }
+
+    /**
+     * Get column types specifically for INSERT/UPDATE/DELETE statements
+     */
+    public Map<String, String> getColumnTypeMapForDML(String query, String databaseType) {
+        String upperQuery = query.toUpperCase().trim();
+
+        if (upperQuery.startsWith("INSERT")) {
+            return getColumnTypeMapForInsert(query, databaseType);
+        } else if (upperQuery.startsWith("UPDATE")) {
+            return getColumnTypeMapForUpdate(query, databaseType);
+        } else if (upperQuery.startsWith("DELETE")) {
+            return getColumnTypeMapForDelete(query, databaseType);
+        }
+
+        return new HashMap<>();
     }
 }

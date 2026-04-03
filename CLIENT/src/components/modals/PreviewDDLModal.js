@@ -1,4 +1,4 @@
-// PreviewDDLModal.js (Complete working version with Generate API button)
+// PreviewDDLModal.js (Complete working version with Generate API button - SUPPORTS ALL QUERY TYPES)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { 
@@ -259,6 +259,46 @@ END ${name};
 /
 `
   },
+};
+
+// Helper function to extract parameters from SQL query (same as QueryEditorModal)
+const extractQueryParameters = (sqlQuery) => {
+  const paramRegex = /:(\w+)/g;
+  const matches = [];
+  let match;
+  while ((match = paramRegex.exec(sqlQuery)) !== null) {
+    if (!matches.includes(match[1])) {
+      matches.push(match[1]);
+    }
+  }
+  
+  return matches.map((param, index) => ({
+    key: param,
+    parameterName: param,
+    dataType: 'VARCHAR2',
+    required: true,
+    description: `Parameter: ${param}`,
+    parameterLocation: 'query',
+    position: index
+  }));
+};
+
+// Helper function to get statement type (same as QueryEditorModal)
+const getStatementType = (sql) => {
+  const trimmed = sql.trim().toUpperCase();
+  if (/^SELECT\b/i.test(trimmed)) return 'SELECT';
+  if (/^INSERT\b/i.test(trimmed)) return 'INSERT';
+  if (/^UPDATE\b/i.test(trimmed)) return 'UPDATE';
+  if (/^DELETE\b/i.test(trimmed)) return 'DELETE';
+  if (/^CREATE\b/i.test(trimmed)) return 'DDL';
+  if (/^ALTER\b/i.test(trimmed)) return 'DDL';
+  if (/^DROP\b/i.test(trimmed)) return 'DDL';
+  if (/^TRUNCATE\b/i.test(trimmed)) return 'DDL';
+  if (/^CALL\b/i.test(trimmed)) return 'CALL';
+  if (/^EXEC(UTE)?\b/i.test(trimmed)) return 'EXECUTE';
+  if (/^BEGIN\b/i.test(trimmed)) return 'PLSQL';
+  if (/^DECLARE\b/i.test(trimmed)) return 'PLSQL';
+  return 'UNKNOWN';
 };
 
 // Extract parameter names from procedure DDL
@@ -825,7 +865,8 @@ const PreviewDDLModal = ({
   colors, 
   theme,
   authToken,
-  databaseType = 'postgresql'
+  databaseType = 'postgresql',
+  onRefreshApis  // ← ADD THIS prop for refreshing APIs after generation
 }) => {
   const [editorContent, setEditorContent] = useState('');
   const [originalContent, setOriginalContent] = useState('');
@@ -903,29 +944,7 @@ const PreviewDDLModal = ({
     codeBg: theme === 'dark' ? 'rgb(13 17 23)' : '#f1f5f9'
   };
 
-  // Function to extract parameters from SQL query
-  const extractQueryParameters = (sqlQuery) => {
-    const paramRegex = /:(\w+)/g;
-    const matches = [];
-    let match;
-    while ((match = paramRegex.exec(sqlQuery)) !== null) {
-      if (!matches.includes(match[1])) {
-        matches.push(match[1]);
-      }
-    }
-    
-    return matches.map((param, index) => ({
-      key: param,
-      parameterName: param,
-      dataType: 'VARCHAR2',
-      required: true,
-      description: `Parameter: ${param}`,
-      parameterLocation: 'query',
-      position: index
-    }));
-  };
-
-  // Function to handle generating API from the current query (CUSTOM QUERY)
+  // UPDATED: Function to handle generating API from the current query (SUPPORTS ALL QUERY TYPES)
   const handleGenerateApiFromQuery = () => {
     const currentQuery = getSQLToExecute();
     
@@ -933,7 +952,7 @@ const PreviewDDLModal = ({
       setCompilationResult({
         success: false,
         message: 'Cannot generate API',
-        error: 'No SQL query found. Please enter a SELECT query in the editor.',
+        error: 'No SQL query found. Please enter a query in the editor.',
         output: ''
       });
       setTimeout(() => setCompilationResult(null), 3000);
@@ -941,11 +960,14 @@ const PreviewDDLModal = ({
     }
     
     const trimmedQuery = currentQuery.trim();
-    if (!/^\s*SELECT\b/i.test(trimmedQuery)) {
+    const queryType = getStatementType(trimmedQuery);
+    
+    // Allow ALL valid SQL types - just reject UNKNOWN (same as QueryEditorModal)
+    if (queryType === 'UNKNOWN') {
       setCompilationResult({
         success: false,
         message: 'Cannot generate API',
-        error: 'Only SELECT statements can be used to generate APIs.',
+        error: 'Invalid or unsupported SQL statement. Please enter a valid SQL query (SELECT, INSERT, UPDATE, DELETE, DDL, CALL, EXECUTE, or PL/SQL block).',
         output: ''
       });
       setTimeout(() => setCompilationResult(null), 3000);
@@ -964,8 +986,6 @@ const PreviewDDLModal = ({
   const handleGenerateApiFromObject = () => {
     setShowApiModal(true);
   };
-
-  
   
   // Refs
   const editorRef = useRef(null);
@@ -1600,136 +1620,179 @@ const PreviewDDLModal = ({
     return editorContent;
   };
   
+  // UPDATED: handleCompile - Now supports ALL SQL operations including CALL/EXECUTE (same as QueryEditorModal)
   const handleCompile = async () => {
-  if (!authToken) return;
-  
-  const sqlToExecute = getSQLToExecute();
-  
-  if (!sqlToExecute.trim()) {
-    setCompilationResult({
-      success: false,
-      message: 'Execution failed',
-      error: 'No SQL statement to execute. Please select text or ensure the editor has content.',
-      output: ''
-    });
-    return;
-  }
-  
-  setIsCompiling(true);
-  setCompilationResult(null);
-  
-  try {
-    const executeSQL = dbConfig.executeSQL;
-    let trimmedSql = sqlToExecute.trim();
+    if (!authToken) return;
     
-    const isSelectQuery = /^\s*SELECT\b/i.test(trimmedSql);
-    const isCallStatement = /^\s*CALL\b/i.test(trimmedSql);
-    const isPLSQLBlock = /^\s*(DECLARE|BEGIN)/i.test(trimmedSql);
-    const isProcedureBody = /^\s*PROCEDURE\s+\w+/i.test(trimmedSql) && !/^\s*CREATE/i.test(trimmedSql);
+    const sqlToExecute = getSQLToExecute();
     
-    let finalSql = sqlToExecute;
-    
-    if (isProcedureBody && selectedObject?.type === 'PROCEDURE') {
-      finalSql = `CREATE OR REPLACE ${sqlToExecute}`;
+    if (!sqlToExecute.trim()) {
+      setCompilationResult({
+        success: false,
+        message: 'Execution failed',
+        error: 'No SQL statement to execute. Please select text or ensure the editor has content.',
+        output: ''
+      });
+      return;
     }
     
-    if (isPLSQLBlock && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
-      finalSql = sqlToExecute + ';\n/';
-    }
+    setIsCompiling(true);
+    setCompilationResult(null);
     
-    const response = await executeSQL(authToken, {
-      sql: finalSql,
-      objectType: selectedObject?.type,
-      objectName: selectedObject?.name,
-      owner: selectedObject?.owner,
-      schema: selectedObject?.schema || selectedObject?.owner,
-      databaseType: databaseType,
-      readOnly: false
-    });
-    
-    let success = false;
-    let message = '';
-    let output = '';
-    let error = null;
-    
-    console.log('Full response:', response); // Debug: log the full response
-    
-    if (response && typeof response === 'object') {
-      // Handle CALL statement responses (has statementType === 'CALL')
-      if (response.statementType === 'CALL') {
-        success = response.responseCode === 200 || response.success === true;
-        message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
-        
-        // Extract the actual data from the response.data field
-        if (response.data) {
-          if (typeof response.data === 'string') {
-            output = response.data;
-          } else if (response.data.error || response.data.message || response.data.traceId) {
-            // This is the actual procedure response - show it nicely
-            output = JSON.stringify(response.data, null, 2);
-          } else if (Array.isArray(response.data)) {
-            output = JSON.stringify(response.data, null, 2);
-          } else if (Object.keys(response.data).length > 0) {
-            output = JSON.stringify(response.data, null, 2);
+    try {
+      const executeSQL = dbConfig.executeSQL;
+      let trimmedSql = sqlToExecute.trim();
+      
+      const statementType = getStatementType(trimmedSql);
+      const isSelectQuery = statementType === 'SELECT';
+      const isCallStatement = statementType === 'CALL' || statementType === 'EXECUTE';
+      const isPLSQLBlock = statementType === 'PLSQL';
+      const isDML = statementType === 'INSERT' || statementType === 'UPDATE' || statementType === 'DELETE';
+      const isDDL = statementType === 'DDL';
+      
+      let finalSql = sqlToExecute;
+      
+      // Oracle specific formatting
+      if (isPLSQLBlock && databaseType === 'oracle' && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
+        finalSql = sqlToExecute + ';\n/';
+      }
+      
+      const response = await executeSQL(authToken, {
+        sql: finalSql,
+        objectType: selectedObject?.type,
+        objectName: selectedObject?.name,
+        owner: selectedObject?.owner,
+        schema: selectedObject?.schema || selectedObject?.owner,
+        databaseType: databaseType,
+        readOnly: false
+      });
+      
+      let success = false;
+      let message = '';
+      let output = '';
+      let error = null;
+      
+      console.log('Full response:', response);
+      
+      if (response && typeof response === 'object') {
+        // Handle CALL/EXECUTE statement responses (has statementType === 'CALL')
+        if (response.statementType === 'CALL' || isCallStatement) {
+          success = response.responseCode === 200 || response.success === true;
+          message = response.message || (success ? 'Procedure/Function executed successfully' : 'Execution failed');
+          
+          if (response.data) {
+            if (typeof response.data === 'string') {
+              output = response.data;
+            } else if (response.data.error || response.data.message || response.data.traceId) {
+              output = JSON.stringify(response.data, null, 2);
+            } else if (Array.isArray(response.data)) {
+              output = response.data.length > 0 ? JSON.stringify(response.data, null, 2) : 'No data returned.';
+            } else if (Object.keys(response.data).length > 0) {
+              output = JSON.stringify(response.data, null, 2);
+            } else {
+              output = 'Statement executed successfully';
+            }
           } else {
-            output = 'Statement executed successfully';
+            output = 'Procedure/Function executed successfully';
           }
-        } else {
-          output = 'Statement executed successfully';
+          error = response.error || null;
         }
-        
-        error = response.error || null;
-      }
-      // Handle SELECT query responses with rows
-      else if (response.data && response.data.rows !== undefined) {
-        success = response.responseCode === 200 || response.success === true;
-        message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
-        
-        if (response.data.rows && response.data.rows.length > 0) {
-          output = JSON.stringify(response.data.rows, null, 2);
-        } else {
-          output = 'No rows returned.';
-        }
-        error = null;
-      }
-      // Handle response with 'success' property
-      else if (response.hasOwnProperty('success')) {
-        success = response.success === true;
-        message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
-        
-        if (isSelectQuery && response.data && response.data.rows) {
-          if (response.data.rows.length > 0) {
+        // Handle SELECT query responses with rows
+        else if (response.data && response.data.rows !== undefined) {
+          success = response.responseCode === 200 || response.success === true;
+          message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
+          
+          if (response.data.rows && response.data.rows.length > 0) {
             output = JSON.stringify(response.data.rows, null, 2);
           } else {
             output = 'No rows returned.';
           }
-        } else if (response.data) {
-          if (typeof response.data === 'string') {
-            output = response.data;
-          } else if (response.data.output) {
-            output = response.data.output;
-          } else if (response.data.rowsAffected !== undefined) {
-            output = `${response.data.rowsAffected} row(s) affected`;
-          } else {
-            output = JSON.stringify(response.data, null, 2);
-          }
-        } else if (response.output) {
-          output = response.output;
-        } else {
-          output = success ? 'Statement executed successfully' : '';
+          error = null;
         }
-        
-        error = response.error || null;
-      }
-      // Handle response with 'responseCode' property
-      else if (response.hasOwnProperty('responseCode')) {
-        success = response.responseCode === 200 || response.success === true;
-        message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
-        
-        if (response.data) {
-          if (typeof response.data === 'string') {
-            output = response.data;
-          } else if (response.data.rows && response.data.rows.length > 0) {
+        // Handle DML (INSERT/UPDATE/DELETE) with rowsAffected
+        else if (isDML && response.data && response.data.rowsAffected !== undefined) {
+          success = response.responseCode === 200 || response.success === true;
+          message = response.message || (success ? `${statementType} executed successfully` : 'Execution failed');
+          output = `${response.data.rowsAffected} row(s) affected.`;
+          error = null;
+        }
+        // Handle DDL (CREATE/ALTER/DROP/TRUNCATE)
+        else if (isDDL) {
+          success = response.responseCode === 200 || response.success === true;
+          message = response.message || (success ? 'DDL statement executed successfully' : 'DDL execution failed');
+          output = 'Statement executed successfully.';
+          error = null;
+        }
+        // Handle response with 'success' property
+        else if (response.hasOwnProperty('success')) {
+          success = response.success === true;
+          message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
+          
+          if (isSelectQuery && response.data && response.data.rows) {
+            if (response.data.rows.length > 0) {
+              output = JSON.stringify(response.data.rows, null, 2);
+            } else {
+              output = 'No rows returned.';
+            }
+          } else if (response.data) {
+            if (typeof response.data === 'string') {
+              output = response.data;
+            } else if (response.data.output) {
+              output = response.data.output;
+            } else if (response.data.rowsAffected !== undefined) {
+              output = `${response.data.rowsAffected} row(s) affected`;
+            } else if (response.data.data) {
+              if (typeof response.data.data === 'object') {
+                output = JSON.stringify(response.data.data, null, 2);
+              } else {
+                output = String(response.data.data);
+              }
+            } else {
+              output = JSON.stringify(response.data, null, 2);
+            }
+          } else if (response.output) {
+            output = response.output;
+          } else {
+            output = success ? 'Statement executed successfully' : '';
+          }
+          error = response.error || null;
+        }
+        // Handle response with 'responseCode' property
+        else if (response.hasOwnProperty('responseCode')) {
+          success = response.responseCode === 200 || response.success === true;
+          message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
+          
+          if (response.data) {
+            if (typeof response.data === 'string') {
+              output = response.data;
+            } else if (response.data.rows && response.data.rows.length > 0) {
+              output = JSON.stringify(response.data.rows, null, 2);
+            } else if (response.data.rows && response.data.rows.length === 0) {
+              output = 'No rows returned.';
+            } else if (response.data.output) {
+              output = response.data.output;
+            } else if (response.data.rowsAffected !== undefined) {
+              output = `${response.data.rowsAffected} row(s) affected`;
+            } else if (response.data.data) {
+              if (typeof response.data.data === 'object') {
+                output = JSON.stringify(response.data.data, null, 2);
+              } else {
+                output = String(response.data.data);
+              }
+            } else {
+              output = JSON.stringify(response.data, null, 2);
+            }
+          } else {
+            output = message;
+          }
+          error = response.error || null;
+        }
+        // Handle response with 'data' property directly
+        else if (response.hasOwnProperty('data')) {
+          success = true;
+          message = 'Query executed successfully';
+          
+          if (response.data.rows && response.data.rows.length > 0) {
             output = JSON.stringify(response.data.rows, null, 2);
           } else if (response.data.rows && response.data.rows.length === 0) {
             output = 'No rows returned.';
@@ -1737,71 +1800,80 @@ const PreviewDDLModal = ({
             output = response.data.output;
           } else if (response.data.rowsAffected !== undefined) {
             output = `${response.data.rowsAffected} row(s) affected`;
+          } else if (response.data.data) {
+            output = JSON.stringify(response.data.data, null, 2);
           } else {
             output = JSON.stringify(response.data, null, 2);
           }
-        } else {
-          output = message;
+          error = null;
         }
-        
-        error = response.error || null;
-      }
-      // Default case
+        // Default case - treat as successful response
+        else {
+          success = true;
+          message = 'Statement executed successfully';
+          
+          if (typeof response === 'string') {
+            output = response;
+          } else if (response.rows && response.rows.length > 0) {
+            output = JSON.stringify(response.rows, null, 2);
+          } else {
+            output = JSON.stringify(response, null, 2);
+          }
+          error = null;
+        }
+      } 
+      // Handle string response
+      else if (typeof response === 'string') {
+        success = true;
+        message = 'Statement executed successfully';
+        output = response;
+        error = null;
+      } 
+      // Handle other response types
       else {
         success = true;
-        message = 'Execution completed successfully';
-        output = JSON.stringify(response, null, 2);
+        message = 'Statement executed successfully';
+        output = String(response);
         error = null;
       }
-    } else if (typeof response === 'string') {
-      success = true;
-      message = 'Execution completed successfully';
-      output = response;
-      error = null;
-    } else {
-      success = true;
-      message = 'Execution completed successfully';
-      output = String(response);
-      error = null;
-    }
-    
-    // Ensure output is never empty for successful operations
-    if (success && !output) {
-      output = 'Statement executed successfully';
-    }
-    
-    setCompilationResult({
-      success: success,
-      message: message,
-      output: output,
-      error: error
-    });
-    
-  } catch (error) {
-    console.error('Execution error:', error);
-    
-    let errorMessage = error.message || String(error);
-    let errorDetail = null;
-    
-    if (error.response && error.response.data) {
-      if (error.response.data.message) {
-        errorMessage = error.response.data.message;
-        errorDetail = error.response.data.error || error.response.data.detail;
-      } else if (error.response.data.error) {
-        errorMessage = error.response.data.error;
+      
+      // Ensure output is never empty for successful operations
+      if (success && !output) {
+        output = 'Statement executed successfully';
       }
+      
+      setCompilationResult({
+        success: success,
+        message: message,
+        output: output,
+        error: error
+      });
+      
+    } catch (error) {
+      console.error('Execution error:', error);
+      
+      let errorMessage = error.message || String(error);
+      let errorDetail = null;
+      
+      if (error.response && error.response.data) {
+        if (error.response.data.message) {
+          errorMessage = error.response.data.message;
+          errorDetail = error.response.data.error || error.response.data.detail;
+        } else if (error.response.data.error) {
+          errorMessage = error.response.data.error;
+        }
+      }
+      
+      setCompilationResult({
+        success: false,
+        message: 'Execution failed',
+        error: errorMessage,
+        output: errorDetail || ''
+      });
+    } finally {
+      setIsCompiling(false);
     }
-    
-    setCompilationResult({
-      success: false,
-      message: 'Execution failed',
-      error: errorMessage,
-      output: errorDetail || ''
-    });
-  } finally {
-    setIsCompiling(false);
-  }
-};
+  };
   
   const handleSave = async () => {
     if (!authToken || !selectedObject) {
@@ -1948,8 +2020,11 @@ const PreviewDDLModal = ({
     setTimeout(() => restoreSelection(), 0);
   };
   
-   // Check if current query is a SELECT statement
-  const isSelectQuery = /^\s*SELECT\b/i.test(editorContent.trim());
+  // UPDATED: Check if current query is a valid SQL statement (any type except UNKNOWN)
+  const trimmedQuery = editorContent.trim();
+  // const queryRegex = /^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|CALL|EXEC(UTE)?|BEGIN|DECLARE)\b/i;
+  const queryRegex = /^(SELECT|INSERT|UPDATE|DELETE|CALL|EXEC(UTE)?)\b/i;
+  const isQuery = queryRegex.test(trimmedQuery);
   
   if (typeof window === 'undefined') return null;
   if (!mounted) return null;
@@ -2385,7 +2460,7 @@ const PreviewDDLModal = ({
           )}
         </div>
         
-        {/* ── Action Buttons ─────────────────────────────────────────────────── */}
+        {/* Action Buttons */}
         <div 
           className="flex items-center justify-between px-6 py-4 border-t shrink-0"
           style={{ borderColor: themeColors.border, backgroundColor: themeColors.card }}
@@ -2426,19 +2501,8 @@ const PreviewDDLModal = ({
             </label>
           </div>
         
-
-       {/* Right side — Action Buttons */}
+          {/* Right side — Action Buttons */}
           <div className="flex items-center gap-2">
-
-            {/* <button
-              onClick={handleDownload}
-              className="px-4 py-2 rounded-lg text-sm hover-lift transition-colors flex items-center gap-2"
-              style={{ backgroundColor: themeColors.hover, color: themeColors.text }}
-            >
-              <Download size={14} />
-              Download
-            </button> */}
-
             {/* Generate API from Database Object button - only show if an object is selected */}
             {selectedObject && (
               <button
@@ -2455,8 +2519,8 @@ const PreviewDDLModal = ({
               </button>
             )}
             
-            {/* Generate API from Custom Query button - only show if editor contains a SELECT query */}
-            {isSelectQuery && editorContent.trim() && (
+            {/* Generate API from Custom Query button - only show if editor contains a valid SQL query (any type except UNKNOWN) */}
+            {isQuery && editorContent.trim() && (
               <button
                 onClick={handleGenerateApiFromQuery}
                 className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
@@ -2480,17 +2544,6 @@ const PreviewDDLModal = ({
               {isCompiling ? <Loader size={14} className="animate-spin" /> : <Play size={14} />}
               Execute
             </button>
-
-
-            {/* <button
-              onClick={handleSave}
-              disabled={isCompiling}
-              className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
-              style={{ backgroundColor: themeColors.success, color: themeColors.white }}
-            >
-              <Save size={14} />
-              Save
-            </button> */}
             
             <button
               onClick={onClose}
@@ -2508,7 +2561,12 @@ const PreviewDDLModal = ({
       {showApiModal && (
         <ApiGenerationModal
           isOpen={showApiModal}
-          onClose={() => setShowApiModal(false)}
+          onClose={() => {
+            setShowApiModal(false);
+            if (onRefreshApis) {
+              onRefreshApis();
+            }
+          }}
           selectedObject={selectedObject}
           colors={themeColors}
           theme={theme}
@@ -2519,7 +2577,6 @@ const PreviewDDLModal = ({
           onGenerateAPI={(apiData) => {
             console.log('API generated from object:', apiData);
             setShowApiModal(false);
-            // Call a refresh function passed from parent if available
             if (onRefreshApis) {
               onRefreshApis();
             }
@@ -2527,11 +2584,16 @@ const PreviewDDLModal = ({
         />
       )}
 
-      {/* For Custom Query API Generation */}
+      {/* For Custom Query API Generation - NOW SUPPORTS ALL QUERY TYPES */}
       {showCustomQueryApiModal && (
         <ApiGenerationModal
           isOpen={showCustomQueryApiModal}
-          onClose={() => setShowCustomQueryApiModal(false)}
+          onClose={() => {
+            setShowCustomQueryApiModal(false);
+            if (onRefreshApis) {
+              onRefreshApis();
+            }
+          }}
           colors={themeColors}
           theme={theme}
           authToken={authToken}
@@ -2542,7 +2604,6 @@ const PreviewDDLModal = ({
           onGenerateAPI={(apiData, response) => {
             console.log('API generated from custom query:', apiData);
             setShowCustomQueryApiModal(false);
-            // Call a refresh function passed from parent if available
             if (onRefreshApis) {
               onRefreshApis();
             }

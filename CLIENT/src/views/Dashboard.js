@@ -539,6 +539,9 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
   const [showApiModal, setShowApiModal] = useState(false);
   const [showQueryEditor, setShowQueryEditor] = useState(false);
   const [selectedForApiGeneration, setSelectedForApiGeneration] = useState(null);
+
+  // Add this state near your other state declarations (around line 200)
+  const [queryEditorDatabaseType, setQueryEditorDatabaseType] = useState('postgresql');
   
   // Stats state
   const [stats, setStats] = useState({
@@ -1442,7 +1445,12 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
           colors={colors}
           theme={theme}
           authToken={authToken}
-          databaseType="all"
+          databaseType="all"  // Keep as "all" to show the database selector
+          selectedDatabaseType={queryEditorDatabaseType}  // ← ADD THIS - Pass the selected type
+          onDatabaseTypeChange={(newType) => {
+            console.log('Database type changed in query editor:', newType);
+            setQueryEditorDatabaseType(newType);
+          }}
           showGenerateApiButton={true}
           onQueryExecute={(sql, response) => {
             console.log('Query executed:', sql);
@@ -1453,7 +1461,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
             console.log('Database type:', databaseType);
             console.log('Named parameters:', namedParams);
           }}
-          onRefreshApis={handleApiUpdate}  // ← ADD THIS - Pass the refresh function
+          onRefreshApis={handleApiUpdate}
         />
       )}
     </div>
