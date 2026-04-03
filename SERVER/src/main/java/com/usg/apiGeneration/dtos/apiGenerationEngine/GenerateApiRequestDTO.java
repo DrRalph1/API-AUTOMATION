@@ -67,4 +67,10 @@ public class GenerateApiRequestDTO {
     // Control flags
     private Boolean regenerateComponents;
     private Boolean isEditing;
+
+    // ============ NEW FIELDS FOR CUSTOM SELECT STATEMENTS (OPTIONAL) ============
+    // These are optional and won't affect existing flow
+    private String customSelectStatement;   // Custom SELECT query (alternative to sourceObject)
+    private Boolean useCustomQuery;          // Flag to indicate using custom query
+
 }

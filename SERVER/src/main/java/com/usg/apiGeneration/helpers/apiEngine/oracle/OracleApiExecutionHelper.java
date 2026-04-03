@@ -9,6 +9,7 @@ import com.usg.apiGeneration.helpers.apiEngine.ApiResponseHelper;
 import com.usg.apiGeneration.repositories.apiGenerationEngine.*;
 import com.usg.apiGeneration.utils.LoggerUtil;
 import com.usg.apiGeneration.utils.apiEngine.DatabaseParameterGeneratorUtil;
+import com.usg.apiGeneration.utils.apiEngine.executor.CustomQueryExecutionHelper;
 import com.usg.apiGeneration.utils.apiEngine.executor.oracle.*;
 import com.usg.apiGeneration.utils.apiEngine.OracleObjectResolverUtil;
 import com.usg.apiGeneration.utils.apiEngine.OracleParameterValidatorUtil;
@@ -33,6 +34,7 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
     private final OracleProcedureExecutorUtil oracleProcedureExecutorUtil;
     private final OracleFunctionExecutorUtil oracleFunctionExecutorUtil;
     private final OraclePackageExecutorUtil oraclePackageExecutorUtil;
+    private final CustomQueryExecutionHelper customQueryExecutionHelper;
 
     @Qualifier("oracleJdbcTemplate")
     private final JdbcTemplate oracleJdbcTemplate;
@@ -48,7 +50,7 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
             OracleViewExecutorUtil oracleViewExecutorUtil,
             OracleProcedureExecutorUtil oracleProcedureExecutorUtil,
             OracleFunctionExecutorUtil oracleFunctionExecutorUtil,
-            OraclePackageExecutorUtil oraclePackageExecutorUtil,
+            OraclePackageExecutorUtil oraclePackageExecutorUtil, CustomQueryExecutionHelper customQueryExecutionHelper,
             @Qualifier("oracleJdbcTemplate") JdbcTemplate oracleJdbcTemplate) {
         super(responseHelper, loggerUtil, conversionHelper, transactionTemplate);
         this.objectResolver = objectResolver;
@@ -58,6 +60,7 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
         this.oracleProcedureExecutorUtil = oracleProcedureExecutorUtil;
         this.oracleFunctionExecutorUtil = oracleFunctionExecutorUtil;
         this.oraclePackageExecutorUtil = oraclePackageExecutorUtil;
+        this.customQueryExecutionHelper = customQueryExecutionHelper;
         this.oracleJdbcTemplate = oracleJdbcTemplate;
     }
 
@@ -979,9 +982,15 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
 
         log.info("Executing Oracle operation for API: {}", api.getId());
 
-        // Your existing Oracle execution logic here
-        // This is where you'd call your existing Oracle executors
+        // ============ CHECK FOR CUSTOM QUERY FIRST ============
+        if (sourceObject != null && sourceObject.isCustomQuery()) {
+            log.info("Executing custom SELECT query for Oracle API: {}", api.getApiCode());
+            return customQueryExecutionHelper.executeCustomQuery(
+                    api, sourceObject, validatedRequest, configuredParamDTOs, oracleJdbcTemplate
+            );
+        }
 
+        // ============ EXISTING LOGIC FOR REGULAR DATABASE OBJECTS ============
         ApiSchemaConfigEntity schemaConfig = api.getSchemaConfig();
         if (schemaConfig == null) {
             throw new RuntimeException("Schema configuration not found");

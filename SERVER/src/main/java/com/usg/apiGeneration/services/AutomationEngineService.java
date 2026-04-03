@@ -32,6 +32,7 @@ import com.usg.apiGeneration.utils.apiEngine.executor.postgresql.PostgreSQLTable
 import com.usg.apiGeneration.utils.apiEngine.executor.postgresql.PostgreSQLViewExecutorUtil;
 import com.usg.apiGeneration.utils.apiEngine.generator.CodeBaseGeneratorUtil;
 import com.usg.apiGeneration.utils.apiEngine.generator.CollectionsGeneratorUtil;
+import com.usg.apiGeneration.utils.apiEngine.generator.CustomQueryParserUtil;
 import com.usg.apiGeneration.utils.apiEngine.generator.DocumentationGeneratorUtil;
 import com.usg.apiGeneration.utils.apiEngine.OracleObjectResolverUtil;
 import com.usg.apiGeneration.utils.apiEngine.OracleParameterGeneratorUtil;
@@ -87,6 +88,7 @@ public class AutomationEngineService {
     private final PostgreSQLApiValidationHelper postgresValidationHelper;
     private final ApiConversionHelper conversionHelper;
     private final ApiResponseHelper responseHelper;
+    private final CustomQueryParserUtil customQueryParserUtil;
     // REMOVE THIS: private final OracleApiExecutionHelper executionHelper;
     private final ApiComponentHelper componentHelper;
     // REMOVE THESE: private final OracleApiMetadataHelper oracleMetadataHelper;
@@ -159,6 +161,13 @@ public class AutomationEngineService {
                     ", Generating API: " + request.getApiName() +
                     " for database: " + databaseType + " by: " + performedBy);
 
+            // Log if this is a custom query
+            if (Boolean.TRUE.equals(request.getUseCustomQuery()) ||
+                    (request.getCustomSelectStatement() != null && !request.getCustomSelectStatement().trim().isEmpty())) {
+                loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+                        ", This is a CUSTOM QUERY API generation");
+            }
+
             DatabaseValidationHelper validationHelper = databaseTypeFactory.getValidationHelper(databaseType);
             validationHelper.validateApiCodeUniqueness(generatedAPIRepository, request.getApiCode());
 
@@ -168,7 +177,6 @@ public class AutomationEngineService {
             String endpointPath = buildEndpointPathFromRequest(request);
             DatabaseParameterGeneratorUtil parameterGenerator = parameterGeneratorFactory.getGenerator(databaseType);
 
-            // Use factory to get the correct execution helper
             BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
 
             GeneratedApiEntity savedApi = executionHelper.createAndSaveApiEntity(
@@ -218,11 +226,16 @@ public class AutomationEngineService {
             loggerUtil.log("apiGeneration", "Request ID: " + requestId +
                     ", Updating API: " + apiId + " by: " + performedBy);
 
-            // Get the existing API entity
+            // Log if this is a custom query update
+            if (Boolean.TRUE.equals(request.getUseCustomQuery()) ||
+                    (request.getCustomSelectStatement() != null && !request.getCustomSelectStatement().trim().isEmpty())) {
+                loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+                        ", This is a CUSTOM QUERY API update");
+            }
+
             GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
                     .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
 
-            // Get the database type from the existing API
             String databaseType = api.getDatabaseType();
             if (databaseType == null || databaseType.isEmpty()) {
                 databaseType = "oracle";
@@ -230,51 +243,53 @@ public class AutomationEngineService {
 
             log.info("Updating API: {} on database: {}", apiId, databaseType);
 
-            // Get the appropriate execution helper
             BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
-
-            // Store the original sourceRequestId before clearing relationships
             String originalSourceRequestId = api.getSourceRequestId();
 
-            // Get the appropriate validation helper
             DatabaseValidationHelper validationHelper = databaseTypeFactory.getValidationHelper(databaseType);
-
-            // Check API code uniqueness if changed
             validationHelper.validateApiCodeUniquenessOnUpdate(
                     generatedAPIRepository, api.getApiCode(), request.getApiCode());
 
-            // Get the appropriate schema service
             Object schemaService = databaseTypeFactory.getSchemaService(databaseType);
 
-            // Convert and validate source object
+            // CRITICAL: For custom queries, pass the custom SELECT statement through
             ApiSourceObjectDTO sourceObjectDTO = convertAndValidateSourceObjectForUpdate(request, schemaService, databaseType);
 
-            // Validate collection info
             CollectionInfoDTO collectionInfo = validationHelper.validateAndGetCollectionInfo(request.getCollectionInfo());
 
-            // Update API entity
             executionHelper.updateApiEntity(api, request, sourceObjectDTO, collectionInfo, performedBy);
-
-            // Clear and recreate relationships
             executionHelper.clearApiRelationships(api);
 
-            // Get the appropriate parameter generator
             DatabaseParameterGeneratorUtil parameterGenerator = parameterGeneratorFactory.getGenerator(databaseType);
-
-            // Recreate relationships
             executionHelper.recreateApiRelationships(api, request, sourceObjectDTO,
                     parameterGenerator, conversionHelper);
 
-            // Set the original sourceRequestId back
             api.setSourceRequestId(originalSourceRequestId);
-
-            // Ensure database type is preserved
             api.setDatabaseType(databaseType);
+
+            // CRITICAL: Store custom query information in the API entity
+            if (Boolean.TRUE.equals(request.getUseCustomQuery()) ||
+                    (request.getCustomSelectStatement() != null && !request.getCustomSelectStatement().trim().isEmpty())) {
+
+                Map<String, Object> sourceObjectMap = api.getSourceObjectInfo();
+                if (sourceObjectMap == null) {
+                    sourceObjectMap = new HashMap<>();
+                }
+                sourceObjectMap.put("isCustomQuery", true);
+                sourceObjectMap.put("customSelectStatement", request.getCustomSelectStatement());
+                sourceObjectMap.put("useCustomQuery", true);
+                sourceObjectMap.put("objectType", "CUSTOM_QUERY");
+                sourceObjectMap.put("operation", "SELECT");
+                sourceObjectMap.put("databaseType", databaseType);
+                api.setSourceObjectInfo(sourceObjectMap);
+
+                log.info("Stored custom query in API entity: {}",
+                        request.getCustomSelectStatement().substring(0, Math.min(100, request.getCustomSelectStatement().length())));
+            }
 
             GeneratedApiEntity savedApi = generatedAPIRepository.save(api);
             entityManager.flush();
 
-            // Update components
             componentHelper.updateComponents(
                     savedApi, performedBy, request, collectionInfo,
                     shouldRegenerateComponents(request),
@@ -326,13 +341,34 @@ public class AutomationEngineService {
     private ApiSourceObjectDTO convertAndValidateSourceObjectForGeneration(GenerateApiRequestDTO request,
                                                                            Object schemaService,
                                                                            String databaseType) {
+
+        // Check for custom query FIRST
+        if (Boolean.TRUE.equals(request.getUseCustomQuery()) ||
+                (request.getCustomSelectStatement() != null && !request.getCustomSelectStatement().trim().isEmpty())) {
+
+            log.info("Processing custom SELECT statement for API generation");
+
+            Map<String, Object> sourceObjectMap = request.getSourceObject();
+            if (sourceObjectMap == null) {
+                sourceObjectMap = new HashMap<>();
+            }
+            sourceObjectMap.put("customSelectStatement", request.getCustomSelectStatement());
+            sourceObjectMap.put("objectType", "CUSTOM_QUERY");
+            sourceObjectMap.put("operation", "SELECT");
+            sourceObjectMap.put("databaseType", databaseType);
+            sourceObjectMap.put("isCustomQuery", true);
+            sourceObjectMap.put("useCustomQuery", true);
+
+            return conversionHelper.convertAndValidateSourceObjectForCustomQuery(
+                    sourceObjectMap, objectMapper, databaseType, customQueryParserUtil
+            );
+        }
+
+        // Regular database object flow
         if ("postgresql".equalsIgnoreCase(databaseType)) {
-            // For PostgreSQL, use PostgreSQL-specific conversion
-            // Pass null for OracleSchemaService as it's not needed for PostgreSQL
             return conversionHelper.convertAndValidateSourceObject(
                     request.getSourceObject(), null, objectMapper);
         } else {
-            // Default to Oracle
             if (!(schemaService instanceof OracleSchemaService)) {
                 throw new IllegalArgumentException("Expected OracleSchemaService for Oracle database type");
             }
@@ -350,13 +386,33 @@ public class AutomationEngineService {
     private ApiSourceObjectDTO convertAndValidateSourceObjectForUpdate(GenerateApiRequestDTO request,
                                                                        Object schemaService,
                                                                        String databaseType) {
+        // Check for custom query FIRST
+        if (Boolean.TRUE.equals(request.getUseCustomQuery()) ||
+                (request.getCustomSelectStatement() != null && !request.getCustomSelectStatement().trim().isEmpty())) {
+
+            log.info("Processing custom SELECT statement for API update");
+
+            Map<String, Object> sourceObjectMap = request.getSourceObject();
+            if (sourceObjectMap == null) {
+                sourceObjectMap = new HashMap<>();
+            }
+            sourceObjectMap.put("customSelectStatement", request.getCustomSelectStatement());
+            sourceObjectMap.put("objectType", "CUSTOM_QUERY");
+            sourceObjectMap.put("operation", "SELECT");
+            sourceObjectMap.put("databaseType", databaseType);
+            sourceObjectMap.put("isCustomQuery", true);
+            sourceObjectMap.put("useCustomQuery", true);
+
+            return conversionHelper.convertAndValidateSourceObjectForCustomQuery(
+                    sourceObjectMap, objectMapper, databaseType, customQueryParserUtil
+            );
+        }
+
+        // Regular database object flow
         if ("postgresql".equalsIgnoreCase(databaseType)) {
-            // For PostgreSQL, use PostgreSQL-specific conversion
-            // You might need to inject a PostgreSQL-specific conversion helper
             return conversionHelper.convertAndValidateSourceObject(
                     request.getSourceObject(), null, objectMapper);
         } else {
-            // Default to Oracle
             if (!(schemaService instanceof OracleSchemaService)) {
                 throw new IllegalArgumentException("Expected OracleSchemaService for Oracle database type");
             }

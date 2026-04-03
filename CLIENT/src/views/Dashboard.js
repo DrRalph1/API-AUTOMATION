@@ -1443,6 +1443,17 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
           theme={theme}
           authToken={authToken}
           databaseType="all"
+          showGenerateApiButton={true}
+          onQueryExecute={(sql, response) => {
+            console.log('Query executed:', sql);
+            // Optional: handle query execution results
+          }}
+          onGenerateApiFromQuery={(sql, databaseType, namedParams) => {
+            console.log('Generating API from query:', sql);
+            console.log('Database type:', databaseType);
+            console.log('Named parameters:', namedParams);
+          }}
+          onRefreshApis={handleApiUpdate}  // ← ADD THIS - Pass the refresh function
         />
       )}
     </div>

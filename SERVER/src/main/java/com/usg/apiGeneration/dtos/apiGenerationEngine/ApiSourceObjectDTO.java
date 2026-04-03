@@ -5,6 +5,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+import java.util.Map;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -13,7 +16,7 @@ public class ApiSourceObjectDTO {
 
     // Original object info
     private String objectName;
-    private String objectType;
+    private String objectType;  // TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, CUSTOM_QUERY
     private String owner;
     private String operation; // SELECT, INSERT, UPDATE, DELETE, EXECUTE
 
@@ -31,6 +34,23 @@ public class ApiSourceObjectDTO {
     private String packageProcedure;
     private String packageProcedureType; // PROCEDURE or FUNCTION
 
+    // ============ NEW FIELDS FOR CUSTOM SELECT STATEMENTS ============
+    // For custom SELECT statement (instead of table/view)
+    private String customSelectStatement;  // The actual SELECT SQL query
+    private String queryAlias;              // Alias for the query (used in API naming)
+    private List<QueryColumnDTO> queryColumns;  // Parsed column metadata
+    private List<String> sourceTables;      // Tables referenced in the query
+    private String fromClause;              // Extracted FROM clause
+    private String whereClause;             // Extracted WHERE clause
+    private String groupByClause;           // Extracted GROUP BY clause
+    private String havingClause;            // Extracted HAVING clause
+    private String orderByClause;           // Extracted ORDER BY clause
+    private Boolean isDynamicQuery;         // Whether query has dynamic parameters
+    private List<String> parameterMarkers;  // Named parameters in the query (e.g., :paramName)
+
+    // For parameter extraction from custom queries
+    private List<ApiParameterDTO> extractedParameters;
+
     // Object metadata
     private Integer columnCount;
     private Integer parameterCount;
@@ -44,6 +64,10 @@ public class ApiSourceObjectDTO {
 
     // Helper method to get effective object type (resolves synonyms)
     public String getEffectiveObjectType() {
+        // If this is a custom query, return CUSTOM_QUERY as the effective type
+        if (customSelectStatement != null && !customSelectStatement.trim().isEmpty()) {
+            return "CUSTOM_QUERY";
+        }
         if (Boolean.TRUE.equals(isSynonym) && targetType != null) {
             return targetType;
         }
@@ -52,6 +76,9 @@ public class ApiSourceObjectDTO {
 
     // Helper method to get effective object name (resolves synonyms)
     public String getEffectiveObjectName() {
+        if (customSelectStatement != null && !customSelectStatement.trim().isEmpty()) {
+            return queryAlias != null ? queryAlias : "custom_query";
+        }
         if (Boolean.TRUE.equals(isSynonym) && targetName != null) {
             return targetName;
         }
@@ -60,10 +87,18 @@ public class ApiSourceObjectDTO {
 
     // Helper method to get effective owner (resolves synonyms)
     public String getEffectiveOwner() {
+        if (customSelectStatement != null && !customSelectStatement.trim().isEmpty()) {
+            return schemaName != null ? schemaName : "public";
+        }
         if (Boolean.TRUE.equals(isSynonym) && targetOwner != null) {
             return targetOwner;
         }
         return owner;
+    }
+
+    // Check if this is a custom query
+    public boolean isCustomQuery() {
+        return customSelectStatement != null && !customSelectStatement.trim().isEmpty();
     }
 
     // Check if this is a DML operation (INSERT/UPDATE/DELETE)

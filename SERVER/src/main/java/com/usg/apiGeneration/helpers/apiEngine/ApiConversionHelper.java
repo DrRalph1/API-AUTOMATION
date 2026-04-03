@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiGeneration.dtos.apiGenerationEngine.*;
 import com.usg.apiGeneration.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiGeneration.services.schemaBrowser.OracleSchemaService;
+import com.usg.apiGeneration.utils.apiEngine.generator.CustomQueryParserUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -1081,4 +1082,70 @@ public class ApiConversionHelper {
 
         return mappings;
     }
+
+
+    /**
+     * Convert and validate source object that might contain a custom SELECT statement
+     */
+    public ApiSourceObjectDTO convertAndValidateSourceObjectForCustomQuery(Map<String, Object> sourceObject,
+                                                                           ObjectMapper objectMapper,
+                                                                           String databaseType,
+                                                                           CustomQueryParserUtil queryParserUtil) {
+        ApiSourceObjectDTO dto = convertAndValidateSourceObject(sourceObject, null, objectMapper);
+
+        // Check if this is a custom query
+        if (sourceObject.containsKey("customSelectStatement")) {
+            String customQuery = (String) sourceObject.get("customSelectStatement");
+
+            if (customQuery != null && !customQuery.trim().isEmpty()) {
+                dto.setCustomSelectStatement(customQuery);
+                dto.setObjectType("CUSTOM_QUERY");
+                dto.setOperation("SELECT");
+
+                // Parse the query to extract metadata
+                Map<String, Object> parsedMetadata = queryParserUtil.parseCustomQuery(customQuery, databaseType);
+
+                // Set extracted metadata
+                dto.setQueryColumns((List<QueryColumnDTO>) parsedMetadata.get("columns"));
+                dto.setSourceTables((List<String>) parsedMetadata.get("sourceTables"));
+                dto.setFromClause((String) parsedMetadata.get("fromClause"));
+                dto.setWhereClause((String) parsedMetadata.get("whereClause"));
+                dto.setGroupByClause((String) parsedMetadata.get("groupByClause"));
+                dto.setHavingClause((String) parsedMetadata.get("havingClause"));
+                dto.setOrderByClause((String) parsedMetadata.get("orderByClause"));
+                dto.setColumnCount((Integer) parsedMetadata.get("columnCount"));
+                dto.setParameterCount(((List<QueryParameterDTO>) parsedMetadata.get("parameters")).size());
+                dto.setQueryAlias((String) parsedMetadata.get("queryAlias"));
+                dto.setIsDynamicQuery((Boolean) parsedMetadata.get("hasParameters"));
+
+                // Convert extracted parameters to ApiParameterDTO list
+                List<ApiParameterDTO> extractedParams = convertQueryParametersToApiParameters(
+                        (List<QueryParameterDTO>) parsedMetadata.get("parameters")
+                );
+                dto.setExtractedParameters(extractedParams);
+            }
+        }
+
+        return dto;
+    }
+
+    /**
+     * Convert QueryParameterDTO to ApiParameterDTO
+     */
+    private List<ApiParameterDTO> convertQueryParametersToApiParameters(List<QueryParameterDTO> queryParams) {
+        if (queryParams == null) return new ArrayList<>();
+
+        return queryParams.stream()
+                .map(qp -> ApiParameterDTO.builder()
+                        .key(qp.getParameterName())
+                        .parameterType(qp.getDataType())
+                        .parameterLocation("query") // Default to query parameter
+                        .required(qp.getIsRequired())
+                        .description(qp.getDescription())
+                        .defaultValue(qp.getDefaultValue())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+
 }

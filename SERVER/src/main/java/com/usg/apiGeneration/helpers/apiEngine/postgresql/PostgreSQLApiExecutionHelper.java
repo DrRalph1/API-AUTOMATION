@@ -7,6 +7,7 @@ import com.usg.apiGeneration.helpers.apiEngine.ApiConversionHelper;
 import com.usg.apiGeneration.helpers.apiEngine.ApiResponseHelper;
 import com.usg.apiGeneration.utils.LoggerUtil;
 import com.usg.apiGeneration.utils.apiEngine.DatabaseParameterGeneratorUtil;
+import com.usg.apiGeneration.utils.apiEngine.executor.CustomQueryExecutionHelper;
 import com.usg.apiGeneration.utils.apiEngine.executor.postgresql.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +26,7 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
     private final PostgreSQLViewExecutorUtil postgreSQLViewExecutorUtil;
     private final PostgreSQLProcedureExecutorUtil postgreSQLProcedureExecutorUtil;
     private final PostgreSQLFunctionExecutorUtil postgreSQLFunctionExecutorUtil;
+    private final CustomQueryExecutionHelper customQueryExecutionHelper;
 
     @Autowired
     @Qualifier("postgresqlJdbcTemplate")
@@ -38,13 +40,14 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
             PostgreSQLTableExecutorUtil postgreSQLTableExecutorUtil,
             PostgreSQLViewExecutorUtil postgreSQLViewExecutorUtil,
             PostgreSQLProcedureExecutorUtil postgreSQLProcedureExecutorUtil,
-            PostgreSQLFunctionExecutorUtil postgreSQLFunctionExecutorUtil,
+            PostgreSQLFunctionExecutorUtil postgreSQLFunctionExecutorUtil, CustomQueryExecutionHelper customQueryExecutionHelper,
             @Qualifier("postgresqlJdbcTemplate") JdbcTemplate postgresqlJdbcTemplate) {
         super(responseHelper, loggerUtil, conversionHelper, transactionTemplate);
         this.postgreSQLTableExecutorUtil = postgreSQLTableExecutorUtil;
         this.postgreSQLViewExecutorUtil = postgreSQLViewExecutorUtil;
         this.postgreSQLProcedureExecutorUtil = postgreSQLProcedureExecutorUtil;
         this.postgreSQLFunctionExecutorUtil = postgreSQLFunctionExecutorUtil;
+        this.customQueryExecutionHelper = customQueryExecutionHelper;
         this.postgresqlJdbcTemplate = postgresqlJdbcTemplate;
     }
 
@@ -146,6 +149,16 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
 
         log.info("Executing PostgreSQL operation for API: {}", api.getId());
 
+        // ============ CHECK FOR CUSTOM QUERY FIRST ============
+        // This won't affect existing flow since isCustomQuery() returns false for regular objects
+        if (sourceObject != null && sourceObject.isCustomQuery()) {
+            log.info("Executing custom SELECT query for PostgreSQL API: {}", api.getApiCode());
+            return customQueryExecutionHelper.executeCustomQuery(
+                    api, sourceObject, validatedRequest, configuredParamDTOs, postgresqlJdbcTemplate
+            );
+        }
+
+        // ============ EXISTING LOGIC FOR REGULAR DATABASE OBJECTS ============
         ApiSchemaConfigEntity schemaConfig = api.getSchemaConfig();
         if (schemaConfig == null) {
             throw new RuntimeException("Schema configuration not found for PostgreSQL API");

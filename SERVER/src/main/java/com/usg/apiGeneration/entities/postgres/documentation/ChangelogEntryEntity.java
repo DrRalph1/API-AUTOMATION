@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.Type;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -16,7 +17,6 @@ import java.util.List;
 public class ChangelogEntryEntity {
 
     @Id
-//    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
     @Column(name = "api_id")
@@ -43,7 +43,7 @@ public class ChangelogEntryEntity {
     @ElementCollection
     @CollectionTable(name = "tb_doc_changelog_changes",
             joinColumns = @JoinColumn(name = "changelog_entry_id"))
-    @Column(name = "change_description", length = 2000)
+    @Column(name = "change_description", columnDefinition = "TEXT")  // Change this line
     private List<String> changes = new ArrayList<>();
 
     @Column(name = "created_at")

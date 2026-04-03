@@ -7,7 +7,7 @@ import {
   FileText, Code, Database, Layers, Eye, EyeOff, ChevronRight, Info,
   Check, Zap, Sparkles, Folder, FolderOpen, Settings, Wrench, Table,
   View, Wrench as FunctionIcon, Package, Link as LinkIcon, GitBranch,
-  GripHorizontal, GripVertical, Maximize, Beaker, ArrowLeft
+  GripHorizontal, GripVertical, Maximize, Beaker, ArrowLeft, Wand2 
 } from 'lucide-react';
 import ApiGenerationModal from './ApiGenerationModal.js';
 
@@ -846,15 +846,14 @@ const PreviewDDLModal = ({
   const [isTestMode, setIsTestMode] = useState(false);
   const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
 
-  // ── NEW: API Generation modal state ──────────────────────────────────────
+  // API Generation modal state
   const [showApiModal, setShowApiModal] = useState(false);
-  // ─────────────────────────────────────────────────────────────────────────
+  const [showCustomQueryApiModal, setShowCustomQueryApiModal] = useState(false);
+  const [customQueryForApi, setCustomQueryForApi] = useState('');
+  const [extractedParamsForApi, setExtractedParamsForApi] = useState([]);
   
   // Modal resize state
-  const [modalSize, setModalSize] = useState({
-    width: 1200,
-    height: 700
-  });
+  const [modalSize, setModalSize] = useState({ width: 1200, height: 700 });
   const [isResizing, setIsResizing] = useState(false);
   const [resizeDirection, setResizeDirection] = useState(null);
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
@@ -871,7 +870,6 @@ const PreviewDDLModal = ({
   const [isUndoRedoAction, setIsUndoRedoAction] = useState(false);
   
   // Refs
-  const editorRef = useRef(null);
   const lineNumbersRef = useRef(null);
   const findInputRef = useRef(null);
   const replaceInputRef = useRef(null);
@@ -883,8 +881,6 @@ const PreviewDDLModal = ({
   
   // Get database configuration
   const dbConfig = DATABASE_CONFIGS[databaseType] || DATABASE_CONFIGS.postgresql;
-  
-  // Get object templates for current database
   const objectTemplates = OBJECT_TEMPLATES[databaseType] || OBJECT_TEMPLATES.postgresql;
   
   // Theme colors
@@ -906,6 +902,73 @@ const PreviewDDLModal = ({
     white: '#ffffff',
     codeBg: theme === 'dark' ? 'rgb(13 17 23)' : '#f1f5f9'
   };
+
+  // Function to extract parameters from SQL query
+  const extractQueryParameters = (sqlQuery) => {
+    const paramRegex = /:(\w+)/g;
+    const matches = [];
+    let match;
+    while ((match = paramRegex.exec(sqlQuery)) !== null) {
+      if (!matches.includes(match[1])) {
+        matches.push(match[1]);
+      }
+    }
+    
+    return matches.map((param, index) => ({
+      key: param,
+      parameterName: param,
+      dataType: 'VARCHAR2',
+      required: true,
+      description: `Parameter: ${param}`,
+      parameterLocation: 'query',
+      position: index
+    }));
+  };
+
+  // Function to handle generating API from the current query (CUSTOM QUERY)
+  const handleGenerateApiFromQuery = () => {
+    const currentQuery = getSQLToExecute();
+    
+    if (!currentQuery || !currentQuery.trim()) {
+      setCompilationResult({
+        success: false,
+        message: 'Cannot generate API',
+        error: 'No SQL query found. Please enter a SELECT query in the editor.',
+        output: ''
+      });
+      setTimeout(() => setCompilationResult(null), 3000);
+      return;
+    }
+    
+    const trimmedQuery = currentQuery.trim();
+    if (!/^\s*SELECT\b/i.test(trimmedQuery)) {
+      setCompilationResult({
+        success: false,
+        message: 'Cannot generate API',
+        error: 'Only SELECT statements can be used to generate APIs.',
+        output: ''
+      });
+      setTimeout(() => setCompilationResult(null), 3000);
+      return;
+    }
+    
+    // Extract parameters from the query
+    const params = extractQueryParameters(trimmedQuery);
+    
+    setCustomQueryForApi(trimmedQuery);
+    setExtractedParamsForApi(params);
+    setShowCustomQueryApiModal(true);
+  };
+  
+  // Function to handle generating API from the selected database object
+  const handleGenerateApiFromObject = () => {
+    setShowApiModal(true);
+  };
+
+  
+  
+  // Refs
+  const editorRef = useRef(null);
   
   // Helper function to stop propagation for editor-specific keys
   const stopPropagationForEditorKeys = (e) => {
@@ -1594,7 +1657,7 @@ const PreviewDDLModal = ({
     if (response && typeof response === 'object') {
       // Handle CALL statement responses (has statementType === 'CALL')
       if (response.statementType === 'CALL') {
-        success = response.responseCode === 200;
+        success = response.responseCode === 200 || response.success === true;
         message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
         
         // Extract the actual data from the response.data field
@@ -1619,7 +1682,7 @@ const PreviewDDLModal = ({
       }
       // Handle SELECT query responses with rows
       else if (response.data && response.data.rows !== undefined) {
-        success = response.responseCode === 200;
+        success = response.responseCode === 200 || response.success === true;
         message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
         
         if (response.data.rows && response.data.rows.length > 0) {
@@ -1660,7 +1723,7 @@ const PreviewDDLModal = ({
       }
       // Handle response with 'responseCode' property
       else if (response.hasOwnProperty('responseCode')) {
-        success = response.responseCode === 200;
+        success = response.responseCode === 200 || response.success === true;
         message = response.message || (success ? 'Execution completed successfully' : 'Execution failed');
         
         if (response.data) {
@@ -1884,6 +1947,9 @@ const PreviewDDLModal = ({
     addToHistory(formatted);
     setTimeout(() => restoreSelection(), 0);
   };
+  
+   // Check if current query is a SELECT statement
+  const isSelectQuery = /^\s*SELECT\b/i.test(editorContent.trim());
   
   if (typeof window === 'undefined') return null;
   if (!mounted) return null;
@@ -2359,9 +2425,11 @@ const PreviewDDLModal = ({
               />
             </label>
           </div>
-          
-          {/* Right side — Download | Generate API | Execute | Save | Close */}
+        
+
+       {/* Right side — Action Buttons */}
           <div className="flex items-center gap-2">
+
             {/* <button
               onClick={handleDownload}
               className="px-4 py-2 rounded-lg text-sm hover-lift transition-colors flex items-center gap-2"
@@ -2371,21 +2439,38 @@ const PreviewDDLModal = ({
               Download
             </button> */}
 
-            {/* ── Generate API button ── */}
-            <button
-              onClick={() => setShowApiModal(true)}
-              disabled={!selectedObject}
-              className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2 disabled:opacity-50"
-              style={{
-                background: 'linear-gradient(to right, #3b82f6, #8b5cf6)',
-                color: '#ffffff'
-              }}
-              title="Generate API from this object"
-            >
-              <Sparkles size={14} />
-              Generate API
-            </button>
-
+            {/* Generate API from Database Object button - only show if an object is selected */}
+            {selectedObject && (
+              <button
+                onClick={handleGenerateApiFromObject}
+                className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
+                style={{
+                  background: 'linear-gradient(to right, #3b82f6, #8b5cf6)',
+                  color: '#ffffff'
+                }}
+                title="Generate API from this database object"
+              >
+                <Sparkles size={14} />
+                Generate API from Object
+              </button>
+            )}
+            
+            {/* Generate API from Custom Query button - only show if editor contains a SELECT query */}
+            {isSelectQuery && editorContent.trim() && (
+              <button
+                onClick={handleGenerateApiFromQuery}
+                className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
+                style={{
+                  background: 'linear-gradient(to right, #10b981, #3b82f6)',
+                  color: '#ffffff'
+                }}
+                title="Generate API from this SQL query"
+              >
+                <Wand2 size={14} />
+                Generate API from Query
+              </button>
+            )}
+            
             <button
               onClick={handleCompile}
               disabled={isCompiling}
@@ -2395,6 +2480,8 @@ const PreviewDDLModal = ({
               {isCompiling ? <Loader size={14} className="animate-spin" /> : <Play size={14} />}
               Execute
             </button>
+
+
             {/* <button
               onClick={handleSave}
               disabled={isCompiling}
@@ -2404,6 +2491,7 @@ const PreviewDDLModal = ({
               <Save size={14} />
               Save
             </button> */}
+            
             <button
               onClick={onClose}
               className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
@@ -2414,10 +2502,9 @@ const PreviewDDLModal = ({
             </button>
           </div>
         </div>
-        {/* ───────────────────────────────────────────────────────────────────── */}
       </div>
 
-      {/* ── API Generation Modal ─────────────────────────────────────────────── */}
+      {/* API Generation Modal for Database Object */}
       {showApiModal && (
         <ApiGenerationModal
           isOpen={showApiModal}
@@ -2429,9 +2516,39 @@ const PreviewDDLModal = ({
           databaseType={databaseType}
           obType={selectedObject?.type}
           isEditing={false}
+          onGenerateAPI={(apiData) => {
+            console.log('API generated from object:', apiData);
+            setShowApiModal(false);
+            // Call a refresh function passed from parent if available
+            if (onRefreshApis) {
+              onRefreshApis();
+            }
+          }}
         />
       )}
-      {/* ───────────────────────────────────────────────────────────────────── */}
+
+      {/* For Custom Query API Generation */}
+      {showCustomQueryApiModal && (
+        <ApiGenerationModal
+          isOpen={showCustomQueryApiModal}
+          onClose={() => setShowCustomQueryApiModal(false)}
+          colors={themeColors}
+          theme={theme}
+          authToken={authToken}
+          databaseType={databaseType}
+          isCustomQuery={true}
+          customQueryText={customQueryForApi}
+          extractedParams={extractedParamsForApi}
+          onGenerateAPI={(apiData, response) => {
+            console.log('API generated from custom query:', apiData);
+            setShowCustomQueryApiModal(false);
+            // Call a refresh function passed from parent if available
+            if (onRefreshApis) {
+              onRefreshApis();
+            }
+          }}
+        />
+      )}
     </div>,
     document.body
   );

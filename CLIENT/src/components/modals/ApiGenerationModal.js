@@ -12,7 +12,7 @@ import {
   BellOff, ShieldOff, Clock as ClockIcon, BarChart, Cpu as CpuIcon,
   Server, Cloud, CloudOff, FileCode, BookOpen, FileKey, GitBranch,
   Folder, FolderOpen, FolderTree, Layers as LayersIcon, Archive,
-  Edit, Edit3, Asterisk, Table, ChevronLeft
+  Edit, Edit3, Asterisk, Table, ChevronLeft, Wand2
 } from 'lucide-react';
 
 // Import the API Generation Engine controller functions
@@ -1804,7 +1804,7 @@ export default function ApiGenerationModal({
   isOpen,
   onClose,
   onSave,
-  onGenerateAPI,  // Add this prop
+  onGenerateAPI,
   selectedObject = null,
   colors = {},
   obType,
@@ -1812,8 +1812,526 @@ export default function ApiGenerationModal({
   databaseType,
   authToken = null,
   isEditing = false,
-  fromDashboard = false // NEW: Flag to indicate if modal is opened from dashboard
+  fromDashboard = false,
+  // NEW: Custom query mode props
+  isCustomQuery = false,
+  customQueryText = '',
+  extractedParams = []
 }) {
+
+  // Add this state to track source type
+  const [sourceType, setSourceType] = useState(isCustomQuery ? 'custom_query' : 'database_object');
+  const [customQuery, setCustomQuery] = useState(customQueryText);
+  
+  // Add a state to track if we're editing a custom query
+  const [isEditingCustomQuery, setIsEditingCustomQuery] = useState(false);
+  const [originalCustomQuery, setOriginalCustomQuery] = useState('');
+
+  // ============ DETECT CUSTOM QUERY IN EDIT MODE ============
+  // This effect runs when editing an existing API to check if it's a custom query
+  useEffect(() => {
+  if (isEditing && selectedObject && !isCustomQuery) {
+    // Check if the selected object has custom query data
+    const sourceObj = selectedObject.sourceObject || selectedObject;
+    
+    // Check various places where custom query might be stored
+    const hasCustomQuery = 
+      sourceObj?.type === 'CUSTOM_QUERY' ||
+      sourceObj?.isCustomQuery === true ||
+      selectedObject?.isCustomQuery === true ||
+      selectedObject?.useCustomQuery === true ||
+      selectedObject?.customSelectStatement ||
+      sourceObj?.query ||
+      selectedObject?.sourceObject?.customSelectStatement ||
+      selectedObject?.isCustomQuery === 'true' ||
+      selectedObject?.data?.isCustomQuery === true;
+    
+    if (hasCustomQuery) {
+      console.log('🔍 Editing existing custom query API detected');
+      setIsEditingCustomQuery(true);
+      setSourceType('custom_query'); // <-- CRITICAL: Set sourceType here
+      
+      // Extract the custom query text from various possible locations
+      let extractedQuery = 
+        selectedObject?.customSelectStatement ||
+        selectedObject?.sourceObject?.customSelectStatement ||
+        sourceObj?.customSelectStatement ||
+        sourceObj?.query ||
+        selectedObject?.customQueryText ||
+        selectedObject?.data?.customSelectStatement ||
+        '';
+      
+      setOriginalCustomQuery(extractedQuery);
+      setCustomQuery(extractedQuery);
+      
+      console.log('📝 Extracted custom query:', extractedQuery.substring(0, 100));
+      
+      // Extract parameters if available
+      if (selectedObject?.parameters && selectedObject.parameters.length > 0) {
+        const extractedParamsList = selectedObject.parameters.map((param, index) => ({
+          id: param.id || `param-${Date.now()}-${index}`,
+          key: param.key,
+          dbColumn: param.dbColumn || param.key,
+          oracleType: param.oracleType || 'VARCHAR2',
+          apiType: param.apiType || 'string',
+          parameterLocation: param.parameterLocation || 'query',
+          required: param.required !== undefined ? param.required : true,
+          description: param.description || `Parameter: ${param.key}`,
+          example: param.example || '',
+          validationPattern: param.validationPattern || '',
+          defaultValue: param.defaultValue || '',
+          inBody: param.parameterLocation === 'body',
+          isPrimaryKey: param.isPrimaryKey || false,
+          paramMode: param.paramMode || 'IN'
+        }));
+        setParameters(extractedParamsList);
+      }
+      
+      // Auto-generate API name from query if not set
+      if (!apiDetails.apiName && extractedQuery) {
+        const generatedName = generateApiNameFromQuery(extractedQuery);
+        setApiDetails(prev => ({
+          ...prev,
+          apiName: generatedName,
+          description: `API generated from custom query: ${extractedQuery.substring(0, 100)}...`
+        }));
+      }
+    }
+  }
+}, [isEditing, selectedObject, isCustomQuery]);
+
+  // Initialize extracted parameters when in custom query mode (for new APIs)
+  useEffect(() => {
+    if (isCustomQuery && extractedParams.length > 0) {
+      // Convert extracted params to the parameter format expected by the modal
+      const paramsWithIds = extractedParams.map((param, index) => ({
+        id: `param-${Date.now()}-${index}`,
+        key: param.key || param.parameterName,
+        dbColumn: param.dbColumn || param.parameterName,
+        oracleType: param.dataType || 'VARCHAR2',
+        apiType: 'string',
+        parameterLocation: param.parameterLocation || 'query',
+        required: param.required !== undefined ? param.required : true,
+        description: param.description || `Parameter: ${param.key || param.parameterName}`,
+        example: param.example || '',
+        validationPattern: param.validationPattern || '',
+        defaultValue: param.defaultValue || '',
+        inBody: false,
+        isPrimaryKey: false,
+        paramMode: 'IN'
+      }));
+      setParameters(paramsWithIds);
+      
+      // Auto-generate API name from query
+      const generatedName = generateApiNameFromQuery(customQuery);
+      setApiDetails(prev => ({
+        ...prev,
+        apiName: generatedName,
+        apiCode: generatedName.toUpperCase().replace(/\s+/g, '_'),
+        description: `API generated from custom query: ${customQuery.substring(0, 100)}...`
+      }));
+    }
+  }, [isCustomQuery, extractedParams, customQuery]);
+
+  // Helper function to generate API name from query
+  const generateApiNameFromQuery = (sqlQuery) => {
+    // Try to extract table names from the query
+    const fromMatch = sqlQuery?.match(/FROM\s+([^\s,]+)/i);
+    if (fromMatch) {
+      const tableName = fromMatch[1];
+      return `Get ${tableName} Data`;
+    }
+    return 'Custom Query API';
+  };
+
+  // Update the validateRequiredFields function to handle custom query mode
+  const validateRequiredFields = () => {
+    const errors = {};
+
+    // Check collection and folder
+    if (!selectedCollection) {
+      errors.collection = 'API Collection is required';
+    }
+    if (!selectedFolder) {
+      errors.folder = 'API Folder is required';
+    }
+
+    // Check API details
+    if (!apiDetails.apiName?.trim()) {
+      errors.apiName = 'API Name is required';
+    }
+    if (!apiDetails.apiCode?.trim()) {
+      errors.apiCode = 'API Code is required';
+    }
+    if (!apiDetails.endpointPath?.trim()) {
+      errors.endpointPath = 'Endpoint Path is required';
+    }
+
+    // For custom queries, check that there's a query
+    if ((isCustomQuery || sourceType === 'custom_query' || isEditingCustomQuery) && !customQuery?.trim()) {
+      errors.customQuery = 'Custom SELECT statement is required';
+    }
+
+    // For database objects (not custom queries), check schema config
+    if (!isCustomQuery && !isEditingCustomQuery && !isEditing && selectedDbObject) {
+      if (!schemaConfig.schemaName?.trim()) {
+        errors.schemaName = 'Schema Name is required';
+      }
+      if (!schemaConfig.objectName?.trim()) {
+        errors.objectName = 'Object Name is required';
+      }
+    }
+
+    // Check authentication specific required fields
+    if (authConfig.authType === 'apiKey') {
+      if (!authConfig.apiKeyHeader?.trim()) {
+        errors.apiKeyHeader = 'API Key Header is required';
+      }
+      if (!authConfig.apiSecretHeader?.trim()) {
+        errors.apiSecretHeader = 'API Secret Header is required';
+      }
+    } else if (authConfig.authType === 'bearer') {
+      if (!authConfig.jwtIssuer?.trim()) {
+        errors.jwtIssuer = 'JWT Issuer is required';
+      }
+    } else if (authConfig.authType === 'basic') {
+      if (!authConfig.basicUsername?.trim()) {
+        errors.basicUsername = 'Username is required';
+      }
+      if (!authConfig.basicPassword?.trim()) {
+        errors.basicPassword = 'Password is required';
+      }
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Update the handleSave function to handle custom query mode (including editing)
+  const handleSave = () => {
+  // Validate all required fields
+  if (!validateRequiredFields()) {
+    // Show first tab with errors
+    if (validationErrors.collection || validationErrors.folder) {
+      setActiveTab('definition');
+    } else if (validationErrors.apiName || validationErrors.apiCode || validationErrors.endpointPath) {
+      setActiveTab('definition');
+    } else if (validationErrors.customQuery) {
+      setActiveTab('request');
+    } else if (!isCustomQuery && !isEditingCustomQuery && !isEditing && (validationErrors.schemaName || validationErrors.objectName)) {
+      setActiveTab('schema');
+    } else if (authConfig.authType !== 'none') {
+      setActiveTab('auth');
+    }
+    
+    alert('Please fill in all required fields marked with *');
+    return;
+  }
+
+  if (!isEditing && apiCodeExists) {
+    alert(`❌ Cannot generate API\n\nAn API with code "${apiDetails.apiCode}" already exists.\nPlease choose a different API code to continue.`);
+    setActiveTab('definition');
+    return;
+  }
+
+  if (!selectedCollection || !selectedFolder) {
+    alert('Please select both a collection and folder');
+    setActiveTab('definition');
+    return;
+  }
+
+  // Determine if this is a custom query
+  const isCustomQueryMode = isCustomQuery || sourceType === 'custom_query' || isEditingCustomQuery;
+  
+  // Get the API ID for editing mode
+  let apiId = `api-${Date.now()}`;
+  if (isEditing) {
+    // Try to get the ID from various possible locations
+    apiId = selectedObject?.id || 
+            selectedObject?.data?.id || 
+            selectedObject?.apiId ||
+            selectedObject?._id ||
+            `api-${Date.now()}`;
+  }
+
+  // Prepare the API data object
+  const apiData = {
+    id: apiId,
+    ...apiDetails,
+    
+    // For custom query mode, include the query and flag
+    isCustomQuery: isCustomQueryMode,
+    customSelectStatement: isCustomQueryMode ? customQuery : null,
+    useCustomQuery: isCustomQueryMode,
+    
+    // For database objects (not custom queries)
+    schemaConfig: (!isCustomQueryMode && sourceType === 'database_object') ? {
+      ...schemaConfig,
+      databaseType: currentDatabaseType
+    } : null,
+    
+    // Collection and folder information
+    collectionInfo: {
+      collectionId: selectedCollection.id,
+      collectionName: selectedCollection.name,
+      collectionType: selectedCollection.type,
+      isNewCollection: isAddingNewCollection,
+      folderId: selectedFolder.id,
+      folderName: selectedFolder.name,
+      isNewFolder: selectedFolder.id?.startsWith('new-folder-')
+    },
+    
+    // Parameters - only IN parameters (including IN/OUT)
+    parameters: getInParameters().map(p => ({
+      ...p,
+      id: p.id || `param-${Date.now()}-${Math.random()}`,
+      inBody: p.parameterLocation === 'body',
+      paramMode: p.paramMode || 'IN'
+    })),
+    
+    // Response mappings - OUT parameters and response fields
+    responseMappings: getOutMappings().map(m => ({
+      ...m,
+      id: m.id || `mapping-${Date.now()}-${Math.random()}`,
+      includeInResponse: m.includeInResponse !== undefined ? m.includeInResponse : true,
+      inResponse: m.inResponse !== undefined ? m.inResponse : true,
+      paramMode: m.paramMode || 'OUT'
+    })),
+    
+    // Request body configuration
+    requestBody: {
+      ...requestBody,
+      bodyType: requestBody.bodyType || 'none'
+    },
+    
+    // Response body configuration
+    responseBody: {
+      ...responseBody,
+      successSchema: responseBody.successSchema || '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}',
+      errorSchema: responseBody.errorSchema || '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}'
+    },
+    
+    // Authentication configuration
+    authConfig: {
+      ...authConfig,
+      authType: authConfig.authType || 'none'
+    },
+    
+    // Headers
+    headers: headers.map(h => ({
+      ...h,
+      id: h.id || `header-${Date.now()}-${Math.random()}`
+    })),
+    
+    // Settings
+    settings: {
+      ...settings,
+      timeout: settings.timeout || 30000,
+      maxRecords: settings.maxRecords || 1000,
+      enableLogging: settings.enableLogging !== undefined ? settings.enableLogging : true,
+      logLevel: settings.logLevel || 'INFO'
+    },
+    
+    // Tests configuration
+    tests: {
+      ...tests,
+      testData: tests.testData || {},
+      testQueries: tests.testQueries || []
+    },
+    
+    // Source object information
+    sourceObject: isCustomQueryMode ? {
+      type: 'CUSTOM_QUERY',
+      query: customQuery,
+      databaseType: currentDatabaseType,
+      isCustomQuery: true
+    } : {
+      type: schemaConfig.objectType,
+      name: schemaConfig.objectName,
+      owner: schemaConfig.schemaName,
+      databaseType: currentDatabaseType,
+      isSynonym: sourceObjectInfo.isSynonym,
+      targetType: sourceObjectInfo.targetType,
+      targetName: sourceObjectInfo.targetName,
+      targetOwner: sourceObjectInfo.targetOwner
+    },
+    
+    // Validation result
+    validation: validationResult,
+    
+    // Flags
+    isEditing: isEditing,
+    customQueryText: isCustomQueryMode ? customQuery : null,
+    
+    // Timestamps
+    createdAt: isEditing ? (selectedObject?.createdAt || new Date().toISOString()) : new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    
+    // Database type
+    databaseType: currentDatabaseType,
+    
+    // Original custom query (for reference when editing)
+    originalCustomQuery: isEditingCustomQuery ? originalCustomQuery : null
+  };
+  
+  console.log('📦 Prepared API data for preview:', {
+    id: apiData.id,
+    name: apiData.apiName,
+    code: apiData.apiCode,
+    isCustomQuery: apiData.isCustomQuery,
+    isEditing: apiData.isEditing,
+    customQueryLength: apiData.customSelectStatement?.length || 0,
+    parametersCount: apiData.parameters.length,
+    mappingsCount: apiData.responseMappings.length
+  });
+  
+  setNewApiData(apiData);
+  setPreviewOpen(true);
+};
+
+  // Update the handlePreviewConfirm to send custom query data to the API (including edits)
+  const handlePreviewConfirm = async () => {
+    setPreviewOpen(false);
+    setLoadingOpen(true);
+    
+    try {
+      if (!selectedCollection || !selectedFolder) {
+        throw new Error('Collection and folder are required');
+      }
+
+      const actualDatabaseType = selectedDbObject?.databaseType || databaseType || 'oracle';
+      
+      const isCustomQueryMode = isCustomQuery || sourceType === 'custom_query' || isEditingCustomQuery;
+      
+      console.log('🚀 Generating/Updating API for:', isCustomQueryMode ? 'Custom Query' : 'Database Object');
+      console.log('📦 Database type:', actualDatabaseType);
+      console.log('📝 isEditing:', isEditing);
+      
+      // Prepare the request object
+      const generateRequest = {
+        apiName: apiDetails.apiName,
+        apiCode: apiDetails.apiCode,
+        description: apiDetails.description,
+        databaseType: actualDatabaseType,
+        version: apiDetails.version,
+        httpMethod: apiDetails.httpMethod,
+        basePath: apiDetails.basePath,
+        endpointPath: apiDetails.endpointPath,
+        category: apiDetails.category,
+        owner: apiDetails.owner,
+        status: apiDetails.status,
+        tags: apiDetails.tags,
+        collectionInfo: {
+          collectionId: selectedCollection.id,
+          collectionName: selectedCollection.name,
+          collectionType: selectedCollection.type,
+          folderId: selectedFolder.id,
+          folderName: selectedFolder.name
+        },
+        // Handle custom query
+        useCustomQuery: isCustomQueryMode,
+        customSelectStatement: isCustomQueryMode ? customQuery : null,
+        // For database objects, include sourceObject
+        sourceObject: (!isCustomQueryMode && sourceType === 'database_object') ? {
+          schemaName: schemaConfig.schemaName,
+          objectType: schemaConfig.objectType,
+          objectName: schemaConfig.objectName,
+          operation: schemaConfig.operation,
+          databaseType: actualDatabaseType,
+          primaryKeyColumn: schemaConfig.primaryKeyColumn,
+          sequenceName: schemaConfig.sequenceName,
+          enablePagination: schemaConfig.enablePagination,
+          pageSize: schemaConfig.pageSize,
+          enableSorting: schemaConfig.enableSorting,
+          defaultSortColumn: schemaConfig.defaultSortColumn,
+          defaultSortDirection: schemaConfig.defaultSortDirection
+        } : null,
+        schemaConfig: (!isCustomQueryMode && sourceType === 'database_object') ? {
+          ...schemaConfig,
+          databaseType: actualDatabaseType
+        } : null,
+        parameters: getInParameters().map(p => ({
+          ...p,
+          bodyFormat: p.parameterLocation === 'body' ? requestBody.bodyType : null
+        })),
+        responseMappings: getOutMappings(),
+        requestBody,
+        responseBody,
+        authConfig,
+        headers,
+        tests: {
+          testConnection: tests.testConnection,
+          testObjectAccess: tests.testObjectAccess,
+          testPrivileges: tests.testPrivileges,
+          testDataTypes: tests.testDataTypes,
+          testNullConstraints: tests.testNullConstraints,
+          testUniqueConstraints: tests.testUniqueConstraints,
+          testForeignKeyReferences: tests.testForeignKeyReferences,
+          testQueryPerformance: tests.testQueryPerformance,
+          performanceThreshold: tests.performanceThreshold,
+          testWithSampleData: tests.testWithSampleData,
+          sampleDataRows: tests.sampleDataRows,
+          testProcedureExecution: tests.testProcedureExecution,
+          testFunctionReturn: tests.testFunctionReturn,
+          testExceptionHandling: tests.testExceptionHandling,
+          testSQLInjection: tests.testSQLInjection,
+          testAuthentication: tests.testAuthentication,
+          testAuthorization: tests.testAuthorization,
+          testData: tests.testData || {},
+          testQueries: tests.testQueries || []
+        },
+        settings,
+        regenerateComponents: true
+      };
+
+      console.log('📡 Sending request:', generateRequest);
+      
+      let response;
+      
+      if (isEditing && (selectedObject?.id || selectedObject?.data?.id)) {
+        const apiId = selectedObject.data?.id || selectedObject.id;
+        console.log('📡 Updating API with ID:', apiId);
+        response = await updateApi(authToken, apiId, generateRequest);
+      } else {
+        response = await generateApi(authToken, generateRequest);
+      }
+      
+      console.log('📥 API response:', response);
+
+      setApiResponse(response);
+
+      if (response.responseCode >= 200 && response.responseCode < 300) {
+        const enrichedApiData = {
+          ...newApiData,
+          ...response.data,
+          generatedFiles: response.data?.generatedFiles || newApiData?.generatedFiles,
+          isEditing: isEditing
+        };
+        setNewApiData(enrichedApiData);
+        
+        if (onSave) {
+          onSave(enrichedApiData, response);
+        }
+        
+        if (onGenerateAPI) {
+          onGenerateAPI(enrichedApiData, response);
+        }
+      } else {
+        console.error('API operation failed:', response);
+      }
+
+    } catch (error) {
+      console.error('❌ Error:', error);
+      setApiResponse({
+        responseCode: 500,
+        message: error.message || 'Failed to process API request',
+        data: null
+      });
+    } finally {
+      setLoadingOpen(false);
+      setConfirmationOpen(true);
+    }
+  };
 
   // console.log("selectedObject::::::::" + JSON.stringify(selectedObject));
 
@@ -2434,167 +2952,266 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
   }
 }, [authToken, populateFormFromObject]);
 
-  // NEW: Function to populate form from existing API data (for editing)
   const populateFormFromApiData = useCallback(async (apiData) => {
-    console.log('📝 populateFormFromApiData called with:', apiData);
+  console.log('📝 populateFormFromApiData called with:', apiData);
+  
+  // ============ CHECK FOR CUSTOM QUERY FIRST ============
+  const isCustomQueryApi = apiData?.isCustomQuery === true || 
+                          apiData?.useCustomQuery === true ||
+                          apiData?.sourceObject?.type === 'CUSTOM_QUERY' ||
+                          apiData?.customSelectStatement ||
+                          apiData?.sourceObject?.customSelectStatement ||
+                          apiData?.sourceObject?.query;
+  
+  if (isCustomQueryApi) {
+    console.log('✅ Detected custom query API in populateFormFromApiData');
+    setIsEditingCustomQuery(true);
+    setSourceType('custom_query');
     
-    // Set API details
-    setApiDetails({
-      apiName: apiData.apiName || '',
-      apiCode: apiData.apiCode || '',
-      description: apiData.description || '',
-      version: apiData.version || '1.0.0',
-      status: apiData.status || 'ACTIVE',
-      httpMethod: apiData.httpMethod || 'GET',
-      basePath: apiData.basePath || '/api/v1',
-      endpointPath: apiData.endpointPath || '',
-      tags: apiData.tags || ['default'],
-      category: apiData.category || 'general',
-      owner: apiData.owner || 'HR',
-    });
+    // Extract custom query text from various possible locations
+    const customQueryText = apiData?.customSelectStatement || 
+                           apiData?.sourceObject?.customSelectStatement ||
+                           apiData?.sourceObject?.query ||
+                           apiData?.sourceObject?.customQuery ||
+                           apiData?.customQueryText ||
+                           '';
+    
+    if (customQueryText) {
+      setCustomQuery(customQueryText);
+      setOriginalCustomQuery(customQueryText);
+      console.log('📝 Set custom query:', customQueryText.substring(0, 100));
+    }
+  } else {
+    // Reset custom query states if not a custom query
+    setIsEditingCustomQuery(false);
+    setSourceType('database_object');
+    setCustomQuery('');
+    setOriginalCustomQuery('');
+  }
+  
+  // ============ SET API DETAILS ============
+  setApiDetails({
+    apiName: apiData.apiName || '',
+    apiCode: apiData.apiCode || '',
+    description: apiData.description || '',
+    version: apiData.version || '1.0.0',
+    status: apiData.status || 'ACTIVE',
+    httpMethod: apiData.httpMethod || 'GET',
+    basePath: apiData.basePath || '/api/v1',
+    endpointPath: apiData.endpointPath || '',
+    tags: apiData.tags || ['default'],
+    category: apiData.category || 'general',
+    owner: apiData.owner || 'HR',
+  });
 
-    // Set collection info
-    if (apiData.collectionInfo) {
-      const collection = collections.find(c => c.id === apiData.collectionInfo.collectionId);
-      if (collection) {
-        setSelectedCollection(collection);
-        setFolders(collection.folders || []);
-        
-        if (apiData.collectionInfo.folderId) {
-          const folder = collection.folders?.find(f => f.id === apiData.collectionInfo.folderId);
-          setSelectedFolder(folder || null);
-        }
+  // ============ SET COLLECTION INFO ============
+  if (apiData.collectionInfo) {
+    const collection = collections.find(c => c.id === apiData.collectionInfo.collectionId);
+    if (collection) {
+      setSelectedCollection(collection);
+      setFolders(collection.folders || []);
+      
+      if (apiData.collectionInfo.folderId) {
+        const folder = collection.folders?.find(f => f.id === apiData.collectionInfo.folderId);
+        setSelectedFolder(folder || null);
       }
     }
+  }
 
-    // Set schema config
-    if (apiData.schemaConfig) {
-      setSchemaConfig({
-        schemaName: apiData.schemaConfig.schemaName || '',
-        objectType: apiData.schemaConfig.objectType || '',
-        objectName: apiData.schemaConfig.objectName || '',
-        operation: apiData.schemaConfig.operation || 'SELECT',
-        primaryKeyColumn: apiData.schemaConfig.primaryKeyColumn || '',
-        sequenceName: apiData.schemaConfig.sequenceName || '',
-        enablePagination: apiData.schemaConfig.enablePagination !== undefined ? apiData.schemaConfig.enablePagination : true,
-        pageSize: apiData.schemaConfig.pageSize || 10,
-        enableSorting: apiData.schemaConfig.enableSorting !== undefined ? apiData.schemaConfig.enableSorting : true,
-        defaultSortColumn: apiData.schemaConfig.defaultSortColumn || '',
-        defaultSortDirection: apiData.schemaConfig.defaultSortDirection || 'ASC'
-      });
-    }
+  // ============ SET SCHEMA CONFIG (only for non-custom queries) ============
+  if (apiData.schemaConfig && !isCustomQueryApi) {
+    setSchemaConfig({
+      schemaName: apiData.schemaConfig.schemaName || '',
+      objectType: apiData.schemaConfig.objectType || '',
+      objectName: apiData.schemaConfig.objectName || '',
+      operation: apiData.schemaConfig.operation || 'SELECT',
+      primaryKeyColumn: apiData.schemaConfig.primaryKeyColumn || '',
+      sequenceName: apiData.schemaConfig.sequenceName || '',
+      enablePagination: apiData.schemaConfig.enablePagination !== undefined ? apiData.schemaConfig.enablePagination : true,
+      pageSize: apiData.schemaConfig.pageSize || 10,
+      enableSorting: apiData.schemaConfig.enableSorting !== undefined ? apiData.schemaConfig.enableSorting : true,
+      defaultSortColumn: apiData.schemaConfig.defaultSortColumn || '',
+      defaultSortDirection: apiData.schemaConfig.defaultSortDirection || 'ASC'
+    });
+  }
 
-    // Set source object info
-    if (apiData.sourceObject) {
-      setSourceObjectInfo({
-        isSynonym: apiData.sourceObject.isSynonym || false,
-        targetType: apiData.sourceObject.targetType || null,
-        targetName: apiData.sourceObject.targetName || null,
-        targetOwner: apiData.sourceObject.targetOwner || null
-      });
-    }
+  // ============ SET SOURCE OBJECT INFO ============
+  if (apiData.sourceObject) {
+    setSourceObjectInfo({
+      isSynonym: apiData.sourceObject.isSynonym || false,
+      targetType: apiData.sourceObject.targetType || null,
+      targetName: apiData.sourceObject.targetName || null,
+      targetOwner: apiData.sourceObject.targetOwner || null
+    });
+  }
 
-    // Set parameters - ensure each has a unique ID
-    if (apiData.parameters && Array.isArray(apiData.parameters)) {
-      const paramsWithIds = apiData.parameters.map(p => ({
-        ...p,
-        id: p.id || `param-${Date.now()}-${Math.random()}`,
-        parameterLocation: p.parameterLocation || 'body',
-        required: p.required !== undefined ? p.required : true,
-        inBody: p.inBody !== undefined ? p.inBody : (p.parameterLocation === 'body'),
-        paramMode: p.paramMode || 'IN'
-      }));
-      setParameters(paramsWithIds);
-    }
+  // ============ SET PARAMETERS ============
+  if (apiData.parameters && Array.isArray(apiData.parameters)) {
+    const paramsWithIds = apiData.parameters.map(p => ({
+      ...p,
+      id: p.id || `param-${Date.now()}-${Math.random()}`,
+      parameterLocation: p.parameterLocation || (isCustomQueryApi ? 'query' : 'body'),
+      required: p.required !== undefined ? p.required : true,
+      inBody: p.inBody !== undefined ? p.inBody : (p.parameterLocation === 'body'),
+      paramMode: p.paramMode || (isCustomQueryApi ? 'IN' : 'IN')
+    }));
+    setParameters(paramsWithIds);
+  } else if (isCustomQueryApi) {
+    // For custom queries with no parameters, initialize empty array
+    setParameters([]);
+  }
 
-    // Set response mappings - ensure each has a unique ID
-    if (apiData.responseMappings && Array.isArray(apiData.responseMappings)) {
-      const mappingsWithIds = apiData.responseMappings.map(m => ({
-        ...m,
-        id: m.id || `mapping-${Date.now()}-${Math.random()}`,
-        includeInResponse: m.includeInResponse !== undefined ? m.includeInResponse : true,
-        inResponse: m.inResponse !== undefined ? m.inResponse : true,
-        nullable: m.nullable !== undefined ? m.nullable : true
-      }));
-      setResponseMappings(mappingsWithIds);
-    }
+  // ============ SET RESPONSE MAPPINGS ============
+  if (apiData.responseMappings && Array.isArray(apiData.responseMappings)) {
+    const mappingsWithIds = apiData.responseMappings.map(m => ({
+      ...m,
+      id: m.id || `mapping-${Date.now()}-${Math.random()}`,
+      includeInResponse: m.includeInResponse !== undefined ? m.includeInResponse : true,
+      inResponse: m.inResponse !== undefined ? m.inResponse : true,
+      nullable: m.nullable !== undefined ? m.nullable : true,
+      paramMode: m.paramMode || 'OUT'
+    }));
+    setResponseMappings(mappingsWithIds);
+  } else if (isCustomQueryApi) {
+    // For custom queries with no response mappings, initialize empty array
+    setResponseMappings([]);
+  }
 
-    // Set request body
-    if (apiData.requestBody) {
-      setRequestBody({
-        bodyType: apiData.requestBody.bodyType || 'none',
-        sample: apiData.requestBody.sample || '',
-        requiredFields: apiData.requestBody.requiredFields || [],
-        validateSchema: apiData.requestBody.validateSchema !== undefined ? apiData.requestBody.validateSchema : true,
-        maxSize: apiData.requestBody.maxSize || 1048576,
-        allowedMediaTypes: apiData.requestBody.allowedMediaTypes || ['application/json']
-      });
-    }
+  // ============ SET REQUEST BODY ============
+  if (apiData.requestBody) {
+    setRequestBody({
+      bodyType: apiData.requestBody.bodyType || (isCustomQueryApi ? 'none' : 'json'),
+      sample: apiData.requestBody.sample || '',
+      requiredFields: apiData.requestBody.requiredFields || [],
+      validateSchema: apiData.requestBody.validateSchema !== undefined ? apiData.requestBody.validateSchema : true,
+      maxSize: apiData.requestBody.maxSize || 1048576,
+      allowedMediaTypes: apiData.requestBody.allowedMediaTypes || ['application/json']
+    });
+  } else {
+    setRequestBody({
+      bodyType: isCustomQueryApi ? 'none' : 'json',
+      sample: null,
+      requiredFields: [],
+      validateSchema: true,
+      maxSize: 1048576,
+      allowedMediaTypes: ['application/json']
+    });
+  }
 
-    // Set response body
-    if (apiData.responseBody) {
-      setResponseBody({
-        successSchema: apiData.responseBody.successSchema || '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}',
-        errorSchema: apiData.responseBody.errorSchema || '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}',
-        includeMetadata: apiData.responseBody.includeMetadata !== undefined ? apiData.responseBody.includeMetadata : true,
-        metadataFields: apiData.responseBody.metadataFields || ['timestamp', 'apiVersion', 'requestId'],
-        contentType: apiData.responseBody.contentType || 'application/json',
-        compression: apiData.responseBody.compression || 'gzip'
-      });
-    }
+  // ============ SET RESPONSE BODY ============
+  if (apiData.responseBody) {
+    setResponseBody({
+      successSchema: apiData.responseBody.successSchema || '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}',
+      errorSchema: apiData.responseBody.errorSchema || '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}',
+      includeMetadata: apiData.responseBody.includeMetadata !== undefined ? apiData.responseBody.includeMetadata : true,
+      metadataFields: apiData.responseBody.metadataFields || ['timestamp', 'apiVersion', 'requestId'],
+      contentType: apiData.responseBody.contentType || 'application/json',
+      compression: apiData.responseBody.compression || 'gzip'
+    });
+  }
 
-    // Set auth config
-    if (apiData.authConfig) {
-      setAuthConfig({
-        authType: apiData.authConfig.authType || 'none',
-        apiKeyHeader: apiData.authConfig.apiKeyHeader || 'X-API-Key',
-        apiKeyValue: apiData.authConfig.apiKeyValue || '',
-        apiSecretHeader: apiData.authConfig.apiSecretHeader || 'X-API-Secret',
-        apiSecretValue: apiData.authConfig.apiSecretValue || '',
-        jwtToken: apiData.authConfig.jwtToken || '',
-        jwtIssuer: apiData.authConfig.jwtIssuer || 'api.example.com',
-        basicUsername: apiData.authConfig.basicUsername || '',
-        basicPassword: apiData.authConfig.basicPassword || '',
-        ipWhitelist: apiData.authConfig.ipWhitelist || '',
-        rateLimitRequests: apiData.authConfig.rateLimitRequests || 100,
-        rateLimitPeriod: apiData.authConfig.rateLimitPeriod || 'minute',
-        enableRateLimiting: apiData.authConfig.enableRateLimiting || false,
-        corsOrigins: apiData.authConfig.corsOrigins || ['*'],
-        auditLevel: apiData.authConfig.auditLevel || 'standard'
-      });
-    }
+  // ============ SET AUTH CONFIG ============
+  if (apiData.authConfig) {
+    setAuthConfig({
+      authType: apiData.authConfig.authType || 'none',
+      apiKeyHeader: apiData.authConfig.apiKeyHeader || 'X-API-Key',
+      apiKeyValue: apiData.authConfig.apiKeyValue || '',
+      apiSecretHeader: apiData.authConfig.apiSecretHeader || 'X-API-Secret',
+      apiSecretValue: apiData.authConfig.apiSecretValue || '',
+      jwtToken: apiData.authConfig.jwtToken || '',
+      jwtIssuer: apiData.authConfig.jwtIssuer || 'api.example.com',
+      basicUsername: apiData.authConfig.basicUsername || '',
+      basicPassword: apiData.authConfig.basicPassword || '',
+      ipWhitelist: apiData.authConfig.ipWhitelist || '',
+      rateLimitRequests: apiData.authConfig.rateLimitRequests || 100,
+      rateLimitPeriod: apiData.authConfig.rateLimitPeriod || 'minute',
+      enableRateLimiting: apiData.authConfig.enableRateLimiting || false,
+      corsOrigins: apiData.authConfig.corsOrigins || ['*'],
+      auditLevel: apiData.authConfig.auditLevel || 'standard'
+    });
+  }
 
-    // Set headers
-    if (apiData.headers && Array.isArray(apiData.headers)) {
-      const headersWithIds = apiData.headers.map((h, idx) => ({
-        ...h,
-        id: h.id || `header-${Date.now()}-${idx}`
-      }));
-      setHeaders(headersWithIds);
-    }
+  // ============ SET HEADERS ============
+  if (apiData.headers && Array.isArray(apiData.headers)) {
+    const headersWithIds = apiData.headers.map((h, idx) => ({
+      ...h,
+      id: h.id || `header-${Date.now()}-${idx}`,
+      key: h.key || h.name,
+      value: h.value || '',
+      required: h.required !== undefined ? h.required : false,
+      description: h.description || ''
+    }));
+    setHeaders(headersWithIds);
+  } else {
+    // Set default headers if none exist
+    setHeaders([
+      { id: '1', key: 'Content-Type', value: 'application/json', required: true, description: 'Response content type' },
+      { id: '2', key: 'Cache-Control', value: 'no-cache', required: false, description: 'Cache control header' }
+    ]);
+  }
 
-    // Set settings
-    if (apiData.settings) {
-      setSettings({
-        timeout: apiData.settings.timeout || 30000,
-        maxRecords: apiData.settings.maxRecords || 1000,
-        enableLogging: apiData.settings.enableLogging !== undefined ? apiData.settings.enableLogging : true,
-        logLevel: apiData.settings.logLevel || 'INFO',
-        enableCaching: apiData.settings.enableCaching || false,
-        cacheTtl: apiData.settings.cacheTtl || 300,
-        generateSwagger: apiData.settings.generateSwagger !== undefined ? apiData.settings.generateSwagger : true,
-        generatePostman: apiData.settings.generatePostman !== undefined ? apiData.settings.generatePostman : true,
-        generateClientSDK: apiData.settings.generateClientSDK !== undefined ? apiData.settings.generateClientSDK : true,
-        enableMonitoring: apiData.settings.enableMonitoring !== undefined ? apiData.settings.enableMonitoring : true,
-        enableAlerts: apiData.settings.enableAlerts || false,
-        alertEmail: apiData.settings.alertEmail || '',
-        enableTracing: apiData.settings.enableTracing || false,
-        corsEnabled: apiData.settings.corsEnabled !== undefined ? apiData.settings.corsEnabled : true
-      });
-    }
+  // ============ SET SETTINGS ============
+  if (apiData.settings) {
+    setSettings({
+      timeout: apiData.settings.timeout || 30000,
+      maxRecords: apiData.settings.maxRecords || 1000,
+      enableLogging: apiData.settings.enableLogging !== undefined ? apiData.settings.enableLogging : true,
+      logLevel: apiData.settings.logLevel || 'INFO',
+      enableCaching: apiData.settings.enableCaching || false,
+      cacheTtl: apiData.settings.cacheTtl || 300,
+      generateSwagger: apiData.settings.generateSwagger !== undefined ? apiData.settings.generateSwagger : true,
+      generatePostman: apiData.settings.generatePostman !== undefined ? apiData.settings.generatePostman : true,
+      generateClientSDK: apiData.settings.generateClientSDK !== undefined ? apiData.settings.generateClientSDK : true,
+      enableMonitoring: apiData.settings.enableMonitoring !== undefined ? apiData.settings.enableMonitoring : true,
+      enableAlerts: apiData.settings.enableAlerts || false,
+      alertEmail: apiData.settings.alertEmail || '',
+      enableTracing: apiData.settings.enableTracing || false,
+      corsEnabled: apiData.settings.corsEnabled !== undefined ? apiData.settings.corsEnabled : true
+    });
+  }
 
-    console.log('✅ Form populated from API data');
-  }, [collections]);
+  // ============ SET TESTS ============
+  if (apiData.tests) {
+    setTests({
+      testConnection: apiData.tests.testConnection !== undefined ? apiData.tests.testConnection : true,
+      testObjectAccess: apiData.tests.testObjectAccess !== undefined ? apiData.tests.testObjectAccess : true,
+      testPrivileges: apiData.tests.testPrivileges !== undefined ? apiData.tests.testPrivileges : true,
+      testDataTypes: apiData.tests.testDataTypes !== undefined ? apiData.tests.testDataTypes : true,
+      testNullConstraints: apiData.tests.testNullConstraints !== undefined ? apiData.tests.testNullConstraints : true,
+      testUniqueConstraints: apiData.tests.testUniqueConstraints || false,
+      testForeignKeyReferences: apiData.tests.testForeignKeyReferences || false,
+      testQueryPerformance: apiData.tests.testQueryPerformance !== undefined ? apiData.tests.testQueryPerformance : true,
+      performanceThreshold: apiData.tests.performanceThreshold || 1000,
+      testWithSampleData: apiData.tests.testWithSampleData !== undefined ? apiData.tests.testWithSampleData : true,
+      sampleDataRows: apiData.tests.sampleDataRows || 10,
+      testProcedureExecution: apiData.tests.testProcedureExecution !== undefined ? apiData.tests.testProcedureExecution : true,
+      testFunctionReturn: apiData.tests.testFunctionReturn !== undefined ? apiData.tests.testFunctionReturn : true,
+      testExceptionHandling: apiData.tests.testExceptionHandling !== undefined ? apiData.tests.testExceptionHandling : true,
+      testSQLInjection: apiData.tests.testSQLInjection !== undefined ? apiData.tests.testSQLInjection : true,
+      testAuthentication: apiData.tests.testAuthentication !== undefined ? apiData.tests.testAuthentication : true,
+      testAuthorization: apiData.tests.testAuthorization !== undefined ? apiData.tests.testAuthorization : true,
+      testData: apiData.tests.testData || {},
+      testQueries: apiData.tests.testQueries || []
+    });
+  }
+
+  // ============ SET CURRENT DATABASE TYPE ============
+  if (apiData.databaseType) {
+    setCurrentDatabaseType(apiData.databaseType);
+  } else if (databaseType) {
+    setCurrentDatabaseType(databaseType);
+  }
+
+  // ============ LOG COMPLETION ============
+  console.log('✅ Form populated from API data', {
+    isCustomQuery: isCustomQueryApi,
+    apiName: apiData.apiName,
+    apiCode: apiData.apiCode,
+    parametersCount: apiData.parameters?.length || 0,
+    responseMappingsCount: apiData.responseMappings?.length || 0
+  });
+  
+}, [collections, databaseType]);
 
   // Function to populate form from selected object - FIXED VERSION WITH PROPER MODE FILTERING
   // Function to populate form from selected object - FIXED VERSION WITH PROPER MODE FILTERING
@@ -3044,64 +3661,6 @@ const populateFormFromObject = useCallback((object) => {
 }, [apiDetails.version, setApiDetails, setSchemaConfig, setParameters, setResponseMappings, setRequestBody, setResponseBody]);
 
   // ==================== VALIDATION FUNCTIONS ====================
-
-  // Validation function
-  const validateRequiredFields = () => {
-    const errors = {};
-
-    // Check collection and folder
-    if (!selectedCollection) {
-      errors.collection = 'API Collection is required';
-    }
-    if (!selectedFolder) {
-      errors.folder = 'API Folder is required';
-    }
-
-    // Check API details
-    if (!apiDetails.apiName?.trim()) {
-      errors.apiName = 'API Name is required';
-    }
-    if (!apiDetails.apiCode?.trim()) {
-      errors.apiCode = 'API Code is required';
-    }
-    if (!apiDetails.endpointPath?.trim()) {
-      errors.endpointPath = 'Endpoint Path is required';
-    } 
-
-    // For new APIs (not editing), check schema config
-    if (!isEditing && selectedDbObject) {
-      if (!schemaConfig.schemaName?.trim()) {
-        errors.schemaName = 'Schema Name is required';
-      }
-      if (!schemaConfig.objectName?.trim()) {
-        errors.objectName = 'Object Name is required';
-      }
-    }
-
-    // Check authentication specific required fields
-    if (authConfig.authType === 'apiKey') {
-      if (!authConfig.apiKeyHeader?.trim()) {
-        errors.apiKeyHeader = 'API Key Header is required';
-      }
-      if (!authConfig.apiSecretHeader?.trim()) {
-        errors.apiSecretHeader = 'API Secret Header is required';
-      }
-    } else if (authConfig.authType === 'bearer') {
-      if (!authConfig.jwtIssuer?.trim()) {
-        errors.jwtIssuer = 'JWT Issuer is required';
-      }
-    } else if (authConfig.authType === 'basic') {
-      if (!authConfig.basicUsername?.trim()) {
-        errors.basicUsername = 'Username is required';
-      }
-      if (!authConfig.basicPassword?.trim()) {
-        errors.basicPassword = 'Password is required';
-      }
-    }
-
-    setValidationErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
 
   // Helper function to check if a field is required
   const isFieldRequired = (fieldName) => {
@@ -4498,355 +5057,6 @@ useEffect(() => {
 }, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, requestBody, responseBody, authConfig, settings, sourceObjectInfo, tests, validationResult, selectedCollection, selectedFolder, isEditing]);
 
 
-  // Handle save - show preview first - UPDATED to check for existing API code only for new APIs
-  const handleSave = () => {
-    // Validate all required fields
-    if (!validateRequiredFields()) {
-      // Show first tab with errors
-      if (validationErrors.collection || validationErrors.folder) {
-        setActiveTab('definition');
-      } else if (validationErrors.apiName || validationErrors.apiCode || validationErrors.endpointPath) {
-        setActiveTab('definition');
-      } else if (!isEditing && (validationErrors.schemaName || validationErrors.objectName)) {
-        setActiveTab('schema');
-      } else if (authConfig.authType !== 'none') {
-        setActiveTab('auth');
-      }
-      
-      // Show error message
-      alert('Please fill in all required fields marked with *');
-      return;
-    }
-
-    // NEW: Check if API code already exists (only for new APIs)
-    if (!isEditing && apiCodeExists) {
-      alert(`❌ Cannot generate API\n\nAn API with code "${apiDetails.apiCode}" already exists.\nPlease choose a different API code to continue.`);
-      setActiveTab('definition');
-      // Focus on the API code field by setting the active tab and maybe scrolling
-      return;
-    }
-
-    // Extract the actual data if we're in editing mode and selectedObject has a data wrapper
-    let sourceData = null;
-    if (isEditing && selectedObject) {
-      // If it's wrapped in a 'data' property, extract it
-      if (selectedObject.data && selectedObject.data.id) {
-        sourceData = selectedObject.data;
-        console.log('📦 Extracted sourceData from selectedObject.data:', sourceData);
-      } else {
-        sourceData = selectedObject;
-        console.log('📦 Using selectedObject directly as sourceData:', sourceData);
-      }
-    } else {
-      sourceData = selectedObject;
-    }
-
-    // Use selectedDbObject for dashboard generation, otherwise use sourceData
-    const effectiveSource = fromDashboard && selectedDbObject ? selectedDbObject : sourceData;
-
-    // Ensure collection and folder are selected
-    if (!selectedCollection || !selectedFolder) {
-      alert('Please select both a collection and folder');
-      setActiveTab('definition');
-      return;
-    }
-
-    // Prepare the API data object
-    const apiData = {
-      id: isEditing ? sourceData?.id || selectedObject?.id || `api-${Date.now()}` : `api-${Date.now()}`,
-      ...apiDetails,
-      schemaConfig,
-      collectionInfo: {
-        collectionId: selectedCollection.id,
-        collectionName: selectedCollection.name,
-        collectionType: selectedCollection.type,
-        isNewCollection: isAddingNewCollection,
-        folderId: selectedFolder.id,
-        folderName: selectedFolder.name,
-        isNewFolder: selectedFolder.id?.startsWith('new-folder-')
-      },
-      // Only store IN parameters in parameters array
-      parameters: getInParameters().map(p => ({
-        ...p,
-        // Ensure each parameter has all required fields
-        id: p.id || `param-${Date.now()}-${Math.random()}`,
-        inBody: p.parameterLocation === 'body'
-      })),
-      // Store all response mappings (including OUT parameters)
-      responseMappings: getOutMappings().map(m => ({
-        ...m,
-        id: m.id || `mapping-${Date.now()}-${Math.random()}`,
-        includeInResponse: m.includeInResponse !== undefined ? m.includeInResponse : true,
-        inResponse: m.inResponse !== undefined ? m.inResponse : true
-      })),
-      requestBody: {
-        ...requestBody,
-        // Ensure bodyType is set correctly
-        bodyType: requestBody.bodyType || 'none'
-      },
-      responseBody: {
-        ...responseBody,
-        successSchema: responseBody.successSchema || '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}',
-        errorSchema: responseBody.errorSchema || '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}'
-      },
-      authConfig: {
-        ...authConfig,
-        // Ensure authType is set
-        authType: authConfig.authType || 'none'
-      },
-      headers: headers.map(h => ({
-        ...h,
-        id: h.id || `header-${Date.now()}-${Math.random()}`
-      })),
-      settings: {
-        ...settings,
-        timeout: settings.timeout || 30000,
-        maxRecords: settings.maxRecords || 1000,
-        enableLogging: settings.enableLogging !== undefined ? settings.enableLogging : true,
-        logLevel: settings.logLevel || 'INFO'
-      },
-      tests: {
-        ...tests,
-        testData: tests.testData || {},
-        testQueries: tests.testQueries || []
-      },
-      createdAt: new Date().toISOString(),
-      sourceObject: isEditing ? sourceData?.sourceObject || sourceData : {
-        name: effectiveSource?.name,
-        type: effectiveSource?.type,
-        owner: effectiveSource?.owner,
-        columns: effectiveSource?.columns?.length || 0,
-        parameters: effectiveSource?.parameters?.length || 0,
-        isSynonym: sourceObjectInfo.isSynonym,
-        targetType: sourceObjectInfo.targetType,
-        targetName: sourceObjectInfo.targetName,
-        targetOwner: sourceObjectInfo.targetOwner
-      },
-      validation: validationResult,
-      isEditing: isEditing // Pass editing flag to preview
-    };
-    
-    console.log('📦 Prepared API data for preview:', apiData);
-    
-    // Show preview modal
-    setNewApiData(apiData);
-    setPreviewOpen(true);
-  };
-
-  const handlePreviewConfirm = async () => {
-  setPreviewOpen(false);
-  setLoadingOpen(true);
-  
-  try {
-    // Double-check collection info exists
-    if (!selectedCollection || !selectedFolder) {
-      throw new Error('Collection and folder are required');
-    }
-
-    // IMPORTANT: Get the database type from the selected object
-    // This ensures we use the correct database type for the API generation
-    const actualDatabaseType = selectedDbObject?.databaseType || databaseType;
-    
-    console.log('🚀 Generating API for database type:', actualDatabaseType);
-    console.log('📦 Selected object:', selectedDbObject?.name, 'Type:', selectedDbObject?.databaseType);
-
-    // Prepare the request object for the generateApi function
-    const generateRequest = {
-      apiName: apiDetails.apiName,
-      apiCode: apiDetails.apiCode,
-      description: apiDetails.description,
-      databaseType: actualDatabaseType, // Use the actual database type from selected object
-      version: apiDetails.version,
-      httpMethod: apiDetails.httpMethod,
-      basePath: apiDetails.basePath,
-      endpointPath: apiDetails.endpointPath,
-      category: apiDetails.category,
-      owner: apiDetails.owner,
-      status: apiDetails.status,
-      tags: apiDetails.tags,
-      collectionInfo: {
-        collectionId: selectedCollection.id,
-        collectionName: selectedCollection.name,
-        collectionType: selectedCollection.type,
-        folderId: selectedFolder.id,
-        folderName: selectedFolder.name
-      },
-      sourceObject: {
-        schemaName: schemaConfig.schemaName,
-        objectType: schemaConfig.objectType,
-        objectName: schemaConfig.objectName,
-        operation: schemaConfig.operation,
-        databaseType: actualDatabaseType, // Use the actual database type here too
-        primaryKeyColumn: schemaConfig.primaryKeyColumn,
-        sequenceName: schemaConfig.sequenceName,
-        enablePagination: schemaConfig.enablePagination,
-        pageSize: schemaConfig.pageSize,
-        enableSorting: schemaConfig.enableSorting,
-        defaultSortColumn: schemaConfig.defaultSortColumn,
-        defaultSortDirection: schemaConfig.defaultSortDirection
-      },
-      schemaConfig: {
-        ...schemaConfig,
-        databaseType: actualDatabaseType // Also add to schemaConfig
-      },
-      // Only send IN parameters in parameters array
-      parameters: getInParameters().map(p => ({
-        ...p,
-        bodyFormat: p.parameterLocation === 'body' ? requestBody.bodyType : null
-      })),
-      // Send all response mappings (including OUT parameters)
-      responseMappings: getOutMappings(),
-      requestBody: {
-        ...requestBody,
-        contentType: requestBody.bodyType === 'json' ? 'application/json' :
-                  requestBody.bodyType === 'xml' ? 'application/xml' :
-                  requestBody.bodyType === 'form-data' ? 'multipart/form-data' :
-                  requestBody.bodyType === 'urlencoded' ? 'application/x-www-form-urlencoded' :
-                  requestBody.bodyType === 'raw' ? 'text/plain' :
-                  null,
-        sample: (() => {
-          if (requestBody.bodyType === 'none') return null;
-          if (typeof requestBody.sample === 'string') {
-            return requestBody.sample;
-          }
-          if (requestBody.sample && typeof requestBody.sample === 'object') {
-            return JSON.stringify(requestBody.sample, null, 2);
-          }
-          return requestBody.bodyType === 'json' ? '{}' : '';
-        })()
-      },
-      responseBody: {
-        ...responseBody,
-        successSchema: (() => {
-          if (typeof responseBody.successSchema === 'string') {
-            return responseBody.successSchema;
-          }
-          if (responseBody.successSchema && typeof responseBody.successSchema === 'object') {
-            return JSON.stringify(responseBody.successSchema, null, 2);
-          }
-          return '{\n  "success": true,\n  "data": {},\n  "message": "Success"\n}';
-        })(),
-        errorSchema: (() => {
-          if (typeof responseBody.errorSchema === 'string') {
-            return responseBody.errorSchema;
-          }
-          if (responseBody.errorSchema && typeof responseBody.errorSchema === 'object') {
-            return JSON.stringify(responseBody.errorSchema, null, 2);
-          }
-          return '{\n  "success": false,\n  "error": {\n    "code": "ERROR",\n    "message": "Error"\n  }\n}';
-        })()
-      },
-      authConfig: authConfig,
-      headers: headers,
-      tests: {
-        testConnection: tests.testConnection,
-        testObjectAccess: tests.testObjectAccess,
-        testPrivileges: tests.testPrivileges,
-        testDataTypes: tests.testDataTypes,
-        testNullConstraints: tests.testNullConstraints,
-        testUniqueConstraints: tests.testUniqueConstraints,
-        testForeignKeyReferences: tests.testForeignKeyReferences,
-        testQueryPerformance: tests.testQueryPerformance,
-        performanceThreshold: tests.performanceThreshold,
-        testWithSampleData: tests.testWithSampleData,
-        sampleDataRows: tests.sampleDataRows,
-        testProcedureExecution: tests.testProcedureExecution,
-        testFunctionReturn: tests.testFunctionReturn,
-        testExceptionHandling: tests.testExceptionHandling,
-        testSQLInjection: tests.testSQLInjection,
-        testAuthentication: tests.testAuthentication,
-        testAuthorization: tests.testAuthorization,
-        testData: (() => {
-          if (!tests.testData) {
-            return {};
-          }
-          if (typeof tests.testData === 'object' && tests.testData !== null) {
-            return tests.testData;
-          }
-          if (typeof tests.testData === 'string') {
-            const trimmed = tests.testData.trim();
-            if (trimmed === '') {
-              return {};
-            }
-            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-              try {
-                return JSON.parse(trimmed);
-              } catch (e) {
-                console.warn('Failed to parse testData JSON, wrapping in object:', e);
-                return { value: trimmed };
-              }
-            }
-            return { value: trimmed };
-          }
-          return { value: tests.testData };
-        })(),
-        testQueries: Array.isArray(tests.testQueries) ? tests.testQueries : []
-      },
-      settings: settings,
-      regenerateComponents: true
-    };
-
-    console.log('📡 Sending request with database type:', generateRequest.databaseType);
-    console.log('📡 Source object database type:', generateRequest.sourceObject.databaseType);
-    
-    let response;
-    
-    // Call the appropriate API based on whether we're editing or creating
-    if (isEditing && (selectedObject?.id || selectedObject?.data?.id)) {
-      const apiId = selectedObject.data?.id || selectedObject.id;
-      console.log('📡 Updating API with ID:', apiId);
-      // Call updateApi for editing
-      response = await updateApi(authToken, apiId, generateRequest);
-    } else {
-      // Call generateApi for new API
-      response = await generateApi(authToken, generateRequest);
-    }
-    
-    console.log('📥 API response:', response);
-
-    // Store the response
-    setApiResponse(response);
-
-    // If the response is successful, we have the generated data
-    if (response.responseCode >= 200 && response.responseCode < 300) {
-      // Combine the original data with the response data
-      const enrichedApiData = {
-        ...newApiData,
-        ...response.data,
-        generatedFiles: response.data?.generatedFiles || newApiData?.generatedFiles,
-        isEditing: isEditing
-      };
-      setNewApiData(enrichedApiData);
-      
-      // Call the parent onSave if provided
-      if (onSave) {
-        onSave(enrichedApiData, response);
-      }
-      
-      // IMPORTANT: Call onGenerateAPI to refresh the dashboard endpoints table
-      // This will trigger the refresh after successful update
-      if (onGenerateAPI) {
-        console.log('🔄 Triggering dashboard refresh after API update');
-        onGenerateAPI();
-      }
-    } else {
-      // Handle error
-      console.error('API operation failed:', response);
-    }
-
-  } catch (error) {
-    console.error('❌ Error:', error);
-    setApiResponse({
-      responseCode: 500,
-      message: error.message || 'Failed to process API request',
-      data: null
-    });
-  } finally {
-    setLoadingOpen(false);
-    setConfirmationOpen(true);
-  }
-};
-
  // Handle confirmation modal close
   const handleConfirmationClose = () => {
     setConfirmationOpen(false);
@@ -5410,7 +5620,7 @@ return ReactDOM.createPortal(
                 )}
 
                 {/* Selected Collection Info */}
-                {selectedCollection && !isAddingNewCollection && (
+                {/* {selectedCollection && !isAddingNewCollection && (
                   <div className="mt-2 p-2 rounded text-xs" style={{ 
                     backgroundColor: themeColors.hover
                   }}>
@@ -5423,10 +5633,118 @@ return ReactDOM.createPortal(
                       <span style={{ color: themeColors.info }}>{selectedCollection.type}</span>
                     </div>
                   </div>
-                )}
+                )} */}
               </div>
             </div>
           </div>
+
+
+          {/* Custom Query Section - Show for both new and editing custom queries */}
+          {(isCustomQuery || sourceType === 'custom_query' || isEditingCustomQuery) && (
+            <div className="px-6 py-4 border-b" style={{ 
+              borderColor: themeColors.border,
+              backgroundColor: themeColors.modalBg
+            }}>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium flex items-center gap-2" style={{ color: themeColors.text }}>
+                    <Wand2 size={14} style={{ color: themeColors.info }} />
+                    Custom SELECT Statement
+                    {!customQuery?.trim() && validationErrors.customQuery && (
+                      <span className="text-xs" style={{ color: themeColors.error }}>(Required)</span>
+                    )}
+                  </label>
+                  
+                  {/* Add an indicator when editing */}
+                  {isEditingCustomQuery && (
+                    <span className="text-xs px-2 py-1 rounded-full" style={{
+                      backgroundColor: themeColors.warning + '20',
+                      color: themeColors.warning
+                    }}>
+                      <Edit className="h-3 w-3 inline mr-1" />
+                      Editing Mode
+                    </span>
+                  )}
+                </div>
+                
+                <textarea
+                  value={customQuery}
+                  onChange={(e) => setCustomQuery(e.target.value)}
+                  className="w-full px-3 py-3 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-opacity-50"
+                  style={{ 
+                    backgroundColor: themeColors.codeBg || (theme === 'dark' ? '#1a202c' : '#f8fafc'),
+                    border: `1px solid ${validationErrors.customQuery ? themeColors.error : themeColors.border}`,
+                    color: themeColors.text,
+                    fontFamily: 'monospace',
+                    fontSize: '13px',
+                    lineHeight: '1.5',
+                    minHeight: '80px'
+                  }}
+                  placeholder="SELECT * FROM your_table WHERE column = :paramName"
+                  spellCheck={false}
+                />
+                
+                {/* <div className="flex items-center justify-between">
+                  <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                    Use :paramName syntax for parameters (e.g., WHERE id = :userId)
+                  </p>
+                  
+                  <button
+                    onClick={() => {
+                      // Extract parameters from the custom query
+                      const paramMatches = customQuery.match(/:\w+/g) || [];
+                      const uniqueParams = [...new Set(paramMatches)];
+                      const newParams = uniqueParams.map((param, idx) => ({
+                        id: `param-${Date.now()}-${idx}`,
+                        key: param.substring(1), // Remove the colon
+                        dbColumn: param.substring(1),
+                        oracleType: 'VARCHAR2',
+                        apiType: 'string',
+                        parameterLocation: 'query',
+                        required: true,
+                        description: `Parameter: ${param.substring(1)}`,
+                        example: '',
+                        validationPattern: '',
+                        defaultValue: '',
+                        inBody: false,
+                        isPrimaryKey: false,
+                        paramMode: 'IN'
+                      }));
+                      setParameters(newParams);
+                    }}
+                    className="text-xs px-3 py-1 rounded-lg flex items-center gap-1 transition-colors hover-lift"
+                    style={{ 
+                      backgroundColor: themeColors.info + '20',
+                      color: themeColors.info,
+                      border: `1px solid ${themeColors.info + '40'}`
+                    }}
+                    title="Extract parameters from query"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Extract Parameters
+                  </button>
+                </div> */}
+                
+                {/* Show query summary */}
+                {/* {customQuery && (
+                  <div className="p-2 rounded text-xs" style={{ 
+                    backgroundColor: themeColors.info + '10',
+                    borderLeft: `3px solid ${themeColors.info}`
+                  }}>
+                    <div className="flex items-center gap-2">
+                      <Database className="h-3 w-3" style={{ color: themeColors.info }} />
+                      <span style={{ color: themeColors.textSecondary }}>Query analysis:</span>
+                      <span style={{ color: themeColors.text }}>
+                        {customQuery.split(/\s+/).length} words, 
+                        {(customQuery.match(/:\w+/g) || []).length} parameters
+                      </span>
+                    </div>
+                  </div>
+                )} */}
+              </div>
+            </div>
+          )}
+
 
           {/* API Details Section */}
           <div className="px-6 py-4 border-b" style={{ 
@@ -5734,11 +6052,6 @@ return ReactDOM.createPortal(
                         }}>
                           <div style={{ color: themeColors.textSecondary }}>
                             {apiDetails.httpMethod} {apiDetails.basePath}{apiDetails.endpointPath}
-                            {getInParameters().filter(p => p.parameterLocation === 'path').length > 0 && (
-                              <span className="ml-1 text-yellow-500">
-                                {getInParameters().filter(p => p.parameterLocation === 'path').map(p => `/{${p.key}}`).join('')}
-                              </span>
-                            )}
                           </div>
                           {getInParameters().filter(p => p.parameterLocation === 'query').length > 0 && (
                             <div className="mt-2 text-xs" style={{ color: themeColors.textSecondary }}>
@@ -7959,11 +8272,6 @@ WHERE ROWNUM <= 100;` : ''}`}
             <div className="text-xs" style={{ color: themeColors.textSecondary }}>
               Endpoint: <span className="font-mono font-medium" style={{ color: themeColors.text }}>
                 {apiDetails.httpMethod} {apiDetails.basePath}{apiDetails.endpointPath}
-                {getInParameters().filter(p => p.parameterLocation === 'path').length > 0 && (
-                  <span className="text-yellow-500">
-                    {getInParameters().filter(p => p.parameterLocation === 'path').map(p => `/{${p.key}}`).join('')}
-                  </span>
-                )}
               </span>
               {validationResult && validationResult.valid && !isEditing && (
                 <span className="text-xs block mt-1" style={{ color: themeColors.success }}>

@@ -10,6 +10,9 @@ import {
   FileCode, Brain, Wind, Coffee, Server, Cloud, ChevronDown
 } from 'lucide-react';
 
+// IMPORTANT: Add the import for ApiGenerationModal
+import ApiGenerationModal from './ApiGenerationModal.js';
+
 // Database type configurations
 const DATABASE_CONFIGS = {
   postgresql: {
@@ -139,6 +142,28 @@ const getDatabaseIcon = (databaseType, size = 20) => {
   }
 };
 
+// Helper function to extract parameters from SQL query
+const extractQueryParameters = (sqlQuery) => {
+  const paramRegex = /:(\w+)/g;
+  const matches = [];
+  let match;
+  while ((match = paramRegex.exec(sqlQuery)) !== null) {
+    if (!matches.includes(match[1])) {
+      matches.push(match[1]);
+    }
+  }
+  
+  return matches.map((param, index) => ({
+    key: param,
+    parameterName: param,
+    dataType: 'VARCHAR2',
+    required: true,
+    description: `Parameter: ${param}`,
+    parameterLocation: 'query',
+    position: index
+  }));
+};
+
 const QueryEditorModal = ({ 
   isOpen, 
   onClose, 
@@ -148,7 +173,10 @@ const QueryEditorModal = ({
   databaseType = 'postgresql',
   initialQuery = '',
   onQueryExecute,
-  onDatabaseTypeChange // Optional callback for when database type changes (only when type is 'all')
+  onDatabaseTypeChange,
+  onGenerateApiFromQuery,
+  showGenerateApiButton = true,
+  onRefreshApis  // ← ADD THIS
 }) => {
   const [editorContent, setEditorContent] = useState(initialQuery || '');
   const [isCompiling, setIsCompiling] = useState(false);
@@ -168,6 +196,12 @@ const QueryEditorModal = ({
   const [queryHistory, setQueryHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
+  
+  // State for API Generation Modal
+  const [showApiModal, setShowApiModal] = useState(false);
+  const [customQueryForApi, setCustomQueryForApi] = useState('');
+  const [extractedParamsForApi, setExtractedParamsForApi] = useState([]);
+  const [currentSqlForApi, setCurrentSqlForApi] = useState('');
   
   // Only show database selector when databaseType is 'all'
   const [showDatabaseSelector, setShowDatabaseSelector] = useState(false);
@@ -786,149 +820,211 @@ const QueryEditorModal = ({
     return editorContent;
   };
   
-
-  
-
-  const handleExecute = async () => {
-  if (!authToken) {
-    setCompilationResult({
-      success: false,
-      message: 'Execution failed',
-      error: 'Authentication required. Please log in.',
-      output: ''
-    });
-    return;
-  }
-  
-  const sqlToExecute = getSQLToExecute();
-  
-  if (!sqlToExecute.trim()) {
-    setCompilationResult({
-      success: false,
-      message: 'Execution failed',
-      error: 'No SQL statement to execute. Please enter a query or select text.',
-      output: ''
-    });
-    return;
-  }
-  
-  setIsCompiling(true);
-  setCompilationResult(null);
-  
-  try {
-    const executeSQL = dbConfig.executeSQL;
-    let trimmedSql = sqlToExecute.trim();
+  // NEW: Generate API from current query
+  const handleGenerateApiFromQuery = () => {
+    const sqlToGenerate = getSQLToExecute().trim();
     
-    const isSelectQuery = /^\s*SELECT\b/i.test(trimmedSql);
-    const isCallStatement = /^\s*CALL\b/i.test(trimmedSql);
-    const isPLSQLBlock = /^\s*(DECLARE|BEGIN)/i.test(trimmedSql);
-    
-    let finalSql = sqlToExecute;
-    
-    if (isPLSQLBlock && activeDatabaseType === 'oracle' && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
-      finalSql = sqlToExecute + ';\n/';
+    if (!sqlToGenerate) {
+      setCompilationResult({
+        success: false,
+        message: 'Cannot generate API',
+        error: 'No SQL statement to generate API from. Please enter a query or select text.',
+        output: ''
+      });
+      setTimeout(() => setCompilationResult(null), 3000);
+      return;
     }
     
-    const response = await executeSQL(authToken, {
-      sql: finalSql,
-      databaseType: activeDatabaseType,
-      readOnly: false
-    });
+    const trimmedSql = sqlToGenerate;
+    if (!/^\s*SELECT\b/i.test(trimmedSql)) {
+      setCompilationResult({
+        success: false,
+        message: 'Cannot generate API',
+        error: 'Only SELECT statements can be used to generate APIs. Please use a SELECT query.',
+        output: ''
+      });
+      setTimeout(() => setCompilationResult(null), 3000);
+      return;
+    }
     
-    let success = false;
-    let message = '';
-    let output = '';
-    let error = null;
+    // Extract parameters from the query
+    const params = extractQueryParameters(trimmedSql);
     
-    console.log('Full response:', response); // Debug log
+    setCurrentSqlForApi(trimmedSql);
+    setCustomQueryForApi(trimmedSql);
+    setExtractedParamsForApi(params);
+    setShowApiModal(true);
+  };
+  
+  const handleExecute = async () => {
+    if (!authToken) {
+      setCompilationResult({
+        success: false,
+        message: 'Execution failed',
+        error: 'Authentication required. Please log in.',
+        output: ''
+      });
+      return;
+    }
     
-    if (response && typeof response === 'object') {
-      // Handle CALL statement responses (has statementType === 'CALL')
-      if (response.statementType === 'CALL') {
-        success = response.responseCode === 200;
-        message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
-        
-        // Extract the actual data from the response.data field
-        if (response.data) {
-          if (typeof response.data === 'string') {
-            output = response.data;
-          } else if (response.data.error || response.data.message || response.data.traceId) {
-            // This is the actual procedure response - show it nicely
-            output = JSON.stringify(response.data, null, 2);
-          } else if (Array.isArray(response.data)) {
-            if (response.data.length > 0) {
+    const sqlToExecute = getSQLToExecute();
+    
+    if (!sqlToExecute.trim()) {
+      setCompilationResult({
+        success: false,
+        message: 'Execution failed',
+        error: 'No SQL statement to execute. Please enter a query or select text.',
+        output: ''
+      });
+      return;
+    }
+    
+    setIsCompiling(true);
+    setCompilationResult(null);
+    
+    try {
+      const executeSQL = dbConfig.executeSQL;
+      let trimmedSql = sqlToExecute.trim();
+      
+      const isSelectQuery = /^\s*SELECT\b/i.test(trimmedSql);
+      const isCallStatement = /^\s*CALL\b/i.test(trimmedSql);
+      const isPLSQLBlock = /^\s*(DECLARE|BEGIN)/i.test(trimmedSql);
+      
+      let finalSql = sqlToExecute;
+      
+      if (isPLSQLBlock && activeDatabaseType === 'oracle' && !trimmedSql.endsWith('/') && !trimmedSql.endsWith(';')) {
+        finalSql = sqlToExecute + ';\n/';
+      }
+      
+      const response = await executeSQL(authToken, {
+        sql: finalSql,
+        databaseType: activeDatabaseType,
+        readOnly: false
+      });
+      
+      let success = false;
+      let message = '';
+      let output = '';
+      let error = null;
+      
+      console.log('Full response:', response); // Debug log
+      
+      if (response && typeof response === 'object') {
+        // Handle CALL statement responses (has statementType === 'CALL')
+        if (response.statementType === 'CALL') {
+          success = response.responseCode === 200 || response.success === true;
+          message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
+          
+          // Extract the actual data from the response.data field
+          if (response.data) {
+            if (typeof response.data === 'string') {
+              output = response.data;
+            } else if (response.data.error || response.data.message || response.data.traceId) {
+              // This is the actual procedure response - show it nicely
+              output = JSON.stringify(response.data, null, 2);
+            } else if (Array.isArray(response.data)) {
+              if (response.data.length > 0) {
+                output = JSON.stringify(response.data, null, 2);
+              } else {
+                output = 'No rows returned.';
+              }
+            } else if (Object.keys(response.data).length > 0) {
               output = JSON.stringify(response.data, null, 2);
             } else {
-              output = 'No rows returned.';
+              output = 'Statement executed successfully';
             }
-          } else if (Object.keys(response.data).length > 0) {
-            output = JSON.stringify(response.data, null, 2);
           } else {
             output = 'Statement executed successfully';
           }
-        } else {
-          output = 'Statement executed successfully';
+          
+          error = response.error || null;
         }
-        
-        error = response.error || null;
-      }
-      // Handle SELECT query responses with rows
-      else if (response.data && response.data.rows !== undefined) {
-        success = response.responseCode === 200;
-        message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
-        
-        if (response.data.rows && response.data.rows.length > 0) {
-          output = JSON.stringify(response.data.rows, null, 2);
-        } else {
-          output = 'No rows returned.';
-        }
-        error = null;
-      }
-      // Handle response with 'success' property
-      else if (response.hasOwnProperty('success')) {
-        success = response.success === true;
-        message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
-        
-        if (isSelectQuery && response.data && response.data.rows) {
-          if (response.data.rows.length > 0) {
+        // Handle SELECT query responses with rows
+        else if (response.data && response.data.rows !== undefined) {
+          success = response.responseCode === 200 || response.success === true;
+          message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
+          
+          if (response.data.rows && response.data.rows.length > 0) {
             output = JSON.stringify(response.data.rows, null, 2);
           } else {
             output = 'No rows returned.';
           }
-        } else if (response.data) {
-          if (typeof response.data === 'string') {
-            output = response.data;
-          } else if (response.data.output) {
-            output = response.data.output;
-          } else if (response.data.rowsAffected !== undefined) {
-            output = `${response.data.rowsAffected} row(s) affected`;
-          } else if (response.data.data) {
-            // Handle nested data structure
-            if (typeof response.data.data === 'object') {
-              output = JSON.stringify(response.data.data, null, 2);
+          error = null;
+        }
+        // Handle response with 'success' property
+        else if (response.hasOwnProperty('success')) {
+          success = response.success === true;
+          message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
+          
+          if (isSelectQuery && response.data && response.data.rows) {
+            if (response.data.rows.length > 0) {
+              output = JSON.stringify(response.data.rows, null, 2);
             } else {
-              output = String(response.data.data);
+              output = 'No rows returned.';
+            }
+          } else if (response.data) {
+            if (typeof response.data === 'string') {
+              output = response.data;
+            } else if (response.data.output) {
+              output = response.data.output;
+            } else if (response.data.rowsAffected !== undefined) {
+              output = `${response.data.rowsAffected} row(s) affected`;
+            } else if (response.data.data) {
+              // Handle nested data structure
+              if (typeof response.data.data === 'object') {
+                output = JSON.stringify(response.data.data, null, 2);
+              } else {
+                output = String(response.data.data);
+              }
+            } else {
+              output = JSON.stringify(response.data, null, 2);
+            }
+          } else if (response.output) {
+            output = response.output;
+          } else {
+            output = success ? 'Statement executed successfully' : '';
+          }
+          
+          error = response.error || null;
+        }
+        // Handle response with 'responseCode' property
+        else if (response.hasOwnProperty('responseCode')) {
+          success = response.responseCode === 200 || response.success === true;
+          message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
+          
+          if (response.data) {
+            if (typeof response.data === 'string') {
+              output = response.data;
+            } else if (response.data.rows && response.data.rows.length > 0) {
+              output = JSON.stringify(response.data.rows, null, 2);
+            } else if (response.data.rows && response.data.rows.length === 0) {
+              output = 'No rows returned.';
+            } else if (response.data.output) {
+              output = response.data.output;
+            } else if (response.data.rowsAffected !== undefined) {
+              output = `${response.data.rowsAffected} row(s) affected`;
+            } else if (response.data.data) {
+              // Handle nested data (for CALL statements)
+              if (typeof response.data.data === 'object') {
+                output = JSON.stringify(response.data.data, null, 2);
+              } else {
+                output = String(response.data.data);
+              }
+            } else {
+              output = JSON.stringify(response.data, null, 2);
             }
           } else {
-            output = JSON.stringify(response.data, null, 2);
+            output = message;
           }
-        } else if (response.output) {
-          output = response.output;
-        } else {
-          output = success ? 'Statement executed successfully' : '';
+          
+          error = response.error || null;
         }
-        
-        error = response.error || null;
-      }
-      // Handle response with 'responseCode' property
-      else if (response.hasOwnProperty('responseCode')) {
-        success = response.responseCode === 200;
-        message = response.message || (success ? 'Query executed successfully' : 'Execution failed');
-        
-        if (response.data) {
-          if (typeof response.data === 'string') {
-            output = response.data;
-          } else if (response.data.rows && response.data.rows.length > 0) {
+        // Handle response with 'data' property directly
+        else if (response.hasOwnProperty('data')) {
+          success = true;
+          message = 'Query executed successfully';
+          
+          if (response.data.rows && response.data.rows.length > 0) {
             output = JSON.stringify(response.data.rows, null, 2);
           } else if (response.data.rows && response.data.rows.length === 0) {
             output = 'No rows returned.';
@@ -937,118 +1033,88 @@ const QueryEditorModal = ({
           } else if (response.data.rowsAffected !== undefined) {
             output = `${response.data.rowsAffected} row(s) affected`;
           } else if (response.data.data) {
-            // Handle nested data (for CALL statements)
-            if (typeof response.data.data === 'object') {
-              output = JSON.stringify(response.data.data, null, 2);
-            } else {
-              output = String(response.data.data);
-            }
+            output = JSON.stringify(response.data.data, null, 2);
           } else {
             output = JSON.stringify(response.data, null, 2);
           }
-        } else {
-          output = message;
+          
+          error = null;
         }
-        
-        error = response.error || null;
-      }
-      // Handle response with 'data' property directly
-      else if (response.hasOwnProperty('data')) {
+        // Default case - treat as successful response
+        else {
+          success = true;
+          message = 'Query executed successfully';
+          
+          if (typeof response === 'string') {
+            output = response;
+          } else if (response.rows && response.rows.length > 0) {
+            output = JSON.stringify(response.rows, null, 2);
+          } else {
+            output = JSON.stringify(response, null, 2);
+          }
+          
+          error = null;
+        }
+      } 
+      // Handle string response
+      else if (typeof response === 'string') {
         success = true;
         message = 'Query executed successfully';
-        
-        if (response.data.rows && response.data.rows.length > 0) {
-          output = JSON.stringify(response.data.rows, null, 2);
-        } else if (response.data.rows && response.data.rows.length === 0) {
-          output = 'No rows returned.';
-        } else if (response.data.output) {
-          output = response.data.output;
-        } else if (response.data.rowsAffected !== undefined) {
-          output = `${response.data.rowsAffected} row(s) affected`;
-        } else if (response.data.data) {
-          output = JSON.stringify(response.data.data, null, 2);
-        } else {
-          output = JSON.stringify(response.data, null, 2);
-        }
-        
+        output = response;
         error = null;
-      }
-      // Default case - treat as successful response
+      } 
+      // Handle other response types
       else {
         success = true;
         message = 'Query executed successfully';
-        
-        if (typeof response === 'string') {
-          output = response;
-        } else if (response.rows && response.rows.length > 0) {
-          output = JSON.stringify(response.rows, null, 2);
-        } else {
-          output = JSON.stringify(response, null, 2);
-        }
-        
+        output = String(response);
         error = null;
       }
-    } 
-    // Handle string response
-    else if (typeof response === 'string') {
-      success = true;
-      message = 'Query executed successfully';
-      output = response;
-      error = null;
-    } 
-    // Handle other response types
-    else {
-      success = true;
-      message = 'Query executed successfully';
-      output = String(response);
-      error = null;
-    }
-    
-    // Ensure output is never empty for successful operations
-    if (success && !output) {
-      output = 'Statement executed successfully';
-    }
-    
-    setCompilationResult({
-      success: success,
-      message: message,
-      output: output,
-      error: error
-    });
-    
-    if (success && sqlToExecute.trim()) {
-      saveToHistory(sqlToExecute);
-      if (onQueryExecute) {
-        onQueryExecute(sqlToExecute, response);
+      
+      // Ensure output is never empty for successful operations
+      if (success && !output) {
+        output = 'Statement executed successfully';
       }
-    }
-    
-  } catch (error) {
-    console.error('Execution error:', error);
-    
-    let errorMessage = error.message || String(error);
-    let errorDetail = null;
-    
-    if (error.response && error.response.data) {
-      if (error.response.data.message) {
-        errorMessage = error.response.data.message;
-        errorDetail = error.response.data.error || error.response.data.detail;
-      } else if (error.response.data.error) {
-        errorMessage = error.response.data.error;
+      
+      setCompilationResult({
+        success: success,
+        message: message,
+        output: output,
+        error: error
+      });
+      
+      if (success && sqlToExecute.trim()) {
+        saveToHistory(sqlToExecute);
+        if (onQueryExecute) {
+          onQueryExecute(sqlToExecute, response);
+        }
       }
+      
+    } catch (error) {
+      console.error('Execution error:', error);
+      
+      let errorMessage = error.message || String(error);
+      let errorDetail = null;
+      
+      if (error.response && error.response.data) {
+        if (error.response.data.message) {
+          errorMessage = error.response.data.message;
+          errorDetail = error.response.data.error || error.response.data.detail;
+        } else if (error.response.data.error) {
+          errorMessage = error.response.data.error;
+        }
+      }
+      
+      setCompilationResult({
+        success: false,
+        message: 'Execution failed',
+        error: errorMessage,
+        output: errorDetail || ''
+      });
+    } finally {
+      setIsCompiling(false);
     }
-    
-    setCompilationResult({
-      success: false,
-      message: 'Execution failed',
-      error: errorMessage,
-      output: errorDetail || ''
-    });
-  } finally {
-    setIsCompiling(false);
-  }
-};
-
+  };
   
   const handleCopy = () => {
     navigator.clipboard.writeText(editorContent);
@@ -1150,6 +1216,9 @@ const QueryEditorModal = ({
 SELECT * FROM your_table_name LIMIT 10;`;
   };
   
+  // Check if current query is a SELECT statement
+  const isSelectQuery = /^\s*SELECT\b/i.test(editorContent.trim());
+  
   if (typeof window === 'undefined') return null;
   if (!mounted) return null;
   if (!isOpen) return null;
@@ -1169,610 +1238,663 @@ SELECT * FROM your_table_name LIMIT 10;`;
   };
   
   return ReactDOM.createPortal(
-    <div className={modalClasses} style={{ backgroundColor: 'rgba(0, 0, 0, 0.7)', backdropFilter: 'blur(8px)' }}>
-      <div 
-        ref={modalRef}
-        className={containerClasses}
-        style={{ 
-          backgroundColor: themeColors.bg,
-          border: `1px solid ${themeColors.modalBorder || themeColors.border}`,
-          borderRadius: isFullscreen ? 0 : '0.75rem',
-          width: isFullscreen ? '100%' : `${modalSize.width}px`,
-          height: isFullscreen ? '100%' : `${modalSize.height}px`,
-          position: 'relative',
-          resize: 'both',
-          overflow: 'hidden'
-        }}
-      >
-        {/* Resize Handles */}
-        {!isFullscreen && (
-          <>
-            <div
-              className="absolute right-0 top-0 w-1 h-full cursor-ew-resize hover:bg-blue-500 transition-colors"
-              style={{ backgroundColor: isResizing && resizeDirection === 'right' ? themeColors.info : 'transparent' }}
-              onMouseDown={(e) => handleResizeStart(e, 'right')}
-            />
-            <div
-              className="absolute bottom-0 left-0 w-full h-1 cursor-ns-resize hover:bg-blue-500 transition-colors"
-              style={{ backgroundColor: isResizing && resizeDirection === 'bottom' ? themeColors.info : 'transparent' }}
-              onMouseDown={(e) => handleResizeStart(e, 'bottom')}
-            />
-            <div
-              className="absolute bottom-0 right-0 w-4 h-4 cursor-nw-resize hover:bg-blue-500 transition-colors rounded-bl"
-              style={{ backgroundColor: isResizing && resizeDirection === 'bottom-right' ? themeColors.info : 'transparent' }}
-              onMouseDown={(e) => handleResizeStart(e, 'bottom-right')}
-            >
-              <Maximize size={12} className="absolute bottom-1 right-1" style={{ color: themeColors.textSecondary }} />
-            </div>
-          </>
-        )}
-        
-        {/* Header */}
+    <>
+      <div className={modalClasses} style={{ backgroundColor: 'rgba(0, 0, 0, 0.7)', backdropFilter: 'blur(8px)' }}>
         <div 
-          className="flex items-center justify-between px-6 py-4 border-b shrink-0"
-          style={{ borderColor: themeColors.border, backgroundColor: themeColors.card }}
+          ref={modalRef}
+          className={containerClasses}
+          style={{ 
+            backgroundColor: themeColors.bg,
+            border: `1px solid ${themeColors.modalBorder || themeColors.border}`,
+            borderRadius: isFullscreen ? 0 : '0.75rem',
+            width: isFullscreen ? '100%' : `${modalSize.width}px`,
+            height: isFullscreen ? '100%' : `${modalSize.height}px`,
+            position: 'relative',
+            resize: 'both',
+            overflow: 'hidden'
+          }}
         >
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.primary + '20' }}>
-              {getDatabaseIcon(activeDatabaseType, 20)}
+          {/* Resize Handles */}
+          {!isFullscreen && (
+            <>
+              <div
+                className="absolute right-0 top-0 w-1 h-full cursor-ew-resize hover:bg-blue-500 transition-colors"
+                style={{ backgroundColor: isResizing && resizeDirection === 'right' ? themeColors.info : 'transparent' }}
+                onMouseDown={(e) => handleResizeStart(e, 'right')}
+              />
+              <div
+                className="absolute bottom-0 left-0 w-full h-1 cursor-ns-resize hover:bg-blue-500 transition-colors"
+                style={{ backgroundColor: isResizing && resizeDirection === 'bottom' ? themeColors.info : 'transparent' }}
+                onMouseDown={(e) => handleResizeStart(e, 'bottom')}
+              />
+              <div
+                className="absolute bottom-0 right-0 w-4 h-4 cursor-nw-resize hover:bg-blue-500 transition-colors rounded-bl"
+                style={{ backgroundColor: isResizing && resizeDirection === 'bottom-right' ? themeColors.info : 'transparent' }}
+                onMouseDown={(e) => handleResizeStart(e, 'bottom-right')}
+              >
+                <Maximize size={12} className="absolute bottom-1 right-1" style={{ color: themeColors.textSecondary }} />
+              </div>
+            </>
+          )}
+          
+          {/* Header */}
+          <div 
+            className="flex items-center justify-between px-6 py-4 border-b shrink-0"
+            style={{ borderColor: themeColors.border, backgroundColor: themeColors.card }}
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.primary + '20' }}>
+                {getDatabaseIcon(activeDatabaseType, 20)}
+              </div>
+              <div>
+                <h2 className="text-lg font-bold" style={{ color: themeColors.text }}>
+                  {getConsoleTitle()}
+                </h2>
+                <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                  {getConsoleSubtitle()}
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-lg font-bold" style={{ color: themeColors.text }}>
-                {getConsoleTitle()}
-              </h2>
-              <p className="text-xs" style={{ color: themeColors.textSecondary }}>
-                {getConsoleSubtitle()}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Only show database selector when databaseType is 'all' */}
-            {databaseType === 'all' && (
-              <div className="relative">
-                <button
-                  onClick={() => setShowDatabaseSelector(!showDatabaseSelector)}
-                  className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-2"
-                  style={{ 
-                    backgroundColor: themeColors.info + '20',
-                    border: `1px solid ${themeColors.info}40`,
-                    color: themeColors.info
-                  }}
-                >
-                  {getDatabaseIcon(selectedDatabaseType, 14)}
-                  <span>{getDatabaseDisplayName(selectedDatabaseType)}</span>
-                  <ChevronDown size={12} />
-                </button>
-                
-                {showDatabaseSelector && (
-                  <div 
-                    className="absolute top-full right-0 mt-1 rounded-lg shadow-lg z-50 min-w-[160px]"
+            <div className="flex items-center gap-2">
+              {/* Only show database selector when databaseType is 'all' */}
+              {databaseType === 'all' && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowDatabaseSelector(!showDatabaseSelector)}
+                    className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-2"
                     style={{ 
-                      backgroundColor: themeColors.card,
-                      border: `1px solid ${themeColors.border}`
+                      backgroundColor: themeColors.info + '20',
+                      border: `1px solid ${themeColors.info}40`,
+                      color: themeColors.info
                     }}
                   >
-                    {Object.keys(DATABASE_CONFIGS).filter(dbType => dbType !== 'all').map(dbType => (
-                      <button
-                        key={dbType}
-                        onClick={() => {
-                          handleDatabaseTypeChange(dbType);
-                          setShowDatabaseSelector(false);
-                        }}
-                        className={`w-full px-3 py-2 text-left text-sm hover-lift transition-colors flex items-center gap-2 ${
-                          selectedDatabaseType === dbType ? 'bg-opacity-20' : ''
-                        }`}
-                        style={{ 
-                          backgroundColor: selectedDatabaseType === dbType ? `${themeColors.info}20` : 'transparent',
-                          color: themeColors.text
-                        }}
-                      >
-                        {getDatabaseIcon(dbType, 14)}
-                        <span>{DATABASE_CONFIGS[dbType]?.displayName || dbType.toUpperCase()}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* Only show database badge when NOT in 'all' mode */}
-            {databaseType !== 'all' && (
-              <span className="text-xs px-2 py-1 rounded" style={{ 
-                backgroundColor: themeColors.info + '20',
-                color: themeColors.info
-              }}>
-                {getDatabaseDisplayName(activeDatabaseType)}
-              </span>
-            )}
-            
-            <button
-              onClick={() => setShowTemplates(!showTemplates)}
-              className="p-2 rounded-lg hover-lift transition-colors"
-              style={{ backgroundColor: themeColors.hover }}
-              title="SQL Templates"
-            >
-              <FileCode size={16} style={{ color: themeColors.textSecondary }} />
-            </button>
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              className="p-2 rounded-lg hover-lift transition-colors"
-              style={{ backgroundColor: themeColors.hover }}
-              title="Query History"
-            >
-              <History size={16} style={{ color: themeColors.textSecondary }} />
-            </button>
-            <button
-              onClick={() => setShowLineNumbers(!showLineNumbers)}
-              className="p-2 rounded-lg hover-lift transition-colors"
-              style={{ backgroundColor: themeColors.hover }}
-              title="Toggle line numbers"
-            >
-              <Hash size={16} style={{ color: themeColors.textSecondary }} />
-            </button>
-            <button
-              onClick={() => setShowFindReplace(!showFindReplace)}
-              className="p-2 rounded-lg hover-lift transition-colors"
-              style={{ backgroundColor: themeColors.hover }}
-              title="Find and Replace"
-            >
-              <Search size={16} style={{ color: themeColors.textSecondary }} />
-            </button>
-            <button
-              onClick={() => setEditorFontSize(prev => Math.max(8, prev - 1))}
-              className="p-2 rounded-lg hover-lift transition-colors"
-              style={{ backgroundColor: themeColors.hover }}
-              title="Decrease font size"
-            >
-              <span style={{ fontSize: 12, color: themeColors.textSecondary }}>A-</span>
-            </button>
-            <button
-              onClick={() => setEditorFontSize(prev => Math.min(24, prev + 1))}
-              className="p-2 rounded-lg hover-lift transition-colors"
-              style={{ backgroundColor: themeColors.hover }}
-              title="Increase font size"
-            >
-              <span style={{ fontSize: 16, color: themeColors.textSecondary }}>A+</span>
-            </button>
-            <button
-              onClick={() => setIsFullscreen(!isFullscreen)}
-              className="p-2 rounded-lg hover-lift transition-colors"
-              style={{ backgroundColor: themeColors.hover }}
-              title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-            >
-              {isFullscreen ? <Minimize2 size={16} style={{ color: themeColors.textSecondary }} /> : <Maximize2 size={16} style={{ color: themeColors.textSecondary }} />}
-            </button>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover-lift transition-colors"
-              style={{ backgroundColor: themeColors.hover }}
-            >
-              <X size={20} style={{ color: themeColors.textSecondary }} />
-            </button>
-          </div>
-        </div>
-        
-        {/* Templates Panel */}
-        {showTemplates && (
-          <div 
-            className="p-4 border-b"
-            style={{ borderColor: themeColors.border, backgroundColor: themeColors.hover }}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium" style={{ color: themeColors.text }}>
-                <FileCode size={14} className="inline mr-2" />
-                SQL Templates ({getDatabaseDisplayName(activeDatabaseType)})
-              </h3>
+                    {getDatabaseIcon(selectedDatabaseType, 14)}
+                    <span>{getDatabaseDisplayName(selectedDatabaseType)}</span>
+                    <ChevronDown size={12} />
+                  </button>
+                  
+                  {showDatabaseSelector && (
+                    <div 
+                      className="absolute top-full right-0 mt-1 rounded-lg shadow-lg z-50 min-w-[160px]"
+                      style={{ 
+                        backgroundColor: themeColors.card,
+                        border: `1px solid ${themeColors.border}`
+                      }}
+                    >
+                      {Object.keys(DATABASE_CONFIGS).filter(dbType => dbType !== 'all').map(dbType => (
+                        <button
+                          key={dbType}
+                          onClick={() => {
+                            handleDatabaseTypeChange(dbType);
+                            setShowDatabaseSelector(false);
+                          }}
+                          className={`w-full px-3 py-2 text-left text-sm hover-lift transition-colors flex items-center gap-2 ${
+                            selectedDatabaseType === dbType ? 'bg-opacity-20' : ''
+                          }`}
+                          style={{ 
+                            backgroundColor: selectedDatabaseType === dbType ? `${themeColors.info}20` : 'transparent',
+                            color: themeColors.text
+                          }}
+                        >
+                          {getDatabaseIcon(dbType, 14)}
+                          <span>{DATABASE_CONFIGS[dbType]?.displayName || dbType.toUpperCase()}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Only show database badge when NOT in 'all' mode */}
+              {databaseType !== 'all' && (
+                <span className="text-xs px-2 py-1 rounded" style={{ 
+                  backgroundColor: themeColors.info + '20',
+                  color: themeColors.info
+                }}>
+                  {getDatabaseDisplayName(activeDatabaseType)}
+                </span>
+              )}
+              
               <button
-                onClick={() => setShowTemplates(false)}
-                className="p-1 rounded hover-lift transition-colors"
-                style={{ color: themeColors.textSecondary }}
+                onClick={() => setShowTemplates(!showTemplates)}
+                className="p-2 rounded-lg hover-lift transition-colors"
+                style={{ backgroundColor: themeColors.hover }}
+                title="SQL Templates"
               >
-                <X size={14} />
+                <FileCode size={16} style={{ color: themeColors.textSecondary }} />
+              </button>
+              <button
+                onClick={() => setShowHistory(!showHistory)}
+                className="p-2 rounded-lg hover-lift transition-colors"
+                style={{ backgroundColor: themeColors.hover }}
+                title="Query History"
+              >
+                <History size={16} style={{ color: themeColors.textSecondary }} />
+              </button>
+              <button
+                onClick={() => setShowLineNumbers(!showLineNumbers)}
+                className="p-2 rounded-lg hover-lift transition-colors"
+                style={{ backgroundColor: themeColors.hover }}
+                title="Toggle line numbers"
+              >
+                <Hash size={16} style={{ color: themeColors.textSecondary }} />
+              </button>
+              <button
+                onClick={() => setShowFindReplace(!showFindReplace)}
+                className="p-2 rounded-lg hover-lift transition-colors"
+                style={{ backgroundColor: themeColors.hover }}
+                title="Find and Replace"
+              >
+                <Search size={16} style={{ color: themeColors.textSecondary }} />
+              </button>
+              <button
+                onClick={() => setEditorFontSize(prev => Math.max(8, prev - 1))}
+                className="p-2 rounded-lg hover-lift transition-colors"
+                style={{ backgroundColor: themeColors.hover }}
+                title="Decrease font size"
+              >
+                <span style={{ fontSize: 12, color: themeColors.textSecondary }}>A-</span>
+              </button>
+              <button
+                onClick={() => setEditorFontSize(prev => Math.min(24, prev + 1))}
+                className="p-2 rounded-lg hover-lift transition-colors"
+                style={{ backgroundColor: themeColors.hover }}
+                title="Increase font size"
+              >
+                <span style={{ fontSize: 16, color: themeColors.textSecondary }}>A+</span>
+              </button>
+              <button
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                className="p-2 rounded-lg hover-lift transition-colors"
+                style={{ backgroundColor: themeColors.hover }}
+                title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              >
+                {isFullscreen ? <Minimize2 size={16} style={{ color: themeColors.textSecondary }} /> : <Maximize2 size={16} style={{ color: themeColors.textSecondary }} />}
+              </button>
+              <button
+                onClick={onClose}
+                className="p-2 rounded-lg hover-lift transition-colors"
+                style={{ backgroundColor: themeColors.hover }}
+              >
+                <X size={20} style={{ color: themeColors.textSecondary }} />
               </button>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {templates.map((template, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => applyTemplate(template)}
-                  className="px-3 py-2 rounded-lg text-left text-sm hover-lift transition-colors"
-                  style={{ 
-                    backgroundColor: themeColors.card,
-                    border: `1px solid ${themeColors.border}`,
-                    color: themeColors.text
-                  }}
-                >
-                  {template.name}
-                </button>
-              ))}
-            </div>
           </div>
-        )}
-        
-        {/* History Panel */}
-        {showHistory && (
-          <div 
-            className="p-4 border-b"
-            style={{ borderColor: themeColors.border, backgroundColor: themeColors.hover }}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium" style={{ color: themeColors.text }}>
-                <History size={14} className="inline mr-2" />
-                Query History ({getDatabaseDisplayName(activeDatabaseType)})
-              </h3>
-              <div className="flex gap-2">
-                {queryHistory.length > 0 && (
-                  <button
-                    onClick={clearHistory}
-                    className="px-2 py-1 rounded text-xs hover-lift transition-colors flex items-center gap-1"
-                    style={{ 
-                      backgroundColor: themeColors.error + '20',
-                      color: themeColors.error
-                    }}
-                  >
-                    <Trash2 size={12} />
-                    Clear All
-                  </button>
-                )}
+          
+          {/* Templates Panel */}
+          {showTemplates && (
+            <div 
+              className="p-4 border-b"
+              style={{ borderColor: themeColors.border, backgroundColor: themeColors.hover }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium" style={{ color: themeColors.text }}>
+                  <FileCode size={14} className="inline mr-2" />
+                  SQL Templates ({getDatabaseDisplayName(activeDatabaseType)})
+                </h3>
                 <button
-                  onClick={() => setShowHistory(false)}
+                  onClick={() => setShowTemplates(false)}
                   className="p-1 rounded hover-lift transition-colors"
                   style={{ color: themeColors.textSecondary }}
                 >
                   <X size={14} />
                 </button>
               </div>
-            </div>
-            {queryHistory.length === 0 ? (
-              <p className="text-sm text-center py-4" style={{ color: themeColors.textSecondary }}>
-                No query history yet. Execute some queries to see them here.
-              </p>
-            ) : (
-              <div className="max-h-64 overflow-y-auto space-y-2">
-                {queryHistory.map((item, idx) => (
-                  <div
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {templates.map((template, idx) => (
+                  <button
                     key={idx}
-                    onClick={() => loadFromHistory(item.query)}
-                    className="p-2 rounded-lg cursor-pointer hover-lift transition-colors"
+                    onClick={() => applyTemplate(template)}
+                    className="px-3 py-2 rounded-lg text-left text-sm hover-lift transition-colors"
                     style={{ 
                       backgroundColor: themeColors.card,
-                      border: `1px solid ${themeColors.border}`
+                      border: `1px solid ${themeColors.border}`,
+                      color: themeColors.text
                     }}
                   >
-                    <pre className="text-xs truncate" style={{ color: themeColors.text }}>
-                      {item.query.length > 200 ? item.query.substring(0, 200) + '...' : item.query}
-                    </pre>
-                    <div className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
-                      {new Date(item.timestamp).toLocaleString()}
-                    </div>
-                  </div>
+                    {template.name}
+                  </button>
                 ))}
               </div>
-            )}
-          </div>
-        )}
-        
-        {/* Find/Replace Panel */}
-        {showFindReplace && (
-          <div 
-            className="p-4 border-b"
-            style={{ borderColor: themeColors.border, backgroundColor: themeColors.hover }}
-          >
-            <div className="flex flex-col gap-3">
-              <div className="flex gap-2">
-                <div className="flex-1 flex gap-2">
-                  <input
-                    ref={findInputRef}
-                    type="text"
-                    placeholder="Find..."
-                    value={findText}
-                    onChange={handleFindTextChange}
-                    onKeyDown={stopPropagationForEditorKeys}
-                    onFocus={() => setIsSearchInputFocused(true)}
-                    onBlur={() => setIsSearchInputFocused(false)}
-                    className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none hover-lift"
-                    style={{ 
-                      backgroundColor: themeColors.card,
-                      border: `1px solid ${themeColors.border}`,
-                      color: themeColors.text
-                    }}
-                  />
-                  <input
-                    ref={replaceInputRef}
-                    type="text"
-                    placeholder="Replace with..."
-                    value={replaceText}
-                    onChange={handleReplaceTextChange}
-                    onKeyDown={stopPropagationForEditorKeys}
-                    onFocus={() => setIsSearchInputFocused(true)}
-                    onBlur={() => setIsSearchInputFocused(false)}
-                    className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none hover-lift"
-                    style={{ 
-                      backgroundColor: themeColors.card,
-                      border: `1px solid ${themeColors.border}`,
-                      color: themeColors.text
-                    }}
-                  />
-                </div>
-                <div className="flex gap-1">
-                  <button
-                    onClick={findPrevious}
-                    disabled={!findText || searchMatches.length === 0}
-                    className="px-3 py-2 rounded-lg text-sm hover-lift transition-colors disabled:opacity-50"
-                    style={{ backgroundColor: themeColors.border, color: themeColors.text }}
-                    title="Previous match"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    onClick={findNext}
-                    disabled={!findText || searchMatches.length === 0}
-                    className="px-3 py-2 rounded-lg text-sm hover-lift transition-colors disabled:opacity-50"
-                    style={{ backgroundColor: themeColors.border, color: themeColors.text }}
-                    title="Next match"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    onClick={replaceCurrent}
-                    disabled={!findText || searchMatches.length === 0}
-                    className="px-3 py-2 rounded-lg text-sm hover-lift transition-colors disabled:opacity-50"
-                    style={{ backgroundColor: themeColors.border, color: themeColors.text }}
-                  >
-                    Replace
-                  </button>
-                  <button
-                    onClick={replaceAll}
-                    disabled={!findText}
-                    className="px-3 py-2 rounded-lg text-sm hover-lift transition-colors disabled:opacity-50"
-                    style={{ backgroundColor: themeColors.border, color: themeColors.text }}
-                  >
-                    Replace All
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 text-xs" style={{ color: themeColors.textSecondary }}>
-                  <input
-                    type="checkbox"
-                    checked={matchCase}
-                    onChange={(e) => setMatchCase(e.target.checked)}
-                    className="rounded"
-                    style={{ accentColor: themeColors.info }}
-                  />
-                  Match case
-                </label>
-                {searchMatches.length > 0 && (
-                  <span className="text-xs" style={{ color: themeColors.textSecondary }}>
-                    {searchIndex + 1} of {searchMatches.length} matches
-                  </span>
-                )}
-              </div>
             </div>
-          </div>
-        )}
-        
-        {/* Toolbar */}
-        <div 
-          className="flex items-center justify-between px-6 py-3 border-b overflow-x-auto shrink-0"
-          style={{ borderColor: themeColors.border, backgroundColor: themeColors.hover }}
-        >
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleFormat}
-              className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-1"
-              style={{ backgroundColor: themeColors.card, color: themeColors.text, border: `1px solid ${themeColors.border}` }}
-            >
-              <Wind size={12} />
-              Format
-            </button>
-            <button
-              onClick={handleClear}
-              className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-1"
-              style={{ backgroundColor: themeColors.card, color: themeColors.text, border: `1px solid ${themeColors.border}` }}
-            >
-              <Trash2 size={12} />
-              Clear
-            </button>
-            <div className="w-px h-6 mx-1" style={{ backgroundColor: themeColors.border }} />
-            <label
-              className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors cursor-pointer flex items-center gap-1"
-              style={{ backgroundColor: themeColors.card, color: themeColors.text, border: `1px solid ${themeColors.border}` }}
-            >
-              <Upload size={12} />
-              Load File
-              <input
-                type="file"
-                accept=".sql,.txt"
-                onChange={handleUpload}
-                className="hidden"
-              />
-            </label>
-            <button
-              onClick={handleCopy}
-              className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-1"
-              style={{ backgroundColor: themeColors.card, color: themeColors.text, border: `1px solid ${themeColors.border}` }}
-            >
-              <Copy size={12} />
-              Copy
-            </button>
-            <button
-              onClick={handleDownload}
-              className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-1"
-              style={{ backgroundColor: themeColors.card, color: themeColors.text, border: `1px solid ${themeColors.border}` }}
-            >
-              <Download size={12} />
-              Export
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleUndo}
-              disabled={historyIndex <= 0}
-              className="p-1.5 rounded-lg hover-lift transition-colors disabled:opacity-50"
-              style={{ backgroundColor: themeColors.card }}
-              title="Undo"
-            >
-              <Undo size={14} style={{ color: themeColors.textSecondary }} />
-            </button>
-            <button
-              onClick={handleRedo}
-              disabled={historyIndex >= history.length - 1}
-              className="p-1.5 rounded-lg hover-lift transition-colors disabled:opacity-50"
-              style={{ backgroundColor: themeColors.card }}
-              title="Redo"
-            >
-              <Redo size={14} style={{ color: themeColors.textSecondary }} />
-            </button>
-          </div>
-        </div>
-        
-        {/* Editor Area */}
-        <div className="flex-1 flex flex-col overflow-hidden relative">
-          <div style={editorContainerStyle} className="overflow-hidden">
-            <div className="flex h-full">
-              {showLineNumbers && (
-                <div
-                  ref={lineNumbersRef}
-                  className="overflow-hidden select-none"
-                  style={{
-                    width: '60px',
-                    backgroundColor: themeColors.codeBg,
-                    borderRight: `1px solid ${themeColors.border}`,
-                    fontFamily: 'monospace',
-                    fontSize: editorFontSize,
-                    lineHeight: 1.5,
-                    overflowY: 'auto'
-                  }}
-                />
-              )}
-              
-              <textarea
-                ref={textareaRef}
-                value={editorContent}
-                onChange={handleContentChange}
-                onScroll={handleScroll}
-                onKeyDown={handleKeyDown}
-                onBlur={saveSelection}
-                onFocus={() => {
-                  if (textareaRef.current && (selectionStartRef.current !== 0 || selectionEndRef.current !== 0)) {
-                    textareaRef.current.setSelectionRange(selectionStartRef.current, selectionEndRef.current);
-                  }
-                }}
-                className="flex-1 p-4 outline-none resize-none"
-                style={{
-                  backgroundColor: themeColors.codeBg,
-                  color: themeColors.text,
-                  fontFamily: 'monospace',
-                  fontSize: editorFontSize,
-                  lineHeight: 1.5,
-                  border: 'none'
-                }}
-                spellCheck={false}
-                placeholder={getPlaceholderText()}
-              />
-            </div>
-          </div>
+          )}
           
-          {/* Resizable Response Panel */}
-          {compilationResult && (
-            <>
-              <div
-                className="flex items-center justify-center cursor-ns-resize hover:bg-opacity-20 transition-colors"
-                style={{
-                  height: '8px',
-                  backgroundColor: themeColors.border,
-                  cursor: 'ns-resize',
-                  position: 'relative'
-                }}
-                onMouseDown={handleResponseDragStart}
-              >
-                <div
-                  className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"
-                  style={{ color: themeColors.textSecondary }}
-                >
-                  <GripHorizontal size={16} />
+          {/* History Panel */}
+          {showHistory && (
+            <div 
+              className="p-4 border-b"
+              style={{ borderColor: themeColors.border, backgroundColor: themeColors.hover }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium" style={{ color: themeColors.text }}>
+                  <History size={14} className="inline mr-2" />
+                  Query History ({getDatabaseDisplayName(activeDatabaseType)})
+                </h3>
+                <div className="flex gap-2">
+                  {queryHistory.length > 0 && (
+                    <button
+                      onClick={clearHistory}
+                      className="px-2 py-1 rounded text-xs hover-lift transition-colors flex items-center gap-1"
+                      style={{ 
+                        backgroundColor: themeColors.error + '20',
+                        color: themeColors.error
+                      }}
+                    >
+                      <Trash2 size={12} />
+                      Clear All
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowHistory(false)}
+                    className="p-1 rounded hover-lift transition-colors"
+                    style={{ color: themeColors.textSecondary }}
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
               </div>
-              
-              <div
-                style={{
-                  height: `${responseHeight}px`,
-                  overflow: 'auto',
-                  borderTop: `1px solid ${themeColors.border}`,
-                  backgroundColor: compilationResult.success ? `${themeColors.success}10` : `${themeColors.error}10`
-                }}
-                className="shrink-0"
-              >
-                <div className="p-4">
-                  <div className="flex items-start gap-3">
-                    {compilationResult.success ? (
-                      <CheckCircle size={18} style={{ color: themeColors.success }} className="mt-0.5 flex-shrink-0" />
-                    ) : (
-                      <AlertCircle size={18} style={{ color: themeColors.error }} className="mt-0.5 flex-shrink-0" />
-                    )}
-                    <div className="flex-1">
-                      <div className="text-sm font-medium" style={{ color: compilationResult.success ? themeColors.success : themeColors.error }}>
-                        {compilationResult.message}
-                      </div>
-                      {compilationResult.error && (
-                        <pre className="text-xs mt-1 whitespace-pre-wrap" style={{ color: themeColors.textSecondary }}>
-                          {compilationResult.error}
-                        </pre>
-                      )}
-                      {compilationResult.output && (
-                        <pre className="text-xs mt-1 whitespace-pre-wrap overflow-x-auto" style={{ color: themeColors.textSecondary }}>
-                          {compilationResult.output}
-                        </pre>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => setCompilationResult(null)}
-                      className="p-1 rounded hover-lift transition-colors"
-                      style={{ backgroundColor: themeColors.hover }}
+              {queryHistory.length === 0 ? (
+                <p className="text-sm text-center py-4" style={{ color: themeColors.textSecondary }}>
+                  No query history yet. Execute some queries to see them here.
+                </p>
+              ) : (
+                <div className="max-h-64 overflow-y-auto space-y-2">
+                  {queryHistory.map((item, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => loadFromHistory(item.query)}
+                      className="p-2 rounded-lg cursor-pointer hover-lift transition-colors"
+                      style={{ 
+                        backgroundColor: themeColors.card,
+                        border: `1px solid ${themeColors.border}`
+                      }}
                     >
-                      <X size={14} style={{ color: themeColors.textSecondary }} />
+                      <pre className="text-xs truncate" style={{ color: themeColors.text }}>
+                        {item.query.length > 200 ? item.query.substring(0, 200) + '...' : item.query}
+                      </pre>
+                      <div className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
+                        {new Date(item.timestamp).toLocaleString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Find/Replace Panel */}
+          {showFindReplace && (
+            <div 
+              className="p-4 border-b"
+              style={{ borderColor: themeColors.border, backgroundColor: themeColors.hover }}
+            >
+              <div className="flex flex-col gap-3">
+                <div className="flex gap-2">
+                  <div className="flex-1 flex gap-2">
+                    <input
+                      ref={findInputRef}
+                      type="text"
+                      placeholder="Find..."
+                      value={findText}
+                      onChange={handleFindTextChange}
+                      onKeyDown={stopPropagationForEditorKeys}
+                      onFocus={() => setIsSearchInputFocused(true)}
+                      onBlur={() => setIsSearchInputFocused(false)}
+                      className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none hover-lift"
+                      style={{ 
+                        backgroundColor: themeColors.card,
+                        border: `1px solid ${themeColors.border}`,
+                        color: themeColors.text
+                      }}
+                    />
+                    <input
+                      ref={replaceInputRef}
+                      type="text"
+                      placeholder="Replace with..."
+                      value={replaceText}
+                      onChange={handleReplaceTextChange}
+                      onKeyDown={stopPropagationForEditorKeys}
+                      onFocus={() => setIsSearchInputFocused(true)}
+                      onBlur={() => setIsSearchInputFocused(false)}
+                      className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none hover-lift"
+                      style={{ 
+                        backgroundColor: themeColors.card,
+                        border: `1px solid ${themeColors.border}`,
+                        color: themeColors.text
+                      }}
+                    />
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={findPrevious}
+                      disabled={!findText || searchMatches.length === 0}
+                      className="px-3 py-2 rounded-lg text-sm hover-lift transition-colors disabled:opacity-50"
+                      style={{ backgroundColor: themeColors.border, color: themeColors.text }}
+                      title="Previous match"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      onClick={findNext}
+                      disabled={!findText || searchMatches.length === 0}
+                      className="px-3 py-2 rounded-lg text-sm hover-lift transition-colors disabled:opacity-50"
+                      style={{ backgroundColor: themeColors.border, color: themeColors.text }}
+                      title="Next match"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      onClick={replaceCurrent}
+                      disabled={!findText || searchMatches.length === 0}
+                      className="px-3 py-2 rounded-lg text-sm hover-lift transition-colors disabled:opacity-50"
+                      style={{ backgroundColor: themeColors.border, color: themeColors.text }}
+                    >
+                      Replace
+                    </button>
+                    <button
+                      onClick={replaceAll}
+                      disabled={!findText}
+                      className="px-3 py-2 rounded-lg text-sm hover-lift transition-colors disabled:opacity-50"
+                      style={{ backgroundColor: themeColors.border, color: themeColors.text }}
+                    >
+                      Replace All
                     </button>
                   </div>
                 </div>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-xs" style={{ color: themeColors.textSecondary }}>
+                    <input
+                      type="checkbox"
+                      checked={matchCase}
+                      onChange={(e) => setMatchCase(e.target.checked)}
+                      className="rounded"
+                      style={{ accentColor: themeColors.info }}
+                    />
+                    Match case
+                  </label>
+                  {searchMatches.length > 0 && (
+                    <span className="text-xs" style={{ color: themeColors.textSecondary }}>
+                      {searchIndex + 1} of {searchMatches.length} matches
+                    </span>
+                  )}
+                </div>
               </div>
-            </>
+            </div>
           )}
-        </div>
-        
-        {/* Action Buttons */}
-        <div 
-          className="flex items-center justify-between px-6 py-4 border-t shrink-0"
-          style={{ borderColor: themeColors.border, backgroundColor: themeColors.card }}
-        >
-          <div className="text-xs" style={{ color: themeColors.textSecondary }}>
-            <span className="font-mono">Ctrl/Cmd + Enter</span> to execute • 
-            <span className="font-mono ml-2">Ctrl/Cmd + Z</span> undo • 
-            <span className="font-mono ml-2">Tab</span> insert spaces
+          
+          {/* Toolbar */}
+          <div 
+            className="flex items-center justify-between px-6 py-3 border-b overflow-x-auto shrink-0"
+            style={{ borderColor: themeColors.border, backgroundColor: themeColors.hover }}
+          >
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleFormat}
+                className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-1"
+                style={{ backgroundColor: themeColors.card, color: themeColors.text, border: `1px solid ${themeColors.border}` }}
+              >
+                <Wind size={12} />
+                Format
+              </button>
+              <button
+                onClick={handleClear}
+                className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-1"
+                style={{ backgroundColor: themeColors.card, color: themeColors.text, border: `1px solid ${themeColors.border}` }}
+              >
+                <Trash2 size={12} />
+                Clear
+              </button>
+              <div className="w-px h-6 mx-1" style={{ backgroundColor: themeColors.border }} />
+              <label
+                className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors cursor-pointer flex items-center gap-1"
+                style={{ backgroundColor: themeColors.card, color: themeColors.text, border: `1px solid ${themeColors.border}` }}
+              >
+                <Upload size={12} />
+                Load File
+                <input
+                  type="file"
+                  accept=".sql,.txt"
+                  onChange={handleUpload}
+                  className="hidden"
+                />
+              </label>
+              <button
+                onClick={handleCopy}
+                className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-1"
+                style={{ backgroundColor: themeColors.card, color: themeColors.text, border: `1px solid ${themeColors.border}` }}
+              >
+                <Copy size={12} />
+                Copy
+              </button>
+              <button
+                onClick={handleDownload}
+                className="px-3 py-1.5 rounded-lg text-xs hover-lift transition-colors flex items-center gap-1"
+                style={{ backgroundColor: themeColors.card, color: themeColors.text, border: `1px solid ${themeColors.border}` }}
+              >
+                <Download size={12} />
+                Export
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleUndo}
+                disabled={historyIndex <= 0}
+                className="p-1.5 rounded-lg hover-lift transition-colors disabled:opacity-50"
+                style={{ backgroundColor: themeColors.card }}
+                title="Undo"
+              >
+                <Undo size={14} style={{ color: themeColors.textSecondary }} />
+              </button>
+              <button
+                onClick={handleRedo}
+                disabled={historyIndex >= history.length - 1}
+                className="p-1.5 rounded-lg hover-lift transition-colors disabled:opacity-50"
+                style={{ backgroundColor: themeColors.card }}
+                title="Redo"
+              >
+                <Redo size={14} style={{ color: themeColors.textSecondary }} />
+              </button>
+            </div>
           </div>
           
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleExecute}
-              disabled={isCompiling}
-              className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
-              style={{ backgroundColor: themeColors.primary, color: themeColors.white }}
-            >
-              {isCompiling ? <Loader size={14} className="animate-spin" /> : <Play size={14} />}
-              Execute
-            </button>
-            <button
-              onClick={onClose}
-              className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
-              style={{ backgroundColor: themeColors.error, color: themeColors.white }}
-            >
-              <X size={14} />
-              Close
-            </button>
+          {/* Editor Area */}
+          <div className="flex-1 flex flex-col overflow-hidden relative">
+            <div style={editorContainerStyle} className="overflow-hidden">
+              <div className="flex h-full">
+                {showLineNumbers && (
+                  <div
+                    ref={lineNumbersRef}
+                    className="overflow-hidden select-none"
+                    style={{
+                      width: '60px',
+                      backgroundColor: themeColors.codeBg,
+                      borderRight: `1px solid ${themeColors.border}`,
+                      fontFamily: 'monospace',
+                      fontSize: editorFontSize,
+                      lineHeight: 1.5,
+                      overflowY: 'auto'
+                    }}
+                  />
+                )}
+                
+                <textarea
+                  ref={textareaRef}
+                  value={editorContent}
+                  onChange={handleContentChange}
+                  onScroll={handleScroll}
+                  onKeyDown={handleKeyDown}
+                  onBlur={saveSelection}
+                  onFocus={() => {
+                    if (textareaRef.current && (selectionStartRef.current !== 0 || selectionEndRef.current !== 0)) {
+                      textareaRef.current.setSelectionRange(selectionStartRef.current, selectionEndRef.current);
+                    }
+                  }}
+                  className="flex-1 p-4 outline-none resize-none"
+                  style={{
+                    backgroundColor: themeColors.codeBg,
+                    color: themeColors.text,
+                    fontFamily: 'monospace',
+                    fontSize: editorFontSize,
+                    lineHeight: 1.5,
+                    border: 'none'
+                  }}
+                  spellCheck={false}
+                  placeholder={getPlaceholderText()}
+                />
+              </div>
+            </div>
+            
+            {/* Resizable Response Panel */}
+            {compilationResult && (
+              <>
+                <div
+                  className="flex items-center justify-center cursor-ns-resize hover:bg-opacity-20 transition-colors"
+                  style={{
+                    height: '8px',
+                    backgroundColor: themeColors.border,
+                    cursor: 'ns-resize',
+                    position: 'relative'
+                  }}
+                  onMouseDown={handleResponseDragStart}
+                >
+                  <div
+                    className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"
+                    style={{ color: themeColors.textSecondary }}
+                  >
+                    <GripHorizontal size={16} />
+                  </div>
+                </div>
+                
+                <div
+                  style={{
+                    height: `${responseHeight}px`,
+                    overflow: 'auto',
+                    borderTop: `1px solid ${themeColors.border}`,
+                    backgroundColor: compilationResult.success ? `${themeColors.success}10` : `${themeColors.error}10`
+                  }}
+                  className="shrink-0"
+                >
+                  <div className="p-4">
+                    <div className="flex items-start gap-3">
+                      {compilationResult.success ? (
+                        <CheckCircle size={18} style={{ color: themeColors.success }} className="mt-0.5 flex-shrink-0" />
+                      ) : (
+                        <AlertCircle size={18} style={{ color: themeColors.error }} className="mt-0.5 flex-shrink-0" />
+                      )}
+                      <div className="flex-1">
+                        <div className="text-sm font-medium" style={{ color: compilationResult.success ? themeColors.success : themeColors.error }}>
+                          {compilationResult.message}
+                        </div>
+                        {compilationResult.error && (
+                          <pre className="text-xs mt-1 whitespace-pre-wrap" style={{ color: themeColors.textSecondary }}>
+                            {compilationResult.error}
+                          </pre>
+                        )}
+                        {compilationResult.output && (
+                          <pre className="text-xs mt-1 whitespace-pre-wrap overflow-x-auto" style={{ color: themeColors.textSecondary }}>
+                            {compilationResult.output}
+                          </pre>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setCompilationResult(null)}
+                        className="p-1 rounded hover-lift transition-colors"
+                        style={{ backgroundColor: themeColors.hover }}
+                      >
+                        <X size={14} style={{ color: themeColors.textSecondary }} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          
+          {/* Action Buttons */}
+          <div 
+            className="flex items-center justify-between px-6 py-4 border-t shrink-0"
+            style={{ borderColor: themeColors.border, backgroundColor: themeColors.card }}
+          >
+            <div className="text-xs" style={{ color: themeColors.textSecondary }}>
+              <span className="font-mono">Ctrl/Cmd + Enter</span> to execute • 
+              <span className="font-mono ml-2">Ctrl/Cmd + Z</span> undo • 
+              <span className="font-mono ml-2">Tab</span> insert spaces
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* NEW: Generate API button - only show for SELECT queries */}
+              {isSelectQuery && (
+                <button
+                  onClick={handleGenerateApiFromQuery}
+                  className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
+                  style={{ 
+                    background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
+                    color: '#ffffff'
+                  }}
+                  title="Generate API from this SELECT query"
+                >
+                  <Sparkles size={14} />
+                  Generate API
+                </button>
+              )}
+              <button
+                onClick={handleExecute}
+                disabled={isCompiling}
+                className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
+                style={{ backgroundColor: themeColors.primary, color: themeColors.white }}
+              >
+                {isCompiling ? <Loader size={14} className="animate-spin" /> : <Play size={14} />}
+                Execute
+              </button>
+              <button
+                onClick={onClose}
+                className="px-5 py-2 rounded-lg text-sm font-medium hover-lift transition-colors flex items-center gap-2"
+                style={{ backgroundColor: themeColors.error, color: themeColors.white }}
+              >
+                <X size={14} />
+                Close
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>,
+      
+      {/* API Generation Modal */}
+       {showApiModal && (
+          <ApiGenerationModal
+            isOpen={showApiModal}
+            onClose={() => {
+              setShowApiModal(false);
+              // Refresh the dashboard when modal closes after successful generation
+              if (onRefreshApis) {
+                console.log('🔄 Refreshing dashboard after API generation');
+                onRefreshApis();
+              }
+            }}
+            colors={themeColors}
+            theme={theme}
+            authToken={authToken}
+            databaseType={activeDatabaseType}
+            isCustomQuery={true}
+            customQueryText={customQueryForApi}
+            extractedParams={extractedParamsForApi}
+            onGenerateAPI={(apiData, response) => {
+              console.log('API generated:', apiData);
+              setShowApiModal(false);
+              
+              // Refresh the dashboard after successful API generation
+              if (onRefreshApis) {
+                console.log('🔄 Refreshing dashboard after API generation');
+                onRefreshApis();
+              }
+              
+              if (onQueryExecute && currentSqlForApi) {
+                onQueryExecute(currentSqlForApi, response);
+              }
+            }}
+          />
+        )}
+    </>,
     document.body
   );
 };
