@@ -4379,7 +4379,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         <div className="flex-1 overflow-auto p-6">
           <div className="max-w-8xl mx-auto ml-2 mr-2">
             {/* Security Overview */}
-            <div className="mb-8">
+            {/* <div className="mb-8">
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h1 className="text-xl font-semibold" style={{ color: colors.text }}>API Security</h1>
@@ -4406,7 +4406,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 </div>
               </div>
 
-              {/* Stats Overview */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 {[
                   { 
@@ -4459,7 +4458,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                   </div>
                 ))}
               </div>
-            </div>
+            </div> */}
 
             {/* Main Content */}
             {!authToken ? (
