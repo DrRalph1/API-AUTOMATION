@@ -830,15 +830,8 @@ const ExportModal = ({ colors, isOpen, onClose, onExport }) => {
 };
 
 // ============ STATS CARDS COMPONENT ============
-const StatsCards = ({ statistics, systemStats, colors, onRefresh }) => {
+const StatsCards = ({ statistics, systemStats, colors, onRefresh, formatExecutionTimeHelper }) => {
   const stats = systemStats || statistics || {};
-
-  const formatExecutionTimeHelper = (ms) => {
-    if (!ms) return 'N/A';
-    if (ms < 1000) return `${ms}ms`;
-    if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
-    return `${(ms / 60000).toFixed(2)}m`;
-  };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -1182,9 +1175,9 @@ const getStatusText = (statusCode) => {
   return 'Unknown';
 };
 
-  const getMethodColor = (method) => {
-    return colors.method[method] || colors.textSecondary;
-  };
+ const getMethodColor = useCallback((method) => {
+  return colors.method[method] || colors.textSecondary;
+}, [colors.method, colors.textSecondary]);
 
   const formatTimestamp = (timestamp) => {
     if (!timestamp) return '';
@@ -1197,23 +1190,27 @@ const getStatusText = (statusCode) => {
   };
   
   const formatExecutionTimeHelper = (ms) => {
-    if (!ms) return 'N/A';
-    if (ms < 1000) return `${ms}ms`;
-    if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
-    return `${(ms / 60000).toFixed(2)}m`;
-  };
+  if (ms === null || ms === undefined) return 'N/A';
 
-  const getStatusCodeColorHelper = (code) => {
-  // Use the colors from the component's closure
+  const time = Number(ms); // 🔥 force conversion
+
+  if (isNaN(time)) return 'N/A';
+
+  if (time < 1000) return `${time.toFixed(2)}ms`;
+  if (time < 60000) return `${(time / 1000).toFixed(2)}s`;
+  return `${(time / 60000).toFixed(2)}m`;
+};
+
+ const getStatusCodeColorHelper = useCallback((code) => {
   if (!code) return colors.textSecondary;
   if (code >= 200 && code < 300) return colors.success;
   if (code >= 300 && code < 400) return colors.info;
   if (code >= 400 && code < 500) return colors.warning;
   if (code >= 500) return colors.error;
   return colors.textSecondary;
-};
+}, [colors.success, colors.info, colors.warning, colors.error, colors.textSecondary]);
 
-  
+
 
   // ============ FIX: Add function to cancel ongoing requests ============
   const cancelOngoingRequest = useCallback(() => {
@@ -2005,7 +2002,7 @@ const renderRequestsTable = () => {
               
               return (
                 <tr 
-                  key={request.id || request.requestId || index}
+                  key={`${request.id || request.requestId || index}`}
                   className="hover:bg-opacity-50 transition-colors cursor-pointer"
                   style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
                   onClick={() => handleViewDetails(request)}
@@ -2308,6 +2305,7 @@ const renderRequestsTable = () => {
             systemStats={systemStats}
             colors={colors}
             onRefresh={loadStatistics}
+            formatExecutionTimeHelper={formatExecutionTimeHelper}
           />
         </div>
 
