@@ -545,153 +545,172 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   const handleEditIPWhitelistEntry = (entry) => {
     console.log('📝 [APISecurity] Editing IP whitelist entry:', entry);
     setEditingIPEntry(entry);
+    
+    // Convert endpoints to string for editing (handle both array and string)
+    let endpointsString = '';
+    if (entry.endpoints) {
+        if (Array.isArray(entry.endpoints)) {
+            // If it's an array, join with comma - this removes the brackets
+            endpointsString = entry.endpoints.join(', ');
+        } else if (typeof entry.endpoints === 'string') {
+            // If it's already a string, remove any brackets if present
+            let cleaned = entry.endpoints;
+            // Remove square brackets if they exist
+            if (cleaned.startsWith('[') && cleaned.endsWith(']')) {
+                cleaned = cleaned.substring(1, cleaned.length - 1);
+            }
+            // Remove quotes if present
+            cleaned = cleaned.replace(/"/g, '');
+            endpointsString = cleaned;
+        }
+    }
+    
     setNewIPEntryData({
-      name: entry.name || '',
-      ipRange: entry.ipRange || '',
-      description: entry.description || '',
-      endpoints: Array.isArray(entry.endpoints) ? entry.endpoints.join(', ') : (entry.endpoints || ''),
-      options: entry.options || {}
+        name: entry.name || '',
+        ipRange: entry.ipRange || '',
+        description: entry.description || '',
+        endpoints: endpointsString,
+        options: entry.options || {}
     });
     setShowEditIPWhitelistModal(true);
-  };
+};
 
   const handleUpdateIPWhitelistEntry = async () => {
     console.log('📡 [APISecurity] Updating IP whitelist entry...');
     
     if (!authToken) {
-      showToast('Authentication required', 'error');
-      return;
+        showToast('Authentication required', 'error');
+        return;
     }
     
     if (!editingIPEntry || !editingIPEntry.id) {
-      showToast('No entry selected for update', 'error');
-      return;
+        showToast('No entry selected for update', 'error');
+        return;
     }
     
     const updateData = {};
     
     if (newIPEntryData.name !== editingIPEntry.name) {
-      updateData.name = newIPEntryData.name;
+        updateData.name = newIPEntryData.name;
     }
     
     if (newIPEntryData.ipRange !== editingIPEntry.ipRange) {
-      updateData.ipRange = newIPEntryData.ipRange;
+        updateData.ipRange = newIPEntryData.ipRange;
     }
     
     if (newIPEntryData.description !== editingIPEntry.description) {
-      updateData.description = newIPEntryData.description;
+        updateData.description = newIPEntryData.description;
+    }
+    
+    // Convert endpoints string to array for comparison
+    let newEndpointsArray = [];
+    if (newIPEntryData.endpoints && newIPEntryData.endpoints.trim()) {
+        newEndpointsArray = newIPEntryData.endpoints.split(',').map(e => e.trim()).filter(e => e);
     }
     
     const originalEndpoints = Array.isArray(editingIPEntry.endpoints) 
-      ? editingIPEntry.endpoints 
-      : (editingIPEntry.endpoints ? editingIPEntry.endpoints.split(',').map(e => e.trim()) : []);
+        ? editingIPEntry.endpoints 
+        : (editingIPEntry.endpoints ? [editingIPEntry.endpoints] : []);
     
-    const newEndpoints = Array.isArray(newIPEntryData.endpoints)
-      ? newIPEntryData.endpoints
-      : (newIPEntryData.endpoints ? newIPEntryData.endpoints.split(',').map(e => e.trim()) : []);
-    
-    if (JSON.stringify(originalEndpoints) !== JSON.stringify(newEndpoints)) {
-      updateData.endpoints = newEndpoints;
+    if (JSON.stringify(originalEndpoints) !== JSON.stringify(newEndpointsArray)) {
+        updateData.endpoints = newEndpointsArray;  // Send as array
     }
     
     if (Object.keys(updateData).length === 0) {
-      showToast('No changes detected to update', 'warning');
-      return;
+        showToast('No changes detected to update', 'warning');
+        return;
     }
     
     const validationErrors = validateUpdateIPWhitelistEntry(updateData);
     if (validationErrors.length > 0) {
-      showToast(`Validation errors: ${validationErrors.join(', ')}`, 'error');
-      return;
+        showToast(`Validation errors: ${validationErrors.join(', ')}`, 'error');
+        return;
     }
     
     try {
-      setLoading(prev => ({ ...prev, ipWhitelist: true }));
-      
-      const response = await updateIPWhitelistEntry(authToken, editingIPEntry.id, updateData);
-      const handledResponse = handleSecurityResponse(response);
-      const updatedEntry = extractUpdateIPWhitelistResponse(handledResponse);
-      
-      if (updatedEntry && updatedEntry.success) {
-        const updatedIpWhitelist = ipWhitelist.map(entry => 
-          entry.id === editingIPEntry.id 
-            ? { 
-                ...entry, 
-                ...updatedEntry,
-                createdAt: entry.createdAt,
-                createdBy: entry.createdBy
-              }
-            : entry
-        );
+        setLoading(prev => ({ ...prev, ipWhitelist: true }));
         
-        setIpWhitelist(updatedIpWhitelist);
+        const response = await updateIPWhitelistEntry(authToken, editingIPEntry.id, updateData);
+        const handledResponse = handleSecurityResponse(response);
+        const updatedEntry = extractUpdateIPWhitelistResponse(handledResponse);
         
-        setEditingIPEntry(null);
-        setNewIPEntryData({
-          name: '',
-          ipRange: '',
-          description: '',
-          endpoints: '',
-          status: 'active',
-          options: {}
-        });
-        setShowEditIPWhitelistModal(false);
-        
-        showToast(updatedEntry.message || 'IP whitelist entry updated successfully!', 'success');
-        
-        if (userId) {
-          clearCachedSecurityData(userId);
-        }
-        
-        await refreshIPWhitelist();
-      } else {
-        showToast('Failed to update IP entry: Invalid response from server', 'error');
-      }
-      
-    } catch (error) {
-      console.error('❌ [APISecurity] Error updating IP whitelist entry:', error);
-      
-      let errorMessage = 'Failed to update IP entry';
-      
-      if (error.message) {
-        if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-          errorMessage = 'Your session has expired. Please log in again.';
-        } else if (error.message.includes('403') || error.message.includes('Forbidden')) {
-          errorMessage = 'You do not have permission to update IP whitelist entries';
-        } else if (error.message.includes('404') || error.message.includes('Not Found')) {
-          errorMessage = 'The IP whitelist entry was not found. It may have been deleted.';
-          const updatedIpWhitelist = ipWhitelist.filter(entry => entry.id !== editingIPEntry.id);
-          setIpWhitelist(updatedIpWhitelist);
-          setShowEditIPWhitelistModal(false);
-        } else if (error.message.includes('409') || error.message.includes('Conflict')) {
-          errorMessage = 'The IP range conflicts with an existing entry';
+        if (updatedEntry && updatedEntry.success) {
+            // Refresh the list
+            await fetchIPWhitelist();
+            
+            setEditingIPEntry(null);
+            setNewIPEntryData({
+                name: '',
+                ipRange: '',
+                description: '',
+                endpoints: '',
+                options: {}
+            });
+            setShowEditIPWhitelistModal(false);
+            
+            showToast(updatedEntry.message || 'IP whitelist entry updated successfully!', 'success');
+            
+            if (userId) {
+                clearCachedSecurityData(userId);
+            }
         } else {
-          errorMessage = error.message;
+            showToast('Failed to update IP entry: Invalid response from server', 'error');
         }
-      }
-      
-      showToast(errorMessage, 'error');
+        
+    } catch (error) {
+        console.error('❌ [APISecurity] Error updating IP whitelist entry:', error);
+        showToast(`Failed to update IP entry: ${error.message}`, 'error');
     } finally {
-      setLoading(prev => ({ ...prev, ipWhitelist: false }));
+        setLoading(prev => ({ ...prev, ipWhitelist: false }));
     }
-  };
+};
 
   const refreshIPWhitelist = async () => {
     try {
-      if (authToken) {
-        const response = await getIPWhitelist(authToken);
-        const handledResponse = handleSecurityResponse(response);
-        const whitelistData = extractIPWhitelist(handledResponse);
-        setIpWhitelist(whitelistData);
-        
-        if (userId) {
-          cacheSecurityData(userId, 'ip_whitelist', whitelistData, 5);
+        if (authToken) {
+            const response = await getIPWhitelist(authToken);
+            const handledResponse = handleSecurityResponse(response);
+            let whitelistData = extractIPWhitelist(handledResponse);
+            
+            // Normalize the data - clean endpoints
+            whitelistData = whitelistData.map(entry => {
+                let endpointsArray = [];
+                
+                if (entry.endpoints) {
+                    if (Array.isArray(entry.endpoints)) {
+                        endpointsArray = entry.endpoints.map(e => {
+                            let cleaned = e;
+                            if (typeof cleaned === 'string') {
+                                cleaned = cleaned.replace(/[\[\]"]/g, '');
+                            }
+                            return cleaned;
+                        }).filter(e => e);
+                    } else if (typeof entry.endpoints === 'string') {
+                        let cleaned = entry.endpoints.replace(/[\[\]"]/g, '');
+                        if (cleaned.includes(',')) {
+                            endpointsArray = cleaned.split(',').map(e => e.trim()).filter(e => e);
+                        } else if (cleaned) {
+                            endpointsArray = [cleaned];
+                        }
+                    }
+                }
+                
+                return {
+                    ...entry,
+                    endpoints: endpointsArray
+                };
+            });
+            
+            setIpWhitelist(whitelistData);
+            
+            if (userId) {
+                cacheSecurityData(userId, 'ip_whitelist', whitelistData, 5);
+            }
         }
-      }
     } catch (refreshError) {
-      console.warn('⚠️ [APISecurity] Failed to refresh IP whitelist after update:', refreshError);
+        console.warn('⚠️ [APISecurity] Failed to refresh IP whitelist after update:', refreshError);
     }
-  };
+};
 
   const fetchRateLimitRules = useCallback(async () => {
     console.log('📡 [APISecurity] Fetching rate limit rules...');
@@ -895,52 +914,86 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     console.log('📡 [APISecurity] Fetching IP whitelist...');
     
     if (!authToken) {
-      console.log('❌ No auth token for fetchIPWhitelist');
-      showToast('Authentication required', 'error');
-      return;
+        console.log('❌ No auth token for fetchIPWhitelist');
+        showToast('Authentication required', 'error');
+        return;
     }
     
     setLoading(prev => ({ ...prev, ipWhitelist: true }));
     setError(prev => ({ ...prev, ipWhitelist: null }));
     
     try {
-      const response = await getIPWhitelist(authToken);
-      console.log('📦 [APISecurity] IP whitelist response:', response);
-      
-      if (!response) {
-        throw new Error('No response from security service');
-      }
-      
-      const handledResponse = handleSecurityResponse(response);
-      const whitelist = extractIPWhitelist(handledResponse);
-      
-      console.log('📊 [APISecurity] Extracted IP whitelist:', whitelist.length);
-      
-      setIpWhitelist(whitelist);
-      
-      if (userId) {
-        cacheSecurityData(userId, 'ipWhitelist', whitelist, 15);
-      }
-      
-      showToast(`Loaded ${whitelist.length} IP whitelist entries`, 'success');
-      
-    } catch (error) {
-      console.error('❌ [APISecurity] Error fetching IP whitelist:', error);
-      setError(prev => ({ ...prev, ipWhitelist: error.message }));
-      showToast(`Failed to load IP whitelist: ${error.message}`, 'error');
-      
-      if (userId) {
-        const cached = getCachedSecurityData(userId, 'ipWhitelist');
-        if (cached) {
-          console.log('📂 [APISecurity] Using cached IP whitelist');
-          setIpWhitelist(cached);
+        const response = await getIPWhitelist(authToken);
+        console.log('📦 [APISecurity] IP whitelist response:', response);
+        
+        if (!response) {
+            throw new Error('No response from security service');
         }
-      }
+        
+        const handledResponse = handleSecurityResponse(response);
+        let whitelist = extractIPWhitelist(handledResponse);
+        
+        // Normalize the data - ensure endpoints is a clean array
+        whitelist = whitelist.map(entry => {
+            let endpointsArray = [];
+            
+            if (entry.endpoints) {
+                if (Array.isArray(entry.endpoints)) {
+                    // If it's already an array, clean each item
+                    endpointsArray = entry.endpoints.map(e => {
+                        let cleaned = e;
+                        if (typeof cleaned === 'string') {
+                            // Remove brackets and quotes
+                            cleaned = cleaned.replace(/[\[\]"]/g, '');
+                        }
+                        return cleaned;
+                    }).filter(e => e);
+                } else if (typeof entry.endpoints === 'string') {
+                    // If it's a string, clean it and split if needed
+                    let cleaned = entry.endpoints;
+                    // Remove brackets and quotes
+                    cleaned = cleaned.replace(/[\[\]"]/g, '');
+                    if (cleaned.includes(',')) {
+                        endpointsArray = cleaned.split(',').map(e => e.trim()).filter(e => e);
+                    } else if (cleaned) {
+                        endpointsArray = [cleaned];
+                    }
+                }
+            }
+            
+            return {
+                ...entry,
+                endpoints: endpointsArray
+            };
+        });
+        
+        console.log('📊 [APISecurity] Extracted IP whitelist:', whitelist.length);
+        
+        setIpWhitelist(whitelist);
+        
+        if (userId) {
+            cacheSecurityData(userId, 'ipWhitelist', whitelist, 15);
+        }
+        
+        showToast(`Loaded ${whitelist.length} IP whitelist entries`, 'success');
+        
+    } catch (error) {
+        console.error('❌ [APISecurity] Error fetching IP whitelist:', error);
+        setError(prev => ({ ...prev, ipWhitelist: error.message }));
+        showToast(`Failed to load IP whitelist: ${error.message}`, 'error');
+        
+        if (userId) {
+            const cached = getCachedSecurityData(userId, 'ipWhitelist');
+            if (cached) {
+                console.log('📂 [APISecurity] Using cached IP whitelist');
+                setIpWhitelist(cached);
+            }
+        }
     } finally {
-      setLoading(prev => ({ ...prev, ipWhitelist: false }));
-      console.log('🏁 [APISecurity] fetchIPWhitelist completed');
+        setLoading(prev => ({ ...prev, ipWhitelist: false }));
+        console.log('🏁 [APISecurity] fetchIPWhitelist completed');
     }
-  }, [authToken, userId]);
+}, [authToken, userId]);
 
   const fetchLoadBalancers = useCallback(async () => {
     console.log('📡 [APISecurity] Fetching load balancers...');
@@ -1200,44 +1253,59 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     }
   };
 
-  const handleAddIPWhitelistEntry = async () => {
+ const handleAddIPWhitelistEntry = async () => {
     console.log('📡 [APISecurity] Adding IP whitelist entry...');
     
     if (!authToken) {
-      showToast('Authentication required', 'error');
-      return;
+        showToast('Authentication required', 'error');
+        return;
     }
     
-    const validationErrors = validateAddIPWhitelistEntry(newIPEntryData);
+    // Convert endpoints string to array
+    let endpointsArray = [];
+    if (newIPEntryData.endpoints && newIPEntryData.endpoints.trim()) {
+        // Split by comma and trim each endpoint
+        endpointsArray = newIPEntryData.endpoints.split(',').map(e => e.trim()).filter(e => e);
+    }
+    
+    const dataToSend = {
+        name: newIPEntryData.name,
+        ipRange: newIPEntryData.ipRange,
+        description: newIPEntryData.description,
+        endpoints: endpointsArray,  // Send as array, not string
+        options: newIPEntryData.options || {}
+    };
+    
+    const validationErrors = validateAddIPWhitelistEntry(dataToSend);
     if (validationErrors.length > 0) {
-      showToast(`Validation errors: ${validationErrors.join(', ')}`, 'error');
-      return;
+        showToast(`Validation errors: ${validationErrors.join(', ')}`, 'error');
+        return;
     }
     
     try {
-      const response = await addIPWhitelistEntry(authToken, newIPEntryData);
-      console.log('📦 [APISecurity] Add IP whitelist entry response:', response);
-      
-      const handledResponse = handleSecurityResponse(response);
-      
-      await fetchIPWhitelist();
-      
-      setNewIPEntryData({
-        name: '',
-        ipRange: '',
-        description: '',
-        endpoints: '',
-        options: {}
-      });
-      setShowIPWhitelistModal(false);
-      
-      showToast('IP whitelist entry added successfully!', 'success');
-      
+        const response = await addIPWhitelistEntry(authToken, dataToSend);
+        console.log('📦 [APISecurity] Add IP whitelist entry response:', response);
+        
+        const handledResponse = handleSecurityResponse(response);
+        
+        await fetchIPWhitelist();
+        
+        setNewIPEntryData({
+            name: '',
+            ipRange: '',
+            description: '',
+            endpoints: '',
+            options: {}
+        });
+        setShowIPWhitelistModal(false);
+        
+        showToast('IP whitelist entry added successfully!', 'success');
+        
     } catch (error) {
-      console.error('❌ [APISecurity] Error adding IP whitelist entry:', error);
-      showToast(`Failed to add IP entry: ${error.message}`, 'error');
+        console.error('❌ [APISecurity] Error adding IP whitelist entry:', error);
+        showToast(`Failed to add IP entry: ${error.message}`, 'error');
     }
-  };
+};
 
   const handleAddLoadBalancer = async () => {
     console.log('📡 [APISecurity] Adding load balancer...');
@@ -1349,7 +1417,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         message: 'No rate limiting rules configured. Add rate limiting to prevent API abuse and DDoS attacks.'
       });
     } else {
-      const activeRules = rateLimitRules.filter(r => r.status === 'active').length;
+      const activeRules = rateLimitRules.filter(r => (r.status).toLowerCase() === 'active').length;
       if (activeRules === 0) {
         recommendations.push({
           severity: 'medium',
@@ -1500,7 +1568,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
           totalEvents: securityEvents.length,
           blockedRequests: securitySummary.blockedRequests || 0,
           throttledRequests: securitySummary.throttledRequests || 0,
-          activeRules: rateLimitRules.filter(r => r.status === 'active').length,
+          activeRules: rateLimitRules.filter(r => (r.status).toLowerCase() === 'active').length,
           activeIPEntries: ipWhitelist.filter(ip => ip.status === 'active').length,
           totalLoadBalancers: loadBalancers.length
         };
@@ -1573,7 +1641,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       totalEvents: events.length,
       blockedRequests: summary.blockedRequests || 0,
       throttledRequests: summary.throttledRequests || 0,
-      activeRules: rules.filter(r => r.status === 'active').length,
+      activeRules: rules.filter(r => (r.status).toLowerCase() === 'active').length,
       activeIPEntries: whitelist.filter(ip => ip.status === 'active').length,
       totalLoadBalancers: balancers.length
     };
@@ -2152,7 +2220,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 },
                 { 
                   label: 'Active Rules', 
-                  value: rateLimitRules.filter(r => r.status === 'active').length.toString(), 
+                  value: rateLimitRules.filter(r => (r.status).toLowerCase() === 'active').length.toString(), 
                   icon: <Filter size={20} />, 
                   color: colors.info 
                 },
@@ -2303,9 +2371,24 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                           </td>
                           <td className="p-4">
                             <div className="text-sm font-mono truncate" style={{ color: colors.text }}>
-                              {Array.isArray(item.endpoints) ? item.endpoints.join(', ') : item.endpoints}
+                                {(() => {
+                                    if (!item.endpoints) return 'All endpoints';
+                                    if (Array.isArray(item.endpoints)) {
+                                        return item.endpoints.join(', ');
+                                    }
+                                    if (typeof item.endpoints === 'string') {
+                                        // Remove brackets if present
+                                        let cleaned = item.endpoints;
+                                        if (cleaned.startsWith('[') && cleaned.endsWith(']')) {
+                                            cleaned = cleaned.substring(1, cleaned.length - 1);
+                                        }
+                                        cleaned = cleaned.replace(/"/g, '');
+                                        return cleaned || 'All endpoints';
+                                    }
+                                    return 'All endpoints';
+                                })()}
                             </div>
-                          </td>
+                        </td>
                           <td className="p-4">
                             <div className="flex items-center gap-2">
                               <div className={`w-2 h-2 rounded-full ${
@@ -3560,18 +3643,21 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Protected Endpoints</label>
                 <input 
-                  type="text" 
-                  value={newIPEntryData.endpoints}
-                  onChange={(e) => setNewIPEntryData({...newIPEntryData, endpoints: e.target.value})}
-                  className="w-full px-3 py-2 rounded-lg text-sm font-mono focus:outline-none"
-                  style={{ 
-                    backgroundColor: colors.inputBg,
-                    border: `1px solid ${colors.inputBorder}`,
-                    color: colors.text
-                  }}
-                  placeholder="/api/v1/** (leave empty for all endpoints)"
+                    type="text" 
+                    value={newIPEntryData.endpoints}
+                    onChange={(e) => setNewIPEntryData({...newIPEntryData, endpoints: e.target.value})}
+                    className="w-full px-3 py-2 rounded-lg text-sm font-mono focus:outline-none"
+                    style={{ 
+                        backgroundColor: colors.inputBg,
+                        border: `1px solid ${colors.inputBorder}`,
+                        color: colors.text
+                    }}
+                    placeholder="/api/v1/**, /api/v2/**, /plx/api/gen/**"
                 />
-              </div>
+                <p className="text-xs mt-1" style={{ color: colors.textTertiary }}>
+                    Separate multiple endpoints with commas. Use /** for wildcard. Leave empty for all endpoints.
+                </p>
+            </div>
             </div>
             
             <div className="flex items-center justify-end gap-3 mt-8">
@@ -4087,18 +4173,23 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Protected Endpoints</label>
                 <input 
-                  type="text" 
-                  value={newIPEntryData.endpoints}
-                  onChange={(e) => setNewIPEntryData({...newIPEntryData, endpoints: e.target.value})}
-                  className="w-full px-3 py-2 rounded-lg text-sm font-mono focus:outline-none"
-                  style={{ 
-                    backgroundColor: colors.inputBg,
-                    border: `1px solid ${colors.inputBorder}`,
-                    color: colors.text
-                  }}
-                  placeholder="/api/v1/** (leave empty for all endpoints)"
+                    type="text" 
+                    value={Array.isArray(newIPEntryData.endpoints) 
+                        ? newIPEntryData.endpoints.join(', ') 
+                        : newIPEntryData.endpoints}
+                    onChange={(e) => setNewIPEntryData({...newIPEntryData, endpoints: e.target.value})}
+                    className="w-full px-3 py-2 rounded-lg text-sm font-mono focus:outline-none"
+                    style={{ 
+                        backgroundColor: colors.inputBg,
+                        border: `1px solid ${colors.inputBorder}`,
+                        color: colors.text
+                    }}
+                    placeholder="/api/v1/**, /api/v2/**, /plx/api/gen/**"
                 />
-              </div>
+                <p className="text-xs mt-1" style={{ color: colors.textTertiary }}>
+                    Separate multiple endpoints with commas. Use /** for wildcard. Leave empty for all endpoints.
+                </p>
+            </div>
             </div>
             
             <div className="flex items-center justify-end gap-3 mt-8">

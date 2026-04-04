@@ -3,6 +3,7 @@ package com.usg.apiGeneration.services;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiGeneration.dtos.apiGenerationEngine.*;
 import com.usg.apiGeneration.entities.postgres.apiGenerationEngine.*;
+import com.usg.apiGeneration.entities.postgres.apiSecurity.IPWhitelistEntryEntity;
 import com.usg.apiGeneration.entities.postgres.codeBase.ImplementationEntity;
 import com.usg.apiGeneration.entities.postgres.collections.*;
 import com.usg.apiGeneration.factories.ApiExecutionHelperFactory;
@@ -13,6 +14,7 @@ import com.usg.apiGeneration.helpers.*;
 import com.usg.apiGeneration.helpers.apiEngine.oracle.OracleApiValidationHelper;
 import com.usg.apiGeneration.helpers.apiEngine.postgresql.PostgreSQLApiValidationHelper;
 import com.usg.apiGeneration.repositories.apiGenerationEngine.*;
+import com.usg.apiGeneration.repositories.apiSecurity.IPWhitelistEntryRepository;
 import com.usg.apiGeneration.repositories.codeBase.*;
 import com.usg.apiGeneration.repositories.codeBase.FolderRepository;
 import com.usg.apiGeneration.repositories.collections.AuthConfigRepository;
@@ -136,6 +138,8 @@ public class AutomationEngineService {
     private final OracleSchemaService oracleSchemaService;
     private final PostgreSQLSchemaService postgreSQLSchemaService;
     private final EntityManager entityManager;
+
+    private final IPWhitelistEntryRepository ipWhitelistRepository;
 
     @Autowired
     @Qualifier("oracleJdbcTemplate")
@@ -1152,6 +1156,33 @@ public class AutomationEngineService {
             GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
                     .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
 
+            // ============ IP WHITELIST VALIDATION ============
+            // Get the actual client IP from HttpServletRequest (not trusting the passed parameter)
+            String actualClientIp = getClientIpAddress(httpServletRequest);
+
+            // Get the full request path for whitelist validation
+            String fullRequestPath = httpServletRequest != null ? httpServletRequest.getRequestURI() : "";
+            String endpointPath = api.getEndpointPath();
+
+            try {
+                validateIpWhitelist(actualClientIp, fullRequestPath, endpointPath);
+            } catch (RuntimeException e) {
+                // IP whitelist validation failed
+                String errorMsg = e.getMessage();
+                int statusCode = 403;
+
+                log.warn("IP whitelist validation failed: {}", errorMsg);
+
+                // Get execution helper for logging
+                BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper("oracle");
+                executionHelper.logExecution(executionLogRepository, api, executeRequest,
+                        null, statusCode, System.currentTimeMillis() - startTime,
+                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
+
+                return responseHelper.createErrorResponse(statusCode, errorMsg, startTime);
+            }
+            // ============ END IP WHITELIST VALIDATION ============
+
             // 2. Get the database type from the API entity
             databaseType = api.getDatabaseType();
             if (databaseType == null || databaseType.isEmpty()) {
@@ -1215,7 +1246,7 @@ public class AutomationEngineService {
 
                 executionHelper.logExecution(executionLogRepository, api, executeRequest,
                         null, statusCode, System.currentTimeMillis() - startTime,
-                        performedBy, clientIp, userAgent, errorMsg, objectMapper);
+                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
                 return responseHelper.createErrorResponse(statusCode, errorMsg, startTime);
             }
@@ -1236,7 +1267,7 @@ public class AutomationEngineService {
 
                 executionHelper.logExecution(executionLogRepository, api, executeRequest,
                         null, 403, System.currentTimeMillis() - startTime,
-                        performedBy, clientIp, userAgent, errorMsg, objectMapper);
+                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
                 return responseHelper.createErrorResponse(403, errorMsg, startTime);
             }
@@ -1266,7 +1297,7 @@ public class AutomationEngineService {
             // 9. Capture request before execution
             try {
                 ApiRequestDTO requestDTO = convertExecuteRequestToApiRequestDTO(validatedRequest, api);
-                requestDTO.setClientIpAddress(clientIp);
+                requestDTO.setClientIpAddress(actualClientIp);
                 requestDTO.setUserAgent(userAgent);
                 requestDTO.setRequestedBy(performedBy);
                 requestDTO.setCorrelationId(executeRequest.getRequestId());
@@ -1295,7 +1326,7 @@ public class AutomationEngineService {
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 405, System.currentTimeMillis() - startTime,
-                        performedBy, clientIp, userAgent, errorMsg, objectMapper);
+                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
                 return responseHelper.createErrorResponse(405, errorMsg, startTime);
             }
@@ -1319,7 +1350,7 @@ public class AutomationEngineService {
 
                     executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                             null, 401, System.currentTimeMillis() - startTime,
-                            performedBy, clientIp, userAgent, errorMsg, objectMapper);
+                            performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
                     return responseHelper.createErrorResponse(401, errorMsg, startTime);
                 }
@@ -1397,7 +1428,7 @@ public class AutomationEngineService {
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 400, System.currentTimeMillis() - startTime,
-                        performedBy, clientIp, userAgent, errorMsg, objectMapper);
+                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
                 return responseHelper.createErrorResponse(400, errorMsg, startTime);
             }
@@ -1417,13 +1448,13 @@ public class AutomationEngineService {
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 403, System.currentTimeMillis() - startTime,
-                        performedBy, clientIp, userAgent, errorMsg, objectMapper);
+                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
                 return responseHelper.createErrorResponse(403, errorMsg, startTime);
             }
 
             // 18. Rate limiting check
-            if (!validatorService.checkRateLimit(api, clientIp)) {
+            if (!validatorService.checkRateLimit(api, actualClientIp)) {
                 String errorMsg = "Rate limit exceeded";
 
                 if (capturedRequestId != null) {
@@ -1437,7 +1468,7 @@ public class AutomationEngineService {
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 429, System.currentTimeMillis() - startTime,
-                        performedBy, clientIp, userAgent, errorMsg, objectMapper);
+                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
                 return responseHelper.createErrorResponse(429,
                         "Rate limit exceeded. Please try again later.", startTime);
@@ -1559,7 +1590,7 @@ public class AutomationEngineService {
                     // Log the execution
                     executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                             null, determinedHttpStatus, executionTime, performedBy,
-                            clientIp, userAgent, responseMessage, objectMapper);
+                            actualClientIp, userAgent, responseMessage, objectMapper);
 
                     // Build error response
                     finalResponse = new ExecuteApiResponseDTO();
@@ -1623,7 +1654,7 @@ public class AutomationEngineService {
                 // 25. Log the successful execution
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         formattedResponse, 200, executionTime, performedBy,
-                        clientIp, userAgent, null, objectMapper);
+                        actualClientIp, userAgent, null, objectMapper);
 
                 // 26. Build success response
                 finalResponse = responseHelper.buildSuccessResponse(
@@ -1672,7 +1703,7 @@ public class AutomationEngineService {
                 try {
                     String logErrorMessage = truncateErrorMessage(detailedError, 1000);
                     executionHelper.logExecution(executionLogRepository, api, validatedRequest,
-                            null, 500, executionTime, performedBy, clientIp, userAgent,
+                            null, 500, executionTime, performedBy, actualClientIp, userAgent,
                             logErrorMessage, objectMapper);
                 } catch (Exception logError) {
                     log.error("Failed to log execution error: {}", logError.getMessage());
@@ -1722,7 +1753,7 @@ public class AutomationEngineService {
                 String logErrorMessage = truncateErrorMessage(detailedError, 1000);
                 BaseApiExecutionHelper defaultHelper = executionHelperFactory.getExecutionHelper("oracle");
                 defaultHelper.logExecution(executionLogRepository, api, executeRequest,
-                        null, 500, executionTime, performedBy, clientIp, userAgent,
+                        null, 500, executionTime, performedBy, getClientIpAddress(httpServletRequest), userAgent,
                         logErrorMessage, objectMapper);
             } catch (Exception logError) {
                 log.error("Failed to log execution error: {}", logError.getMessage());
@@ -3077,4 +3108,359 @@ public class AutomationEngineService {
     }
 
 
+
+    /**
+     * Check if the requesting IP is whitelisted and has access to the endpoint
+     * DENY BY DEFAULT - Only allow if explicitly whitelisted
+     * @param clientIp The client IP address (automatically obtained from request)
+     * @param fullRequestPath The complete request path (e.g., /plx/api/gen/{apiId}/api/v1/create-bio-data)
+     * @param endpointPath The API endpoint path (e.g., /create-bio-data)
+     * @throws RuntimeException with appropriate message if access is denied
+     */
+    private void validateIpWhitelist(String clientIp, String fullRequestPath, String endpointPath) {
+        try {
+            // Get all active whitelist entries (case-insensitive)
+            List<IPWhitelistEntryEntity> allEntries = ipWhitelistRepository.findAll();
+            List<IPWhitelistEntryEntity> whitelistEntries = allEntries.stream()
+                    .filter(entry -> entry.getStatus() != null && "ACTIVE".equalsIgnoreCase(entry.getStatus().trim()))
+                    .collect(Collectors.toList());
+
+            // DENY BY DEFAULT - If no whitelist entries exist, block everything
+            if (whitelistEntries.isEmpty()) {
+                String errorMsg = "Access denied: No IP whitelist configuration found. Please contact system administrator.";
+                log.warn("IP whitelist validation failed - No active whitelist entries found. IP: {}, FullPath: {}, Endpoint: {}",
+                        clientIp, fullRequestPath, endpointPath);
+                throw new RuntimeException(errorMsg);
+            }
+
+            // Check if the client IP matches any whitelist entry
+            boolean ipMatches = false;
+            IPWhitelistEntryEntity matchingEntry = null;
+
+            for (IPWhitelistEntryEntity entry : whitelistEntries) {
+                if (isIpInRange(clientIp, entry.getIpRange())) {
+                    ipMatches = true;
+                    matchingEntry = entry;
+                    log.info("IP {} matched whitelist entry: {} (Range: {})", clientIp, entry.getName(), entry.getIpRange());
+                    break;
+                }
+            }
+
+            // DENY if IP not found in any whitelist entry
+            if (!ipMatches) {
+                String errorMsg = String.format("Access denied: IP address %s is not whitelisted. Please contact system administrator for access.", clientIp);
+                log.warn("IP whitelist validation failed - IP: {}, FullPath: {}, Endpoint: {}", clientIp, fullRequestPath, endpointPath);
+                throw new RuntimeException(errorMsg);
+            }
+
+            // Check endpoint access using the FULL REQUEST PATH
+            String allowedEndpoints = matchingEntry.getEndpoints();
+
+            // Clean the endpoints string - remove brackets, quotes, and trim
+            String cleanedEndpoints = "";
+            if (allowedEndpoints != null) {
+                cleanedEndpoints = allowedEndpoints.trim();
+                // Remove square brackets if present
+                if (cleanedEndpoints.startsWith("[") && cleanedEndpoints.endsWith("]")) {
+                    cleanedEndpoints = cleanedEndpoints.substring(1, cleanedEndpoints.length() - 1);
+                }
+                // Remove quotes if present
+                cleanedEndpoints = cleanedEndpoints.replace("\"", "");
+            }
+
+            // If endpoints is empty or null or contains "/**", they can access all endpoints
+            if (cleanedEndpoints == null || cleanedEndpoints.trim().isEmpty() || "/**".equals(cleanedEndpoints.trim())) {
+                log.info("IP {} has access to all endpoints (allowedEndpoints: {})", clientIp, cleanedEndpoints);
+                return;
+            }
+
+            // Parse allowed endpoints (comma-separated)
+            String[] allowedEndpointList = cleanedEndpoints.split(",");
+            boolean endpointAllowed = false;
+
+            for (String allowedEndpoint : allowedEndpointList) {
+                // Clean each endpoint pattern - remove any remaining brackets or quotes
+                String trimmedEndpoint = allowedEndpoint.trim();
+                trimmedEndpoint = trimmedEndpoint.replace("[", "").replace("]", "").replace("\"", "");
+
+                if (trimmedEndpoint.isEmpty()) {
+                    continue;
+                }
+
+                // Check against BOTH full request path and endpoint path
+                if (isEndpointMatch(fullRequestPath, trimmedEndpoint) || isEndpointMatch(endpointPath, trimmedEndpoint)) {
+                    endpointAllowed = true;
+                    log.info("IP {} granted access to path: {} (matched pattern: {})", clientIp, fullRequestPath, trimmedEndpoint);
+                    break;
+                }
+            }
+
+            // DENY if endpoint not in allowed list
+            if (!endpointAllowed) {
+                String errorMsg = String.format("Access denied: IP address %s does not have access to path '%s'. Allowed paths: %s",
+                        clientIp, fullRequestPath, cleanedEndpoints);
+                log.warn("IP endpoint access denied - IP: {}, FullPath: {}, Allowed: {}", clientIp, fullRequestPath, cleanedEndpoints);
+                throw new RuntimeException(errorMsg);
+            }
+
+            log.info("IP whitelist validation passed - IP: {}, FullPath: {}", clientIp, fullRequestPath);
+
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error during IP whitelist validation: {}", e.getMessage(), e);
+            // DENY on error to be safe
+            throw new RuntimeException("Access validation failed. Please contact system administrator.");
+        }
+    }
+
+    /**
+     * Check if a path matches an allowed pattern
+     * Supports:
+     * - Exact matches: "/create-bio-data"
+     * - Path prefix with /** : "/plx/api/gen/**" (matches any path under that prefix)
+     * - Wildcard in the middle: "/plx/api/gen/create-bio-data"
+     */
+    private boolean isEndpointMatch(String actualPath, String allowedPattern) {
+        if (actualPath == null || allowedPattern == null) {
+            return false;
+        }
+
+        actualPath = actualPath.trim();
+        String pattern = allowedPattern.trim();
+
+        // Clean the pattern - remove any brackets or quotes that might have been stored
+        pattern = pattern.replace("[", "").replace("]", "").replace("\"", "");
+
+        // Handle /** which means allow all paths
+        if ("/**".equals(pattern)) {
+            return true;
+        }
+
+        // Handle empty pattern
+        if (pattern.isEmpty()) {
+            return true;
+        }
+
+        // Exact match
+        if (actualPath.equals(pattern)) {
+            return true;
+        }
+
+        // Path prefix match (if pattern ends with /**)
+        if (pattern.endsWith("/**")) {
+            String prefix = pattern.substring(0, pattern.length() - 3);
+            // Remove trailing slash if present for cleaner matching
+            if (prefix.endsWith("/")) {
+                prefix = prefix.substring(0, prefix.length() - 1);
+            }
+            // Check if actual path starts with the prefix
+            if (prefix.isEmpty()) {
+                return true;
+            }
+            // Special handling for paths with variable segments (like API IDs)
+            if (actualPath.startsWith(prefix)) {
+                log.debug("Path {} matches prefix pattern {}", actualPath, pattern);
+                return true;
+            }
+        }
+
+        // Simple wildcard match (single *)
+        if (pattern.contains("*") && !pattern.contains("/**")) {
+            // Convert to simple regex - escape regex special characters except *
+            String regexPattern = pattern
+                    .replace(".", "\\.")
+                    .replace("?", "\\?")
+                    .replace("+", "\\+")
+                    .replace("[", "\\[")
+                    .replace("]", "\\]")
+                    .replace("{", "\\{")
+                    .replace("}", "\\}")
+                    .replace("(", "\\(")
+                    .replace(")", "\\)")
+                    .replace("*", ".*");
+
+            try {
+                boolean matches = actualPath.matches(regexPattern);
+                if (matches) {
+                    log.debug("Path {} matches wildcard pattern {}", actualPath, pattern);
+                }
+                return matches;
+            } catch (Exception e) {
+                log.warn("Regex error for pattern {}: {}", pattern, e.getMessage());
+                // Fall back to simple contains check
+                return actualPath.contains(pattern.replace("*", ""));
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if an IP address falls within a CIDR range, matches an exact IP, or matches a wildcard pattern
+     * Supports:
+     * - Exact IP: "192.168.1.100"
+     * - CIDR notation: "192.168.1.0/24"
+     * - Wildcard patterns: "192.168.1.*", "192.168.*.*", "192.*.*.*", "192.168.*"
+     * - Range notation: "192.168.1.1-192.168.1.100"
+     * @param ipAddress The client IP address to check
+     * @param ipRange The IP range/pattern to check against
+     * @return true if the IP matches the range/pattern, false otherwise
+     */
+    private boolean isIpInRange(String ipAddress, String ipRange) {
+        if (ipAddress == null || ipRange == null) {
+            return false;
+        }
+
+        ipAddress = ipAddress.trim();
+        ipRange = ipRange.trim();
+
+        // Check for exact IP match
+        if (ipAddress.equals(ipRange)) {
+            return true;
+        }
+
+        // Check for CIDR notation (e.g., "192.168.1.0/24")
+        if (ipRange.contains("/")) {
+            try {
+                String[] parts = ipRange.split("/");
+                String networkAddress = parts[0];
+                int prefixLength = Integer.parseInt(parts[1]);
+
+                // Convert IPs to integers for comparison
+                int ipInt = ipToInt(ipAddress);
+                int networkInt = ipToInt(networkAddress);
+
+                // Calculate mask based on prefix length
+                int mask = prefixLength == 0 ? 0 : (0xFFFFFFFF << (32 - prefixLength));
+
+                // Check if IP is in the network range
+                return (ipInt & mask) == (networkInt & mask);
+            } catch (Exception e) {
+                log.warn("Failed to parse CIDR range: {}", ipRange, e);
+                return false;
+            }
+        }
+
+        // Check for IP range notation (e.g., "192.168.1.1-192.168.1.100")
+        if (ipRange.contains("-")) {
+            try {
+                String[] parts = ipRange.split("-");
+                String startIp = parts[0].trim();
+                String endIp = parts[1].trim();
+
+                int startInt = ipToInt(startIp);
+                int endInt = ipToInt(endIp);
+                int ipInt = ipToInt(ipAddress);
+
+                return ipInt >= startInt && ipInt <= endInt;
+            } catch (Exception e) {
+                log.warn("Failed to parse IP range: {}", ipRange, e);
+                return false;
+            }
+        }
+
+        // Check for wildcard pattern (e.g., "192.168.1.*", "192.168.*.*", "192.168.*")
+        if (ipRange.contains("*")) {
+            // Handle partial wildcard like "192.168.*" (meaning 192.168.x.x)
+            String normalizedRange = ipRange;
+            String[] rangeParts = normalizedRange.split("\\.");
+
+            // If pattern has fewer than 4 parts, pad with *
+            if (rangeParts.length < 4) {
+                StringBuilder padded = new StringBuilder();
+                for (int i = 0; i < rangeParts.length; i++) {
+                    if (i > 0) padded.append(".");
+                    padded.append(rangeParts[i]);
+                }
+                for (int i = rangeParts.length; i < 4; i++) {
+                    padded.append(".*");
+                }
+                normalizedRange = padded.toString();
+            }
+
+            // Use simple wildcard matching
+            return matchWildcardSimple(ipAddress, normalizedRange);
+        }
+
+        return false;
+    }
+
+    /**
+     * Simple wildcard matching for IP addresses
+     * Supports patterns like "192.168.1.*" and "192.168.*.*"
+     */
+    private boolean matchWildcardSimple(String ipAddress, String ipRange) {
+        String[] ipParts = ipAddress.split("\\.");
+        String[] rangeParts = ipRange.split("\\.");
+
+        if (ipParts.length != 4 || rangeParts.length != 4) {
+            return false;
+        }
+
+        for (int i = 0; i < 4; i++) {
+            if (rangeParts[i].equals("*")) {
+                continue; // Wildcard matches anything
+            }
+            if (!ipParts[i].equals(rangeParts[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Convert IP address string to integer for CIDR calculations
+     */
+    private int ipToInt(String ipAddress) {
+        try {
+            String[] parts = ipAddress.split("\\.");
+            if (parts.length != 4) {
+                return 0;
+            }
+            int result = 0;
+            for (int i = 0; i < 4; i++) {
+                result |= (Integer.parseInt(parts[i]) << (24 - (8 * i)));
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("Failed to convert IP to int: {}", ipAddress, e);
+            return 0;
+        }
+    }
+
+    /**
+     * Get the actual client IP address from HttpServletRequest
+     * This handles proxies and load balancers properly
+     */
+    private String getClientIpAddress(HttpServletRequest request) {
+        if (request == null) {
+            return "unknown";
+        }
+
+        String ipAddress = request.getHeader("X-Forwarded-For");
+
+        if (ipAddress == null || ipAddress.isEmpty() || "unknown".equalsIgnoreCase(ipAddress)) {
+            ipAddress = request.getHeader("Proxy-Client-IP");
+        }
+        if (ipAddress == null || ipAddress.isEmpty() || "unknown".equalsIgnoreCase(ipAddress)) {
+            ipAddress = request.getHeader("WL-Proxy-Client-IP");
+        }
+        if (ipAddress == null || ipAddress.isEmpty() || "unknown".equalsIgnoreCase(ipAddress)) {
+            ipAddress = request.getHeader("HTTP_CLIENT_IP");
+        }
+        if (ipAddress == null || ipAddress.isEmpty() || "unknown".equalsIgnoreCase(ipAddress)) {
+            ipAddress = request.getHeader("HTTP_X_FORWARDED_FOR");
+        }
+        if (ipAddress == null || ipAddress.isEmpty() || "unknown".equalsIgnoreCase(ipAddress)) {
+            ipAddress = request.getRemoteAddr();
+        }
+
+        // If multiple IPs in X-Forwarded-For, take the first one (original client)
+        if (ipAddress != null && ipAddress.contains(",")) {
+            ipAddress = ipAddress.split(",")[0].trim();
+        }
+
+        return ipAddress != null ? ipAddress : "unknown";
+    }
 }

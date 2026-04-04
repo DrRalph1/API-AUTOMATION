@@ -913,9 +913,9 @@ export const validateAddIPWhitelistEntry = (addIPEntryRequest) => {
     errors.push('IP range/CIDR is required');
   }
   
-  // Basic CIDR validation
+  // Validate IP range (supports CIDR, single IP, and wildcards)
   if (addIPEntryRequest.ipRange && !isValidCIDR(addIPEntryRequest.ipRange)) {
-    errors.push('Invalid IP range/CIDR format');
+    errors.push('Invalid IP range/CIDR format. Use formats like: 192.168.1.0/24, 192.168.1.100, 192.168.1.*, or 192.168.*.*');
   }
   
   return errors;
@@ -939,9 +939,9 @@ export const validateUpdateIPWhitelistEntry = (updateIPEntryRequest) => {
     return errors;
   }
   
-  // Validate IP range if provided
+  // Validate IP range if provided (supports CIDR, single IP, and wildcards)
   if (updateIPEntryRequest.ipRange && !isValidCIDR(updateIPEntryRequest.ipRange)) {
-    errors.push('Invalid IP range/CIDR format');
+    errors.push('Invalid IP range/CIDR format. Use formats like: 192.168.1.0/24, 192.168.1.100, 192.168.1.*, or 192.168.*.*');
   }
   
   // Validate status if provided
@@ -1245,14 +1245,35 @@ export const formatIPWhitelistEndpoints = (endpoints, maxDisplay = 3) => {
 };
 
 /**
- * Check if IP range is valid CIDR
+ * Check if IP range is valid CIDR or wildcard pattern
+ * Supports:
+ * - IPv4 CIDR: "192.168.1.0/24"
+ * - IPv6 CIDR: "2001:db8::/32"
+ * - Single IP: "192.168.1.100"
+ * - Wildcard patterns: "192.168.1.*", "192.168.*.*", "10.*.*.*"
  * @param {string} ipRange - IP range to validate
- * @returns {boolean} True if valid CIDR
+ * @returns {boolean} True if valid
  */
 export const isValidCIDR = (ipRange) => {
   if (!ipRange) return false;
   
-  // IPv4 CIDR
+  // Trim whitespace
+  ipRange = ipRange.trim();
+  
+  // Check for wildcard patterns (e.g., "192.168.1.*", "192.168.*.*", "10.*.*.*")
+  if (ipRange.includes('*')) {
+    const parts = ipRange.split('.');
+    if (parts.length !== 4) return false;
+    
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i] === '*') continue;
+      const num = parseInt(parts[i], 10);
+      if (isNaN(num) || num < 0 || num > 255) return false;
+    }
+    return true;
+  }
+  
+  // IPv4 CIDR or single IP
   const ipv4CidrRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
   // IPv6 CIDR
   const ipv6CidrRegex = /^([0-9a-fA-F:]+)(\/\d{1,3})?$/;
@@ -1275,16 +1296,52 @@ export const isValidCIDR = (ipRange) => {
     }
   }
   
+  // Validate CIDR prefix if present
+  if (ipRange.includes('/')) {
+    const parts = ipRange.split('/');
+    const prefix = parseInt(parts[1], 10);
+    if (isNaN(prefix)) return false;
+    
+    // IPv4 prefix must be between 0 and 32
+    if (!ipRange.includes(':') && (prefix < 0 || prefix > 32)) {
+      return false;
+    }
+    
+    // IPv6 prefix must be between 0 and 128
+    if (ipRange.includes(':') && (prefix < 0 || prefix > 128)) {
+      return false;
+    }
+  }
+  
   return true;
 };
 
 /**
- * Get CIDR notation description
- * @param {string} cidr - CIDR notation
- * @returns {string} Description of the CIDR range
+ * Get CIDR notation description or wildcard description
+ * @param {string} cidr - CIDR notation or wildcard pattern
+ * @returns {string} Description of the range
  */
 export const getCIDRDescription = (cidr) => {
-  if (!cidr || !isValidCIDR(cidr)) return 'Invalid CIDR';
+  if (!cidr) return 'Invalid';
+  
+  cidr = cidr.trim();
+  
+  // Handle wildcard patterns
+  if (cidr.includes('*')) {
+    const parts = cidr.split('.');
+    let starCount = parts.filter(p => p === '*').length;
+    
+    if (starCount === 1) {
+      return `All IPs in ${cidr.replace('*', 'x')} range (256 addresses)`;
+    } else if (starCount === 2) {
+      return `All IPs in ${cidr.replace(/\*/g, 'x')} range (65,536 addresses)`;
+    } else if (starCount === 3) {
+      return `All IPs in ${cidr.replace(/\*/g, 'x')} range (16,777,216 addresses)`;
+    }
+    return `Wildcard pattern: ${cidr}`;
+  }
+  
+  if (!isValidCIDR(cidr)) return 'Invalid CIDR';
   
   if (cidr.includes('/')) {
     const [ip, prefix] = cidr.split('/');

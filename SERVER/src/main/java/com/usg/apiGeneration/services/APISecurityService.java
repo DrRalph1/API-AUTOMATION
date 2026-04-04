@@ -87,10 +87,15 @@ public class APISecurityService {
     // ============================================================
     public IPWhitelistResponseDTO getIPWhitelist(String requestId, String performedBy) {
         try {
-            loggerUtil.log("api-security", "RequestEntity ID: " + requestId +
+            loggerUtil.log("api-security", "Request ID: " + requestId +
                     ", Getting IP whitelist");
 
-            List<IPWhitelistEntryEntity> entries = ipWhitelistEntryRepository.findAll();
+            // Get all entries sorted by created date descending (most recent first)
+            List<IPWhitelistEntryEntity> entries = ipWhitelistEntryRepository.findAllByOrderByCreatedAtDesc();
+
+            // Or if you don't have that method, use this:
+            // List<IPWhitelistEntryEntity> entries = ipWhitelistEntryRepository.findAll();
+            // entries.sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()));
 
             IPWhitelistResponseDTO response = new IPWhitelistResponseDTO();
             response.setEntries(entries.stream()
@@ -112,7 +117,7 @@ public class APISecurityService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("api-security", "RequestEntity ID: " + requestId +
+            loggerUtil.log("api-security", "Request ID: " + requestId +
                     ", Error getting IP whitelist: " + e.getMessage());
             throw e;
         }
