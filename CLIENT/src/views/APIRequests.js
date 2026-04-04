@@ -2015,10 +2015,13 @@ const renderRequestsTable = () => {
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
-                      <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
-                        color: statusColor,
-                        backgroundColor: `${statusColor}20`
-                      }}>
+                      <span className={`status-badge ${
+                        !statusCode ? 'status-badge-default' :
+                        statusCode >= 200 && statusCode < 300 ? 'status-badge-success' :
+                        statusCode >= 300 && statusCode < 400 ? 'status-badge-info' :
+                        statusCode >= 400 && statusCode < 500 ? 'status-badge-warning' :
+                        statusCode >= 500 ? 'status-badge-error' : 'status-badge-default'
+                      }`}>
                         {statusText}
                       </span>
                     </div>
@@ -2182,7 +2185,7 @@ const renderRequestsTable = () => {
       fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
       fontSize: '13px'
     }}>
-      <style>{`
+      <style key={`theme-styles-${isDark}`}>{`
         @keyframes fadeInUp {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
@@ -2224,6 +2227,40 @@ const renderRequestsTable = () => {
         
         ::-webkit-scrollbar-thumb:hover {
           background: ${colors.textSecondary};
+        }
+
+        .status-badge {
+          display: inline-block;
+          padding: 0.125rem 0.5rem;
+          border-radius: 0.25rem;
+          font-size: 0.75rem;
+          font-weight: 500;
+          transition: all 0.2s ease;
+        }
+        
+        .status-badge-success { 
+          background-color: ${isDark ? 'rgba(52, 211, 153, 0.12)' : '#10b98120'} !important; 
+          color: ${colors.success} !important;
+        }
+        
+        .status-badge-info { 
+          background-color: ${isDark ? 'rgba(96, 165, 250, 0.12)' : '#3b82f620'} !important; 
+          color: ${colors.info} !important;
+        }
+        
+        .status-badge-warning { 
+          background-color: ${isDark ? 'rgba(251, 191, 36, 0.12)' : '#f59e0b20'} !important; 
+          color: ${colors.warning} !important;
+        }
+        
+        .status-badge-error { 
+          background-color: ${isDark ? 'rgba(248, 113, 113, 0.12)' : '#ef444420'} !important; 
+          color: ${colors.error} !important;
+        }
+        
+        .status-badge-default { 
+          background-color: ${colors.hover} !important; 
+          color: ${colors.textSecondary} !important;
         }
       `}</style>
 
