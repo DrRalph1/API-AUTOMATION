@@ -1076,7 +1076,7 @@ export const getSupportedImportFormats = () => {
  */
 export const getDefaultEnvironmentVariables = () => {
   return {
-    base_url: 'http://localhost:8080',
+    base_url: 'http://192.168.0.127:4789',
     api_url: 'https://api.example.com',
     access_token: '',
     refresh_token: '',

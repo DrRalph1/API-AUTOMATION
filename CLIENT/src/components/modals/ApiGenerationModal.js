@@ -1,5 +1,5 @@
 // components/modals/ApiGenerationModal.js - COMPLETE FIXED VERSION WITH LOADING STATE
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { 
   X, Plus, Trash2, Save, Copy, Code, Globe, Lock, FileText, 
@@ -2128,7 +2128,9 @@ useEffect(() => {
       ...p,
       id: p.id || `param-${Date.now()}-${Math.random()}`,
       inBody: p.parameterLocation === 'body',
-      paramMode: p.paramMode || 'IN'
+      paramMode: p.paramMode || 'IN',
+      key: p.key, // Make sure key is preserved
+      dbColumn: p.dbColumn // Make sure dbColumn is preserved
     })),
     
     // Response mappings - OUT parameters and response fields
@@ -2325,6 +2327,12 @@ useEffect(() => {
         settings,
         regenerateComponents: true
       };
+
+      console.log('📤 Sending parameters:', getInParameters().map(p => ({ 
+        key: p.key, 
+        oracleType: p.oracleType,  // Should show JSONB after update
+        parameterLocation: p.parameterLocation 
+      })));
 
       console.log('📡 Sending request:', generateRequest);
       
@@ -2900,7 +2908,8 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
       response = await getObjectDetails(authToken, {
         objectType: object.type,
         objectName: object.name,
-        owner: object.owner
+        owner: object.owner,
+        schema: object.owner // PostgreSQL uses schema instead of owner
       });
     } else {
       // Default to Oracle controller
@@ -2955,6 +2964,13 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
       databaseType: object.databaseType
     });
 
+    // Determine the normalized database type for the radio buttons
+    const normalizedDbType = object.databaseType?.toLowerCase() === 'postgresql' ? 'postgresql' : 'oracle';
+    
+    // Set current database type for the radio buttons
+    setCurrentDatabaseType(normalizedDbType);
+    console.log('🎯 Set currentDatabaseType to:', normalizedDbType);
+
     // Create a selected object with all details
     const detailedObject = {
       ...object,
@@ -2974,6 +2990,7 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
       name: detailedObject.name,
       type: detailedObject.type,
       databaseType: detailedObject.databaseType,
+      normalizedDbType: normalizedDbType,
       parametersCount: detailedObject.parameters?.length,
       columnsCount: detailedObject.columns?.length
     });
@@ -2981,8 +2998,12 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
     // Set the selected object and populate form
     setSelectedDbObject(detailedObject);
     
+    // Set source type to database_object (since we selected a database object)
+    setSourceType('database_object');
+    setIsEditingCustomQuery(false);
+    
     // Populate the form with the detailed object
-    await populateFormFromObject(detailedObject);
+    await populateFormFromObject(detailedObject, true);
     
     console.log('✅ Object details loaded and form populated successfully');
     
@@ -2994,7 +3015,6 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
   }
 }, [authToken, populateFormFromObject]);
 
- // In populateFormFromApiData function, update the custom query detection section
 const populateFormFromApiData = useCallback(async (apiData) => {
   console.log('📝 populateFormFromApiData called with:', apiData);
   
@@ -3025,19 +3045,32 @@ const populateFormFromApiData = useCallback(async (apiData) => {
       console.log('📝 Set custom query:', customQueryText.substring(0, 100));
     }
     
-    // ============ CRITICAL: Set database type for custom query ============
+    // Set database type for custom query
     const customQueryDbType = apiData?.databaseType || 
                               apiData?.sourceObject?.databaseType ||
                               databaseType || 
                               'oracle';
-    setCurrentDatabaseType(customQueryDbType);
-    console.log('📦 Database type for custom query:', customQueryDbType);
+    // Normalize database type to lowercase for radio buttons
+    const normalizedDbType = customQueryDbType.toLowerCase() === 'postgresql' ? 'postgresql' : 'oracle';
+    setCurrentDatabaseType(normalizedDbType);
+    console.log('📦 Database type for custom query:', normalizedDbType);
   } else {
     // Reset custom query states if not a custom query
     setIsEditingCustomQuery(false);
     setSourceType('database_object');
     setCustomQuery('');
     setOriginalCustomQuery('');
+    
+    // Set database type for database object
+    const dbType = apiData?.databaseType || 
+                   apiData?.sourceObject?.databaseType ||
+                   apiData?.schemaConfig?.databaseType ||
+                   databaseType || 
+                   'oracle';
+    // Normalize database type to lowercase for radio buttons
+    const normalizedDbType = dbType.toLowerCase() === 'postgresql' ? 'postgresql' : 'oracle';
+    setCurrentDatabaseType(normalizedDbType);
+    console.log('📦 Database type for database object:', normalizedDbType);
   }
   
   // ============ SET API DETAILS ============
@@ -3069,8 +3102,8 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     }
   }
 
-  // ============ SET SCHEMA CONFIG (only for non-custom queries) ============
-  if (apiData.schemaConfig && !isCustomQueryApi) {
+  // ============ SET SCHEMA CONFIG (for both custom query and database object) ============
+  if (apiData.schemaConfig) {
     setSchemaConfig({
       schemaName: apiData.schemaConfig.schemaName || '',
       objectType: apiData.schemaConfig.objectType || '',
@@ -3084,6 +3117,21 @@ const populateFormFromApiData = useCallback(async (apiData) => {
       defaultSortColumn: apiData.schemaConfig.defaultSortColumn || '',
       defaultSortDirection: apiData.schemaConfig.defaultSortDirection || 'ASC'
     });
+  } else if (!isCustomQueryApi && apiData.sourceObject && apiData.sourceObject.type !== 'CUSTOM_QUERY') {
+    // If no schemaConfig but we have sourceObject (legacy format)
+    setSchemaConfig({
+      schemaName: apiData.sourceObject.owner || '',
+      objectType: apiData.sourceObject.type || '',
+      objectName: apiData.sourceObject.name || '',
+      operation: apiData.operation || 'SELECT',
+      primaryKeyColumn: apiData.primaryKeyColumn || '',
+      sequenceName: apiData.sequenceName || '',
+      enablePagination: apiData.enablePagination !== undefined ? apiData.enablePagination : true,
+      pageSize: apiData.pageSize || 10,
+      enableSorting: apiData.enableSorting !== undefined ? apiData.enableSorting : true,
+      defaultSortColumn: apiData.defaultSortColumn || '',
+      defaultSortDirection: apiData.defaultSortDirection || 'ASC'
+    });
   }
 
   // ============ SET SOURCE OBJECT INFO ============
@@ -3096,30 +3144,78 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     });
   }
 
+  // ============ SET SELECTED DB OBJECT (for editing mode) ============
+  if (!isCustomQueryApi && apiData.sourceObject && apiData.sourceObject.type !== 'CUSTOM_QUERY') {
+    // Determine database type for the selected object
+    const objDbType = apiData.databaseType || 
+                      apiData.sourceObject.databaseType || 
+                      apiData.schemaConfig?.databaseType ||
+                      databaseType || 
+                      'oracle';
+    
+    setSelectedDbObject({
+      name: apiData.sourceObject.name || apiData.schemaConfig?.objectName,
+      owner: apiData.sourceObject.owner || apiData.schemaConfig?.schemaName,
+      type: apiData.sourceObject.type || apiData.schemaConfig?.objectType,
+      databaseType: objDbType,
+      isSynonym: apiData.sourceObject.isSynonym || false,
+      targetType: apiData.sourceObject.targetType,
+      targetName: apiData.sourceObject.targetName,
+      targetOwner: apiData.sourceObject.targetOwner,
+      columns: apiData.sourceObject.columns || apiData.columns,
+      parameters: apiData.sourceObject.parameters || apiData.parameters
+    });
+  }
+
   // ============ SET PARAMETERS ============
   if (apiData.parameters && Array.isArray(apiData.parameters)) {
-    const paramsWithIds = apiData.parameters.map(p => ({
-      ...p,
-      id: p.id || `param-${Date.now()}-${Math.random()}`,
-      parameterLocation: p.parameterLocation || (isCustomQueryApi ? 'query' : 'body'),
-      required: p.required !== undefined ? p.required : true,
-      inBody: p.inBody !== undefined ? p.inBody : (p.parameterLocation === 'body'),
-      paramMode: p.paramMode || (isCustomQueryApi ? 'IN' : 'IN')
-    }));
-    setParameters(paramsWithIds);
-  } else if (isCustomQueryApi) {
-    // For custom queries with no parameters, initialize empty array
-    setParameters([]);
-  }
+  const paramsWithIds = apiData.parameters.map((p, idx) => ({
+    ...p,  // Spread all properties from the saved parameter (including oracleType)
+    id: p.id || `param-${Date.now()}-${idx}`,
+    key: p.key || p.parameterName,
+    dbColumn: p.dbColumn || p.key,
+    // IMPORTANT: Preserve the stored oracleType exactly as saved
+    oracleType: p.oracleType || p.dataType || 'VARCHAR2',
+    apiType: p.apiType || 'string',
+    parameterLocation: p.parameterLocation || (isCustomQueryApi ? 'query' : 'body'),
+    required: p.required !== undefined ? p.required : true,
+    description: p.description || `Parameter: ${p.key || p.parameterName}`,
+    example: p.example || '',
+    validationPattern: p.validationPattern || '',
+    defaultValue: p.defaultValue || '',
+    inBody: p.inBody !== undefined ? p.inBody : (p.parameterLocation === 'body'),
+    isPrimaryKey: p.isPrimaryKey || false,
+    paramMode: p.paramMode || (isCustomQueryApi ? 'IN' : 'IN')
+  }));
+  setParameters(paramsWithIds);
+  console.log('📦 Loaded parameters from API data:', paramsWithIds.map(p => ({ 
+    key: p.key, 
+    oracleType: p.oracleType,
+    originalType: p.oracleType  // Log the actual type being set
+  })));
+}
+
+
+  console.log('📦 Loaded parameters from API data:', {
+    count: apiData.parameters?.length,
+    firstParam: apiData.parameters?.[0],
+    rawData: apiData.parameters
+  });
 
   // ============ SET RESPONSE MAPPINGS ============
   if (apiData.responseMappings && Array.isArray(apiData.responseMappings)) {
-    const mappingsWithIds = apiData.responseMappings.map(m => ({
+    const mappingsWithIds = apiData.responseMappings.map((m, idx) => ({
       ...m,
-      id: m.id || `mapping-${Date.now()}-${Math.random()}`,
+      id: m.id || `mapping-${Date.now()}-${idx}`,
+      apiField: m.apiField || m.fieldName,
+      dbColumn: m.dbColumn || m.columnName,
+      oracleType: m.oracleType || m.dataType || 'VARCHAR2',
+      apiType: m.apiType || 'string',
+      format: m.format || '',
+      nullable: m.nullable !== undefined ? m.nullable : true,
+      isPrimaryKey: m.isPrimaryKey || false,
       includeInResponse: m.includeInResponse !== undefined ? m.includeInResponse : true,
       inResponse: m.inResponse !== undefined ? m.inResponse : true,
-      nullable: m.nullable !== undefined ? m.nullable : true,
       paramMode: m.paramMode || 'OUT'
     }));
     setResponseMappings(mappingsWithIds);
@@ -3246,31 +3342,47 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     });
   }
 
-  // ============ SET CURRENT DATABASE TYPE ============
-  if (apiData.databaseType) {
-    setCurrentDatabaseType(apiData.databaseType);
-  } else if (databaseType) {
-    setCurrentDatabaseType(databaseType);
+  // ============ SET CURRENT DATABASE TYPE (already set at top) ============
+  // Ensure currentDatabaseType is properly set for database objects
+  if (!isCustomQueryApi && (!currentDatabaseType || currentDatabaseType === 'oracle')) {
+    const dbType = apiData?.databaseType || 
+                   apiData?.sourceObject?.databaseType ||
+                   apiData?.schemaConfig?.databaseType ||
+                   databaseType || 
+                   'oracle';
+    const normalizedDbType = dbType.toLowerCase() === 'postgresql' ? 'postgresql' : 'oracle';
+    setCurrentDatabaseType(normalizedDbType);
   }
 
   // ============ LOG COMPLETION ============
   console.log('✅ Form populated from API data', {
     isCustomQuery: isCustomQueryApi,
+    sourceType: isCustomQueryApi ? 'custom_query' : 'database_object',
     apiName: apiData.apiName,
     apiCode: apiData.apiCode,
     parametersCount: apiData.parameters?.length || 0,
-    responseMappingsCount: apiData.responseMappings?.length || 0
+    responseMappingsCount: apiData.responseMappings?.length || 0,
+    databaseType: currentDatabaseType
   });
   
 }, [collections, databaseType]);
 
   // Function to populate form from selected object - FIXED VERSION WITH PROPER MODE FILTERING
-  // Function to populate form from selected object - FIXED VERSION WITH PROPER MODE FILTERING
-const populateFormFromObject = useCallback((object) => {
+const populateFormFromObject = useCallback((object, preserveExistingApiDetails = false) => {
   console.log('📝 populateFormFromObject called with object:', object);
+  console.log('📝 preserveExistingApiDetails:', preserveExistingApiDetails);
   console.log('📝 Object database type:', object.databaseType);
   console.log('📝 Object type:', object.type);
   console.log('📝 Object name:', object.name);
+  
+  // Ensure source type is database_object
+  setSourceType('database_object');
+  setIsEditingCustomQuery(false);
+  
+  // Set the database type for radio buttons
+  const normalizedDbType = object.databaseType?.toLowerCase() === 'postgresql' ? 'postgresql' : 'oracle';
+  setCurrentDatabaseType(normalizedDbType);
+  console.log('🎯 Set currentDatabaseType to:', normalizedDbType);
   
   const objectType = object.type?.toUpperCase() || object.objectType?.toUpperCase();
   const baseName = object.name?.toLowerCase() || object.objectName?.toLowerCase() || '';
@@ -3312,16 +3424,27 @@ const populateFormFromObject = useCallback((object) => {
     }
   }
 
-  // Set API details
-  setApiDetails(prev => ({
-    ...prev,
-    apiName: object.name || object.objectName ? `${object.name || object.objectName} API` : 'New API',
-    apiCode: objectType ? `${objectType.slice(0, 3)}_${object.name || object.objectName || 'API'}` : 'API',
-    description: object.comment || (object.name || object.objectName ? `API for ${object.name || object.objectName}` : ''),
-    endpointPath: endpointPath,
-    owner: object.owner || 'HR',
-    httpMethod: httpMethod
-  }));
+  // ONLY update API details if NOT preserving existing values
+  if (!preserveExistingApiDetails) {
+    setApiDetails(prev => ({
+      ...prev,
+      apiName: object.name || object.objectName ? `${object.name || object.objectName} API` : 'New API',
+      apiCode: objectType ? `${objectType.slice(0, 3)}_${object.name || object.objectName || 'API'}` : 'API',
+      description: object.comment || (object.name || object.objectName ? `API for ${object.name || object.objectName}` : ''),
+      endpointPath: endpointPath,
+      owner: object.owner || 'HR',
+      httpMethod: httpMethod
+    }));
+  } else {
+    // Only update the fields that should be updated from the object
+    setApiDetails(prev => ({
+      ...prev,
+      // Only update these if they are empty or if we specifically want to
+      endpointPath: prev.endpointPath || endpointPath,
+      owner: prev.owner || object.owner || 'HR',
+      httpMethod: prev.httpMethod || httpMethod
+    }));
+  }
 
   // Set schema config with proper operation based on HTTP method
   setSchemaConfig(prev => ({
@@ -3333,7 +3456,8 @@ const populateFormFromObject = useCallback((object) => {
     primaryKeyColumn: ''
   }));
 
-  // Generate parameters and response mappings
+  // Generate parameters and response mappings - ALWAYS regenerate from the object
+  // This ensures parameters and mappings are updated when changing the database object
   const newParameters = [];
   const newMappings = [];
 
@@ -3359,147 +3483,177 @@ const populateFormFromObject = useCallback((object) => {
 
   // Process parameters if we have any
   if (parameters.length > 0) {
-    console.log('📦 Processing parameters (count: ' + parameters.length + ')');
+  console.log('📦 Processing parameters (count: ' + parameters.length + ')');
+  
+  parameters.forEach((param, index) => {
+    // Extract parameter data with fallbacks for different naming conventions
+    // PRIORITIZE: key, then ARGUMENT_NAME, then argument_name, then name, then NAME
+    const paramName = param.key || 
+                      param.ARGUMENT_NAME || 
+                      param.argument_name || 
+                      param.name || 
+                      param.NAME || 
+                      `param_${index + 1}`;
     
-    parameters.forEach((param, index) => {
-      // Extract parameter data with fallbacks for different naming conventions
-      const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || `param_${index + 1}`;
-      const paramType = param.DATA_TYPE || param.data_type || param.type || param.TYPE || 'VARCHAR2';
-      // IMPORTANT: Use in_out as the key for parameter mode (from your sample data)
-      const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 'IN';
-      
-      // Normalize the mode to handle different formats (IN, OUT, INOUT, IN/OUT)
-      let normalizedMode = paramMode?.toString().toUpperCase().replace(/\s+/g, '_') || 'IN';
-      // Convert INOUT to IN/OUT for consistency
-      if (normalizedMode === 'INOUT') {
-        normalizedMode = 'IN/OUT';
-      }
-      
-      console.log(`🔍 Processing param ${index}:`, { 
-        paramName, 
-        paramType, 
-        paramMode: normalizedMode,
-        original: paramMode 
-      });
-      
-      // Generate a clean key name
-      let cleanKey = paramName;
-      if (typeof paramName === 'string') {
-        cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
+    const paramType = param.oracleType || 
+                      param.DATA_TYPE || 
+                      param.data_type || 
+                      param.type || 
+                      param.TYPE || 
+                      'VARCHAR2';
+    
+    const paramMode = param.paramMode || 
+                      param.IN_OUT || 
+                      param.in_out || 
+                      param.mode || 
+                      param.MODE || 
+                      'IN';
+    
+    // Normalize the mode
+    let normalizedMode = paramMode?.toString().toUpperCase().replace(/\s+/g, '_') || 'IN';
+    if (normalizedMode === 'INOUT') {
+      normalizedMode = 'IN/OUT';
+    }
+    
+    console.log(`🔍 Processing param ${index}:`, { 
+      paramName, 
+      paramType, 
+      paramMode: normalizedMode,
+      original: paramMode,
+      originalKey: param.key,
+      originalDbColumn: param.dbColumn
+    });
+    
+    // Generate a clean key name - preserve the original if it exists
+    let cleanKey = paramName;
+    if (typeof paramName === 'string') {
+      // Only clean if it's a generated name, not if it's from the original data
+      if (param.key) {
+        cleanKey = param.key;
+      } else if (param.dbColumn) {
+        cleanKey = param.dbColumn;
       } else {
-        cleanKey = `param_${index + 1}`;
+        cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
       }
-      
-      // Determine parameter location based on mode and HTTP method
-      let parameterLocation = 'query';
-      
-      // Check if this is an IN or IN/OUT parameter for parameters tab
-      const isInParam = normalizedMode === 'IN' || normalizedMode === 'IN/OUT';
-      // Check if this is an OUT or IN/OUT parameter for mappings tab
-      const isOutParam = normalizedMode === 'OUT' || normalizedMode === 'IN/OUT';
-      
+    } else {
+      cleanKey = `param_${index + 1}`;
+    }
+    
+    // Determine parameter location based on mode and HTTP method
+    let parameterLocation = param.parameterLocation || 'query';
+    
+    const isInParam = normalizedMode === 'IN' || normalizedMode === 'IN/OUT';
+    const isOutParam = normalizedMode === 'OUT' || normalizedMode === 'IN/OUT';
+    
+    // If parameter location is not set, determine from HTTP method
+    if (!param.parameterLocation) {
       if (isInParam && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
         parameterLocation = 'body';
       } else if (isInParam && httpMethod === 'GET') {
         parameterLocation = 'query';
       }
+    }
 
-      // Determine database type for type mapping
-      const dbType = object.databaseType?.toLowerCase() || 'oracle';
-      
-      // Determine type based on database type
-      let oracleType = 'VARCHAR2';
-      let apiType = 'string';
-      
-      if (dbType === 'postgresql') {
-        // PostgreSQL type mapping
-        if (paramType.includes('VARCHAR') || paramType.includes('CHAR') || paramType.includes('TEXT')) {
-          oracleType = 'VARCHAR2';
-          apiType = 'string';
-        } else if (paramType.includes('INT') || paramType.includes('BIGINT') || paramType.includes('SMALLINT') || 
-                   paramType.includes('DECIMAL') || paramType.includes('NUMERIC') || paramType.includes('FLOAT') ||
-                   paramType.includes('DOUBLE') || paramType.includes('REAL')) {
-          oracleType = 'NUMBER';
-          apiType = 'integer';
-        } else if (paramType.includes('DATE') || paramType.includes('TIME') || paramType.includes('TIMESTAMP')) {
-          oracleType = 'DATE';
-          apiType = 'string';
-        } else if (paramType.includes('BOOLEAN')) {
-          oracleType = 'VARCHAR2';
-          apiType = 'boolean';
-        } else {
-          oracleType = 'VARCHAR2';
-          apiType = 'string';
-        }
+    // Determine database type for type mapping
+    const dbType = object.databaseType?.toLowerCase() || 'oracle';
+    
+    // Determine type based on database type
+    let oracleType = 'VARCHAR2';
+    let apiType = 'string';
+    
+    if (dbType === 'postgresql') {
+      if (paramType.includes('VARCHAR') || paramType.includes('CHAR') || paramType.includes('TEXT')) {
+        oracleType = 'VARCHAR2';
+        apiType = 'string';
+      } else if (paramType.includes('INT') || paramType.includes('BIGINT') || paramType.includes('SMALLINT') || 
+                 paramType.includes('DECIMAL') || paramType.includes('NUMERIC') || paramType.includes('FLOAT') ||
+                 paramType.includes('DOUBLE') || paramType.includes('REAL')) {
+        oracleType = 'NUMBER';
+        apiType = 'integer';
+      } else if (paramType.includes('DATE') || paramType.includes('TIME') || paramType.includes('TIMESTAMP')) {
+        oracleType = 'DATE';
+        apiType = 'string';
+      } else if (paramType.includes('BOOLEAN')) {
+        oracleType = 'VARCHAR2';
+        apiType = 'boolean';
       } else {
-        // Data Type mapping
-        if (paramType.includes('VARCHAR') || paramType.includes('CHAR')) {
-          oracleType = 'VARCHAR2';
-          apiType = 'string';
-        } else if (paramType.includes('NUMBER') || paramType.includes('INT') || paramType.includes('FLOAT')) {
-          oracleType = 'NUMBER';
-          apiType = 'integer';
-        } else if (paramType.includes('DATE')) {
-          oracleType = 'DATE';
-          apiType = 'string';
-        } else if (paramType.includes('TIMESTAMP')) {
-          oracleType = 'TIMESTAMP';
-          apiType = 'string';
-        } else if (paramType.includes('CLOB')) {
-          oracleType = 'CLOB';
-          apiType = 'string';
-        } else {
-          oracleType = 'VARCHAR2';
-          apiType = 'string';
-        }
+        oracleType = 'VARCHAR2';
+        apiType = 'string';
       }
+    } else {
+      if (paramType.includes('VARCHAR') || paramType.includes('CHAR')) {
+        oracleType = 'VARCHAR2';
+        apiType = 'string';
+      } else if (paramType.includes('NUMBER') || paramType.includes('INT') || paramType.includes('FLOAT')) {
+        oracleType = 'NUMBER';
+        apiType = 'integer';
+      } else if (paramType.includes('DATE')) {
+        oracleType = 'DATE';
+        apiType = 'string';
+      } else if (paramType.includes('TIMESTAMP')) {
+        oracleType = 'TIMESTAMP';
+        apiType = 'string';
+      } else if (paramType.includes('CLOB')) {
+        oracleType = 'CLOB';
+        apiType = 'string';
+      } else {
+        oracleType = 'VARCHAR2';
+        apiType = 'string';
+      }
+    }
 
-      // CRITICAL FIX: Only add to parameters array for IN and IN/OUT parameters
-      if (isInParam) {
-        newParameters.push({
-          id: `proc-param-${Date.now()}-${index}`,
-          key: cleanKey,
-          dbColumn: paramName,
-          oracleType: oracleType,
-          apiType: apiType,
-          parameterLocation: parameterLocation,
-          required: isInParam, // IN/IN OUT parameters are typically required
-          description: `${paramName} (${normalizedMode})`,
-          example: oracleType === 'NUMBER' ? '1000' : 
-                  oracleType === 'DATE' ? '2024-01-01' : 
-                  oracleType === 'CLOB' ? '{...}' : 'sample',
-          validationPattern: '',
-          defaultValue: param.DATA_DEFAULT || param.defaultValue || '',
-          inBody: parameterLocation === 'body',
-          isPrimaryKey: false,
-          paramMode: normalizedMode
-        });
-        console.log(`✅ Added to PARAMETERS tab: ${cleanKey} (${normalizedMode})`);
-      }
+    // Preserve existing values if available
+    const required = param.required !== undefined ? param.required : isInParam;
+    const description = param.description || `${paramName} (${normalizedMode})`;
+    const example = param.example || (oracleType === 'NUMBER' ? '1000' : 
+                                      oracleType === 'DATE' ? '2024-01-01' : 
+                                      oracleType === 'CLOB' ? '{...}' : 'sample');
+    const defaultValue = param.defaultValue || param.DATA_DEFAULT || '';
+    const inBody = param.inBody !== undefined ? param.inBody : (parameterLocation === 'body');
 
-      // CRITICAL FIX: Only add to response mappings for OUT and IN/OUT parameters
-      if (isOutParam) {
-        newMappings.push({
-          id: `mapping-out-${Date.now()}-${index}`,
-          apiField: cleanKey,
-          dbColumn: paramName,
-          oracleType: oracleType,
-          apiType: apiType,
-          format: oracleType === 'DATE' ? 'date-time' : '',
-          nullable: true,
-          isPrimaryKey: false,
-          includeInResponse: true,
-          inResponse: true,
-          paramMode: normalizedMode
-        });
-        console.log(`✅ Added to MAPPINGS tab: ${cleanKey} (${normalizedMode})`);
-      }
-    });
+    // Only add to parameters array for IN and IN/OUT parameters
+    if (isInParam) {
+      newParameters.push({
+        id: param.id || `proc-param-${Date.now()}-${index}`,
+        key: cleanKey,
+        dbColumn: param.dbColumn || paramName,
+        oracleType: oracleType,
+        apiType: apiType,
+        parameterLocation: parameterLocation,
+        required: required,
+        description: description,
+        example: example,
+        validationPattern: param.validationPattern || '',
+        defaultValue: defaultValue,
+        inBody: inBody,
+        isPrimaryKey: param.isPrimaryKey || false,
+        paramMode: normalizedMode
+      });
+      console.log(`✅ Added to PARAMETERS tab: ${cleanKey} (${normalizedMode})`);
+    }
+
+    // Only add to response mappings for OUT and IN/OUT parameters
+    if (isOutParam) {
+      newMappings.push({
+        id: param.id || `mapping-out-${Date.now()}-${index}`,
+        apiField: cleanKey,
+        dbColumn: param.dbColumn || paramName,
+        oracleType: oracleType,
+        apiType: apiType,
+        format: param.format || (oracleType === 'DATE' ? 'date-time' : ''),
+        nullable: param.nullable !== undefined ? param.nullable : true,
+        isPrimaryKey: param.isPrimaryKey || false,
+        includeInResponse: param.includeInResponse !== undefined ? param.includeInResponse : true,
+        inResponse: param.inResponse !== undefined ? param.inResponse : true,
+        paramMode: normalizedMode
+      });
+      console.log(`✅ Added to MAPPINGS tab: ${cleanKey} (${normalizedMode})`);
+    }
+  });
 
     // For functions, handle return type
     const returnType = object.RETURN_TYPE || object.return_type || object.returnType || object.details?.returnType;
     if (returnType && objectType === 'FUNCTION') {
-      // Determine Data Type for return based on database type
       const dbType = object.databaseType?.toLowerCase() || 'oracle';
       let oracleType = 'VARCHAR2';
       
@@ -3525,7 +3679,6 @@ const populateFormFromObject = useCallback((object) => {
         }
       }
 
-      // Determine API type
       let apiType = 'string';
       if (oracleType === 'NUMBER') {
         apiType = 'integer';
@@ -3548,7 +3701,7 @@ const populateFormFromObject = useCallback((object) => {
     }
   }
 
-  // Process columns if we have any and no parameters (for tables/views)
+  // Process columns for tables/views
   if (columns.length > 0 && parameters.length === 0) {
     console.log('📦 Processing columns (count: ' + columns.length + ')');
     
@@ -3559,13 +3712,9 @@ const populateFormFromObject = useCallback((object) => {
       const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
       
       if (colName) {
-        // Clean up column name for API key
         const cleanKey = typeof colName === 'string' ? colName.toLowerCase() : `column_${index + 1}`;
-        
-        // Determine database type for type mapping
         const dbType = object.databaseType?.toLowerCase() || 'oracle';
         
-        // Determine type based on database type
         let oracleType = 'VARCHAR2';
         
         if (dbType === 'postgresql') {
@@ -3598,13 +3747,11 @@ const populateFormFromObject = useCallback((object) => {
           }
         }
 
-        // Determine API type
         let apiType = 'string';
         if (oracleType === 'NUMBER') {
           apiType = 'integer';
         }
 
-        // Determine parameter location
         let parameterLocation = 'query';
         if (isPrimaryKey && (httpMethod === 'GET' || httpMethod === 'PUT' || httpMethod === 'DELETE')) {
           parameterLocation = 'path';
@@ -3612,7 +3759,6 @@ const populateFormFromObject = useCallback((object) => {
           parameterLocation = 'body';
         }
         
-        // For tables/views, all columns go to both parameters and mappings
         newParameters.push({
           id: `param-col-${Date.now()}-${index}`,
           key: cleanKey,
@@ -3656,6 +3802,8 @@ const populateFormFromObject = useCallback((object) => {
     outCount: newMappings.length
   });
 
+  // ALWAYS update parameters and mappings regardless of preserveExistingApiDetails
+  // This ensures when you change the database object, the parameters and mappings update
   setParameters(newParameters);
   setResponseMappings(newMappings);
   
@@ -3709,7 +3857,7 @@ const populateFormFromObject = useCallback((object) => {
   console.log(`✅ Form populated for ${objectType} with operation: ${operation} (HTTP ${httpMethod})`);
   console.log(`📊 Parameters (IN/IN OUT): ${newParameters.length}, Mappings (OUT/IN OUT): ${newMappings.length}`);
   console.log(`📊 Database type: ${object.databaseType}`);
-}, [apiDetails.version, setApiDetails, setSchemaConfig, setParameters, setResponseMappings, setRequestBody, setResponseBody]);
+}, [apiDetails.version, apiDetails.httpMethod, setApiDetails, setSchemaConfig, setParameters, setResponseMappings, setRequestBody, setResponseBody]);
 
   // ==================== VALIDATION FUNCTIONS ====================
 
@@ -3948,118 +4096,147 @@ useEffect(() => {
   }
 }, [isOpen, fromDashboard, selectedObject, isEditing, selectedDbObject]);
 
-  // Initialize parameters and mappings based on selected object - FIXED VERSION
-  useEffect(() => {
-    const initializeFromObject = async () => {
-      // If we're on dashboard and have selectedDbObject, use that
-      if (fromDashboard && selectedDbObject) {
-        console.log('📝 Using dashboard-selected object:', selectedDbObject);
-        await populateFormFromObject(selectedDbObject);
-        return;
-      }
+ // Add a ref to track if we're currently editing the same API
+const currentEditingApiIdRef = useRef(null);
+const isInitializedRef = useRef(false);
 
-      if (!selectedObject) {
-        console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
-        return;
-      }
-
-      setLoading(true);
-      
-      // Check if we're in edit mode - IMPROVED DETECTION
-      const isEditMode = isEditing || (selectedObject?.data && selectedObject.data.id);
-      
-      console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
-        selectedObject: selectedObject,
-        isEditing: isEditing,
-        isEditMode: isEditMode
-      });
-
-      try {
-        // For API objects (when in edit mode), handle differently
-        if (isEditMode) {
-          console.log('ℹ️ Loading API object for edit mode');
-          
-          // Extract the API data - handle both wrapped and unwrapped formats
-          let apiData = selectedObject;
-          
-          // If it's wrapped in a 'data' property (from API response), extract it
-          if (selectedObject.data && selectedObject.data.id) {
-            apiData = selectedObject.data;
-          }
-          
-          console.log('📦 Extracted API data for edit:', apiData);
-          
-          // Populate form with existing API data
-          await populateFormFromApiData(apiData);
-          
-          setLoading(false);
-          return;
-        }
-
-        // For regular database objects (not APIs), validate and populate
-        console.log('🔍 Starting validation for object:', selectedObject.name);
-        
-        // Validate the source object (now resolves synonyms)
-        const validationResponse = await validateObject(selectedObject, selectedObject.type);
-        console.log('📦 Validation response received:', validationResponse);
-        
-        if (validationResponse && validationResponse.data) {
-          console.log('📦 Using validation data to populate form');
-          
-          const validationData = validationResponse.data;
-          
-          // Extract parameters from the response
-          let parameters = [];
-          let columns = [];
-          
-          if (validationData.details?.parameters && Array.isArray(validationData.details.parameters)) {
-            parameters = validationData.details.parameters;
-            console.log('📦 Found parameters in validationData.details.parameters:', parameters.length);
-          }
-          
-          if (validationData.details?.columns && Array.isArray(validationData.details.columns)) {
-            columns = validationData.details.columns;
-            console.log('📦 Found columns in validationData.details.columns:', columns.length);
-          }
-          
-          // Create a combined object with all the data
-          const combinedObject = {
-            ...selectedObject,
-            details: validationData.details || {},
-            parameters: parameters,
-            columns: columns,
-            // Use the target owner/name if it was a synonym
-            owner: validationData.owner || selectedObject.targetOwner || selectedObject.owner,
-            name: validationData.objectName || selectedObject.targetName || selectedObject.name,
-            type: validationData.objectType || selectedObject.targetType || selectedObject.type
-          };
-          
-          console.log('📦 Combined object for population:', {
-            owner: combinedObject.owner,
-            name: combinedObject.name,
-            type: combinedObject.type,
-            hasParameters: combinedObject.parameters?.length > 0,
-            parametersCount: combinedObject.parameters?.length,
-            hasColumns: combinedObject.columns?.length > 0,
-            columnsCount: combinedObject.columns?.length
-          });
-          
-          // Populate the form
-          await populateFormFromObject(combinedObject);
-        } else {
-          console.log('⚠️ No validation data received');
-        }
-      } catch (error) {
-        console.error('❌ Error initializing modal:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (isOpen) {
-      initializeFromObject();
+// Modify your initialization useEffect
+useEffect(() => {
+  const initializeFromObject = async () => {
+    // If we're on dashboard and have selectedDbObject AND we're NOT editing an existing API
+    if (fromDashboard && selectedDbObject && !isEditing) {
+      console.log('📝 Using dashboard-selected object for NEW API:', selectedDbObject);
+      await populateFormFromObject(selectedDbObject, false);
+      return;
     }
-  }, [selectedObject, isOpen, authToken, obType, isEditing, collections, fromDashboard, selectedDbObject, populateFormFromObject]);
+
+    if (!selectedObject) {
+      console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
+      return;
+    }
+
+    setLoading(true);
+    
+    // Check if we're in edit mode - IMPROVED DETECTION
+    const isEditMode = isEditing || (selectedObject?.data && selectedObject.data.id);
+    
+    // Get the API ID we're editing
+    const editingApiId = isEditMode ? (selectedObject?.data?.id || selectedObject?.id) : null;
+    
+    // If we're reopening the same API we were just editing, preserve form state
+    if (isEditMode && currentEditingApiIdRef.current === editingApiId && isInitializedRef.current) {
+      console.log('🔄 Reopening same API - preserving form state');
+      setLoading(false);
+      return;
+    }
+    
+    // Store the current API ID
+    if (isEditMode && editingApiId) {
+      currentEditingApiIdRef.current = editingApiId;
+    }
+    
+    console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
+      selectedObject: selectedObject,
+      isEditing: isEditing,
+      isEditMode: isEditMode,
+      editingApiId: editingApiId,
+      previousId: currentEditingApiIdRef.current
+    });
+
+    try {
+      // FOR EDIT MODE: Load from API data only
+      if (isEditMode) {
+        console.log('ℹ️ EDIT MODE: Loading API object for edit');
+        
+        // Extract the API data - handle both wrapped and unwrapped formats
+        let apiData = selectedObject;
+        
+        // If it's wrapped in a 'data' property (from API response), extract it
+        if (selectedObject.data && selectedObject.data.id) {
+          apiData = selectedObject.data;
+        }
+        
+        console.log('📦 Extracted API data for edit:', apiData);
+        
+        // ONLY populate from API data - DO NOT call populateFormFromObject
+        await populateFormFromApiData(apiData);
+        
+        // Mark as initialized
+        isInitializedRef.current = true;
+        
+        setLoading(false);
+        return; // IMPORTANT: Exit here, don't continue to database object logic
+      }
+
+      // FOR NEW API MODE (not editing) - Validate and populate from database object
+      console.log('🆕 NEW API MODE: Starting validation for object:', selectedObject.name);
+      
+      // Validate the source object (now resolves synonyms)
+      const validationResponse = await validateObject(selectedObject, selectedObject.type);
+      console.log('📦 Validation response received:', validationResponse);
+      
+      if (validationResponse && validationResponse.data) {
+        console.log('📦 Using validation data to populate form');
+        
+        const validationData = validationResponse.data;
+        
+        // Extract parameters from the response
+        let parameters = [];
+        let columns = [];
+        
+        if (validationData.details?.parameters && Array.isArray(validationData.details.parameters)) {
+          parameters = validationData.details.parameters;
+          console.log('📦 Found parameters in validationData.details.parameters:', parameters.length);
+        }
+        
+        if (validationData.details?.columns && Array.isArray(validationData.details.columns)) {
+          columns = validationData.details.columns;
+          console.log('📦 Found columns in validationData.details.columns:', columns.length);
+        }
+        
+        // Create a combined object with all the data
+        const combinedObject = {
+          ...selectedObject,
+          details: validationData.details || {},
+          parameters: parameters,
+          columns: columns,
+          owner: validationData.owner || selectedObject.targetOwner || selectedObject.owner,
+          name: validationData.objectName || selectedObject.targetName || selectedObject.name,
+          type: validationData.objectType || selectedObject.targetType || selectedObject.type
+        };
+        
+        console.log('📦 Combined object for population:', {
+          owner: combinedObject.owner,
+          name: combinedObject.name,
+          type: combinedObject.type,
+          hasParameters: combinedObject.parameters?.length > 0,
+          parametersCount: combinedObject.parameters?.length
+        });
+        
+        // Populate the form from the database object
+        await populateFormFromObject(combinedObject, false);
+      } else {
+        console.log('⚠️ No validation data received');
+      }
+      
+      // Mark as initialized
+      isInitializedRef.current = true;
+      
+    } catch (error) {
+      console.error('❌ Error initializing modal:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (isOpen) {
+    initializeFromObject();
+  } else {
+    // Reset refs when modal closes
+    currentEditingApiIdRef.current = null;
+    isInitializedRef.current = false;
+  }
+}, [selectedObject, isOpen, authToken, obType, isEditing, collections, fromDashboard, selectedDbObject]);
 
   // Add this useEffect after your initialization useEffect - FIXED VERSION
   useEffect(() => {
@@ -5388,12 +5565,12 @@ return ReactDOM.createPortal(
                   </>
                 )}
                 
-                {isEditing && !selectedObject?.loading && (
+                {/* {isEditing && !selectedObject?.loading && (
                   <p className="text-xs mt-1" style={{ color: themeColors.success }}>
                     <CheckCircle className="h-3 w-3 inline mr-1" />
                     Editing existing API
                   </p>
-                )}
+                )} */}
 
                 {/* Dashboard selected object indicator - UPDATED with database type badge */}
                 {fromDashboard && selectedDbObject && (
@@ -5688,113 +5865,6 @@ return ReactDOM.createPortal(
               </div>
             </div>
           </div>
-
-
-          {/* Custom Query Section - Show for both new and editing custom queries */}
-          {(isCustomQuery || sourceType === 'custom_query' || isEditingCustomQuery) && (
-            <div className="px-6 py-4 border-b" style={{ 
-              borderColor: themeColors.border,
-              backgroundColor: themeColors.modalBg
-            }}>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium flex items-center gap-2" style={{ color: themeColors.text }}>
-                    <Wand2 size={14} style={{ color: themeColors.info }} />
-                    Custom SELECT Statement
-                    {!customQuery?.trim() && validationErrors.customQuery && (
-                      <span className="text-xs" style={{ color: themeColors.error }}>(Required)</span>
-                    )}
-                  </label>
-                  
-                  {/* Add an indicator when editing */}
-                  {isEditingCustomQuery && (
-                    <span className="text-xs px-2 py-1 rounded-full" style={{
-                      backgroundColor: themeColors.warning + '20',
-                      color: themeColors.warning
-                    }}>
-                      <Edit className="h-3 w-3 inline mr-1" />
-                      Editing Mode
-                    </span>
-                  )}
-                </div>
-                
-                <textarea
-                  value={customQuery}
-                  onChange={(e) => setCustomQuery(e.target.value)}
-                  className="w-full px-3 py-3 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-opacity-50"
-                  style={{ 
-                    backgroundColor: themeColors.codeBg || (theme === 'dark' ? '#1a202c' : '#f8fafc'),
-                    border: `1px solid ${validationErrors.customQuery ? themeColors.error : themeColors.border}`,
-                    color: themeColors.text,
-                    fontFamily: 'monospace',
-                    fontSize: '13px',
-                    lineHeight: '1.5',
-                    minHeight: '80px'
-                  }}
-                  placeholder="SELECT * FROM your_table WHERE column = :paramName"
-                  spellCheck={false}
-                />
-                
-                {/* <div className="flex items-center justify-between">
-                  <p className="text-xs" style={{ color: themeColors.textSecondary }}>
-                    Use :paramName syntax for parameters (e.g., WHERE id = :userId)
-                  </p>
-                  
-                  <button
-                    onClick={() => {
-                      // Extract parameters from the custom query
-                      const paramMatches = customQuery.match(/:\w+/g) || [];
-                      const uniqueParams = [...new Set(paramMatches)];
-                      const newParams = uniqueParams.map((param, idx) => ({
-                        id: `param-${Date.now()}-${idx}`,
-                        key: param.substring(1), // Remove the colon
-                        dbColumn: param.substring(1),
-                        oracleType: 'VARCHAR2',
-                        apiType: 'string',
-                        parameterLocation: 'query',
-                        required: true,
-                        description: `Parameter: ${param.substring(1)}`,
-                        example: '',
-                        validationPattern: '',
-                        defaultValue: '',
-                        inBody: false,
-                        isPrimaryKey: false,
-                        paramMode: 'IN'
-                      }));
-                      setParameters(newParams);
-                    }}
-                    className="text-xs px-3 py-1 rounded-lg flex items-center gap-1 transition-colors hover-lift"
-                    style={{ 
-                      backgroundColor: themeColors.info + '20',
-                      color: themeColors.info,
-                      border: `1px solid ${themeColors.info + '40'}`
-                    }}
-                    title="Extract parameters from query"
-                  >
-                    <RefreshCw className="h-3 w-3" />
-                    Extract Parameters
-                  </button>
-                </div> */}
-                
-                {/* Show query summary */}
-                {/* {customQuery && (
-                  <div className="p-2 rounded text-xs" style={{ 
-                    backgroundColor: themeColors.info + '10',
-                    borderLeft: `3px solid ${themeColors.info}`
-                  }}>
-                    <div className="flex items-center gap-2">
-                      <Database className="h-3 w-3" style={{ color: themeColors.info }} />
-                      <span style={{ color: themeColors.textSecondary }}>Query analysis:</span>
-                      <span style={{ color: themeColors.text }}>
-                        {customQuery.split(/\s+/).length} words, 
-                        {(customQuery.match(/:\w+/g) || []).length} parameters
-                      </span>
-                    </div>
-                  </div>
-                )} */}
-              </div>
-            </div>
-          )}
 
 
           {/* API Details Section */}
@@ -6517,14 +6587,608 @@ return ReactDOM.createPortal(
 
                 {/* Schema Tab placeholder for editing mode */}
                 {activeTab === 'schema' && isEditing && (
-                  <div className="p-8 text-center">
-                    <Database className="h-12 w-12 mx-auto mb-4" style={{ color: themeColors.textSecondary }} />
-                    <p style={{ color: themeColors.text }}>Schema configuration cannot be edited for existing APIs</p>
-                    <p className="text-xs mt-2" style={{ color: themeColors.textSecondary }}>
-                      To change the source object, create a new API
-                    </p>
+  <div className="space-y-6">
+    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+      Database Schema Configuration
+    </h3>
+
+    {/* Source Type Selection */}
+    <div className="mb-6">
+      <label className="text-xs font-medium flex items-center gap-2 mb-2" style={{ color: themeColors.text }}>
+        <Database className="h-4 w-4" />
+        Source Type
+      </label>
+      <div className="flex gap-4">
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            value="database_object"
+            checked={sourceType === 'database_object'}
+            onChange={(e) => {
+              setSourceType(e.target.value);
+              if (isEditingCustomQuery) {
+                setIsEditingCustomQuery(false);
+                setCustomQuery('');
+              }
+              // Clear validation error
+              setValidationErrors(prev => ({ ...prev, customQuery: null }));
+            }}
+            className="h-4 w-4"
+            style={{ accentColor: themeColors.info }}
+          />
+          <span className="text-sm" style={{ color: themeColors.text }}>Database Object</span>
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            value="custom_query"
+            checked={sourceType === 'custom_query'}
+            onChange={(e) => {
+              setSourceType(e.target.value);
+              if (!isEditingCustomQuery) {
+                setIsEditingCustomQuery(true);
+              }
+              // Clear validation error
+              setValidationErrors(prev => ({ ...prev, customQuery: null }));
+            }}
+            className="h-4 w-4"
+            style={{ accentColor: themeColors.info }}
+          />
+          <span className="text-sm" style={{ color: themeColors.text }}>Custom SQL Query</span>
+        </label>
+      </div>
+    </div>
+
+    {/* Database Object Selection Section */}
+    {sourceType === 'database_object' && (
+      <>
+        {/* Object Selector Button */}
+        <div className="mb-6">
+          <button
+            onClick={() => setShowObjectSelector(true)}
+            className="px-4 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors hover-lift"
+            style={{ backgroundColor: themeColors.info, color: themeColors.white }}
+          >
+            <Search className="h-4 w-4" />
+            {selectedDbObject ? 'Change Database Object' : 'Select Database Object'}
+          </button>
+          
+          {selectedDbObject && (
+            <div className="mt-3 p-3 rounded-lg border" style={{ 
+              borderColor: themeColors.success + '40',
+              backgroundColor: themeColors.success + '10'
+            }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-sm" style={{ color: themeColors.text }}>
+                    {selectedDbObject.name}
+                  </div>
+                  <div className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
+                    {selectedDbObject.owner}.{selectedDbObject.name} ({selectedDbObject.type})
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ 
+                      backgroundColor: selectedDbObject.databaseType === 'PostgreSQL' ? '#3b82f620' : '#ef444420',
+                      color: selectedDbObject.databaseType === 'PostgreSQL' ? '#3b82f6' : '#ef4444'
+                    }}>
+                      {selectedDbObject.databaseType === 'PostgreSQL' ? 'PostgreSQL' : 'Oracle'}
+                    </span>
+                    {sourceObjectInfo.isSynonym && (
+                      <span className="text-xs px-2 py-0.5 rounded-full" style={{ 
+                        backgroundColor: themeColors.warning + '20',
+                        color: themeColors.warning
+                      }}>
+                        Synonym → {sourceObjectInfo.targetType}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedDbObject(null);
+                    setSchemaConfig({
+                      schemaName: '',
+                      objectType: '',
+                      objectName: '',
+                      operation: 'SELECT',
+                      primaryKeyColumn: '',
+                      sequenceName: '',
+                      enablePagination: true,
+                      pageSize: 10,
+                      enableSorting: true,
+                      defaultSortColumn: '',
+                      defaultSortDirection: 'ASC'
+                    });
+                    setParameters([]);
+                    setResponseMappings([]);
+                  }}
+                  className="p-1.5 rounded transition-colors hover-lift"
+                  style={{ backgroundColor: themeColors.error + '20', color: themeColors.error }}
+                  title="Clear selection"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Show manual schema config when no object selected */}
+          {!selectedDbObject && (
+            <div className="mt-4 text-center p-4 rounded-lg border border-dashed" style={{ 
+              borderColor: themeColors.info + '40',
+              backgroundColor: themeColors.info + '10'
+            }}>
+              <Database className="h-8 w-8 mx-auto mb-2" style={{ color: themeColors.info }} />
+              <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                No database object selected. Click the button above to select one.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Manual Schema Configuration Form - Only show when object is selected */}
+        {selectedDbObject && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
+                    Schema Name
+                    <Asterisk className="h-3 w-3" style={{ color: themeColors.error }} />
+                  </label>
+                  <input
+                    type="text"
+                    value={schemaConfig.schemaName}
+                    onChange={(e) => handleSchemaConfigChange('schemaName', e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                    style={{ 
+                      backgroundColor: themeColors.card,
+                      borderColor: validationErrors.schemaName ? themeColors.error : themeColors.border,
+                      color: themeColors.text
+                    }}
+                    placeholder="HR"
+                    readOnly
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
+                    Object Type
+                  </label>
+                  <select
+                    value={schemaConfig.objectType}
+                    onChange={(e) => handleSchemaConfigChange('objectType', e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                    style={{ 
+                      backgroundColor: themeColors.bg,
+                      borderColor: themeColors.border,
+                      color: themeColors.text
+                    }}
+                    disabled
+                  >
+                    <option value="">Select type</option>
+                    <option value="TABLE">Table</option>
+                    <option value="VIEW">View</option>
+                    <option value="PROCEDURE">Procedure</option>
+                    <option value="FUNCTION">Function</option>
+                    <option value="PACKAGE">Package</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
+                    Object Name
+                    <Asterisk className="h-3 w-3" style={{ color: themeColors.error }} />
+                  </label>
+                  <input
+                    type="text"
+                    value={schemaConfig.objectName}
+                    onChange={(e) => handleSchemaConfigChange('objectName', e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                    style={{ 
+                      backgroundColor: themeColors.card,
+                      borderColor: validationErrors.objectName ? themeColors.error : themeColors.border,
+                      color: themeColors.text
+                    }}
+                    placeholder="EMPLOYEES"
+                    readOnly
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                    Operation
+                  </label>
+                  <select
+                    value={schemaConfig.operation}
+                    onChange={(e) => handleSchemaConfigChange('operation', e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                    style={{ 
+                      backgroundColor: themeColors.bg,
+                      borderColor: themeColors.border,
+                      color: themeColors.text
+                    }}
+                  >
+                    <option value="SELECT">SELECT (Read)</option>
+                    <option value="INSERT">INSERT (Create)</option>
+                    <option value="UPDATE">UPDATE (Update)</option>
+                    <option value="DELETE">DELETE (Delete)</option>
+                    <option value="EXECUTE">EXECUTE (Procedure/Function)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                    Primary Key Column
+                  </label>
+                  <input
+                    type="text"
+                    value={schemaConfig.primaryKeyColumn}
+                    onChange={(e) => handleSchemaConfigChange('primaryKeyColumn', e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                    style={{ 
+                      backgroundColor: themeColors.card,
+                      borderColor: themeColors.border,
+                      color: themeColors.text
+                    }}
+                    placeholder="ID"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                    Sequence Name (for INSERT)
+                  </label>
+                  <input
+                    type="text"
+                    value={schemaConfig.sequenceName}
+                    onChange={(e) => handleSchemaConfigChange('sequenceName', e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                    style={{ 
+                      backgroundColor: themeColors.card,
+                      borderColor: themeColors.border,
+                      color: themeColors.text
+                    }}
+                    placeholder="SEQ_TABLE_NAME"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                      Enable Pagination
+                    </label>
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={schemaConfig.enablePagination}
+                        onChange={(e) => handleSchemaConfigChange('enablePagination', e.target.checked)}
+                        className="h-4 w-4 rounded"
+                        style={{ accentColor: themeColors.info }}
+                      />
+                      <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>Yes</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                      Page Size
+                    </label>
+                    <input
+                      type="number"
+                      value={schemaConfig.pageSize}
+                      onChange={(e) => handleSchemaConfigChange('pageSize', parseInt(e.target.value))}
+                      className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                      style={{ 
+                        backgroundColor: themeColors.card,
+                        borderColor: themeColors.border,
+                        color: themeColors.text
+                      }}
+                      min="1"
+                      max="1000"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                      Enable Sorting
+                    </label>
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={schemaConfig.enableSorting}
+                        onChange={(e) => handleSchemaConfigChange('enableSorting', e.target.checked)}
+                        className="h-4 w-4 rounded"
+                        style={{ accentColor: themeColors.info }}
+                      />
+                      <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>Yes</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                      Default Sort Column
+                    </label>
+                    <input
+                      type="text"
+                      value={schemaConfig.defaultSortColumn}
+                      onChange={(e) => handleSchemaConfigChange('defaultSortColumn', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                      style={{ 
+                        backgroundColor: themeColors.card,
+                        borderColor: themeColors.border,
+                        color: themeColors.text
+                      }}
+                      placeholder="CREATED_DATE"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                    Default Sort Direction
+                  </label>
+                  <select
+                    value={schemaConfig.defaultSortDirection}
+                    onChange={(e) => handleSchemaConfigChange('defaultSortDirection', e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                    style={{ 
+                      backgroundColor: themeColors.bg,
+                      borderColor: themeColors.border,
+                      color: themeColors.text
+                    }}
+                  >
+                    <option value="ASC">Ascending (ASC)</option>
+                    <option value="DESC">Descending (DESC)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Database Type Selector - Pre-populated from selected object */}
+            <div className="mt-6 p-4 rounded-lg border" style={{ 
+              borderColor: themeColors.border,
+              backgroundColor: themeColors.card
+            }}>
+              <label className="text-xs font-medium flex items-center gap-2 mb-3" style={{ color: themeColors.text }}>
+                <Database className="h-4 w-4" />
+                Database Type
+              </label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    value="oracle"
+                    checked={currentDatabaseType === 'oracle'}
+                    onChange={(e) => setCurrentDatabaseType(e.target.value)}
+                    className="h-4 w-4"
+                    style={{ accentColor: '#ef4444' }}
+                  />
+                  <span className="text-sm" style={{ color: themeColors.text }}>Oracle</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    value="postgresql"
+                    checked={currentDatabaseType === 'postgresql'}
+                    onChange={(e) => setCurrentDatabaseType(e.target.value)}
+                    className="h-4 w-4"
+                    style={{ accentColor: '#3b82f6' }}
+                  />
+                  <span className="text-sm" style={{ color: themeColors.text }}>PostgreSQL</span>
+                </label>
+              </div>
+              <p className="text-xs mt-2" style={{ color: themeColors.textSecondary }}>
+                {currentDatabaseType === 'postgresql' 
+                  ? 'API will be optimized for PostgreSQL syntax and features' 
+                  : 'API will be optimized for Oracle PL/SQL syntax and features'}
+              </p>
+            </div>
+
+            {/* Object Info Summary */}
+            <div className="mt-4 p-3 rounded-lg border" style={{ 
+              borderColor: themeColors.info + '40',
+              backgroundColor: themeColors.info + '10'
+            }}>
+              <h4 className="text-xs font-medium mb-2 flex items-center gap-2" style={{ color: themeColors.info }}>
+                <Info className="h-3 w-3" />
+                Object Summary
+              </h4>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span style={{ color: themeColors.textSecondary }}>Full Path:</span>
+                  <span className="ml-2 font-mono" style={{ color: themeColors.text }}>
+                    {schemaConfig.schemaName}.{schemaConfig.objectName}
+                  </span>
+                </div>
+                <div>
+                  <span style={{ color: themeColors.textSecondary }}>Operation:</span>
+                  <span className="ml-2 font-mono" style={{ color: themeColors.text }}>
+                    {schemaConfig.operation}
+                  </span>
+                </div>
+                {schemaConfig.primaryKeyColumn && (
+                  <div>
+                    <span style={{ color: themeColors.textSecondary }}>Primary Key:</span>
+                    <span className="ml-2 font-mono" style={{ color: themeColors.text }}>
+                      {schemaConfig.primaryKeyColumn}
+                    </span>
                   </div>
                 )}
+                {schemaConfig.enablePagination && (
+                  <div>
+                    <span style={{ color: themeColors.textSecondary }}>Pagination:</span>
+                    <span className="ml-2 font-mono" style={{ color: themeColors.text }}>
+                      Page Size: {schemaConfig.pageSize}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </>
+    )}
+
+    {/* Custom Query Section */}
+    {sourceType === 'custom_query' && (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium flex items-center gap-2" style={{ color: themeColors.text }}>
+            <Wand2 size={14} style={{ color: themeColors.info }} />
+            Custom SQL Statement
+            {!customQuery?.trim() && validationErrors.customQuery && (
+              <span className="text-xs" style={{ color: themeColors.error }}>(Required)</span>
+            )}
+          </label>
+          
+          {isEditingCustomQuery && (
+            <span className="text-xs px-2 py-1 rounded-full" style={{
+              backgroundColor: themeColors.warning + '20',
+              color: themeColors.warning
+            }}>
+              <Edit className="h-3 w-3 inline mr-1" />
+              Editing Mode
+            </span>
+          )}
+        </div>
+        
+        <textarea
+          value={customQuery}
+          onChange={(e) => setCustomQuery(e.target.value)}
+          className="w-full px-3 py-3 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-opacity-50"
+          style={{ 
+            backgroundColor: themeColors.codeBg || (theme === 'dark' ? '#1a202c' : '#f8fafc'),
+            border: `1px solid ${validationErrors.customQuery ? themeColors.error : themeColors.border}`,
+            color: themeColors.text,
+            fontFamily: 'monospace',
+            fontSize: '13px',
+            lineHeight: '1.5',
+            minHeight: '120px'
+          }}
+          placeholder="SELECT * FROM your_table WHERE column = :paramName"
+          spellCheck={false}
+        />
+        
+        <div className="flex items-center justify-between">
+          <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+            Use :paramName syntax for parameters (e.g., WHERE id = :userId)
+          </p>
+          
+          <button
+            onClick={() => {
+              // Extract parameters from the custom query
+              const paramMatches = customQuery.match(/:\w+/g) || [];
+              const uniqueParams = [...new Set(paramMatches)];
+              const newParams = uniqueParams.map((param, idx) => ({
+                id: `param-${Date.now()}-${idx}`,
+                key: param.substring(1),
+                dbColumn: param.substring(1),
+                oracleType: 'VARCHAR2',
+                apiType: 'string',
+                parameterLocation: 'query',
+                required: true,
+                description: `Parameter: ${param.substring(1)}`,
+                example: '',
+                validationPattern: '',
+                defaultValue: '',
+                inBody: false,
+                isPrimaryKey: false,
+                paramMode: 'IN'
+              }));
+              setParameters(newParams);
+            }}
+            className="text-xs px-3 py-1 rounded-lg flex items-center gap-1 transition-colors hover-lift"
+            style={{ 
+              backgroundColor: themeColors.info + '20',
+              color: themeColors.info,
+              border: `1px solid ${themeColors.info + '40'}`
+            }}
+          >
+            <RefreshCw className="h-3 w-3" />
+            Extract Parameters
+          </button>
+        </div>
+        
+        {/* Query Preview */}
+        {customQuery && (
+          <div className="p-3 rounded-lg border" style={{ 
+            borderColor: themeColors.success + '40',
+            backgroundColor: themeColors.success + '10'
+          }}>
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle className="h-3 w-3" style={{ color: themeColors.success }} />
+              <span className="text-xs font-medium" style={{ color: themeColors.success }}>Query Analysis</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <span style={{ color: themeColors.textSecondary }}>Tables referenced:</span>
+                <span className="ml-2 font-mono" style={{ color: themeColors.text }}>
+                  {(customQuery.match(/FROM\s+(\w+)/i) || []).slice(1).join(', ') || 'Unknown'}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: themeColors.textSecondary }}>Parameters found:</span>
+                <span className="ml-2 font-mono" style={{ color: themeColors.text }}>
+                  {(customQuery.match(/:\w+/g) || []).length}
+                </span>
+              </div>
+              <div className="col-span-2">
+                <span style={{ color: themeColors.textSecondary }}>Estimated complexity:</span>
+                <span className="ml-2 font-mono" style={{ color: themeColors.text }}>
+                  {customQuery.split(/\s+/).length > 50 ? 'Complex' : 
+                  customQuery.split(/\s+/).length > 20 ? 'Moderate' : 'Simple'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Database Type for Custom Query */}
+        <div className="mt-4 p-4 rounded-lg border" style={{ 
+          borderColor: themeColors.border,
+          backgroundColor: themeColors.card
+        }}>
+          <label className="text-xs font-medium flex items-center gap-2 mb-3" style={{ color: themeColors.text }}>
+            <Database className="h-4 w-4" />
+            Database Type for Custom Query
+          </label>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                value="oracle"
+                checked={currentDatabaseType === 'oracle'}
+                onChange={(e) => setCurrentDatabaseType(e.target.value)}
+                className="h-4 w-4"
+                style={{ accentColor: '#ef4444' }}
+              />
+              <span className="text-sm" style={{ color: themeColors.text }}>Oracle</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                value="postgresql"
+                checked={currentDatabaseType === 'postgresql'}
+                onChange={(e) => setCurrentDatabaseType(e.target.value)}
+                className="h-4 w-4"
+                style={{ accentColor: '#3b82f6' }}
+              />
+              <span className="text-sm" style={{ color: themeColors.text }}>PostgreSQL</span>
+            </label>
+          </div>
+          <p className="text-xs mt-2" style={{ color: themeColors.textSecondary }}>
+            {currentDatabaseType === 'postgresql' 
+              ? 'Query will be executed against PostgreSQL database' 
+              : 'Query will be executed against Oracle database'}
+          </p>
+        </div>
+      </div>
+    )}
+  </div>
+)}
 
                 {/* Parameters Tab - Show only IN parameters */}
                 {activeTab === 'parameters' && (
