@@ -247,7 +247,7 @@ const SyntaxHighlighter = ({ language, code }) => {
 };
 
 // ============ REQUEST DETAILS MODAL COMPONENT ============
-const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) => {
+const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getStatusText }) => {
   if (!isOpen || !request) return null;
 
   const [activeTab, setActiveTab] = useState('request');
@@ -326,10 +326,10 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                 {request.responseStatusCode || 'Pending'}
               </span>
               <span className="text-xs px-2 py-1 rounded" style={{ 
-                backgroundColor: `${getRequestStatusColorHelper(request.requestStatus, colors)}20`,
-                color: getRequestStatusColorHelper(request.requestStatus, colors)
+                backgroundColor: `${getStatusCodeColorHelper(request.responseStatusCode, colors)}20`,
+                color: getStatusCodeColorHelper(request.responseStatusCode, colors)
               }}>
-                {request.requestStatus || 'PENDING'}
+                {getStatusText(request.responseStatusCode)}
               </span>
             </div>
           </div>
@@ -1114,23 +1114,95 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     showToast('Copied to clipboard!', 'success');
   };
 
-  const getStatusColor = (status) => {
-    const colors_map = {
-      'SUCCESS': colors.success,
-      'FAILED': colors.error,
-      'TIMEOUT': colors.warning,
-      'PENDING': colors.info,
-      'ERROR': colors.error,
-      'CANCELLED': colors.textSecondary,
-      'RETRY': colors.warning
-    };
-    return colors_map[status] || colors.textSecondary;
+ // Enhanced getStatusText function with more status codes
+const getStatusText = (statusCode) => {
+  if (!statusCode) return 'PENDING';
+  
+  const statusMessages = {
+    // 1xx Informational
+    100: 'Continue',
+    101: 'Switching Protocols',
+    102: 'Processing',
+    103: 'Early Hints',
+    
+    // 2xx Success
+    200: 'OK',
+    201: 'Created',
+    202: 'Accepted',
+    203: 'Non-Authoritative Information',
+    204: 'No Content',
+    205: 'Reset Content',
+    206: 'Partial Content',
+    207: 'Multi-Status',
+    208: 'Already Reported',
+    226: 'IM Used',
+    
+    // 3xx Redirection
+    300: 'Multiple Choices',
+    301: 'Moved Permanently',
+    302: 'Found',
+    303: 'See Other',
+    304: 'Not Modified',
+    305: 'Use Proxy',
+    307: 'Temporary Redirect',
+    308: 'Permanent Redirect',
+    
+    // 4xx Client Errors
+    400: 'Bad Request',
+    401: 'Unauthorized',
+    402: 'Payment Required',
+    403: 'Forbidden',
+    404: 'Not Found',
+    405: 'Method Not Allowed',
+    406: 'Not Acceptable',
+    407: 'Proxy Authentication Required',
+    408: 'Request Timeout',
+    409: 'Conflict',
+    410: 'Gone',
+    411: 'Length Required',
+    412: 'Precondition Failed',
+    413: 'Payload Too Large',
+    414: 'URI Too Long',
+    415: 'Unsupported Media Type',
+    416: 'Range Not Satisfiable',
+    417: 'Expectation Failed',
+    418: "I'm a teapot",
+    421: 'Misdirected Request',
+    422: 'Unprocessable Entity',
+    423: 'Locked',
+    424: 'Failed Dependency',
+    425: 'Too Early',
+    426: 'Upgrade Required',
+    428: 'Precondition Required',
+    429: 'Too Many Requests',
+    431: 'Request Header Fields Too Large',
+    451: 'Unavailable For Legal Reasons',
+    
+    // 5xx Server Errors
+    500: 'Internal Server Error',
+    501: 'Not Implemented',
+    502: 'Bad Gateway',
+    503: 'Service Unavailable',
+    504: 'Gateway Timeout',
+    505: 'HTTP Version Not Supported',
+    506: 'Variant Also Negotiates',
+    507: 'Insufficient Storage',
+    508: 'Loop Detected',
+    510: 'Not Extended',
+    511: 'Network Authentication Required'
   };
-
-  const getStatusText = (status) => {
-    if (!status) return 'UNKNOWN';
-    return status.charAt(0) + status.slice(1).toLowerCase();
-  };
+  
+  if (statusMessages[statusCode]) {
+    return statusMessages[statusCode];
+  }
+  
+  if (statusCode >= 200 && statusCode < 300) return 'Success';
+  if (statusCode >= 300 && statusCode < 400) return 'Redirect';
+  if (statusCode >= 400 && statusCode < 500) return 'Client Error';
+  if (statusCode >= 500) return 'Server Error';
+  
+  return 'Unknown';
+};
 
   const getMethodColor = (method) => {
     return colors.method[method] || colors.textSecondary;
@@ -1155,10 +1227,10 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
 
   const getStatusCodeColorHelper = (code) => {
     if (!code) return colors.textSecondary;
-    if (code >= 200 && code < 300) return colors.success;
-    if (code >= 300 && code < 400) return colors.info;
-    if (code >= 400 && code < 500) return colors.warning;
-    if (code >= 500) return colors.error;
+    if (code >= 200 && code < 300) return colors.success;  // Green
+    if (code >= 300 && code < 400) return colors.warning;  // Yellow/Orange (not info)
+    if (code >= 400 && code < 500) return colors.error;    // Red
+    if (code >= 500) return colors.error;                  // Red
     return colors.textSecondary;
   };
 
@@ -1919,200 +1991,205 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     console.log('First request:', requests[0]);
   }, [requests]);
 
-  // Render requests table
-  const renderRequestsTable = () => {
-    console.log('Rendering table with requests:', requests.length, 'requests');
-    console.log('Loading states:', loading);
-    
-    return (
-      <div className="flex-1 flex flex-col overflow-hidden pl-2 pr-2">
-        <div className="flex-1 overflow-auto p-4">
-          <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-            <thead className="sticky top-0" style={{ backgroundColor: colors.card, zIndex: 10 }}>
-              <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
-                <th className="text-left py-3 px-4 text-xs font-medium w-12" style={{ color: colors.textSecondary }}>#</th>
-                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
-                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Method</th>
-                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Request Name</th>
-                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>API</th>
-                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status Code</th>
-                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Duration</th>
-                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
-                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
-                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
-               </tr>
-            </thead>
-            <tbody>
-              {requests.map((request, index) => {
-                const sequentialNumber = (pagination.page * pagination.size) + index + 1;
-                const statusColor = getStatusColor(request.requestStatus);
-                const statusText = getStatusText(request.requestStatus);
-                
-                return (
-                  <tr 
-                    key={request.id || request.requestId || index}
-                    className="hover:bg-opacity-50 transition-colors cursor-pointer"
-                    style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
-                    onClick={() => handleViewDetails(request)}
-                  >
-                    <td className="py-3 px-4">
-                      <span className="text-sm font-mono" style={{ color: colors.textSecondary }}>
-                        {sequentialNumber}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
-                        <span className="text-xs font-medium" style={{ color: statusColor }}>
-                          {statusText}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
-                        backgroundColor: getMethodColor(request.httpMethod),
-                        color: 'white'
-                      }}>
-                        {request.httpMethod}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-sm" style={{ color: colors.text }}>{request.requestName || 'N/A'}</span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-xs" style={{ color: colors.textSecondary }}>{request.apiCode || request.apiName || 'N/A'}</span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(request.responseStatusCode) }}>
-                        {request.responseStatusCode || '-'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-sm" style={{ color: colors.text }}>
-                        {formatExecutionTimeHelper(request.executionDurationMs)}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-xs" style={{ color: colors.textSecondary }}>
-                        {formatTimestamp(request.requestTimestamp || request.createdAt)}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-xs font-mono" style={{ color: colors.textSecondary }}>
-                        {request.correlationId?.substring(0, 8) || 'N/A'}...
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewDetails(request);
-                          }}
-                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                          style={{ backgroundColor: colors.hover }}
-                        >
-                          <Eye size={12} style={{ color: colors.textSecondary }} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            copyToClipboard(JSON.stringify(request, null, 2));
-                          }}
-                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                          style={{ backgroundColor: colors.hover }}
-                        >
-                          <Copy size={12} style={{ color: colors.textSecondary }} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteRequest(request.id);
-                          }}
-                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                          style={{ backgroundColor: colors.hover }}
-                        >
-                          <Trash2 size={12} style={{ color: colors.error }} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+  // Render requests table - FIXED VERSION with consistent colors
+const renderRequestsTable = () => {
+  console.log('Rendering table with requests:', requests.length, 'requests');
+  console.log('Loading states:', loading);
+  
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden pl-2 pr-2">
+      <div className="flex-1 overflow-auto p-4">
+        <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+          <thead className="sticky top-0" style={{ backgroundColor: colors.card, zIndex: 10 }}>
+            <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
+              <th className="text-left py-3 px-4 text-xs font-medium w-12" style={{ color: colors.textSecondary }}>#</th>
+              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
+              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Method</th>
+              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Request Name</th>
+              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>API</th>
+              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status Code</th>
+              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Duration</th>
+              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
+              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
+              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {requests.map((request, index) => {
+              const sequentialNumber = (pagination.page * pagination.size) + index + 1;
+              const statusCode = request.responseStatusCode;
+              // Use the same color function for both
+              const statusColor = getStatusCodeColorHelper(statusCode);
+              const statusText = getStatusText(statusCode);
               
-              {/* Empty state */}
-              {requests.length === 0 && !loading.initialLoad && !loading.refresh && !loading.export && (
-                <tr>
-                  <td colSpan="10" className="text-center py-12">
-                    <FileText size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
-                    <p className="text-lg mb-2" style={{ color: colors.text }}>No Requests Found</p>
-                    <p className="text-sm" style={{ color: colors.textSecondary }}>
-                      {searchQuery ? `No requests matching "${searchQuery}"` : 'Try adjusting your filters or date range'}
-                    </p>
+              return (
+                <tr 
+                  key={request.id || request.requestId || index}
+                  className="hover:bg-opacity-50 transition-colors cursor-pointer"
+                  style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
+                  onClick={() => handleViewDetails(request)}
+                >
+                  <td className="py-3 px-4">
+                    <span className="text-sm font-mono" style={{ color: colors.textSecondary }}>
+                      {sequentialNumber}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
+                      <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
+                        color: statusColor,
+                        backgroundColor: `${statusColor}20`
+                      }}>
+                        {statusText}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
+                      backgroundColor: getMethodColor(request.httpMethod),
+                      color: 'white'
+                    }}>
+                      {request.httpMethod}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-sm" style={{ color: colors.text }}>{request.requestName || 'N/A'}</span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-xs" style={{ color: colors.textSecondary }}>{request.apiCode || request.apiName || 'N/A'}</span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(request.responseStatusCode) }}>
+                      {request.responseStatusCode || '-'}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-sm" style={{ color: colors.text }}>
+                      {formatExecutionTimeHelper(request.executionDurationMs)}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-xs" style={{ color: colors.textSecondary }}>
+                      {formatTimestamp(request.requestTimestamp || request.createdAt)}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-xs font-mono" style={{ color: colors.textSecondary }}>
+                      {request.correlationId?.substring(0, 8) || 'N/A'}...
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewDetails(request);
+                        }}
+                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                        style={{ backgroundColor: colors.hover }}
+                      >
+                        <Eye size={12} style={{ color: colors.textSecondary }} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyToClipboard(JSON.stringify(request, null, 2));
+                        }}
+                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                        style={{ backgroundColor: colors.hover }}
+                      >
+                        <Copy size={12} style={{ color: colors.textSecondary }} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteRequest(request.id);
+                        }}
+                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                        style={{ backgroundColor: colors.hover }}
+                      >
+                        <Trash2 size={12} style={{ color: colors.error }} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
-              )}
+              );
+            })}
+            
+            {/* Empty state */}
+            {requests.length === 0 && !loading.initialLoad && !loading.refresh && !loading.export && (
+              <tr>
+                <td colSpan="10" className="text-center py-12">
+                  <FileText size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
+                  <p className="text-lg mb-2" style={{ color: colors.text }}>No Requests Found</p>
+                  <p className="text-sm" style={{ color: colors.textSecondary }}>
+                    {searchQuery ? `No requests matching "${searchQuery}"` : 'Try adjusting your filters or date range'}
+                  </p>
+                </td>
+              </tr>
+            )}
 
-              {/* Loading state */}
-              {(loading.refresh || loading.initialLoad) && requests.length === 0 && (
-                <tr>
-                  <td colSpan="10" className="text-center py-12">
-                    <RefreshCw size={32} className="animate-spin mx-auto mb-4" style={{ color: colors.textSecondary }} />
-                    <p className="text-sm" style={{ color: colors.textSecondary }}>Loading requests...</p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+            {/* Loading state */}
+            {(loading.refresh || loading.initialLoad) && requests.length === 0 && (
+              <tr>
+                <td colSpan="10" className="text-center py-12">
+                  <RefreshCw size={32} className="animate-spin mx-auto mb-4" style={{ color: colors.textSecondary }} />
+                  <p className="text-sm" style={{ color: colors.textSecondary }}>Loading requests...</p>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
 
-          {/* Pagination - Always show if there are requests or totalElements > 0 */}
-          {pagination.totalPages > 0 && (
-            <div className="flex items-center justify-between mt-4 py-3 px-4" style={{ backgroundColor: colors.card, borderTop: `1px solid ${colors.border}` }}>
-              <div className="text-sm" style={{ color: colors.textSecondary }}>
-                Showing {requests.length > 0 ? pagination.page * pagination.size + 1 : 0} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    if (pagination.page > 0) {
-                      handlePaginationChange(pagination.page - 1);
-                    }
-                  }}
-                  disabled={pagination.page === 0 || isPaginationLoadingRef.current}
-                  className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
-                  style={{ backgroundColor: colors.hover, color: colors.text }}
-                >
-                  <ChevronLeft size={14} />
-                  Previous
-                </button>
-                <div className="flex items-center gap-1 px-2">
-                  <span className="text-sm font-medium" style={{ color: colors.text }}>
-                    {pagination.page + 1}
-                  </span>
-                  <span className="text-sm" style={{ color: colors.textSecondary }}>
-                    of {pagination.totalPages}
-                  </span>
-                </div>
-                <button
-                  onClick={() => {
-                    if (pagination.page < pagination.totalPages - 1) {
-                      handlePaginationChange(pagination.page + 1);
-                    }
-                  }}
-                  disabled={pagination.page >= pagination.totalPages - 1 || isPaginationLoadingRef.current}
-                  className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
-                  style={{ backgroundColor: colors.hover, color: colors.text }}
-                >
-                  Next
-                  <ChevronRight size={14} />
-                </button>
-              </div>
+        {/* Pagination - Always show if there are requests or totalElements > 0 */}
+        {pagination.totalPages > 0 && (
+          <div className="flex items-center justify-between mt-4 py-3 px-4" style={{ backgroundColor: colors.card, borderTop: `1px solid ${colors.border}` }}>
+            <div className="text-sm" style={{ color: colors.textSecondary }}>
+              Showing {requests.length > 0 ? pagination.page * pagination.size + 1 : 0} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
             </div>
-          )}
-        </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (pagination.page > 0) {
+                    handlePaginationChange(pagination.page - 1);
+                  }
+                }}
+                disabled={pagination.page === 0 || isPaginationLoadingRef.current}
+                className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                <ChevronLeft size={14} />
+                Previous
+              </button>
+              <div className="flex items-center gap-1 px-2">
+                <span className="text-sm font-medium" style={{ color: colors.text }}>
+                  {pagination.page + 1}
+                </span>
+                <span className="text-sm" style={{ color: colors.textSecondary }}>
+                  of {pagination.totalPages}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  if (pagination.page < pagination.totalPages - 1) {
+                    handlePaginationChange(pagination.page + 1);
+                  }
+                }}
+                disabled={pagination.page >= pagination.totalPages - 1 || isPaginationLoadingRef.current}
+                className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                Next
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   const showFullOverlay = loading.initialLoad || loading.export || loading.delete;
   const loadingType = loading.initialLoad ? 'initialLoad' : 
@@ -2310,6 +2387,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         isOpen={showDetailsModal}
         onClose={() => setShowDetailsModal(false)}
         onRefresh={loadRequests}
+        getStatusText={getStatusText}
       />
 
       <FilterModal

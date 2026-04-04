@@ -1156,33 +1156,6 @@ public class AutomationEngineService {
             GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
                     .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
 
-            // ============ IP WHITELIST VALIDATION ============
-            // Get the actual client IP from HttpServletRequest (not trusting the passed parameter)
-            String actualClientIp = getClientIpAddress(httpServletRequest);
-
-            // Get the full request path for whitelist validation
-            String fullRequestPath = httpServletRequest != null ? httpServletRequest.getRequestURI() : "";
-            String endpointPath = api.getEndpointPath();
-
-            try {
-                validateIpWhitelist(actualClientIp, fullRequestPath, endpointPath);
-            } catch (RuntimeException e) {
-                // IP whitelist validation failed
-                String errorMsg = e.getMessage();
-                int statusCode = 403;
-
-                log.warn("IP whitelist validation failed: {}", errorMsg);
-
-                // Get execution helper for logging
-                BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper("oracle");
-                executionHelper.logExecution(executionLogRepository, api, executeRequest,
-                        null, statusCode, System.currentTimeMillis() - startTime,
-                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
-
-                return responseHelper.createErrorResponse(statusCode, errorMsg, startTime);
-            }
-            // ============ END IP WHITELIST VALIDATION ============
-
             // 2. Get the database type from the API entity
             databaseType = api.getDatabaseType();
             if (databaseType == null || databaseType.isEmpty()) {
@@ -1194,7 +1167,81 @@ public class AutomationEngineService {
             // 3. Get the appropriate execution helper
             BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
 
-            // 4. Check API status
+            // 4. Validate request structure
+            if (executeRequest == null) {
+                executeRequest = new ExecuteApiRequestDTO();
+                executeRequest.setRequestId(UUID.randomUUID().toString());
+            }
+
+            // 5. Extract HTTP method
+            String httpMethod = null;
+            if (httpServletRequest != null) {
+                httpMethod = httpServletRequest.getMethod();
+                log.info("HTTP method from HttpServletRequest: {}", httpMethod);
+                executeRequest.setHttpMethod(httpMethod);
+            }
+
+            // 6. Prepare and validate the request
+            ExecuteApiRequestDTO validatedRequest = executionHelper.prepareValidatedRequest(api, executeRequest);
+
+            if (validatedRequest.getHttpMethod() == null && httpMethod != null) {
+                validatedRequest.setHttpMethod(httpMethod);
+                log.info("Re-set HTTP method in validatedRequest: {}", httpMethod);
+            }
+
+            // 7. Get actual client IP and request path
+            String actualClientIp = getClientIpAddress(httpServletRequest);
+            String fullRequestPath = httpServletRequest != null ? httpServletRequest.getRequestURI() : "";
+            String endpointPath = api.getEndpointPath();
+
+            // ============ CAPTURE REQUEST BEFORE ANY VALIDATION ============
+            // This ensures we capture ALL attempts including IP whitelist failures
+            try {
+                ApiRequestDTO requestDTO = convertExecuteRequestToApiRequestDTO(validatedRequest, api);
+                requestDTO.setClientIpAddress(actualClientIp);
+                requestDTO.setUserAgent(userAgent);
+                requestDTO.setRequestedBy(performedBy);
+                requestDTO.setCorrelationId(executeRequest.getRequestId());
+
+                capturedRequest = apiRequestService.captureRequest(
+                        requestId, apiId, requestDTO, performedBy, httpServletRequest);
+                capturedRequestId = capturedRequest.getId();
+                log.info("Request captured successfully with ID: {}", capturedRequestId);
+            } catch (Exception e) {
+                log.error("Failed to capture request: {}", e.getMessage());
+            }
+            // ============ END CAPTURE ============
+
+            // ============ IP WHITELIST VALIDATION ============
+            try {
+                validateIpWhitelist(actualClientIp, fullRequestPath, endpointPath);
+            } catch (RuntimeException e) {
+                // IP whitelist validation failed
+                String errorMsg = e.getMessage();
+                int statusCode = 403;
+
+                log.warn("IP whitelist validation failed: {}", errorMsg);
+
+                // Update captured request with the error
+                if (capturedRequestId != null) {
+                    try {
+                        updateCapturedRequestWithError(requestId, capturedRequestId, statusCode,
+                                errorMsg, System.currentTimeMillis() - startTime);
+                    } catch (Exception ex) {
+                        log.error("Failed to update captured request with error: {}", ex.getMessage());
+                    }
+                }
+
+                // Log the execution
+                executionHelper.logExecution(executionLogRepository, api, validatedRequest,
+                        null, statusCode, System.currentTimeMillis() - startTime,
+                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
+
+                return responseHelper.createErrorResponse(statusCode, errorMsg, startTime);
+            }
+            // ============ END IP WHITELIST VALIDATION ============
+
+            // 8. Check API status
             String apiStatus = api.getStatus() != null ? api.getStatus().toUpperCase() : "UNKNOWN";
 
             if (!"ACTIVE".equals(apiStatus)) {
@@ -1244,14 +1291,14 @@ public class AutomationEngineService {
                     }
                 }
 
-                executionHelper.logExecution(executionLogRepository, api, executeRequest,
+                executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, statusCode, System.currentTimeMillis() - startTime,
                         performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
                 return responseHelper.createErrorResponse(statusCode, errorMsg, startTime);
             }
 
-            // 5. Check isActive flag
+            // 9. Check isActive flag
             if (!api.getIsActive()) {
                 String errorMsg = "API is inactive and cannot be executed. Please contact system administrator to activate it.";
                 log.warn("API execution blocked - isActive flag is false for API ID: {}", apiId);
@@ -1265,49 +1312,11 @@ public class AutomationEngineService {
                     }
                 }
 
-                executionHelper.logExecution(executionLogRepository, api, executeRequest,
+                executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 403, System.currentTimeMillis() - startTime,
                         performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
                 return responseHelper.createErrorResponse(403, errorMsg, startTime);
-            }
-
-            // 6. Validate request structure
-            if (executeRequest == null) {
-                executeRequest = new ExecuteApiRequestDTO();
-                executeRequest.setRequestId(UUID.randomUUID().toString());
-            }
-
-            // 7. Extract HTTP method
-            String httpMethod = null;
-            if (httpServletRequest != null) {
-                httpMethod = httpServletRequest.getMethod();
-                log.info("HTTP method from HttpServletRequest: {}", httpMethod);
-                executeRequest.setHttpMethod(httpMethod);
-            }
-
-            // 8. Prepare and validate the request
-            ExecuteApiRequestDTO validatedRequest = executionHelper.prepareValidatedRequest(api, executeRequest);
-
-            if (validatedRequest.getHttpMethod() == null && httpMethod != null) {
-                validatedRequest.setHttpMethod(httpMethod);
-                log.info("Re-set HTTP method in validatedRequest: {}", httpMethod);
-            }
-
-            // 9. Capture request before execution
-            try {
-                ApiRequestDTO requestDTO = convertExecuteRequestToApiRequestDTO(validatedRequest, api);
-                requestDTO.setClientIpAddress(actualClientIp);
-                requestDTO.setUserAgent(userAgent);
-                requestDTO.setRequestedBy(performedBy);
-                requestDTO.setCorrelationId(executeRequest.getRequestId());
-
-                capturedRequest = apiRequestService.captureRequest(
-                        requestId, apiId, requestDTO, performedBy, httpServletRequest);
-                capturedRequestId = capturedRequest.getId();
-                log.info("Request captured successfully with ID: {}", capturedRequestId);
-            } catch (Exception e) {
-                log.error("Failed to capture request: {}", e.getMessage());
             }
 
             // 10. Validate HTTP method
