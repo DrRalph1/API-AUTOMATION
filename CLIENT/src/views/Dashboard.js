@@ -257,7 +257,10 @@ const ApiEndpointItem = React.memo(({ api, colors, isDark, onClick }) => {
             </span>
           </div>
           
-          <p className="text-xs mt-0.5 truncate" style={{ color: colors.textSecondary }}>
+          <p
+            className="text-xs mt-0.5 truncate max-w-[400px]"
+            style={{ color: colors.textSecondary }}
+          >
             {api.description || api.url}
           </p>
           
