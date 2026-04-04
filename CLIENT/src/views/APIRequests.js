@@ -247,32 +247,10 @@ const SyntaxHighlighter = ({ language, code }) => {
 };
 
 // ============ REQUEST DETAILS MODAL COMPONENT ============
-const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getStatusText }) => {
+const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getStatusText, getStatusCodeColorHelper }) => {
   if (!isOpen || !request) return null;
 
   const [activeTab, setActiveTab] = useState('request');
-
-  const getStatusCodeColorHelper = (code, colors) => {
-    if (!code) return colors.textSecondary;
-    if (code >= 200 && code < 300) return colors.success;
-    if (code >= 300 && code < 400) return colors.info;
-    if (code >= 400 && code < 500) return colors.warning;
-    if (code >= 500) return colors.error;
-    return colors.textSecondary;
-  };
-
-  const getRequestStatusColorHelper = (status, colors) => {
-    const statusMap = {
-      'SUCCESS': colors.success,
-      'FAILED': colors.error,
-      'TIMEOUT': colors.warning,
-      'PENDING': colors.info,
-      'ERROR': colors.error,
-      'CANCELLED': colors.textSecondary,
-      'RETRY': colors.warning
-    };
-    return statusMap[status] || colors.textSecondary;
-  };
 
   const isRequestSuccessfulHelper = (request) => {
     return request?.responseStatusCode >= 200 && request?.responseStatusCode < 300;
@@ -320,14 +298,14 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
             </h2>
             <div className="flex items-center gap-2">
               <span className="text-xs px-2 py-1 rounded" style={{ 
-                backgroundColor: getStatusCodeColorHelper(request.responseStatusCode, colors),
+                backgroundColor: getStatusCodeColorHelper(request.responseStatusCode),
                 color: 'white'
               }}>
                 {request.responseStatusCode || 'Pending'}
               </span>
               <span className="text-xs px-2 py-1 rounded" style={{ 
-                backgroundColor: `${getStatusCodeColorHelper(request.responseStatusCode, colors)}20`,
-                color: getStatusCodeColorHelper(request.responseStatusCode, colors)
+                backgroundColor: `${getStatusCodeColorHelper(request.responseStatusCode)}20`,
+                color: getStatusCodeColorHelper(request.responseStatusCode)
               }}>
                 {getStatusText(request.responseStatusCode)}
               </span>
@@ -1226,13 +1204,16 @@ const getStatusText = (statusCode) => {
   };
 
   const getStatusCodeColorHelper = (code) => {
-    if (!code) return colors.textSecondary;
-    if (code >= 200 && code < 300) return colors.success;  // Green
-    if (code >= 300 && code < 400) return colors.warning;  // Yellow/Orange (not info)
-    if (code >= 400 && code < 500) return colors.error;    // Red
-    if (code >= 500) return colors.error;                  // Red
-    return colors.textSecondary;
-  };
+  // Use the colors from the component's closure
+  if (!code) return colors.textSecondary;
+  if (code >= 200 && code < 300) return colors.success;
+  if (code >= 300 && code < 400) return colors.info;
+  if (code >= 400 && code < 500) return colors.warning;
+  if (code >= 500) return colors.error;
+  return colors.textSecondary;
+};
+
+  
 
   // ============ FIX: Add function to cancel ongoing requests ============
   const cancelOngoingRequest = useCallback(() => {
@@ -2387,7 +2368,8 @@ const renderRequestsTable = () => {
         isOpen={showDetailsModal}
         onClose={() => setShowDetailsModal(false)}
         onRefresh={loadRequests}
-        getStatusText={getStatusText}
+        getStatusText={getStatusText}  // Add this line
+        getStatusCodeColorHelper={getStatusCodeColorHelper}
       />
 
       <FilterModal
