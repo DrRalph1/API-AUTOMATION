@@ -523,7 +523,7 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken, dat
                 backgroundColor: colors.inputBg,
                 color: colors.text
               }}
-              placeholder={`Search across ${getDatabaseNames()} databases (tables, views, procedures, functions)...`}
+              placeholder={`Search across multiple databases such as ${getDatabaseNames()}, etc...`}
               autoFocus
             />
             {searching && (
