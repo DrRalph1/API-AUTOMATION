@@ -857,18 +857,20 @@ export default function EntryPage() {
   const navItems = [
     { id: "overview", label: "Dashboard", icon: LayoutDashboard, component: <Dashboard setActiveTab={setActiveTab} authToken={`Bearer ${token}`} /> },
     { id: "schema-browser", label: "Schema Browser", icon: DatabaseBackup, component: <SchemaBrowser authToken={`Bearer ${token}`} /> },
-    { id: "oracle-schema-browser", label: "Oracle Schema Browser", icon: DatabaseIcon, component: <OracleSchemaBrowser authToken={`Bearer ${token}`} /> },
-    { id: "postgresql-schema-browser", label: "PostgreSQL Schema Browser", icon: DatabaseIcon2, component: <PostgreSQLSchemaBrowser authToken={`Bearer ${token}`} /> },
+    // { id: "oracle-schema-browser", label: "Oracle Schema Browser", icon: DatabaseIcon, component: <OracleSchemaBrowser authToken={`Bearer ${token}`} /> },
+    // { id: "postgresql-schema-browser", label: "PostgreSQL Schema Browser", icon: DatabaseIcon2, component: <PostgreSQLSchemaBrowser authToken={`Bearer ${token}`} /> },
     { id: "api-collections", label: "Collections", icon: FileCode, component: <Collections authToken={`Bearer ${token}`} /> },
     { id: "api-docs", label: "Documentation", icon: Activity, component: <Documentation authToken={`Bearer ${token}`} /> },
     { id: "code-base", label: "Code Base", icon: Code, component: <CodeBase authToken={`Bearer ${token}`} /> },
-    { id: "security", label: "API Security", icon: Shield, component: <APISecurity authToken={`Bearer ${token}`} /> },
     { id: "user-mgt", label: "User Mgt", icon: UserCog, component: <UserMangement authToken={`Bearer ${token}`} /> },
     { id: "api-requests", label: "API Requests", icon: FileCode, component: <APIRequests authToken={`Bearer ${token}`} /> },
+    { id: "api-security", label: "API Security", icon: Shield, component: <APISecurity authToken={`Bearer ${token}`} /> },
   ];
 
   // Filter navigation items for UI display (hide user-mgt)
-  const visibleNavItems = navItems.filter(item => item.id !== "user-mgt" && item.id !== "security" && item.id !== "oracle-schema-browser" && item.id !== "postgresql-schema-browser");
+  // const visibleNavItems = navItems.filter(item => item.id !== "user-mgt" && item.id !== "api-security-disabled" && item.id !== "oracle-schema-browser" && item.id !== "postgresql-schema-browser");
+
+  const visibleNavItems = navItems.filter(item => item.id !== "user-mgt" && item.id !== "api-security-disabled");
 
   // Quick actions
   const quickActions = [

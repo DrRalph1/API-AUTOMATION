@@ -1422,12 +1422,18 @@ const PreviewDDLModal = ({
     const lines = editorContent.split('\n');
     const lineCount = lines.length;
     
-    const lineNumbersHtml = Array.from({ length: lineCount }, (_, i) => i + 1)
-      .map(num => `<div style="padding: 4px 8px; font-size: ${editorFontSize}px; line-height: 1.5; color: ${themeColors.textSecondary};">${num}</div>`)
-      .join('');
+    // Calculate exact line height
+    const lineHeight = editorFontSize * 1.5;
+    
+    // Generate line numbers using Array.from with map (same as QueryEditorModal)
+    const lineNumbersHtml = Array.from({ length: lineCount }, (_, index) => {
+      const lineNumber = index + 1;
+      return `<div style="height: ${lineHeight}px; line-height: ${lineHeight}px; padding: 0 8px 0 0; text-align: right; font-size: ${editorFontSize}px; color: ${themeColors.textSecondary};">${lineNumber}</div>`;
+    }).join('');
     
     lineNumbersRef.current.innerHTML = lineNumbersHtml;
     
+    // Sync scroll position
     if (textareaRef.current && lineNumbersRef.current) {
       lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
     }
@@ -2350,7 +2356,7 @@ const PreviewDDLModal = ({
                 </div>
               </div>
             ) : (
-              <div className="flex h-full">
+              <div className="flex h-full relative">
                 {showLineNumbers && (
                   <div
                     ref={lineNumbersRef}
@@ -2362,34 +2368,43 @@ const PreviewDDLModal = ({
                       fontFamily: 'monospace',
                       fontSize: editorFontSize,
                       lineHeight: 1.5,
-                      overflowY: 'auto'
+                      overflowY: 'auto',
+                      // CRITICAL: Match textarea padding exactly (same as QueryEditorModal)
+                      paddingTop: '16px',
+                      paddingBottom: '16px',
+                      paddingLeft: '8px',
+                      paddingRight: '0'
                     }}
                   />
                 )}
                 
-                <textarea
-                  ref={textareaRef}
-                  value={editorContent}
-                  onChange={handleContentChange}
-                  onScroll={handleScroll}
-                  onKeyDown={handleKeyDown}
-                  onBlur={saveSelection}
-                  onFocus={() => {
-                    if (textareaRef.current && (selectionStartRef.current !== 0 || selectionEndRef.current !== 0)) {
-                      textareaRef.current.setSelectionRange(selectionStartRef.current, selectionEndRef.current);
-                    }
-                  }}
-                  className="flex-1 p-4 outline-none resize-none"
-                  style={{
-                    backgroundColor: themeColors.codeBg,
-                    color: themeColors.text,
-                    fontFamily: 'monospace',
-                    fontSize: editorFontSize,
-                    lineHeight: 1.5,
-                    border: 'none'
-                  }}
-                  spellCheck={false}
-                />
+                <div className="flex-1 relative overflow-hidden">
+                  <textarea
+                    ref={textareaRef}
+                    value={editorContent}
+                    onChange={handleContentChange}
+                    onScroll={handleScroll}
+                    onKeyDown={handleKeyDown}
+                    onBlur={saveSelection}
+                    onFocus={() => {
+                      if (textareaRef.current && (selectionStartRef.current !== 0 || selectionEndRef.current !== 0)) {
+                        textareaRef.current.setSelectionRange(selectionStartRef.current, selectionEndRef.current);
+                      }
+                    }}
+                    className="absolute inset-0 w-full h-full p-4 outline-none resize-none"
+                    style={{
+                      backgroundColor: themeColors.codeBg,
+                      color: themeColors.text,
+                      fontFamily: 'monospace',
+                      fontSize: editorFontSize,
+                      lineHeight: 1.5,
+                      border: 'none',
+                      margin: 0,
+                      boxSizing: 'border-box'
+                    }}
+                    spellCheck={false}
+                  />
+                </div>
               </div>
             )}
           </div>

@@ -2336,7 +2336,7 @@ const renderRequestsTable = () => {
           </div>
         </div>
 
-        <div className="w-full p-4 mt-2 -mb-2 space-y-6">
+        <div className="w-full p-4 mt-2 -mb-4 space-y-6">
           <StatsCards 
             statistics={statistics}
             systemStats={systemStats}
