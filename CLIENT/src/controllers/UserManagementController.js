@@ -421,36 +421,43 @@ export const extractUsersList = (response) => {
  * @returns {Object} User details
  */
 export const extractUserDetails = (response) => {
-  if (!response || !response.data) return null;
+  if (!response || !response.data) {
+    return null;
+  }
   
-  const details = response.data;
+  const userData = response.data;
   
   return {
-    id: details.id || details.userId,
-    username: details.username,
-    email: details.email,
-    phoneNumber: details.phoneNumber,
-    fullName: details.fullName,
-    roleId: details.roleId || details.role,
-    roleName: details.roleName,
-    status: details.status,
-    avatarColor: details.avatarColor,
-    department: details.department,
-    permissions: details.permissions || [],
-    mfaEnabled: details.mfaEnabled || false,
-    emailVerified: details.emailVerified || false,
-    phoneVerified: details.phoneVerified || false,
-    lastActive: details.lastActive,
-    joinedDate: details.joinedDate,
-    location: details.location,
-    timezone: details.timezone,
-    securityScore: details.securityScore || 0,
-    tags: details.tags || [],
-    devices: details.devices || [],
-    apiKeys: details.apiKeys || 0,
-    activeSessions: details.activeSessions || 0,
-    activityLog: details.activityLog || [],
-    permissionsBreakdown: details.permissionsBreakdown || {}
+    id: userData.id || userData.userId,
+    username: userData.username,
+    email: userData.email,
+    phoneNumber: userData.phoneNumber,
+    fullName: userData.fullName,
+    role: userData.role,
+    roleId: userData.roleId,
+    status: userData.status,
+    avatarColor: userData.avatarColor,
+    department: userData.department,
+    permissions: userData.permissions || [],
+    mfaEnabled: userData.mfaEnabled || false,
+    emailVerified: userData.emailVerified || false,
+    phoneVerified: userData.phoneVerified || false,
+    apiAccessCount: userData.apiAccessCount || 0,
+    lastLoginIp: userData.lastLoginIp,
+    location: userData.location,
+    timezone: userData.timezone,
+    totalLogins: userData.totalLogins !== undefined ? userData.totalLogins : 0,  // ✅ ADD THIS
+    failedLogins: userData.failedLogins || 0,
+    securityScore: userData.securityScore || 0,
+    tags: userData.tags || [],
+    devices: userData.devices || [],
+    apiKeys: userData.apiKeys || 0,
+    activeSessions: userData.activeSessions || 0,
+    lastActive: userData.lastActive || null,  // ✅ ADD THIS
+    joinedDate: userData.joinedDate,
+    createdAt: userData.createdAt,
+    updatedAt: userData.updatedAt,
+    createdBy: userData.createdBy
   };
 };
 

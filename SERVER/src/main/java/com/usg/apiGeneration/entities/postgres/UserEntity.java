@@ -107,6 +107,10 @@ public class UserEntity {
     @Column(name = "last_login_ip", length = 45)
     private String lastLoginIp;
 
+    // Add getter and setter
+    @Column(name = "total_logins", nullable = false, columnDefinition = "integer default 0")
+    private Integer totalLogins = 0;
+
     @PrePersist
     protected void onCreate() {
         createdDate = LocalDateTime.now();

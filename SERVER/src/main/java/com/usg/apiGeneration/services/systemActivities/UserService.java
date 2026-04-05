@@ -270,6 +270,19 @@ public class UserService {
                 throw new RuntimeException("Your account has been deactivated. Please contact support");
             }
 
+            // ✅ CRITICAL FIX: Update totalLogins and lastLogin on successful login
+            LocalDateTime now = LocalDateTime.now();
+            int currentTotalLogins = user.getTotalLogins() != null ? user.getTotalLogins() : 0;
+            user.setTotalLogins(currentTotalLogins + 1);
+            user.setLastLogin(now);
+            user.setLastModifiedDate(now);
+            appUserRepository.save(user);
+
+            loggerUtil.log("api-automation",
+                    "[Login] RequestEntity ID: " + requestId +
+                            ", Updated totalLogins to " + (currentTotalLogins + 1) +
+                            " and lastLogin to " + now + " for user: " + userId);
+
             // Enhanced default password check with null safety
             Boolean isDefaultPassword = user.getIsDefaultPassword();
             if (isDefaultPassword == null) {
@@ -292,15 +305,13 @@ public class UserService {
                 responseData.put("token", jwtToken);
                 responseData.put("userId", user.getUserId());
                 responseData.put("emailAddress", user.getEmailAddress() != null ? user.getEmailAddress() : "");
+                responseData.put("totalLogins", user.getTotalLogins());
+                responseData.put("lastLogin", user.getLastLogin());
 
                 result.put("responseCode", 200);
                 result.put("message", "Please reset your default password");
                 result.put("data", responseData);
             } else {
-                // Update last login + reset counters
-                appUserRepository.updateLastLogin(user.getUserId(), LocalDateTime.now(), LocalDateTime.now());
-                appUserRepository.resetFailedLoginAttempts(user.getUserId());
-
                 String role = appUserRepository.getUserRoleByUserId(user.getUserId());
 
                 Map<String, Object> userData = new HashMap<>();
@@ -311,6 +322,7 @@ public class UserService {
                 userData.put("email", user.getEmailAddress() != null ? user.getEmailAddress() : "");
                 userData.put("phone_number", user.getPhoneNumber() != null ? user.getPhoneNumber() : "");
                 userData.put("last_login", user.getLastLogin());
+                userData.put("total_logins", user.getTotalLogins());  // ✅ ADDED
                 userData.put("is_active", user.getIsActive() != null ? user.getIsActive() : true);
                 userData.put("is_default_password", isDefaultPassword);
                 userData.put("token", jwtToken);
@@ -962,11 +974,11 @@ public class UserService {
                             String.format("User with ID %s not found", userId)
                     ));
 
-            // Build the DTO with ALL fields including phoneNumber
+            // Build the DTO with ALL fields including totalLogins and lastLogin
             UserDTO dto = UserDTO.builder()
                     .userId(entity.getUserId())
                     .username(entity.getUsername())
-                    .phoneNumber(entity.getPhoneNumber())           // ✅ CRITICAL - Add this line
+                    .phoneNumber(entity.getPhoneNumber())
                     .emailAddress(entity.getEmailAddress())
                     .staffId(entity.getStaffId())
                     .fullName(entity.getFullName())
@@ -977,12 +989,15 @@ public class UserService {
                     .failedLoginAttempts(entity.getFailedLoginAttempts())
                     .accountLockedUntil(entity.getAccountLockedUntil())
                     .lastLogin(entity.getLastLogin())
+                    .totalLogins(entity.getTotalLogins() != null ? entity.getTotalLogins() : 0)  // ✅ ADDED
                     .createdDate(entity.getCreatedDate())
                     .lastModifiedDate(entity.getLastModifiedDate())
                     .build();
 
             loggerUtil.log("api-automation",
-                    "RequestEntity ID: " + requestId + ", User retrieved successfully: " + userId);
+                    "RequestEntity ID: " + requestId + ", User retrieved successfully: " + userId +
+                            ", totalLogins: " + dto.getTotalLogins() +
+                            ", lastLogin: " + dto.getLastLogin());
 
             result.put("responseCode", 200);
             result.put("message", "User retrieved successfully");
@@ -1014,23 +1029,21 @@ public class UserService {
     // ========== GET ALL USERS ==========
     @Transactional
     public Map<String, Object> getAllUsers(Pageable pageable, String requestId, HttpServletRequest req, String performedBy) {
-        // Optionally log/audit the retrieval
-        // auditLogHelper.logAuditAction("RETRIEVE_ALL_USERS", performedBy, String.format("Retrieved all users - Page: %d, Size: %d", pageable.getPageNumber(), pageable.getPageSize()), requestId);
-
         // Get paginated users
         Page<UserEntity> usersPage = appUserRepository.findAll(pageable);
 
-        // Map entities to DTOs - you already do this mapping elsewhere; adapt if needed
+        // Map entities to DTOs with ALL fields
         List<UserDTO> users = usersPage.stream().map(entity -> UserDTO.builder()
                         .userId(entity.getUserId())
                         .username(entity.getUsername())
                         .fullName(entity.getFullName())
-                        .emailAddress(entity.getEmailAddress()) // ✅ Make sure this is included
-                        .phoneNumber(entity.getPhoneNumber())   // ✅ Make sure this is included
-                        .staffId(entity.getStaffId())           // ✅ Make sure this is included
+                        .emailAddress(entity.getEmailAddress())
+                        .phoneNumber(entity.getPhoneNumber())
+                        .staffId(entity.getStaffId())
                         .createdDate(entity.getCreatedDate())
                         .failedLoginAttempts(entity.getFailedLoginAttempts())
-                        .lastLogin(entity.getLastLogin())
+                        .lastLogin(entity.getLastLogin())                    // ✅ ADDED
+                        .totalLogins(entity.getTotalLogins() != null ? entity.getTotalLogins() : 0)  // ✅ ADDED
                         .isActive(entity.getIsActive())
                         .accountLockedUntil(entity.getAccountLockedUntil())
                         .roleId(entity.getRole() != null ? entity.getRole().getRoleId() : null)

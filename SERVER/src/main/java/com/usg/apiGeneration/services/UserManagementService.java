@@ -116,7 +116,50 @@ public class UserManagementService {
         long apiKeysCount = apiKeyRepository.countActiveKeysByUserId(userEntity.getUserId());
         long activeSessionsCount = sessionRepository.countActiveSessionsByUserId(userEntity.getUserId());
 
-        return dtoConverter.convertToDto(userEntity, role, devices, tags, apiKeysCount, activeSessionsCount);
+        UserDTO dto = dtoConverter.convertToDto(userEntity, role, devices, tags, apiKeysCount, activeSessionsCount);
+
+        // CRITICAL FIX: Set totalLogins - get from UserEntity (you need to add this field to UserEntity)
+        // If UserEntity doesn't have totalLogins, you might need to calculate it from activity logs
+        Integer totalLogins = userEntity.getTotalLogins();
+        if (totalLogins != null) {
+            dto.setTotalLogins(totalLogins);
+        } else {
+            // Calculate from activity logs or set default
+            dto.setTotalLogins(0);
+        }
+
+        // Set failedLogins
+        Integer failedLogins = userEntity.getFailedLoginAttempts();
+        if (failedLogins != null) {
+            dto.setFailedLogins(failedLogins);
+        } else {
+            dto.setFailedLogins(0);
+        }
+
+        // CRITICAL FIX: Set lastActive to null if user has never logged in (totalLogins == 0)
+        if (dto.getTotalLogins() == 0 || userEntity.getLastLogin() == null) {
+            dto.setLastActive(null);
+        } else if (userEntity.getLastLogin() != null) {
+            // Format the lastActive date
+            dto.setLastActive(userEntity.getLastLogin()
+                    .format(DateTimeFormatter.ofPattern("MMMM d, yyyy h:mm a")));
+        }
+
+        // Set joinedDate from createdDate
+        if (userEntity.getCreatedDate() != null) {
+            dto.setJoinedDate(userEntity.getCreatedDate()
+                    .format(DateTimeFormatter.ofPattern("MMMM d, yyyy")));
+            dto.setCreatedAt(userEntity.getCreatedDate()
+                    .format(DateTimeFormatter.ofPattern("MMMM d, yyyy h:mm a")));
+        }
+
+        // Set updatedAt
+        if (userEntity.getLastModifiedDate() != null) {
+            dto.setUpdatedAt(userEntity.getLastModifiedDate()
+                    .format(DateTimeFormatter.ofPattern("MMMM d, yyyy h:mm a")));
+        }
+
+        return dto;
     }
 
     private Sort createSort(String sortField, String sortDirection) {
@@ -184,15 +227,9 @@ public class UserManagementService {
             response.setApiKeys(userDto.getApiKeys());
             response.setActiveSessions(userDto.getActiveSessions());
 
-            // Format dates
-            if (userEntity.getLastLogin() != null) {
-                response.setLastActive(userEntity.getLastLogin()
-                        .format(DateTimeFormatter.ofPattern("MMMM d, yyyy h:mm a")));
-            }
-            if (userEntity.getCreatedDate() != null) {
-                response.setJoinedDate(userEntity.getCreatedDate()
-                        .format(DateTimeFormatter.ofPattern("MMMM d, yyyy")));
-            }
+            // Use the DTO's lastActive which already handles null for never-logged-in users
+            response.setLastActive(userDto.getLastActive());
+            response.setJoinedDate(userDto.getJoinedDate());
 
             // Add devices
             List<UserDeviceEntity> devices = deviceRepository.findByUser(userEntity);

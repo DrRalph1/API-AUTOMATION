@@ -1618,11 +1618,8 @@ export default function EntryPage() {
                       isDark ? 'bg-gray-900 border border-gray-800' : 'bg-white border border-gray-200'
                     }`}>
                       {/* User Info Section */}
-                      <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
+                      {/* <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
                         <div className="flex items-center gap-3 mb-3">
-                          {/* <div className={`w-12 h-12 rounded-full ${isDark ? 'bg-gray-800' : 'bg-gray-100'} flex items-center justify-center`}>
-                            <UserCheck className={`h-6 w-6 ${isDark ? 'text-gray-300' : 'text-gray-600'}`} />
-                          </div> */}
                           <div>
                             <h3 className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
                               {user?.name || "Admin User"}
@@ -1632,8 +1629,7 @@ export default function EntryPage() {
                             </p>
                           </div>
                         </div>
-                        {/* Status can be added here if needed */}
-                      </div>
+                      </div> */}
 
                       {/* Actions Section */}
                       <div className="p-2">

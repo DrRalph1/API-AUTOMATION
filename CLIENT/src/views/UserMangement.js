@@ -191,6 +191,26 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   const [isOpeningModal, setIsOpeningModal] = useState(false);
   const pendingRequestRef = useRef(null);
 
+  const formatLastActive = (lastActiveDate, totalLogins) => {
+      // If user has never logged in (totalLogins is 0), show "Never logged in"
+      if (totalLogins === 0 && !lastActiveDate) {
+          return 'Never logged in';
+      }
+      
+      // If no date provided, also show never logged in
+      if (!lastActiveDate) {
+          return 'Never logged in';
+      }
+      
+      // Check if it's a valid date
+      const date = new Date(lastActiveDate);
+      if (isNaN(date.getTime())) {
+          return 'Never logged in';
+      }
+      
+      return formatDateForDisplay(lastActiveDate, false);
+  };
+
   // Load roles on component mount
   useEffect(() => {
     if (authToken) {
@@ -1486,7 +1506,9 @@ const loadUsers = async (filters = {}) => {
                     <Clock size={14} style={{ color: colors.textSecondary }} />
                     <div className="flex-1">
                       <div className="text-xs" style={{ color: colors.textSecondary }}>Last Active</div>
-                      <div className="text-sm" style={{ color: colors.text }}>{formatDate(userDetails?.lastActive)}</div>
+                      <div className="text-sm" style={{ color: colors.text }}>
+                        {userDetails?.lastActive ? formatDate(userDetails.lastActive) : 'Never logged in'}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -2966,7 +2988,7 @@ const loadUsers = async (filters = {}) => {
           </div>
         </div>
         <div className="flex items-end justify-between">
-          <div className="text-lg font-bold truncate" style={{ color: colors.text }}>
+          <div className="text-xl font-bold truncate" style={{ color: colors.text }}>
             {value}
           </div>
           {change && (
@@ -3089,7 +3111,7 @@ const loadUsers = async (filters = {}) => {
             <div className="flex items-center gap-1">
               <Clock size={12} style={{ color: colors.textSecondary }} />
               <span style={{ color: colors.textSecondary }}>
-                {formatDate(user.lastActive)} {formatTime(user.lastActive)}
+                {user.lastActive ? `${formatDate(user.lastActive)} ${formatTime(user.lastActive)}` : 'Never logged in'}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -3816,10 +3838,16 @@ const loadUsers = async (filters = {}) => {
                             </div>
                           </td>
                           <td className="p-3">
-                            <div className="text-sm" style={{ color: colors.text }}>
-                              {formatDateForDisplay(user.lastActive, false)}
+                            <div className="text-sm" style={{ color: !user.lastActive || user.totalLogins === 0 ? colors.textTertiary : colors.text }}>
+                                {formatLastActive(user.lastActive, user.totalLogins)}
                             </div>
-                          </td>
+                            {(!user.lastActive || user.totalLogins === 0) && (
+                                <div className="text-xs" style={{ color: colors.warning }}>
+                                    <AlertCircle size={10} className="inline mr-1" />
+                                    Awaiting first login
+                                </div>
+                            )}
+                        </td>
                           <td className="p-3">
                             <div className="flex items-center gap-1">
                               <div className="text-sm font-medium" style={{ color: colors.text }}>

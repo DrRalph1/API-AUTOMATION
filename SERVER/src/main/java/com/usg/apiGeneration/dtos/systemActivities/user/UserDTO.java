@@ -81,6 +81,11 @@ public class UserDTO {
     @Schema(description = "Date and time when the user was last modified", example = "2024-01-15T09:30:00")
     private LocalDateTime lastModifiedDate;
 
+    // Add getter and setter (Lombok @Getter @Setter should handle this)
+    // But if not, add:
+    @Schema(description = "Total number of successful logins", example = "42")
+    private Integer totalLogins;
+
     // Constructor for create operations (without systemActivities fields)
     public UserDTO(String userId, String username, String password, String fullName,
                    UUID roleId, String roleName, Boolean isActive, Boolean isDefaultPassword) {
