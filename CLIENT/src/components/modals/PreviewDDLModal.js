@@ -923,6 +923,66 @@ const PreviewDDLModal = ({
   // Get database configuration
   const dbConfig = DATABASE_CONFIGS[databaseType] || DATABASE_CONFIGS.postgresql;
   const objectTemplates = OBJECT_TEMPLATES[databaseType] || OBJECT_TEMPLATES.postgresql;
+
+  // Add toast state
+  const [toast, setToast] = useState(null);
+
+  // Show toast function
+  const showToast = useCallback((message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 2000);
+  }, []);
+
+
+  // Copy to clipboard function
+const copyToClipboard = useCallback((text) => {
+  if (!text) {
+    showToast('Nothing to copy', 'warning');
+    return;
+  }
+  
+  // Modern clipboard API
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        showToast('Copied to clipboard!', 'success');
+      })
+      .catch((err) => {
+        console.error('Clipboard write failed:', err);
+        // Fallback to older method
+        fallbackCopy(text);
+      });
+  } else {
+    // Fallback for older browsers
+    fallbackCopy(text);
+  }
+  
+  function fallbackCopy(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-9999px';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    
+    try {
+      const successful = document.execCommand('copy');
+      if (successful) {
+        showToast('Copied to clipboard!', 'success');
+      } else {
+        showToast('Failed to copy to clipboard', 'error');
+      }
+    } catch (err) {
+      console.error('Fallback copy failed:', err);
+      showToast('Failed to copy to clipboard', 'error');
+    }
+    
+    document.body.removeChild(textarea);
+  }
+}, [showToast]);
+
   
   // Theme colors
   const themeColors = colors || {
@@ -1954,14 +2014,7 @@ const PreviewDDLModal = ({
   };
   
   const handleCopy = () => {
-    navigator.clipboard.writeText(editorContent);
-    setCompilationResult({
-      success: true,
-      message: 'Copied to clipboard',
-      output: '',
-      error: null
-    });
-    setTimeout(() => setCompilationResult(null), 2000);
+    copyToClipboard(editorContent);
   };
   
   const handleDownload = () => {
@@ -2411,68 +2464,85 @@ const PreviewDDLModal = ({
           
           {/* Resizable Response Panel */}
           {compilationResult && (
-            <>
-              <div
-                className="flex items-center justify-center cursor-ns-resize hover:bg-opacity-20 transition-colors"
-                style={{
-                  height: '8px',
-                  backgroundColor: themeColors.border,
-                  cursor: 'ns-resize',
-                  position: 'relative'
-                }}
-                onMouseDown={handleResponseDragStart}
-              >
+              <>
+                {/* Resize handle */}
                 <div
-                  className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"
-                  style={{ color: themeColors.textSecondary }}
+                  className="flex items-center justify-center cursor-ns-resize hover:bg-opacity-20 transition-colors"
+                  style={{
+                    height: '8px',
+                    backgroundColor: themeColors.border,
+                    cursor: 'ns-resize',
+                    position: 'relative'
+                  }}
+                  onMouseDown={handleResponseDragStart}
                 >
-                  <GripHorizontal size={16} />
-                </div>
-              </div>
-              
-              <div
-                style={{
-                  height: `${responseHeight}px`,
-                  overflow: 'auto',
-                  borderTop: `1px solid ${themeColors.border}`,
-                  backgroundColor: compilationResult.success ? `${themeColors.success}10` : `${themeColors.error}10`
-                }}
-                className="shrink-0"
-              >
-                <div className="p-4">
-                  <div className="flex items-start gap-3">
-                    {compilationResult.success ? (
-                      <CheckCircle size={18} style={{ color: themeColors.success }} className="mt-0.5 flex-shrink-0" />
-                    ) : (
-                      <AlertCircle size={18} style={{ color: themeColors.error }} className="mt-0.5 flex-shrink-0" />
-                    )}
-                    <div className="flex-1">
-                      <div className="text-sm font-medium" style={{ color: compilationResult.success ? themeColors.success : themeColors.error }}>
-                        {compilationResult.message}
-                      </div>
-                      {compilationResult.error && (
-                        <pre className="text-xs mt-1 whitespace-pre-wrap" style={{ color: themeColors.textSecondary }}>
-                          {compilationResult.error}
-                        </pre>
-                      )}
-                      {compilationResult.output && (
-                        <pre className="text-xs mt-1 whitespace-pre-wrap overflow-x-auto" style={{ color: themeColors.textSecondary }}>
-                          {compilationResult.output}
-                        </pre>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => setCompilationResult(null)}
-                      className="p-1 rounded hover-lift transition-colors"
-                      style={{ backgroundColor: themeColors.hover }}
-                    >
-                      <X size={14} style={{ color: themeColors.textSecondary }} />
-                    </button>
+                  <div
+                    className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"
+                    style={{ color: themeColors.textSecondary }}
+                  >
+                    <GripHorizontal size={16} />
                   </div>
                 </div>
-              </div>
-            </>
-          )}
+                
+                <div
+                  style={{
+                    height: `${responseHeight}px`,
+                    overflow: 'auto',
+                    borderTop: `1px solid ${themeColors.border}`,
+                    backgroundColor: compilationResult.success ? `${themeColors.success}10` : `${themeColors.error}10`
+                  }}
+                  className="shrink-0"
+                >
+                  <div className="p-4">
+                    <div className="flex items-start gap-3">
+                      {compilationResult.success ? (
+                        <CheckCircle size={18} style={{ color: themeColors.success }} className="mt-0.5 flex-shrink-0" />
+                      ) : (
+                        <AlertCircle size={18} style={{ color: themeColors.error }} className="mt-0.5 flex-shrink-0" />
+                      )}
+                      <div className="flex-1">
+                        <div className="text-sm font-medium" style={{ color: compilationResult.success ? themeColors.success : themeColors.error }}>
+                          {compilationResult.message}
+                        </div>
+                        {compilationResult.error && (
+                          <pre className="text-xs mt-1 whitespace-pre-wrap" style={{ color: themeColors.textSecondary }}>
+                            {compilationResult.error}
+                          </pre>
+                        )}
+                        {compilationResult.output && (
+                          <pre className="text-xs mt-1 whitespace-pre-wrap overflow-x-auto" style={{ color: themeColors.textSecondary }}>
+                            {compilationResult.output}
+                          </pre>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {/* Add Copy Button */}
+                        {(compilationResult.output || compilationResult.error) && (
+                          <button
+                            onClick={() => {
+                              const contentToCopy = compilationResult.output || compilationResult.error || compilationResult.message;
+                              copyToClipboard(contentToCopy);
+                            }}
+                            className="p-1.5 rounded hover-lift transition-colors"
+                            style={{ backgroundColor: themeColors.hover }}
+                            title="Copy to clipboard"
+                          >
+                            <Copy size={14} style={{ color: themeColors.textSecondary }} />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setCompilationResult(null)}
+                          className="p-1 rounded hover-lift transition-colors"
+                          style={{ backgroundColor: themeColors.hover }}
+                        >
+                          <X size={14} style={{ color: themeColors.textSecondary }} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
         </div>
         
         {/* Action Buttons */}
@@ -2597,6 +2667,32 @@ const PreviewDDLModal = ({
             }
           }}
         />
+      )}
+
+      <style>{`
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .animate-fade-in-up {
+          animation: fadeInUp 0.2s ease-out;
+        }
+      `}</style>
+
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-4 right-4 px-4 py-2 rounded text-sm font-medium z-1500 animate-fade-in-up"
+          style={{ 
+            backgroundColor: toast.type === 'error' ? themeColors.error : 
+                          toast.type === 'success' ? themeColors.success : 
+                          toast.type === 'warning' ? themeColors.warning : 
+                          themeColors.info,
+            color: '#ffffff'
+          }}>
+          {toast.message}
+        </div>
       )}
 
       {/* For Custom Query API Generation - NOW SUPPORTS ALL QUERY TYPES */}
