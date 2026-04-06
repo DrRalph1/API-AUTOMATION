@@ -711,6 +711,17 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
 
   const [abortController, setAbortController] = useState(null);
 
+  const getCurrentTimestamp = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    return `${year}${month}${day}${hours}${minutes}${seconds}`;
+  };
+
   // Add these memoized callbacks near the top of the Collections component
   const memoizedSetSelectedLanguage = useCallback((lang) => {
     setSelectedLanguage(lang);
@@ -2478,30 +2489,54 @@ const deletePathParam = (id) => {
         
         // CRITICAL FIX: Construct URL with path parameter placeholders
         let requestUrl = request.url || '';
-        
+        let templateUrl = requestUrl;
+
+        // If there are path parameters, we need to ensure the URL has placeholders
         if (pathParams.length > 0) {
           console.log(`🛣️ [Transform] Building URL with ${pathParams.length} path params`);
           
+          // Check if the URL already has placeholders
           const hasPlaceholders = pathParams.some(p => 
             requestUrl.includes(`{${p.key}}`) || requestUrl.includes(`:${p.key}`)
           );
           
-          if (!hasPlaceholders && !requestUrl.includes('{') && !requestUrl.includes(':')) {
-            if (!requestUrl.endsWith('/')) {
-              requestUrl += '/';
-            }
+          if (!hasPlaceholders) {
+            // Check if the URL contains the actual parameter values
+            let hasActualValues = false;
+            let constructedUrl = requestUrl;
             
-            pathParams.forEach((param, index) => {
-              if (index === 0 && requestUrl.endsWith('/')) {
-                requestUrl += `{${param.key}}`;
-              } else if (index === 0) {
-                requestUrl += `/{${param.key}}`;
-              } else {
-                requestUrl += `/{${param.key}}`;
+            pathParams.forEach(param => {
+              // Try to find the parameter value in the URL
+              if (param.value && constructedUrl.includes(param.value)) {
+                constructedUrl = constructedUrl.replace(param.value, `{${param.key}}`);
+                hasActualValues = true;
+                console.log(`  🔄 Replaced actual value "${param.value}" with placeholder {${param.key}}`);
               }
             });
             
-            console.log(`✅ [Transform] Added placeholders to URL: ${requestUrl}`);
+            if (hasActualValues) {
+              requestUrl = constructedUrl;
+              templateUrl = constructedUrl;
+              console.log(`✅ [Transform] Added placeholders to URL: ${requestUrl}`);
+            } else if (!hasPlaceholders && !requestUrl.includes('{') && !requestUrl.includes(':')) {
+              // If no placeholders and no actual values found, append the placeholder
+              if (!requestUrl.endsWith('/')) {
+                requestUrl += '/';
+              }
+              
+              pathParams.forEach((param, index) => {
+                if (index === 0 && requestUrl.endsWith('/')) {
+                  requestUrl += `{${param.key}}`;
+                } else if (index === 0) {
+                  requestUrl += `/{${param.key}}`;
+                } else {
+                  requestUrl += `/{${param.key}}`;
+                }
+              });
+              
+              templateUrl = requestUrl;
+              console.log(`✅ [Transform] Appended placeholders to URL: ${requestUrl}`);
+            }
           } else {
             console.log(`✅ [Transform] URL already has placeholders: ${requestUrl}`);
           }
@@ -3011,6 +3046,7 @@ const resolveEnvironmentVariables = useCallback((url, envVariables) => {
 }, []);
 
 const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
+
   // Reset the auto-tab-change flag when loading a new request
   skipAutoTabChange.current = false;
   isUserInitiatedTabChange.current = false;
@@ -3053,7 +3089,13 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   // This is important for future environment switching
   console.log('📝 Setting original templateUrl to:', initialTemplateUrl);
   setTemplateUrl(initialTemplateUrl);
-  
+
+  // ============== SET HTTP METHOD ==============
+  if (request.method) {
+    console.log('📡 Setting request method to:', request.method);
+    setRequestMethod(request.method);
+  }
+
   // ============== Resolve environment variables ==============
   let resolvedUrl = initialTemplateUrl;
 
@@ -3156,33 +3198,94 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
 
   // ============== Build the final URL with path params ==============
   // Start with the WORKING template URL (environment variables resolved)
-  let finalUrlWithPathParams = workingTemplateUrl;
+// Start with the WORKING template URL (environment variables resolved)
+let finalUrlWithPathParams = workingTemplateUrl;
+
+// Replace path parameters in the resolved URL
+if (initialPathParams.length > 0) {
+  console.log('🛣️ Processing path params for URL:', { workingTemplateUrl, initialPathParams });
   
-  // Replace path parameters in the resolved URL
-  if (initialPathParams.length > 0) {
-    console.log('🛣️ Processing path params for URL:', { workingTemplateUrl, initialPathParams });
+  // FIRST: Update the path params with AUTOGENERATE timestamps
+  const updatedPathParams = initialPathParams.map(param => {
+    if (param.key && param.oracleType === 'AUTOGENERATE') {
+      const timestamp = getCurrentTimestamp();
+      console.log(`🔄 AUTOGENERATE path param ${param.key} set to timestamp: ${timestamp}`);
+      return { ...param, value: timestamp };
+    }
+    return param;
+  });
+  
+  // Update the state with the new values
+  setRequestPathParams(updatedPathParams);
+  
+  // Now build the URL with the updated values
+  // IMPORTANT: Check if the URL has placeholders for path parameters
+  let urlWithPlaceholders = finalUrlWithPathParams;
+  
+  // Check if the URL already has the placeholder format {paramName}
+  const hasPlaceholders = updatedPathParams.some(param => 
+    urlWithPlaceholders.includes(`{${param.key}}`) || urlWithPlaceholders.includes(`:${param.key}`)
+  );
+  
+  if (!hasPlaceholders) {
+    // If no placeholders exist, we need to add them to the URL template
+    // This happens when the saved URL already has the actual values instead of placeholders
+    console.log('⚠️ URL has no placeholders for path params, extracting template...');
     
-    initialPathParams.forEach(param => {
-      if (param.key && param.value && param.value.trim() !== '') {
-        const placeholder = `{${param.key}}`;
-        const colonPlaceholder = `:${param.key}`;
-        
-        if (finalUrlWithPathParams.includes(placeholder)) {
-          finalUrlWithPathParams = finalUrlWithPathParams.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), param.value);
-          console.log(`  🔄 Replaced ${placeholder} with ${param.value}`);
-        }
-        if (finalUrlWithPathParams.includes(colonPlaceholder)) {
-          finalUrlWithPathParams = finalUrlWithPathParams.replace(new RegExp(colonPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), param.value);
-          console.log(`  🔄 Replaced ${colonPlaceholder} with ${param.value}`);
-        }
+    // Try to extract the base URL without the path parameter values
+    let baseUrl = workingTemplateUrl;
+    
+    // Remove the last segment(s) that might contain path param values
+    updatedPathParams.forEach(param => {
+      // Look for the param value in the URL and replace with placeholder
+      if (param.value && baseUrl.includes(param.value)) {
+        baseUrl = baseUrl.replace(param.value, `{${param.key}}`);
+        console.log(`  🔄 Replaced value ${param.value} with placeholder {${param.key}}`);
       }
     });
     
-    console.log('✅ Final URL with path params:', finalUrlWithPathParams);
+    urlWithPlaceholders = baseUrl;
+    console.log('📝 Updated URL with placeholders:', urlWithPlaceholders);
   }
   
-  // Set the final URL
-  setRequestUrl(finalUrlWithPathParams);
+  // Now replace placeholders with actual values
+  updatedPathParams.forEach(param => {
+    if (param.key) {
+      const placeholder = `{${param.key}}`;
+      const colonPlaceholder = `:${param.key}`;
+      
+      // Determine the value to use
+      let paramValue = '';
+      if (param.oracleType === 'AUTOGENERATE') {
+        paramValue = param.value; // Already set above
+        console.log(`  🔄 Using AUTOGENERATE value for ${param.key}: ${paramValue}`);
+      } else {
+        paramValue = param.value && param.value.trim() !== '' ? param.value : '';
+      }
+      
+      if (urlWithPlaceholders.includes(placeholder)) {
+        urlWithPlaceholders = urlWithPlaceholders.replace(
+          new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), 
+          paramValue
+        );
+        console.log(`  🔄 Replaced ${placeholder} with ${paramValue || '(empty)'}`);
+      }
+      if (urlWithPlaceholders.includes(colonPlaceholder)) {
+        urlWithPlaceholders = urlWithPlaceholders.replace(
+          new RegExp(colonPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), 
+          paramValue
+        );
+        console.log(`  🔄 Replaced ${colonPlaceholder} with ${paramValue || '(empty)'}`);
+      }
+    }
+  });
+  
+  finalUrlWithPathParams = urlWithPlaceholders;
+  console.log('✅ Final URL with path params:', finalUrlWithPathParams);
+}
+
+// Set the final URL
+setRequestUrl(finalUrlWithPathParams);
   
   // Then fetch additional details from API
   if (authToken && request.id && collectionId) {
@@ -3203,8 +3306,15 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           authType: details.authType,
           authConfig: details.authConfig,
           headersCount: details.headers?.length,
-          jwtToken: details.authConfig?.jwtToken ? 'present' : 'absent'
+          jwtToken: details.authConfig?.jwtToken ? 'present' : 'absent',
+          method: details.method  // Add this to see the method from API
         });
+        
+        // ============== UPDATE HTTP METHOD FROM API ==============
+        if (details.method) {
+          console.log('📡 Updating request method from API details:', details.method);
+          setRequestMethod(details.method);
+        }
         
         // ============== AUTH CONFIGURATION ==============
         let apiAuthHeaders = [];
@@ -3337,65 +3447,95 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
         const queryParams = [];
         const pathParams = [];
         const headerParams = [];
-        let bodyParams = []; // DECLARE THIS HERE
-        
-        console.log('📊 Processing parameters from API:', details.parameters.length);
+        let bodyParams = [];
         
         details.parameters.forEach(param => {
           if (param && param.key) {
+            // Check if this is an AUTOGENERATE parameter
+            const isAutoGenerate = param.oracleType === 'AUTOGENERATE';
+            const currentTimestamp = getCurrentTimestamp();
+            
             const paramObject = {
               id: param.id || `${param.key}-${Date.now()}-${Math.random()}`,
               key: param.key,
-              value: param.value || '',
-              description: param.description || '',
+              // For AUTOGENERATE, set value to current timestamp
+              value: isAutoGenerate ? currentTimestamp : (param.value || ''),
+              description: param.description || (isAutoGenerate ? 'Auto-generated timestamp field' : ''),
               enabled: param.enabled !== false,
-              required: param.required || false,
-              parameterLocation: param.parameterLocation || 'query'
+              required: isAutoGenerate ? false : (param.required || false),
+              parameterLocation: param.parameterLocation || 'query',
+              // Oracle/API type fields
+              oracleType: param.oracleType || 'VARCHAR2',
+              // For AUTOGENERATE, set example and defaultValue to current timestamp
+              example: isAutoGenerate ? currentTimestamp : (param.example || ''),
+              defaultValue: isAutoGenerate ? currentTimestamp : (param.defaultValue || ''),
+              apiType: param.apiType || 'string',
+              validationPattern: param.validationPattern || '',
+              inBody: param.parameterLocation === 'body',
+              isPrimaryKey: param.isPrimaryKey || false,
+              paramMode: param.paramMode || 'IN'
             };
+            
+            console.log(`🔧 Processing ${param.parameterLocation || 'unknown'} param "${param.key}":`, {
+              oracleType: param.oracleType,
+              isAutoGenerate,
+              value: paramObject.value,
+              example: paramObject.example,
+              required: paramObject.required,
+              location: param.parameterLocation
+            });
             
             const location = (param.parameterLocation || '').toLowerCase();
             
-            console.log(`📍 Parameter ${param.key} has location: ${location}`);
-            
             if (location === 'path') {
               pathParams.push(paramObject);
-              console.log(`🛣️ Added ${param.key} to PATH params`);
+              console.log(`🛣️ Added ${param.key} to PATH params (AutoGen: ${isAutoGenerate})`);
             } else if (location === 'query') {
               queryParams.push(paramObject);
-              console.log(`🔍 Added ${param.key} to QUERY params`);
+              console.log(`🔍 Added ${param.key} to QUERY params (AutoGen: ${isAutoGenerate})`);
             } else if (location === 'header') {
               headerParams.push(paramObject);
-              console.log(`📋 Added ${param.key} to HEADER params`);
+              console.log(`📋 Added ${param.key} to HEADER params (AutoGen: ${isAutoGenerate})`);
             } else if (location === 'body') {
               bodyParams.push(paramObject);
-              console.log(`📦 Added ${param.key} to BODY params (will NOT be in URL)`);
+              console.log(`📦 Added ${param.key} to BODY params (AutoGen: ${isAutoGenerate})`);
             } else {
+              // If no location specified, check HTTP method
               if (requestMethod === 'POST' || requestMethod === 'PUT' || requestMethod === 'PATCH') {
                 bodyParams.push(paramObject);
-                console.log(`📦 Default: ${param.key} added to BODY params (${requestMethod} request)`);
+                console.log(`📦 Default: ${param.key} added to BODY params (${requestMethod} request, AutoGen: ${isAutoGenerate})`);
               } else {
                 queryParams.push(paramObject);
-                console.log(`🔍 Default: ${param.key} added to QUERY params (${requestMethod} request)`);
+                console.log(`🔍 Default: ${param.key} added to QUERY params (${requestMethod} request, AutoGen: ${isAutoGenerate})`);
               }
             }
           }
         });
         
-        // Only set query params (these go in the URL)
+        // Set query params (these go in the URL)
         if (queryParams.length > 0) {
-          console.log('📝 Setting query params (will appear in URL):', queryParams.map(p => p.key));
+          console.log('📝 Setting query params:', queryParams.map(p => ({ 
+            key: p.key, 
+            isAutoGen: p.oracleType === 'AUTOGENERATE', 
+            value: p.value 
+          })));
           setRequestParams(queryParams);
         } else {
           console.log('✅ No query params - clearing requestParams');
           setRequestParams([]);
         }
         
+        // Set path params
         if (pathParams.length > 0 && initialPathParams.length === 0) {
-          console.log('🛣️ Setting path params from API:', pathParams.map(p => p.key));
+          console.log('🛣️ Setting path params from API:', pathParams.map(p => ({ 
+            key: p.key, 
+            isAutoGen: p.oracleType === 'AUTOGENERATE', 
+            value: p.value 
+          })));
           setRequestPathParams(pathParams);
         }
         
-        // Process headers
+        // Process headers - merge auth headers with header params
         const allHeaders = [...apiAuthHeaders];
         
         if (headerParams.length > 0) {
@@ -3442,27 +3582,33 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
         console.log('📌 Final headers:', uniqueHeaders.map(h => h.key));
         setRequestHeaders(uniqueHeaders);
         
-        // Process request body - ONLY ONCE, right after processing parameters
-        if (details.requestBody) {
-          const bodyType = details.requestBody.bodyType || 'raw';
+        // ============== PROCESS REQUEST BODY WITH AUTOGENERATE SUPPORT ==============
+        if (details.requestBody || bodyParams.length > 0) {
+          const bodyType = details.requestBody?.bodyType || 
+                          (bodyParams.length > 0 ? 'raw' : 'none');
           
           console.log('📦 Processing request body:', {
             bodyType,
-            sample: details.requestBody.sample
+            bodyParamsCount: bodyParams.length,
+            autoGenerateParams: bodyParams.filter(p => p.oracleType === 'AUTOGENERATE').map(p => p.key)
           });
           
           switch (bodyType) {
             case 'form-data':
               setRequestBodyType('form-data');
               if (bodyParams.length > 0) {
-                const formDataArray = bodyParams.map((param, index) => ({
-                  id: param.id || `form-${Date.now()}-${index}`,
-                  key: param.key,
-                  value: param.value || '',
-                  type: 'text',
-                  enabled: true,
-                  description: param.description || ''
-                }));
+                const formDataArray = bodyParams.map((param, index) => {
+                  const isAutoGenerate = param.oracleType === 'AUTOGENERATE';
+                  return {
+                    id: param.id || `form-${Date.now()}-${index}`,
+                    key: param.key,
+                    // For AUTOGENERATE, set value to current timestamp
+                    value: isAutoGenerate ? getCurrentTimestamp() : (param.value || ''),
+                    type: 'text',
+                    enabled: true,
+                    description: param.description || (isAutoGenerate ? 'Auto-generated timestamp field' : '')
+                  };
+                });
                 setFormData(formDataArray);
               } else {
                 setFormData([]);
@@ -3473,13 +3619,17 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
             case 'x-www-form-urlencoded':
               setRequestBodyType('x-www-form-urlencoded');
               if (bodyParams.length > 0) {
-                const urlEncodedArray = bodyParams.map((param, index) => ({
-                  id: param.id || `url-${Date.now()}-${index}`,
-                  key: param.key,
-                  value: param.value || '',
-                  description: param.description || '',
-                  enabled: true
-                }));
+                const urlEncodedArray = bodyParams.map((param, index) => {
+                  const isAutoGenerate = param.oracleType === 'AUTOGENERATE';
+                  return {
+                    id: param.id || `url-${Date.now()}-${index}`,
+                    key: param.key,
+                    // For AUTOGENERATE, set value to current timestamp
+                    value: isAutoGenerate ? getCurrentTimestamp() : (param.value || ''),
+                    description: param.description || (isAutoGenerate ? 'Auto-generated timestamp field' : ''),
+                    enabled: true
+                  };
+                });
                 setUrlEncodedData(urlEncodedArray);
               } else {
                 setUrlEncodedData([]);
@@ -3495,7 +3645,9 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                 const jsonBody = {};
                 bodyParams.forEach(param => {
                   if (param.key) {
-                    let value = param.value || '';
+                    const isAutoGenerate = param.oracleType === 'AUTOGENERATE';
+                    // For AUTOGENERATE, use current timestamp as value
+                    let value = isAutoGenerate ? getCurrentTimestamp() : (param.value || '');
                     if (value && (value.startsWith('{') || value.startsWith('['))) {
                       try {
                         value = JSON.parse(value);
@@ -3508,7 +3660,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                 });
                 let jsonString = JSON.stringify(jsonBody, null, 2);
                 
-                if (details.requestBody.sample && details.requestBody.sample !== '{}') {
+                if (details.requestBody?.sample && details.requestBody.sample !== '{}') {
                   try {
                     const parsedSample = JSON.parse(details.requestBody.sample);
                     const merged = { ...parsedSample, ...jsonBody };
@@ -3518,7 +3670,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                   }
                 }
                 setRequestBody(jsonString);
-              } else if (details.requestBody.sample) {
+              } else if (details.requestBody?.sample) {
                 setRequestBody(details.requestBody.sample);
               } else {
                 setRequestBody('{}');
@@ -3532,18 +3684,19 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                 let xmlBody = '<?xml version="1.0" encoding="UTF-8"?>\n<request>\n';
                 bodyParams.forEach(param => {
                   if (param.key) {
-                    const value = param.value || '';
-                    const escapedValue = value.replace(/&/g, '&amp;')
-                                              .replace(/</g, '&lt;')
-                                              .replace(/>/g, '&gt;')
-                                              .replace(/"/g, '&quot;')
-                                              .replace(/'/g, '&apos;');
+                    const isAutoGenerate = param.oracleType === 'AUTOGENERATE';
+                    const value = isAutoGenerate ? getCurrentTimestamp() : (param.value || '');
+                    const escapedValue = String(value).replace(/&/g, '&amp;')
+                                                      .replace(/</g, '&lt;')
+                                                      .replace(/>/g, '&gt;')
+                                                      .replace(/"/g, '&quot;')
+                                                      .replace(/'/g, '&apos;');
                     xmlBody += `  <${param.key}>${escapedValue}</${param.key}>\n`;
                   }
                 });
                 xmlBody += '</request>';
                 setRequestBody(xmlBody);
-              } else if (details.requestBody.sample) {
+              } else if (details.requestBody?.sample) {
                 setRequestBody(details.requestBody.sample);
               } else {
                 setRequestBody('<?xml version="1.0" encoding="UTF-8"?>\n<request>\n</request>');
@@ -3552,7 +3705,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
               
             case 'graphql':
               setRequestBodyType('graphql');
-              if (details.requestBody.sample) {
+              if (details.requestBody?.sample) {
                 try {
                   const parsed = JSON.parse(details.requestBody.sample);
                   setGraphqlQuery(parsed.query || '');
@@ -3580,20 +3733,24 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
               break;
           }
         } else {
-          // If no request body details, but we have body parameters, default to raw JSON
-          if (bodyParams.length > 0) {
-            console.log('📦 No request body details, but have body parameters - defaulting to raw JSON');
-            setRequestBodyType('raw');
-            setRawBodyType('json');
-            const jsonBody = {};
-            bodyParams.forEach(param => {
-              if (param.key) {
-                jsonBody[param.key] = param.value || '';
-              }
-            });
-            setRequestBody(JSON.stringify(jsonBody, null, 2));
-          }
+          // No request body details and no body parameters
+          setRequestBodyType('none');
+          setRequestBody('');
+          setFormData([]);
+          setUrlEncodedData([]);
+          setBinaryFile(null);
+          setGraphqlQuery('');
+          setGraphqlVariables('');
         }
+        
+        console.log('✅ Parameter processing complete:', {
+          totalParams: details.parameters.length,
+          queryParams: queryParams.length,
+          pathParams: pathParams.length,
+          headerParams: headerParams.length,
+          bodyParams: bodyParams.length,
+          autoGenerateCount: details.parameters.filter(p => p.oracleType === 'AUTOGENERATE').length
+        });
       } // Close the if (details.parameters) block
 
       // Set active tab after all data is loaded

@@ -1376,7 +1376,7 @@ public class AutomationEngineService {
                             p.getKey(), p.getParameterType(), p.getParameterLocation(), p.getRequired()));
 
             // 13. Create consolidated params
-            Map<String, Object> consolidatedParams = createConsolidatedParamsWithHeaders(validatedRequest);
+            Map<String, Object> consolidatedParams = createConsolidatedParamsWithHeaders(validatedRequest, api);
 
             // 14. Parse XML body if present
             if (validatedRequest.getBody() instanceof String) {
@@ -2882,11 +2882,28 @@ public class AutomationEngineService {
     }
 
 
+    // Add this helper method near the other helper methods
+    /**
+     * Generate current timestamp in format YYYYMMDDHHMMSS
+     * Used for AUTOGENERATE data type parameters
+     */
+    private String getCurrentTimestamp() {
+        LocalDateTime now = LocalDateTime.now();
+        return String.format("%04d%02d%02d%02d%02d%02d",
+                now.getYear(),
+                now.getMonthValue(),
+                now.getDayOfMonth(),
+                now.getHour(),
+                now.getMinute(),
+                now.getSecond());
+    }
+
 
     /**
      * Create consolidated parameters map that INCLUDES HEADERS for validation
+     * Also handles AUTOGENERATE data types by auto-populating with current timestamp
      */
-    private Map<String, Object> createConsolidatedParamsWithHeaders(ExecuteApiRequestDTO executeRequest) {
+    private Map<String, Object> createConsolidatedParamsWithHeaders(ExecuteApiRequestDTO executeRequest, GeneratedApiEntity api) {
         Map<String, Object> allParams = new HashMap<>();
 
         // Add path parameters
@@ -2935,6 +2952,54 @@ public class AutomationEngineService {
             }
         }
 
+        // ============ HANDLE AUTOGENERATE PARAMETERS ============
+        // Get all AUTOGENERATE parameters from the API and auto-populate them
+        if (api != null && api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("AUTOGENERATE".equalsIgnoreCase(param.getOracleType())) {
+                    String paramKey = param.getKey();
+                    String timestamp = getCurrentTimestamp();
+
+                    // Check if this parameter already has a meaningful value
+                    boolean hasExistingValue = false;
+                    Object existingValue = null;
+
+                    for (Map.Entry<String, Object> entry : allParams.entrySet()) {
+                        if (entry.getKey().equalsIgnoreCase(paramKey)) {
+                            existingValue = entry.getValue();
+                            // Treat null OR empty string as "no value"
+                            if (existingValue != null && !existingValue.toString().trim().isEmpty()) {
+                                hasExistingValue = true;
+                                log.info("AUTOGENERATE parameter [{}] already has value: {}, keeping existing value",
+                                        paramKey, existingValue);
+                            } else {
+                                log.info("AUTOGENERATE parameter [{}] has empty value, will auto-populate", paramKey);
+                            }
+                            break;
+                        }
+                    }
+
+                    // If no meaningful existing value, auto-populate with timestamp
+                    if (!hasExistingValue) {
+                        allParams.put(paramKey, timestamp);
+                        log.info("🔧 AUTOGENERATE parameter [{}] auto-populated with timestamp: {}", paramKey, timestamp);
+
+                        // Also add to the appropriate location in the request
+                        String location = param.getParameterLocation();
+                        if ("path".equalsIgnoreCase(location) && executeRequest.getPathParams() != null) {
+                            executeRequest.getPathParams().put(paramKey, timestamp);
+                        } else if ("query".equalsIgnoreCase(location) && executeRequest.getQueryParams() != null) {
+                            executeRequest.getQueryParams().put(paramKey, timestamp);
+                        } else if ("header".equalsIgnoreCase(location) && executeRequest.getHeaders() != null) {
+                            executeRequest.getHeaders().put(paramKey, timestamp);
+                        } else if ("body".equalsIgnoreCase(location) && executeRequest.getBody() instanceof Map) {
+                            ((Map<String, Object>) executeRequest.getBody()).put(paramKey, timestamp);
+                        }
+                    }
+                }
+            }
+        }
+
         log.info("Final consolidated params keys: {}", allParams.keySet());
 
         // Check specifically for ac_no in any form
@@ -2970,6 +3035,12 @@ public class AutomationEngineService {
         log.info("Consolidated params keys: {}", consolidatedParams.keySet());
 
         for (ApiParameterEntity param : parameters) {
+            // Skip AUTOGENERATE parameters - they are auto-populated
+            if ("AUTOGENERATE".equalsIgnoreCase(param.getOracleType())) {
+                log.info("Skipping validation for AUTOGENERATE parameter: {}", param.getKey());
+                continue;
+            }
+
             if (!param.getRequired()) {
                 continue;
             }

@@ -19,6 +19,7 @@ import org.springframework.jdbc.core.SqlParameter;
 import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -42,6 +43,23 @@ public class OracleProcedureExecutorUtil {
         this.objectResolver = objectResolver;
     }
 
+
+    /**
+     * Generate current timestamp in format YYYYMMDDHHMMSS
+     * Used for AUTOGENERATE data type parameters
+     */
+    private String getCurrentTimestamp() {
+        LocalDateTime now = LocalDateTime.now();
+        return String.format("%04d%02d%02d%02d%02d%02d",
+                now.getYear(),
+                now.getMonthValue(),
+                now.getDayOfMonth(),
+                now.getHour(),
+                now.getMinute(),
+                now.getSecond());
+    }
+
+
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String procedureName, String owner, ExecuteApiRequestDTO request,
                           List<ApiParameterDTO> configuredParamDTOs) {
@@ -52,16 +70,12 @@ public class OracleProcedureExecutorUtil {
         log.info("API Name: {}", api != null ? api.getApiName() : "null");
         log.info("Procedure Name parameter: {}", procedureName);
         log.info("Owner parameter: {}", owner);
-        log.info("Request Body Type: {}", request.getBody() != null ? request.getBody().getClass().getName() : "null");
-        log.info("Request Body: {}", request.getBody());
 
         // ============ CREATE PARAMETER MAPPING ============
-        // Build a map of API parameter keys to database parameter names
         Map<String, String> apiToDbParamMap = new HashMap<>();
         if (configuredParamDTOs != null) {
             for (ApiParameterDTO param : configuredParamDTOs) {
                 if (param.getKey() != null) {
-                    // Use dbParameter if available, otherwise use dbColumn, otherwise use the key
                     String dbParamName = param.getDbParameter();
                     if (dbParamName == null || dbParamName.isEmpty()) {
                         dbParamName = param.getDbColumn();
@@ -75,58 +89,39 @@ public class OracleProcedureExecutorUtil {
             }
         }
 
-        // ============ HANDLE XML BODY ============
+        // ============ HANDLE XML/JSON BODY ============
         Map<String, Object> dbParams = new HashMap<>();
         String xmlBody = null;
         boolean isXmlBody = false;
-        boolean hasXmlParameter = false;
 
-        // Check if request body is a String and looks like XML
         if (request.getBody() != null) {
             if (request.getBody() instanceof String) {
                 String bodyString = (String) request.getBody();
-                // Check if it's XML (starts with <)
                 if (bodyString.trim().startsWith("<")) {
                     isXmlBody = true;
                     xmlBody = bodyString;
-                    log.info("=========================================");
-                    log.info("XML BODY DETECTED!");
-                    log.info("XML Length: {} characters", xmlBody.length());
-                    log.info("XML Preview: {}", xmlBody.substring(0, Math.min(500, xmlBody.length())));
-                    log.info("=========================================");
-                } else {
-                    // Regular string body - might be JSON or plain text
-                    log.info("String body detected (non-XML): {}", bodyString.substring(0, Math.min(100, bodyString.length())));
+                    log.info("XML BODY DETECTED! Length: {} characters", xmlBody.length());
+                } else if (bodyString.trim().startsWith("{") || bodyString.trim().startsWith("[")) {
+                    try {
+                        Map<String, Object> jsonMap = objectMapper.readValue(bodyString, new TypeReference<Map<String, Object>>() {});
+                        for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
+                            String paramKey = entry.getKey().toLowerCase();
+                            String dbParamName = apiToDbParamMap.getOrDefault(paramKey, entry.getKey().toUpperCase());
+                            dbParams.put(dbParamName, entry.getValue());
+                            log.debug("Added JSON param: {} -> {}", entry.getKey(), dbParamName);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to parse JSON body: {}", e.getMessage());
+                    }
                 }
             } else if (request.getBody() instanceof Map) {
                 Map<String, Object> bodyMap = (Map<String, Object>) request.getBody();
-
-                // Check for wrapped XML from old format
-                if (bodyMap.containsKey("_xml")) {
-                    isXmlBody = true;
-                    xmlBody = (String) bodyMap.get("_xml");
-                    log.info("Found XML in _xml wrapper: {}", xmlBody.substring(0, Math.min(200, xmlBody.length())));
-                } else {
-                    // Regular JSON body
-                    log.info("JSON body detected with keys: {}", bodyMap.keySet());
-                    for (Map.Entry<String, Object> entry : bodyMap.entrySet()) {
-                        String paramKey = entry.getKey().toLowerCase();
-                        String dbParamName = apiToDbParamMap.getOrDefault(paramKey, entry.getKey().toUpperCase());
-
-                        // Handle nested objects and arrays
-                        Object value = entry.getValue();
-                        if (value instanceof Map || value instanceof List) {
-                            try {
-                                value = objectMapper.writeValueAsString(value);
-                                log.debug("Converted complex object to JSON string for parameter: {}", dbParamName);
-                            } catch (Exception e) {
-                                log.warn("Failed to convert complex object to string: {}", e.getMessage());
-                            }
-                        }
-
-                        dbParams.put(dbParamName, value);
-                        log.debug("Added JSON param: {} -> {} = {}", entry.getKey(), dbParamName, value);
-                    }
+                log.info("JSON body detected with keys: {}", bodyMap.keySet());
+                for (Map.Entry<String, Object> entry : bodyMap.entrySet()) {
+                    String paramKey = entry.getKey().toLowerCase();
+                    String dbParamName = apiToDbParamMap.getOrDefault(paramKey, entry.getKey().toUpperCase());
+                    dbParams.put(dbParamName, entry.getValue());
+                    log.debug("Added JSON param: {} -> {}", entry.getKey(), dbParamName);
                 }
             }
         }
@@ -134,136 +129,90 @@ public class OracleProcedureExecutorUtil {
         // ============ PROCESS XML BODY ============
         if (isXmlBody && xmlBody != null) {
             log.info("Processing XML body for procedure execution");
-
-            // FIRST: Try to extract individual parameters from XML
             Map<String, Object> extractedXmlParams = parseXmlParameters(xmlBody, configuredParamDTOs, apiToDbParamMap);
             if (!extractedXmlParams.isEmpty()) {
                 dbParams.putAll(extractedXmlParams);
-                log.info("✅ Extracted {} parameters from XML and added to dbParams", extractedXmlParams.size());
-                log.info("Extracted params: {}", extractedXmlParams.keySet());
-            }
-
-            // Strategy 1: Look for explicit XML/CLOB parameter in API configuration
-            for (ApiParameterEntity param : api.getParameters()) {
-                String paramKey = param.getKey().toLowerCase();
-                String dbParamName = getDbParamName(param);
-
-                // Check if this parameter is designed to accept XML
-                boolean isXmlParameter = paramKey.contains("xml") ||
-                        paramKey.contains("clob") ||
-                        paramKey.contains("request") ||
-                        paramKey.contains("payload") ||
-                        paramKey.contains("body") ||
-                        paramKey.equals("_xml") ||
-                        paramKey.equals("xmldata");
-
-                if (isXmlParameter && dbParamName != null) {
-                    // Only add the full XML if we haven't already extracted individual params
-                    // and this parameter hasn't been set yet
-                    if (!dbParams.containsKey(dbParamName)) {
-                        dbParams.put(dbParamName, xmlBody);
-                        hasXmlParameter = true;
-                        log.info("✅ Mapped full XML body to database parameter: {}", dbParamName);
-                    }
-                    break;
-                }
-            }
-
-            // Strategy 2: If no explicit XML parameter found, look for any CLOB/VARCHAR2 parameter
-            if (!hasXmlParameter && extractedXmlParams.isEmpty()) {
-                for (ApiParameterEntity param : api.getParameters()) {
-                    String dbParamName = getDbParamName(param);
-                    if (dbParamName != null) {
-                        String oracleType = param.getOracleType();
-                        if (oracleType != null) {
-                            String upperType = oracleType.toUpperCase();
-                            if (upperType.contains("CLOB") ||
-                                    upperType.contains("VARCHAR") ||
-                                    upperType.contains("LONG")) {
-                                dbParams.put(dbParamName, xmlBody);
-                                hasXmlParameter = true;
-                                log.info("✅ Mapped full XML body to CLOB/VARCHAR parameter: {}", dbParamName);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Strategy 3: If no suitable parameter found, log warning
-            if (!hasXmlParameter && extractedXmlParams.isEmpty()) {
-                log.warn("⚠️ No suitable database parameter found for XML body and no individual parameters extracted. " +
-                        "XML will be stored in a default location.");
-                dbParams.put("XML_BODY", xmlBody);
+                log.info("✅ Extracted {} parameters from XML", extractedXmlParams.size());
             }
         }
 
         // ============ ADD PATH AND QUERY PARAMETERS ============
-        // Add path parameters
         if (request.getPathParams() != null && !request.getPathParams().isEmpty()) {
             for (Map.Entry<String, Object> entry : request.getPathParams().entrySet()) {
                 String paramKey = entry.getKey().toLowerCase();
                 String dbParamName = apiToDbParamMap.getOrDefault(paramKey, entry.getKey().toUpperCase());
                 dbParams.put(dbParamName, entry.getValue());
-                log.debug("Added path param: {} -> {} = {}", entry.getKey(), dbParamName, entry.getValue());
+                log.debug("Added path param: {} -> {}", entry.getKey(), dbParamName);
             }
-            log.info("Path params added: {}", request.getPathParams().keySet());
         }
 
-        // Add query parameters
         if (request.getQueryParams() != null && !request.getQueryParams().isEmpty()) {
             for (Map.Entry<String, Object> entry : request.getQueryParams().entrySet()) {
                 String paramKey = entry.getKey().toLowerCase();
                 String dbParamName = apiToDbParamMap.getOrDefault(paramKey, entry.getKey().toUpperCase());
                 dbParams.put(dbParamName, entry.getValue());
-                log.debug("Added query param: {} -> {} = {}", entry.getKey(), dbParamName, entry.getValue());
+                log.debug("Added query param: {} -> {}", entry.getKey(), dbParamName);
             }
-            log.info("Query params added: {}", request.getQueryParams().keySet());
         }
 
-        // ============ ADD HEADERS AS PARAMETERS (if needed) ============
-        if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
-            for (Map.Entry<String, String> entry : request.getHeaders().entrySet()) {
-                String headerKey = entry.getKey().toLowerCase();
-                // Check if the API expects this header as a parameter
-                boolean headerIsParameter = api.getParameters().stream()
-                        .anyMatch(p -> p.getKey().equalsIgnoreCase(headerKey));
+        // ============ HANDLE AUTOGENERATE PARAMETERS ============
+        if (api != null && api.getParameters() != null && !api.getParameters().isEmpty()) {
+            log.info("Checking for AUTOGENERATE parameters to auto-populate");
 
-                if (headerIsParameter) {
-                    String dbParamName = apiToDbParamMap.getOrDefault(headerKey, headerKey.toUpperCase());
-                    dbParams.put(dbParamName, entry.getValue());
-                    log.debug("Added header as parameter: {} -> {} = {}", headerKey, dbParamName, entry.getValue());
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("AUTOGENERATE".equalsIgnoreCase(param.getOracleType())) {
+                    String paramKey = param.getKey();
+                    String dbParamName = getDbParamName(param);
+                    String timestamp = getCurrentTimestamp();
+
+                    // Check if this parameter already has a value
+                    boolean hasExistingValue = false;
+
+                    if (dbParams.containsKey(dbParamName)) {
+                        hasExistingValue = true;
+                        log.info("AUTOGENERATE parameter [{}] already has value: {}, keeping existing value",
+                                paramKey, dbParams.get(dbParamName));
+                    }
+
+                    if (request.getPathParams() != null && request.getPathParams().containsKey(paramKey)) {
+                        hasExistingValue = true;
+                        log.info("AUTOGENERATE parameter [{}] found in path params", paramKey);
+                    }
+
+                    if (request.getQueryParams() != null && request.getQueryParams().containsKey(paramKey)) {
+                        hasExistingValue = true;
+                        log.info("AUTOGENERATE parameter [{}] found in query params", paramKey);
+                    }
+
+                    if (!hasExistingValue) {
+                        dbParams.put(dbParamName, timestamp);
+                        log.info("🔧 AUTOGENERATE parameter [{}] auto-populated with timestamp: {}",
+                                paramKey, timestamp);
+                    }
                 }
             }
         }
 
-        // ============ HANDLE COLLECTION/ARRAY PARAMETERS ============
-        // Convert collection/array parameters to single values for database
+        // Convert complex objects to JSON strings
         for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
             Object value = entry.getValue();
-            if (value instanceof List || (value != null && value.getClass().isArray())) {
-                Collection<?> collection = value instanceof List ?
-                        (List<?>) value : Arrays.asList((Object[]) value);
-                if (!collection.isEmpty()) {
-                    // Take the first value
-                    dbParams.put(entry.getKey(), collection.iterator().next());
-                    log.info("Converted collection parameter '{}' to single value", entry.getKey());
-                } else {
-                    dbParams.put(entry.getKey(), null);
+            if (value instanceof Map || value instanceof List) {
+                try {
+                    String jsonValue = objectMapper.writeValueAsString(value);
+                    dbParams.put(entry.getKey(), jsonValue);
+                    log.debug("Converted complex object to JSON string for parameter: {}", entry.getKey());
+                } catch (Exception e) {
+                    log.warn("Failed to convert complex object to string: {}", e.getMessage());
                 }
             }
         }
 
         log.info("Final DB params prepared: {}", dbParams.keySet());
 
-        // ============ OWNER RESOLUTION STRATEGY ============
+        // ============ OWNER RESOLUTION ============
         String oracleOwner = resolveOwner(owner, sourceObject, api, procedureName);
-
         if (oracleOwner == null || oracleOwner.trim().isEmpty()) {
-            log.error("❌ COULD NOT DETERMINE OWNER/SCHEMA NAME");
-            throw new ValidationException(
-                    "Could not determine the database schema/owner for procedure: " + procedureName
-            );
+            throw new ValidationException("Could not determine the database schema/owner for procedure: " + procedureName);
         }
 
         oracleOwner = oracleOwner.toUpperCase();
@@ -273,10 +222,7 @@ public class OracleProcedureExecutorUtil {
         log.info("Final procedure name: {}", oracleProcedureName);
 
         // ============ SYNONYM RESOLUTION ============
-        // Resolve the actual target (handle synonyms)
         Map<String, Object> resolution = objectResolver.resolveProcedureTarget(oracleOwner, oracleProcedureName);
-        log.info("🔍 Synonym resolution result: {}", resolution);
-
         String actualOwner;
         String actualProcedureName;
 
@@ -287,50 +233,39 @@ public class OracleProcedureExecutorUtil {
         } else {
             actualOwner = oracleOwner;
             actualProcedureName = oracleProcedureName;
-            log.info("ℹ️ Not a synonym, using original: {}.{}", actualOwner, actualProcedureName);
         }
 
-        // ==================== VALIDATION STEP 1: Validate procedure exists and is valid ====================
+        // ============ VALIDATION ============
         try {
             objectResolver.validateDatabaseObject(actualOwner, actualProcedureName, "PROCEDURE");
             log.info("✅ Procedure {}.{} exists and is valid", actualOwner, actualProcedureName);
         } catch (EmptyResultDataAccessException e) {
-            log.error("❌ Procedure {}.{} does not exist", actualOwner, actualProcedureName);
-            throw new ValidationException(
-                    String.format("The procedure '%s.%s' does not exist or you don't have access to it.",
-                            actualOwner, actualProcedureName)
-            );
+            throw new ValidationException(String.format("The procedure '%s.%s' does not exist or you don't have access to it.",
+                    actualOwner, actualProcedureName));
         }
 
-        // ==================== VALIDATION STEP 2: Validate all parameters ====================
         try {
             oracleParameterValidatorUtil.validateParameters(configuredParamDTOs, dbParams, actualOwner, actualProcedureName);
-            log.info("✅ All parameter validations passed for procedure {}.{}", actualOwner, actualProcedureName);
+            log.info("✅ All parameter validations passed");
         } catch (ValidationException e) {
             log.error("❌ Parameter validation failed: {}", e.getMessage());
             throw e;
         }
 
-        // ==================== EXECUTE PROCEDURE ====================
+        // ============ EXECUTE PROCEDURE ============
         try {
             SimpleJdbcCall jdbcCall = new SimpleJdbcCall(oracleJdbcTemplate);
 
-            // Set schema and procedure name - use resolved actual owner
             if (actualOwner != null && !actualOwner.isEmpty()) {
                 jdbcCall = jdbcCall.withSchemaName(actualOwner);
-                log.info("Setting schema name to: {}", actualOwner);
             }
 
             jdbcCall = jdbcCall.withProcedureName(actualProcedureName);
-            log.info("Setting procedure name to: {}", actualProcedureName);
+            log.info("Executing: {}.{}", actualOwner, actualProcedureName);
 
-            log.info("Oracle will execute: {}.{}", actualOwner != null ? actualOwner : "<default schema>", actualProcedureName);
-
-            // ==================== DECLARE PARAMETERS IN CORRECT ORDER ====================
-            // Build a complete list of all parameters with their positions
+            // Declare parameters in order
             List<ParameterDeclaration> allParameters = new ArrayList<>();
 
-            // 1. Add parameters from API configuration (both IN and OUT)
             if (api.getParameters() != null && !api.getParameters().isEmpty()) {
                 for (ApiParameterEntity param : api.getParameters()) {
                     if (param == null || param.getKey() == null) continue;
@@ -338,32 +273,19 @@ public class OracleProcedureExecutorUtil {
                     String dbParamName = getDbParamName(param);
                     String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
                     int position = param.getPosition() != null ? param.getPosition() : Integer.MAX_VALUE;
-
-                    // Get SQL type
                     int sqlType = mapToSqlType(param.getOracleType());
 
                     allParameters.add(new ParameterDeclaration(
-                            dbParamName,
-                            paramMode,
-                            position,
-                            sqlType,
-                            param.getOracleType(),
-                            param
-                    ));
-
-                    log.debug("Added parameter from API config: {} (position: {}, mode: {})",
-                            dbParamName, position, paramMode);
+                            dbParamName, paramMode, position, sqlType, param.getOracleType(), param));
                 }
             }
 
-            // 2. Also add response mappings that might be OUT parameters (if not already covered)
             if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
                 for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
                     if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
                         String outParamName = mapping.getDbColumn() != null && !mapping.getDbColumn().isEmpty() ?
                                 mapping.getDbColumn().toUpperCase() : "out_param_" + mapping.getPosition();
 
-                        // Check if already added
                         boolean exists = allParameters.stream()
                                 .anyMatch(p -> p.parameterName.equals(outParamName));
 
@@ -372,151 +294,97 @@ public class OracleProcedureExecutorUtil {
                             int sqlType = mapToSqlType(mapping.getOracleType());
 
                             allParameters.add(new ParameterDeclaration(
-                                    outParamName,
-                                    "OUT",
-                                    position,
-                                    sqlType,
-                                    mapping.getOracleType(),
-                                    null
-                            ));
-
-                            log.debug("Added OUT parameter from response mapping: {} (position: {})",
-                                    outParamName, position);
+                                    outParamName, "OUT", position, sqlType, mapping.getOracleType(), null));
                         }
                     }
                 }
             }
 
-            // Sort parameters by position
             allParameters.sort(Comparator.comparingInt(p -> p.position));
 
-            log.info("Declaring parameters in order (by POSITION):");
-            for (ParameterDeclaration param : allParameters) {
-                log.info("  Position {}: {} ({}) - Mode: {}",
-                        param.position, param.parameterName, param.oracleType, param.mode);
-            }
-
-            // Now declare parameters in the correct order
             for (ParameterDeclaration param : allParameters) {
                 if ("OUT".equals(param.mode) || "IN/OUT".equals(param.mode) || "INOUT".equals(param.mode)) {
                     jdbcCall.declareParameters(new SqlOutParameter(param.parameterName, param.sqlType));
-                    log.debug("Declared OUT/INOUT parameter: {} of type: {} (SQL type: {})",
-                            param.parameterName, param.oracleType, param.sqlType);
+                    log.debug("Declared OUT parameter: {}", param.parameterName);
                 } else {
-                    // IN parameter - check if it has a value
                     if (dbParams.containsKey(param.parameterName)) {
                         jdbcCall.declareParameters(new SqlParameter(param.parameterName, param.sqlType));
-                        Object paramValue = dbParams.get(param.parameterName);
-                        log.debug("Declared IN parameter: {} of type: {} (SQL type: {}) with value: {}",
-                                param.parameterName, param.oracleType, param.sqlType,
-                                paramValue instanceof String && paramValue.toString().length() > 100 ?
-                                        paramValue.toString().substring(0, 100) + "..." : paramValue);
-                    } else {
-                        log.warn("IN parameter {} declared but no value provided in dbParams", param.parameterName);
-                        // Still declare it, will be passed as NULL
-                        jdbcCall.declareParameters(new SqlParameter(param.parameterName, param.sqlType));
+                        log.debug("Declared IN parameter: {}", param.parameterName);
                     }
                 }
             }
 
-            log.info("Executing SimpleJdbcCall for {}.{} with {} total parameters",
-                    actualOwner != null ? actualOwner : "<default>", actualProcedureName, allParameters.size());
-
-            // Execute the procedure with the mapped database parameters
             Map<String, Object> result = jdbcCall.execute(dbParams);
+            log.info("Procedure executed successfully");
 
-            log.info("Procedure executed successfully, result contains {} keys: {}", result.size(), result.keySet());
-
-            // Map the results to response data
+            // Process results
             Map<String, Object> responseData = new HashMap<>();
 
             if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-                int mappedCount = 0;
-
                 for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
                     if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
                         String dbColumn = mapping.getDbColumn();
                         if (dbColumn != null && !dbColumn.isEmpty()) {
-                            // Try with uppercase first (Oracle returns uppercase column names)
                             String upperDbColumn = dbColumn.toUpperCase();
-
                             if (result.containsKey(upperDbColumn)) {
                                 responseData.put(mapping.getApiField(), result.get(upperDbColumn));
-                                log.debug("Mapped output {} to {} with value: {}",
-                                        upperDbColumn, mapping.getApiField(), result.get(upperDbColumn));
-                                mappedCount++;
-                            }
-                            // Try with original case if uppercase not found
-                            else if (result.containsKey(dbColumn)) {
-                                responseData.put(mapping.getApiField(), result.get(dbColumn));
-                                log.debug("Mapped output {} to {} with value: {}",
-                                        dbColumn, mapping.getApiField(), result.get(dbColumn));
-                                mappedCount++;
-                            }
-                            else {
-                                log.warn("Output parameter {} not found in result set. Available keys: {}",
-                                        dbColumn, result.keySet());
+                                log.debug("Mapped {} to {}", upperDbColumn, mapping.getApiField());
                             }
                         }
                     }
                 }
-
-                log.debug("Mapped {} output parameters to response", mappedCount);
-            } else {
-                // If no response mappings, just return the whole result
-                log.debug("No response mappings found, returning entire result map");
-                responseData.putAll(result);
             }
 
-            log.info("============ PROCEDURE EXECUTION COMPLETE ============");
             return responseData.isEmpty() ? result : responseData;
 
         } catch (ValidationException e) {
-            // Re-throw validation exceptions
             throw e;
         } catch (Exception e) {
-            log.error("Error executing procedure {}.{}: {}",
-                    actualOwner != null ? actualOwner : "<default>", actualProcedureName, e.getMessage(), e);
+            log.error("Error executing procedure: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to execute procedure: " + e.getMessage(), e);
+        }
+    }
 
-            // Provide user-friendly error messages for common Oracle errors
-            String errorMessage = e.getMessage();
-            if (errorMessage != null) {
-                if (errorMessage.contains("ORA-06550")) {
-                    throw new ValidationException(
-                            String.format("Invalid parameters provided for procedure '%s.%s'. Please check parameter names and data types. Details: %s",
-                                    actualOwner, actualProcedureName, extractOracleError(errorMessage))
-                    );
-                }
-                if (errorMessage.contains("ORA-00942")) {
-                    throw new ValidationException(
-                            String.format("Table or view referenced in procedure '%s.%s' could not be found. Details: %s",
-                                    actualOwner, actualProcedureName, extractOracleError(errorMessage))
-                    );
-                }
-                if (errorMessage.contains("ORA-01031")) {
-                    throw new ValidationException(
-                            String.format("Insufficient privileges to execute procedure '%s.%s'. Details: %s",
-                                    actualOwner, actualProcedureName, extractOracleError(errorMessage))
-                    );
-                }
-                if (errorMessage.contains("ORA-01400")) {
-                    throw new ValidationException(
-                            "A required value is missing for a NOT NULL column. Please provide all required parameters."
-                    );
-                }
-                if (errorMessage.contains("ORA-12899")) {
-                    throw new ValidationException(
-                            String.format("Value too large for column. Details: %s", extractOracleError(errorMessage))
-                    );
-                }
-                if (errorMessage.contains("Invalid column type")) {
-                    throw new ValidationException(
-                            "Invalid parameter format. Please check the data types of your parameters."
-                    );
-                }
-            }
+    // Helper method to get DB param name
+    private String getDbParamName(ApiParameterEntity param) {
+        if (param.getDbParameter() != null && !param.getDbParameter().isEmpty()) {
+            return param.getDbParameter().toUpperCase();
+        }
+        if (param.getDbColumn() != null && !param.getDbColumn().isEmpty()) {
+            return param.getDbColumn().toUpperCase();
+        }
+        return param.getKey().toUpperCase();
+    }
 
-            throw new RuntimeException("Failed to execute the requested operation: " + extractOracleError(errorMessage), e);
+    // Helper method to map Oracle type to SQL type
+    private int mapToSqlType(String oracleType) {
+        if (oracleType == null) return java.sql.Types.VARCHAR;
+        String upperType = oracleType.toUpperCase();
+        if (upperType.contains("VARCHAR")) return java.sql.Types.VARCHAR;
+        if (upperType.contains("NUMBER")) return java.sql.Types.NUMERIC;
+        if (upperType.contains("DATE")) return java.sql.Types.DATE;
+        if (upperType.contains("TIMESTAMP")) return java.sql.Types.TIMESTAMP;
+        if (upperType.contains("CLOB")) return java.sql.Types.CLOB;
+        return java.sql.Types.VARCHAR;
+    }
+
+    // Helper class for parameter declaration
+    private static class ParameterDeclaration {
+        final String parameterName;
+        final String mode;
+        final int position;
+        final int sqlType;
+        final String oracleType;
+        final ApiParameterEntity apiParameter;
+
+        ParameterDeclaration(String parameterName, String mode, int position,
+                             int sqlType, String oracleType, ApiParameterEntity apiParameter) {
+            this.parameterName = parameterName;
+            this.mode = mode;
+            this.position = position;
+            this.sqlType = sqlType;
+            this.oracleType = oracleType;
+            this.apiParameter = apiParameter;
         }
     }
 
@@ -663,35 +531,7 @@ public class OracleProcedureExecutorUtil {
         return null;
     }
 
-    private int mapToSqlType(String oracleType) {
-        if (oracleType == null) return java.sql.Types.VARCHAR;
 
-        String upperType = oracleType.toUpperCase();
-        if (upperType.contains("VARCHAR")) return java.sql.Types.VARCHAR;
-        if (upperType.contains("CHAR")) return java.sql.Types.CHAR;
-        if (upperType.contains("CLOB")) return java.sql.Types.CLOB;
-        if (upperType.contains("NUMBER") || upperType.contains("NUMERIC")) return java.sql.Types.NUMERIC;
-        if (upperType.contains("INTEGER")) return java.sql.Types.INTEGER;
-        if (upperType.contains("DATE")) return java.sql.Types.DATE;
-        if (upperType.contains("TIMESTAMP")) return java.sql.Types.TIMESTAMP;
-        if (upperType.contains("BLOB")) return java.sql.Types.BLOB;
-        if (upperType.contains("BOOLEAN")) return java.sql.Types.BOOLEAN;
-        if (upperType.contains("REF CURSOR")) return oracle.jdbc.OracleTypes.CURSOR;
-        if (upperType.contains("CURSOR")) return oracle.jdbc.OracleTypes.CURSOR;
-
-        return java.sql.Types.VARCHAR;
-    }
-
-    // Helper methods
-    private String getDbParamName(ApiParameterEntity param) {
-        if (param.getDbParameter() != null && !param.getDbParameter().isEmpty()) {
-            return param.getDbParameter().toUpperCase();
-        }
-        if (param.getDbColumn() != null && !param.getDbColumn().isEmpty()) {
-            return param.getDbColumn().toUpperCase();
-        }
-        return param.getKey().toUpperCase();
-    }
 
     private String getDbParamNameForApiKey(String apiKey, List<ApiParameterDTO> configuredParamDTOs) {
         for (ApiParameterDTO param : configuredParamDTOs) {
@@ -786,25 +626,4 @@ public class OracleProcedureExecutorUtil {
         return extractedParams;
     }
 
-    /**
-     * Helper class to hold parameter declaration information
-     */
-    private static class ParameterDeclaration {
-        final String parameterName;
-        final String mode;
-        final int position;
-        final int sqlType;
-        final String oracleType;
-        final ApiParameterEntity apiParameter;
-
-        ParameterDeclaration(String parameterName, String mode, int position,
-                             int sqlType, String oracleType, ApiParameterEntity apiParameter) {
-            this.parameterName = parameterName;
-            this.mode = mode;
-            this.position = position;
-            this.sqlType = sqlType;
-            this.oracleType = oracleType;
-            this.apiParameter = apiParameter;
-        }
-    }
 }

@@ -258,7 +258,7 @@ const ORACLE_DATA_TYPES = [
   'VARCHAR2', 'NUMBER', 'DATE', 'TIMESTAMP', 'TIMESTAMP WITH TIME ZONE',
   'TIMESTAMP WITH LOCAL TIME ZONE', 'INTERVAL YEAR TO MONTH', 'INTERVAL DAY TO SECOND',
   'RAW', 'LONG RAW', 'CHAR', 'NCHAR', 'NVARCHAR2', 'CLOB', 'NCLOB', 'BLOB', 'JSONB', 'SYS_REFCURSOR',
-  'BFILE', 'ROWID', 'UROWID'
+  'BFILE', 'ROWID', 'UROWID', 'AUTOGENERATE'
 ];
 
 // API Data Types
@@ -2720,43 +2720,112 @@ useEffect(() => {
   };
 
   // Handle parameter operations
-  const handleAddParameter = () => {
-    const newParam = {
-      id: `param-${Date.now()}`,
-      key: '',
-      dbColumn: '',
-      oracleType: 'VARCHAR2',
-      apiType: 'string',
-      parameterLocation: 'query',
-      required: false,
-      description: '',
-      example: '',
-      validationPattern: '',
-      defaultValue: '',
-      inBody: false,
-      isPrimaryKey: false,
-      paramMode: 'IN' // Default to IN for new parameters
-    };
-    setParameters([...parameters, newParam]);
+ const handleAddParameter = () => {
+  const timestamp = getCurrentTimestamp();
+  const newParam = {
+    id: `param-${Date.now()}`,
+    key: '',
+    dbColumn: '',
+    oracleType: 'VARCHAR2', // Default is VARCHAR2, not AUTOGENERATE
+    apiType: 'string',
+    parameterLocation: 'query',
+    required: true, // Default to required for non-AUTOGENERATE
+    description: '',
+    example: 'sample', // Default sample value
+    validationPattern: '',
+    defaultValue: '',
+    inBody: false,
+    isPrimaryKey: false,
+    paramMode: 'IN'
   };
+  
+  // Only if the default is AUTOGENERATE (which it's not), set special values
+  // This is handled by the change handler if user selects AUTOGENERATE
+  
+  setParameters([...parameters, newParam]);
+};
 
-  const handleParameterChange = (id, field, value) => {
-    setParameters(prevParams => {
-      // First, update the parameter
-      const updatedParams = prevParams.map(param => 
-        param.id === id ? { ...param, [field]: value } : param
+
+// Helper function to get current timestamp in numeric format (YYYYMMDDHHMMSS)
+const getCurrentTimestamp = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  
+  return `${year}${month}${day}${hours}${minutes}${seconds}`;
+};
+
+const handleParameterChange = (id, field, value) => {
+  setParameters(prevParams => {
+    // First, find the current parameter to check its type
+    const currentParam = prevParams.find(p => p.id === id);
+    
+    // Update the parameter
+    const updatedParams = prevParams.map(param => 
+      param.id === id ? { ...param, [field]: value } : param
+    );
+    
+    // If changing the oracleType to AUTOGENERATE
+    if (field === 'oracleType' && value === 'AUTOGENERATE') {
+      const timestamp = getCurrentTimestamp();
+      return updatedParams.map(param => 
+        param.id === id ? { 
+          ...param, 
+          required: false,
+          example: timestamp,
+          defaultValue: timestamp,
+          description: param.description || 'Auto-generated timestamp field'
+        } : param
       );
+    }
+    
+    // If changing the oracleType FROM AUTOGENERATE to something else
+    if (field === 'oracleType' && currentParam?.oracleType === 'AUTOGENERATE' && value !== 'AUTOGENERATE') {
+      // Generate a default sample value based on the new data type
+      let defaultExample = 'sample';
+      let defaultDescription = currentParam.description?.replace('Auto-generated timestamp field', '') || '';
       
-      // If changing location to/from body, update inBody flag for that parameter
-      if (field === 'parameterLocation') {
-        return updatedParams.map(param => 
-          param.id === id ? { ...param, inBody: value === 'body' } : param
-        );
+      // Set example based on the new data type
+      if (value === 'NUMBER') {
+        defaultExample = '123';
+      } else if (value === 'DATE') {
+        defaultExample = '2024-01-01';
+      } else if (value === 'TIMESTAMP') {
+        defaultExample = '2024-01-01 12:00:00';
+      } else if (value === 'VARCHAR2') {
+        defaultExample = 'sample';
+      } else if (value === 'CLOB') {
+        defaultExample = 'Long text content...';
+      } else if (value === 'BLOB') {
+        defaultExample = 'binary_data';
       }
       
-      return updatedParams;
-    });
-  };
+      return updatedParams.map(param => 
+        param.id === id ? { 
+          ...param, 
+          required: true, // Reset required to true for non-AUTOGENERATE fields
+          example: defaultExample,
+          defaultValue: '',
+          description: defaultDescription.trim() || `${param.key || 'Parameter'} field`,
+          _autoGenerated: false
+        } : param
+      );
+    }
+    
+    // If changing location to/from body, update inBody flag for that parameter
+    if (field === 'parameterLocation') {
+      return updatedParams.map(param => 
+        param.id === id ? { ...param, inBody: value === 'body' } : param
+      );
+    }
+    
+    return updatedParams;
+  });
+};
 
   const handleRemoveParameter = (id) => {
     setParameters(parameters.filter(param => param.id !== id));
@@ -2764,27 +2833,67 @@ useEffect(() => {
 
   // Handle response mapping operations
   const handleAddResponseMapping = () => {
-    const newMapping = {
-      id: `mapping-${Date.now()}`,
-      apiField: '',
-      dbColumn: '',
-      oracleType: 'VARCHAR2',
-      apiType: 'string',
-      format: '',
-      nullable: true,
-      isPrimaryKey: false,
-      includeInResponse: true,
-      inResponse: true,
-      paramMode: 'OUT' // Default to OUT for new mappings
-    };
-    setResponseMappings([...responseMappings, newMapping]);
+  const newMapping = {
+    id: `mapping-${Date.now()}`,
+    apiField: '',
+    dbColumn: '',
+    oracleType: 'VARCHAR2',
+    apiType: 'string',
+    format: '',
+    nullable: true,
+    isPrimaryKey: false,
+    includeInResponse: true,
+    inResponse: true,
+    paramMode: 'OUT'
   };
+  
+  // If oracleType is AUTOGENERATE, set nullable to false and add example
+  if (newMapping.oracleType === 'AUTOGENERATE') {
+    newMapping.nullable = false;
+    newMapping.example = getCurrentTimestamp();
+  }
+  
+  setResponseMappings([...responseMappings, newMapping]);
+};
 
   const handleResponseMappingChange = (id, field, value) => {
-    setResponseMappings(responseMappings.map(mapping => 
-      mapping.id === id ? { ...mapping, [field]: value } : mapping
-    ));
-  };
+  setResponseMappings(responseMappings.map(mapping => {
+    // Find the current mapping
+    const currentMapping = responseMappings.find(m => m.id === id);
+    const updated = { ...mapping, [field]: value };
+    
+    // If changing oracleType to AUTOGENERATE
+    if (field === 'oracleType' && value === 'AUTOGENERATE') {
+      updated.nullable = false;
+      if (updated.example !== undefined) {
+        updated.example = getCurrentTimestamp();
+      }
+      updated.description = updated.description || 'Auto-generated timestamp field';
+    }
+    
+    // If changing oracleType FROM AUTOGENERATE to something else
+    if (field === 'oracleType' && currentMapping?.oracleType === 'AUTOGENERATE' && value !== 'AUTOGENERATE') {
+      updated.nullable = true;
+      updated.description = updated.description?.replace('Auto-generated timestamp field', '') || '';
+      
+      // Reset example if it exists
+      if (updated.example !== undefined) {
+        // Set example based on the new data type
+        if (value === 'NUMBER') {
+          updated.example = '123';
+        } else if (value === 'DATE') {
+          updated.example = '2024-01-01';
+        } else if (value === 'TIMESTAMP') {
+          updated.example = '2024-01-01T12:00:00Z';
+        } else {
+          updated.example = 'sample';
+        }
+      }
+    }
+    
+    return updated;
+  }));
+};
 
   const handleRemoveResponseMapping = (id) => {
     setResponseMappings(responseMappings.filter(mapping => mapping.id !== id));
@@ -3613,6 +3722,9 @@ const populateFormFromObject = useCallback((object, preserveExistingApiDetails =
 
     // Only add to parameters array for IN and IN/OUT parameters
     if (isInParam) {
+      // Check if the parameter type is AUTOGENERATE
+      const isAutoGenerate = oracleType === 'AUTOGENERATE';
+      
       newParameters.push({
         id: param.id || `proc-param-${Date.now()}-${index}`,
         key: cleanKey,
@@ -3620,11 +3732,11 @@ const populateFormFromObject = useCallback((object, preserveExistingApiDetails =
         oracleType: oracleType,
         apiType: apiType,
         parameterLocation: parameterLocation,
-        required: required,
+        required: isAutoGenerate ? false : required, // AUTO GENERATE = NOT required
         description: description,
-        example: example,
+        example: isAutoGenerate ? 'Auto-generated timestamp' : example,
         validationPattern: param.validationPattern || '',
-        defaultValue: defaultValue,
+        defaultValue: isAutoGenerate ? getCurrentTimestamp() : defaultValue, // Set timestamp default
         inBody: inBody,
         isPrimaryKey: param.isPrimaryKey || false,
         paramMode: normalizedMode
@@ -3634,6 +3746,8 @@ const populateFormFromObject = useCallback((object, preserveExistingApiDetails =
 
     // Only add to response mappings for OUT and IN/OUT parameters
     if (isOutParam) {
+      const isAutoGenerate = oracleType === 'AUTOGENERATE';
+      
       newMappings.push({
         id: param.id || `mapping-out-${Date.now()}-${index}`,
         apiField: cleanKey,
@@ -3641,13 +3755,12 @@ const populateFormFromObject = useCallback((object, preserveExistingApiDetails =
         oracleType: oracleType,
         apiType: apiType,
         format: param.format || (oracleType === 'DATE' ? 'date-time' : ''),
-        nullable: param.nullable !== undefined ? param.nullable : true,
+        nullable: isAutoGenerate ? false : (param.nullable !== undefined ? param.nullable : true),
         isPrimaryKey: param.isPrimaryKey || false,
         includeInResponse: param.includeInResponse !== undefined ? param.includeInResponse : true,
         inResponse: param.inResponse !== undefined ? param.inResponse : true,
         paramMode: normalizedMode
       });
-      console.log(`✅ Added to MAPPINGS tab: ${cleanKey} (${normalizedMode})`);
     }
   });
 
