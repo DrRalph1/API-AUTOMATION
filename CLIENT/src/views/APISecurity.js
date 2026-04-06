@@ -2044,10 +2044,10 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               <Shield size={32} style={{ color: colors.primary, opacity: 0.3 }} />
             </div>
           </div>
-          <h3 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>
+          <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>
             {getLoadingMessage()}
           </h3>
-          <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
+          <p className="text-xs mb-2" style={{ color: colors.textSecondary }}>
             {getLoadingTip()}
           </p>
           {/* <p className="text-xs" style={{ color: colors.textTertiary }}>

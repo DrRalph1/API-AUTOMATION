@@ -359,10 +359,10 @@ const LoadingOverlay = ({ isLoading, colors, loadingText }) => {
             <BookOpen size={32} style={{ color: colors.primary, opacity: 0.3 }} />
           </div>
         </div>
-        <h3 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>
+        <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>
           Loading Documentation
         </h3>
-        <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
+        <p className="text-xs mb-2" style={{ color: colors.textSecondary }}>
           {loadingText || 'Please wait while we load your documentation data'}
         </p>
       </div>
@@ -1178,7 +1178,7 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
       let exampleUrl = endpointData.url || endpointData.path || '';
       pathParams.forEach(param => {
         const placeholder = `{${param.name}}`;
-        const exampleValue = param.example || param.defaultValue || `example_${param.name}`;
+        const exampleValue = param.example || param.defaultValue || `sample_${param.name}`;
         exampleUrl = exampleUrl.replace(placeholder, exampleValue);
       });
       
@@ -1186,7 +1186,7 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
       let queryStringExample = '';
       if (queryParams.length > 0) {
         const queryParts = queryParams.map(param => {
-          const value = param.example || param.defaultValue || `example_${param.name}`;
+          const value = param.example || param.defaultValue || `sample_${param.name}`;
           return `${encodeURIComponent(param.name)}=${encodeURIComponent(value)}`;
         });
         queryStringExample = '?' + queryParts.join('&');
@@ -1761,10 +1761,10 @@ req.end();`
         <div className="max-w-6xl mx-auto">
           {/* Header with Example URL */}
           <div className="mb-8">
-            <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
+            <h1 className="text-xl font-semibold mb-4" style={{ color: colors.text }}>
               {selectedRequest.name}
             </h1>
-            <div className="flex items-center gap-3 mb-2">
+            {/* <div className="flex items-center gap-3 mb-2">
               <div className="px-3 py-1 rounded text-sm font-medium" style={{ 
                 backgroundColor: getMethodColor(selectedRequest.method),
                 color: 'white'
@@ -1774,34 +1774,10 @@ req.end();`
               <code className="text-lg font-mono" style={{ color: colors.text }}>
                 {selectedRequest.path || selectedRequest.url || ''}
               </code>
-            </div>
+            </div> */}
+          
             
-            {/* Example URL Section */}
-            {/* {(endpointDetails.exampleUrl || endpointDetails.queryStringExample) && (
-              <div className="mt-4 p-4 rounded-lg border" style={{ 
-                backgroundColor: colors.codeBg,
-                borderColor: colors.border
-              }}>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <LinkIcon size={14} style={{ color: colors.textSecondary }} />
-                    <span className="text-sm font-medium" style={{ color: colors.text }}>Example Request URL</span>
-                  </div>
-                  <button 
-                    onClick={() => copyToClipboard(endpointDetails.fullExampleUrl)}
-                    className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                    style={{ backgroundColor: colors.hover }}
-                  >
-                    <Copy size={12} style={{ color: colors.textSecondary }} />
-                  </button>
-                </div>
-                <code className="text-sm font-mono break-all" style={{ color: colors.primary }}>
-                  {endpointDetails.fullExampleUrl}
-                </code>
-              </div>
-            )} */}
-            
-            <div className="flex flex-wrap items-center gap-4 text-sm mb-4 mt-4">
+            <div className="flex flex-wrap items-center gap-4 text-xs mb-4 mt-4">
               <div style={{ color: colors.textTertiary }}>
                 <Folder size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
                 {selectedCollection?.name} › {selectedRequest.category || 'API'}
@@ -1841,15 +1817,43 @@ req.end();`
             </div>
           </div>
 
+
+
           {/* Request Details */}
           <div className="space-y-8">
             <section>
-              <h2 className="text-xl font-semibold mb-6 pb-2 border-b" style={{ 
+              {/* <h2 className="text-xl font-semibold mb-6 pb-2 border-b" style={{ 
                 color: colors.text,
                 borderColor: colors.border
               }}>
                 Request Details
-              </h2>
+              </h2> */}
+
+
+              {/* Request URL Section */}
+            {(endpointDetails.exampleUrl || endpointDetails.queryStringExample) && (
+              <div className="mb-6 -mt-1 p-4 rounded-lg border" style={{ 
+                backgroundColor: colors.codeBg,
+                borderColor: colors.border
+              }}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <LinkIcon size={14} style={{ color: colors.textSecondary }} />
+                    <span className="text-sm font-medium" style={{ color: colors.text }}>Request URL</span>
+                  </div>
+                  <button 
+                    onClick={() => copyToClipboard(endpointDetails.fullExampleUrl)}
+                    className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                    style={{ backgroundColor: colors.hover }}
+                  >
+                    <Copy size={12} style={{ color: colors.textSecondary }} />
+                  </button>
+                </div>
+                <code className="text-sm font-mono break-all" style={{ color: colors.primary }}>
+                  {endpointDetails.fullExampleUrl}
+                </code>
+              </div>
+            )}
               
               {/* Headers Section */}
               {endpointDetails.headers && endpointDetails.headers.length > 0 && (

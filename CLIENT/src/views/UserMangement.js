@@ -2954,10 +2954,10 @@ const loadUsers = async (filters = {}) => {
               <Users size={32} style={{ color: colors.primary, opacity: 0.3 }} />
             </div>
           </div>
-          <h3 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>
+          <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>
             User Management
           </h3>
-          <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
+          <p className="text-xs mb-2" style={{ color: colors.textSecondary }}>
             {getLoadingMessage()}
           </p>
           <p className="text-xs mb-1" style={{ color: colors.textTertiary }}>

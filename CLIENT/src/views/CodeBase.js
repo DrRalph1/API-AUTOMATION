@@ -384,10 +384,10 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
               <FileCode size={32} style={{ color: colors.primary, opacity: 0.3 }} />
             </div>
           </div>
-          <h3 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>
+          <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>
             Loading Code Base
           </h3>
-          <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
+          <p className="text-xs mb-2" style={{ color: colors.textSecondary }}>
             Please wait while we prepare your collections and implementations
           </p>
           <p className="text-xs" style={{ color: colors.textTertiary }}>
@@ -1815,10 +1815,10 @@ const renderImplementationContent = () => {
         <div className="mb-8">
           {selectedRequest ? (
             <>
-              <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
+              <h1 className="text-xl font-semibold mb-4" style={{ color: colors.text }}>
                 {selectedRequest.name}
               </h1>
-              <div className="flex items-center gap-3 mb-2">
+              {/* <div className="flex items-center gap-3 mb-2">
                 {selectedRequest.method && (
                   <div className="px-3 py-1 rounded text-sm font-medium" style={{ 
                     backgroundColor: getMethodColor(selectedRequest.method),
@@ -1830,9 +1830,9 @@ const renderImplementationContent = () => {
                 <code className="text-lg font-mono" style={{ color: colors.text }}>
                   {selectedRequest.url || ''}
                 </code>
-              </div>
+              </div> */}
               
-              <div className="flex flex-wrap items-center gap-4 text-sm mb-4 mt-4">
+              <div className="flex flex-wrap items-center gap-4 text-xs mb-4 mt-4">
                 {selectedCollection && (
                   <div style={{ color: colors.textTertiary }}>
                     <Folder size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />

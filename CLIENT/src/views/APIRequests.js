@@ -931,10 +931,10 @@ const LoadingOverlay = ({ isLoading, loadingType, colors }) => {
             <LayoutDashboard size={32} style={{ color: colors.primary, opacity: 0.3 }} />
           </div>
         </div>
-        <h3 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>
+        <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>
           {getLoadingMessage()}
         </h3>
-        <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
+        <p className="text-xs mb-2" style={{ color: colors.textSecondary }}>
           {getLoadingDescription()}
         </p>
       </div>
@@ -1827,10 +1827,11 @@ const getStatusText = (statusCode) => {
       >
         <div className="flex items-center justify-between p-3 border-b" style={{ borderColor: colors.border }}>
           {!sidebarCollapsed && (
-            <span className="text-xs font-semibold uppercase" style={{ color: colors.textSecondary }}>API Request Monitor</span>
+            <span className="text-sm font-semibold uppercase" style={{ color: colors.textSecondary }}>API Request Monitor</span>
           )}
           <button
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            // onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            onClick={() => {}}
             className="p-1 rounded hover:bg-opacity-50 transition-colors ml-auto"
             style={{ backgroundColor: colors.hover }}
           >

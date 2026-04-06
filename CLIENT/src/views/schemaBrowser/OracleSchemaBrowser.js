@@ -103,8 +103,8 @@ const FullPageLoader = ({ colors }) => (
           <Database size={32} style={{ color: colors.primary, opacity: 0.3 }} />
         </div>
       </div>
-      <h2 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>Loading Schema Browser</h2>
-      <p className="text-sm" style={{ color: colors.textSecondary }}>Please wait while we connect to the database...</p>
+      <h2 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>Loading Schema Browser</h2>
+      <p className="text-xs" style={{ color: colors.textSecondary }}>Please wait while we connect to the database...</p>
     </div>
   </div>
 );

@@ -633,7 +633,7 @@ try (Response response = client.newCall(request).execute()) {
             ) : (
               <div className="text-center py-8">
                 <Code size={32} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-                <p className="text-sm mb-2" style={{ color: colors.text }}>No code generated yet</p>
+                <p className="text-xs mb-2" style={{ color: colors.text }}>No code generated yet</p>
                 <p className="text-xs" style={{ color: colors.textSecondary }}>
                   {requestUrl 
                     ? 'Click "Generate Code" to create a snippet' 
@@ -4449,10 +4449,10 @@ useEffect(() => {
               <Layers size={32} style={{ color: colors.primary, opacity: 0.3 }} />
             </div>
           </div>
-          <h3 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>
+          <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>
             API Collections
           </h3>
-          <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
+          <p className="text-xs mb-2" style={{ color: colors.textSecondary }}>
             {getLoadingMessage()}
           </p>
           <p className="text-xs mb-1" style={{ color: colors.textTertiary }}>
@@ -5969,7 +5969,7 @@ const renderBodyTab = () => {
         return (
           <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
             <FileBinary size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-            <p className="text-sm mb-2" style={{ color: colors.text }}>Upload a file</p>
+            <p className="text-xs mb-2" style={{ color: colors.text }}>Upload a file</p>
             <p className="text-xs mb-6 max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
               Select a file to send as the request body. Files are sent as-is without any processing.
             </p>
@@ -7210,7 +7210,7 @@ const renderResponseContent = () => {
           <div className="p-4 space-y-4">
             <div className="text-center p-8 border-2 border-dashed rounded hover-lift" style={{ borderColor: colors.border }}>
               <Upload size={32} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-              <p className="text-sm mb-2" style={{ color: colors.text }}>Drag and drop files here</p>
+              <p className="text-xs mb-2" style={{ color: colors.text }}>Drag and drop files here</p>
               <p className="text-xs" style={{ color: colors.textSecondary }}>Supports: Postman collections, OpenAPI, etc.</p>
               <button 
                 type="button"

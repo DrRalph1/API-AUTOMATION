@@ -304,7 +304,7 @@ const ApiGenerationCard = React.memo(({ colors, onGenerate }) => (
               Generate New API
             </h3>
             <p className="text-xs" style={{ color: colors.textSecondary }}>
-              Create APIs from your database
+              Create APIs from database objects such as tables, views, functions, procedures etc.
             </p>
           </div>
         </div>
@@ -318,9 +318,11 @@ const ApiGenerationCard = React.memo(({ colors, onGenerate }) => (
       </div>
       
       <div className="px-4 py-2 border-t flex gap-4 text-xs overflow-x-auto" style={{ borderColor: colors.border }}>
-        <span className="whitespace-nowrap" style={{ color: colors.textSecondary }}>✓ REST & GraphQL</span>
-        <span className="whitespace-nowrap" style={{ color: colors.textSecondary }}>✓ Auto-documentation</span>
-        <span className="whitespace-nowrap" style={{ color: colors.textSecondary }}>✓ Built-in security</span>
+        {/* <span className="whitespace-nowrap" style={{ color: colors.textSecondary }}>✓ REST & GraphQL</span> */}
+        <span className="whitespace-nowrap" style={{ color: colors.textSecondary }}>✓ Postman Collection</span>
+        <span className="whitespace-nowrap" style={{ color: colors.textSecondary }}>✓ Auto Code Generation</span>
+        <span className="whitespace-nowrap" style={{ color: colors.textSecondary }}>✓ Auto Documentation</span>
+        <span className="whitespace-nowrap" style={{ color: colors.textSecondary }}>✓ Robust In-built Security</span>
       </div>
     </div>
   </div>
@@ -604,10 +606,10 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
               <LayoutDashboard size={32} style={{ color: colors.primary, opacity: 0.3 }} />
             </div>
           </div>
-          <h3 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>
+          <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>
             {loading.initialLoad ? 'Loading Dashboard' : 'Refreshing Dashboard'}
           </h3>
-          <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
+          <p className="text-xs mb-2" style={{ color: colors.textSecondary }}>
             Please wait while we prepare your dashboard data
           </p>
         </div>
