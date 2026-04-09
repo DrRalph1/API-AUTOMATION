@@ -772,6 +772,15 @@ const memoizedRequestParams = useMemo(() => requestParams || [], [
     };
   }, []);
 
+  // Add this useEffect to sync method changes with tabs
+useEffect(() => {
+  if (selectedRequest && selectedRequest.id) {
+    setRequestTabs(prevTabs => prevTabs.map(tab =>
+      tab.id === selectedRequest.id ? { ...tab, method: requestMethod } : tab
+    ));
+  }
+}, [requestMethod, selectedRequest]);
+
   useEffect(() => {
     console.log('📝 authToken changed:', authToken ? 'present' : 'missing');
   }, [authToken]);
@@ -3098,6 +3107,52 @@ const getDisplayValue = (value, dataType) => {
   return String(value);
 };
 
+// Add or update tab when a request is selected
+const updateRequestTabs = useCallback((request, collectionId, folderId) => {
+  setRequestTabs(prevTabs => {
+    // Check if tab already exists
+    const existingTabIndex = prevTabs.findIndex(tab => tab.id === request.id);
+    
+    if (existingTabIndex !== -1) {
+      // Update existing tab
+      const updatedTabs = [...prevTabs];
+      updatedTabs[existingTabIndex] = {
+        ...updatedTabs[existingTabIndex],
+        name: request.name,
+        method: request.method,
+        isActive: true,
+        collectionId,
+        folderId
+      };
+      
+      // Mark other tabs as inactive
+      updatedTabs.forEach((tab, idx) => {
+        if (idx !== existingTabIndex) {
+          tab.isActive = false;
+        }
+      });
+      
+      return updatedTabs;
+    } else {
+      // Add new tab
+      const newTab = {
+        id: request.id,
+        name: request.name,
+        method: request.method,
+        isActive: true,
+        collectionId,
+        folderId
+      };
+      
+      // Mark existing tabs as inactive
+      const updatedTabs = prevTabs.map(tab => ({ ...tab, isActive: false }));
+      
+      return [...updatedTabs, newTab];
+    }
+  });
+}, []);
+
+
 const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
   // Reset the auto-tab-change flag when loading a new request
   skipAutoTabChange.current = false;
@@ -3796,6 +3851,9 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     isSaved: request.isSaved !== false
   };
   setSelectedRequest(requestWithContext);
+
+  // ADD THIS LINE - Update the tabs when a request is selected
+  updateRequestTabs(request, collectionId, folderId);
   
 }, [authToken, determineActiveTab, requestUrl, authType, authConfig, activeTab, requestBodyType, formData, urlEncodedData, requestHeaders, environments, activeEnvironment]);
 
@@ -3814,7 +3872,7 @@ const addNewRequest = (collectionId, folderId) => {
     authConfig: { type: 'noauth' },
     params: [],
     headers: [],
-    body: '', // Ensure this is empty string, not '{\n  \n}'
+    body: '',
     tests: '',
     preRequestScript: '',
     isSaved: false,
@@ -3839,6 +3897,10 @@ const addNewRequest = (collectionId, folderId) => {
   
   // Pass the new request to handleSelectRequest - it will detect it's new and reset everything
   handleSelectRequest(newRequest, collectionId, folderId);
+  
+  // ADD THIS - Also add to tabs directly
+  updateRequestTabs(newRequest, collectionId, folderId);
+  
   showToast('Request added', 'success');
 };
 
@@ -4804,27 +4866,30 @@ useEffect(() => {
 
   // Update request name
   const updateRequestName = (collectionId, folderId, requestId, newName) => {
-    if (!newName.trim()) return;
-    setCollections(collections.map(col => 
-      col.id === collectionId ? {
-        ...col,
-        folders: (col.folders || []).map(folder =>
-          folder.id === folderId ? {
-            ...folder,
-            requests: (folder.requests || []).map(req =>
-              req.id === requestId ? { ...req, name: newName, isEditing: false } : req
-            )
-          } : folder
-        )
-      } : col
-    ));
-    
-    setRequestTabs(tabs => tabs.map(tab =>
-      tab.id === requestId ? { ...tab, name: newName } : tab
-    ));
-    
-    showToast('Request name updated', 'success');
-  };
+  if (!newName.trim()) return;
+  setCollections(collections.map(col => 
+    col.id === collectionId ? {
+      ...col,
+      folders: (col.folders || []).map(folder =>
+        folder.id === folderId ? {
+          ...folder,
+          requests: (folder.requests || []).map(req =>
+            req.id === requestId ? { ...req, name: newName, isEditing: false } : req
+          )
+        } : folder
+      )
+    } : col
+  ));
+  
+  // UPDATE THIS - Update the tab name when request name changes
+  setRequestTabs(tabs => tabs.map(tab =>
+    tab.id === requestId ? { ...tab, name: newName } : tab
+  ));
+  
+  setSelectedRequest(prev => prev && prev.id === requestId ? { ...prev, name: newName } : prev);
+  
+  showToast('Request name updated', 'success');
+};
 
   // Add param
   const addParam = () => {
@@ -8348,7 +8413,7 @@ const renderResponseContent = () => {
                 }}>
               {requestTabs.map(tab => (
                 <div key={tab.id}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 border-r cursor-pointer hover-lift flex-shrink-0"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 border-r cursor-pointer hover-lift flex-shrink-0 group"
                   style={{ 
                     backgroundColor: tab.isActive ? colors.card : colors.sidebar,
                     borderRightColor: colors.border,
@@ -8375,13 +8440,16 @@ const renderResponseContent = () => {
                       {tab.name}
                     </span>
                   </div>
-                  <button type="button" onClick={(e) => {
-                    e.stopPropagation();
-                    if (requestTabs.length > 1) {
+                  <button 
+                    type="button" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Allow closing any tab, including the last one
                       setRequestTabs(tabs => tabs.filter(t => t.id !== tab.id));
                       if (tab.isActive) {
                         const remainingTabs = requestTabs.filter(t => t.id !== tab.id);
                         if (remainingTabs.length > 0) {
+                          // Switch to the next tab (or previous if none)
                           const nextTab = remainingTabs[0];
                           const collection = collections.find(c => c.id === nextTab.collectionId);
                           const folder = collection?.folders?.find(f => f.id === nextTab.folderId);
@@ -8389,14 +8457,55 @@ const renderResponseContent = () => {
                           if (request) {
                             handleSelectRequest(request, nextTab.collectionId, nextTab.folderId);
                           }
+                        } else {
+                          // No tabs left - create a new empty request or clear the UI
+                          const emptyRequest = {
+                            id: `req-${Date.now()}`,
+                            name: 'New Request',
+                            method: 'GET',
+                            url: '',
+                            description: '',
+                            status: 'unsaved',
+                            lastModified: new Date().toISOString(),
+                            authType: 'noauth',
+                            authConfig: { type: 'noauth' },
+                            params: [],
+                            headers: [],
+                            body: '',
+                            tests: '',
+                            preRequestScript: '',
+                            isSaved: false
+                          };
+                          setSelectedRequest(emptyRequest);
+                          setRequestMethod('GET');
+                          setRequestUrl('');
+                          setRequestBody('');
+                          setRequestParams([]);
+                          setRequestHeaders([]);
+                          setRequestPathParams([]);
+                          setAuthType('noauth');
+                          setAuthConfig({ type: 'noauth' });
+                          setRequestBodyType('none');
+                          // Reset all other request-related states
                         }
                       }
-                    } else {
-                      showToast('Cannot close the last tab', 'error');
-                    }
-                  }} className="p-0.5 rounded opacity-0 hover:opacity-100 hover:bg-opacity-50 transition-colors hover-lift flex-shrink-0"
-                    style={{ backgroundColor: colors.hover }}>
-                    <X size={12} style={{ color: colors.textSecondary }} />
+                    }} 
+                    className="p-0.5 rounded transition-all flex-shrink-0"
+                    style={{ 
+                      backgroundColor: 'transparent',
+                      opacity: 0.4,
+                      color: colors.textSecondary
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.opacity = '1';
+                      e.currentTarget.style.backgroundColor = colors.hover;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.opacity = '0.4';
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <X size={12} />
                   </button>
                 </div>
               ))}

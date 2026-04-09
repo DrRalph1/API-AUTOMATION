@@ -4,7 +4,9 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.Map;
 
 @Data
@@ -21,4 +23,12 @@ public class ExecuteApiRequestDTO {
     private String httpMethod;
     private Integer timeoutSeconds;
     private Map<String, Object> metadata;
+
+    // ============ FILE UPLOAD SUPPORT ============
+    private MultipartFile file;                      // Single file upload
+    private List<MultipartFile> files;               // Multiple files upload
+    private Map<String, MultipartFile> fileMap;      // Named files (parameterName -> file)
+
+    // For backward compatibility with base64 encoded files in JSON
+    private Boolean hasBase64Files;                  // Flag indicating base64 files in body
 }

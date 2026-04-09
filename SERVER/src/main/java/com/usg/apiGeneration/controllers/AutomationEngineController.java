@@ -16,10 +16,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.MultiValueMap;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -82,7 +85,7 @@ public class AutomationEngineController {
     }
 
     @PostMapping("/gen-engine/{apiId}/execute")
-    @Operation(summary = "Execute API", description = "Execute a generated API - Accepts any content type")
+    @Operation(summary = "Execute API", description = "Execute a generated API - Accepts any content type including multipart/form-data for file uploads")
     public ResponseEntity<?> executeApi(
             @PathVariable String apiId,
             HttpServletRequest req,
@@ -98,9 +101,8 @@ public class AutomationEngineController {
 
             loggingHelper.logApiExecution(requestId, apiId, performedBy, contentType, clientIp, userAgent);
 
-            // Extract all request components
-            ExecuteApiRequestDTO executeRequest = requestExtractorHelper.extractRequestComponents(
-                    request, requestId, apiId);
+            // Extract all request components with file support
+            ExecuteApiRequestDTO executeRequest = extractRequestComponentsWithFileSupport(request, requestId, apiId);
 
             // Execute the API
             ExecuteApiResponseDTO response = automationEngineService.executeApi(
@@ -119,6 +121,144 @@ public class AutomationEngineController {
                     "An error occurred while executing API: " + e.getMessage(),
                     HttpStatus.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    // NEW HELPER METHOD: Extracts request components with file upload support
+    private ExecuteApiRequestDTO extractRequestComponentsWithFileSupport(HttpServletRequest request, String requestId, String apiId) {
+        ExecuteApiRequestDTO executeRequest = new ExecuteApiRequestDTO();
+        executeRequest.setRequestId(requestId);
+
+        try {
+            // Check if this is a multipart request (file upload)
+            String contentType = request.getContentType();
+            boolean isMultipart = contentType != null && contentType.startsWith("multipart/form-data");
+
+            if (isMultipart && request instanceof MultipartHttpServletRequest) {
+                // Handle file upload request
+                MultipartHttpServletRequest multipartRequest = (MultipartHttpServletRequest) request;
+
+                // Extract files
+                Map<String, MultipartFile> fileMap = multipartRequest.getFileMap();
+                if (fileMap != null && !fileMap.isEmpty()) {
+                    executeRequest.setFileMap(fileMap);
+
+                    // Set single file if there's exactly one
+                    if (fileMap.size() == 1) {
+                        executeRequest.setFile(fileMap.values().iterator().next());
+                    }
+
+                    // Set multiple files list
+                    executeRequest.setFiles(new ArrayList<>(fileMap.values()));
+
+                    log.info("Extracted {} file(s) from multipart request", fileMap.size());
+                    for (Map.Entry<String, MultipartFile> entry : fileMap.entrySet()) {
+                        log.info("  File field '{}': {} ({} bytes)",
+                                entry.getKey(),
+                                entry.getValue().getOriginalFilename(),
+                                entry.getValue().getSize());
+                    }
+                }
+
+                // Extract form parameters (excluding files)
+                Map<String, String[]> parameterMap = multipartRequest.getParameterMap();
+                Map<String, Object> formData = new HashMap<>();
+
+                for (Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
+                    String key = entry.getKey();
+                    String[] values = entry.getValue();
+                    if (values != null && values.length > 0) {
+                        if (values.length == 1) {
+                            formData.put(key, values[0]);
+                        } else {
+                            formData.put(key, Arrays.asList(values));
+                        }
+                    }
+                }
+
+                if (!formData.isEmpty()) {
+                    executeRequest.setBody(formData);
+                    log.info("Extracted form parameters: {}", formData.keySet());
+                }
+
+                // Check for base64 encoded files in form data
+                boolean hasBase64Files = false;
+                for (Object value : formData.values()) {
+                    if (value instanceof String) {
+                        String strValue = (String) value;
+                        if (strValue != null && strValue.startsWith("data:") && strValue.contains(";base64,")) {
+                            hasBase64Files = true;
+                            break;
+                        }
+                    }
+                }
+                executeRequest.setHasBase64Files(hasBase64Files);
+                if (hasBase64Files) {
+                    log.info("Detected base64 encoded files in form data");
+                }
+            } else {
+                // Not a multipart request - use existing extractor
+                ExecuteApiRequestDTO extracted = requestExtractorHelper.extractRequestComponents(request, requestId, apiId);
+                if (extracted != null) {
+                    executeRequest.setUrl(extracted.getUrl());
+                    executeRequest.setPathParams(extracted.getPathParams());
+                    executeRequest.setQueryParams(extracted.getQueryParams());
+                    executeRequest.setBody(extracted.getBody());
+                    executeRequest.setHttpMethod(extracted.getHttpMethod());
+                    executeRequest.setTimeoutSeconds(extracted.getTimeoutSeconds());
+                    executeRequest.setMetadata(extracted.getMetadata());
+                }
+            }
+
+            // Extract headers (common for all request types)
+            Enumeration<String> headerNames = request.getHeaderNames();
+            Map<String, String> headers = new HashMap<>();
+            if (headerNames != null) {
+                while (headerNames.hasMoreElements()) {
+                    String headerName = headerNames.nextElement();
+                    String headerValue = request.getHeader(headerName);
+                    headers.put(headerName, headerValue);
+                }
+            }
+            executeRequest.setHeaders(headers);
+
+            // Set URL if not already set
+            if (executeRequest.getUrl() == null) {
+                StringBuffer requestURL = request.getRequestURL();
+                String queryString = request.getQueryString();
+                String fullUrl = requestURL.toString();
+                if (queryString != null && !queryString.isEmpty()) {
+                    fullUrl = fullUrl + "?" + queryString;
+                }
+                executeRequest.setUrl(fullUrl);
+            }
+
+            // Set query params if not already set
+            if (executeRequest.getQueryParams() == null && request.getQueryString() != null) {
+                Map<String, Object> queryParams = new HashMap<>();
+                String[] pairs = request.getQueryString().split("&");
+                for (String pair : pairs) {
+                    String[] keyValue = pair.split("=");
+                    String key = keyValue[0];
+                    String value = keyValue.length > 1 ? keyValue[1] : "";
+                    queryParams.put(key, value);
+                }
+                executeRequest.setQueryParams(queryParams);
+            }
+
+            // Set HTTP method
+            executeRequest.setHttpMethod(request.getMethod());
+
+        } catch (Exception e) {
+            log.error("Error extracting request components with file support: {}", e.getMessage(), e);
+            // Fall back to standard extraction
+            ExecuteApiRequestDTO fallback = requestExtractorHelper.extractRequestComponents(request, requestId, apiId);
+            if (fallback != null) {
+                executeRequest = fallback;
+                executeRequest.setRequestId(requestId);
+            }
+        }
+
+        return executeRequest;
     }
 
     @PostMapping("/gen-engine/{apiId}/test")
@@ -194,8 +334,6 @@ public class AutomationEngineController {
         }
     }
 
-
-
     @GetMapping("/gen/api/{apiId}")
     @Operation(summary = "Get Full Generated API details", description = "Get full details of a generated API")
     public ResponseEntity<?> getGeneratedApiDetails(
@@ -228,8 +366,6 @@ public class AutomationEngineController {
                     HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
-
-
 
     @GetMapping("/gen-engine/{apiId}/analytics")
     @Operation(summary = "Get API analytics", description = "Get analytics for a generated API")
@@ -369,7 +505,7 @@ public class AutomationEngineController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggingHelper.logGetApiDetails(requestId, apiId, performedBy); // Reusing log method
+            loggingHelper.logGetApiDetails(requestId, apiId, performedBy);
 
             List<ApiExecutionLogDTO> logs = automationEngineService.getExecutionLogs(
                     apiId, fromDate, toDate, limit);
@@ -409,7 +545,7 @@ public class AutomationEngineController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggingHelper.logGetApiDetails(requestId, apiId, performedBy); // Reusing log method
+            loggingHelper.logGetApiDetails(requestId, apiId, performedBy);
 
             List<ApiTestResultDTO> testResults = automationEngineService.getTestResults(apiId);
 
@@ -534,7 +670,7 @@ public class AutomationEngineController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggingHelper.logGetApiDetails(requestId, apiId, performedBy); // Reusing log method
+            loggingHelper.logGetApiDetails(requestId, apiId, performedBy);
 
             GeneratedApiResponseDTO apiDetails = automationEngineService.getApiDetails(requestId, apiId);
             Map<String, Object> relatedComponents = extractRelatedComponents(apiDetails);
@@ -624,7 +760,7 @@ public class AutomationEngineController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggingHelper.logGetApiDetails(requestId, apiId, performedBy); // Reusing log method
+            loggingHelper.logGetApiDetails(requestId, apiId, performedBy);
 
             GeneratedApiResponseDTO response = automationEngineService.partialUpdateApi(
                     requestId, apiId, performedBy, updates);
@@ -658,7 +794,7 @@ public class AutomationEngineController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggingHelper.logGetApiDetails(requestId, apiId, performedBy); // Reusing log method
+            loggingHelper.logGetApiDetails(requestId, apiId, performedBy);
 
             GeneratedApiEntity api = automationEngineService.getApiEntity(apiId);
             automationEngineService.syncGeneratedComponents(api, performedBy);
@@ -693,7 +829,7 @@ public class AutomationEngineController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggingHelper.logGetApiDetails(requestId, apiId, performedBy); // Reusing log method
+            loggingHelper.logGetApiDetails(requestId, apiId, performedBy);
 
             ApiDetailsResponseDTO details = automationEngineService.getCompleteApiDetails(requestId, apiId);
 
@@ -736,9 +872,8 @@ public class AutomationEngineController {
             loggingHelper.logApiExecution(requestId, apiId, performedBy,
                     req.getContentType(), clientIp, userAgent);
 
-            // Extract request components using the helper
-            ExecuteApiRequestDTO executeRequest = requestExtractorHelper.extractRequestComponents(
-                    req, requestId, apiId);
+            // Extract request components with file support
+            ExecuteApiRequestDTO executeRequest = extractRequestComponentsWithFileSupport(req, requestId, apiId);
 
             // Set HTTP method
             executeRequest.setHttpMethod(req.getMethod());
@@ -757,10 +892,6 @@ public class AutomationEngineController {
         }
     }
 
-    /**
-     * SAA
-     * Handles exceptions for executeApiById endpoint
-     */
     private ResponseEntity<Map<String, Object>> handleException(String requestId, String apiId, Exception e) {
         loggingHelper.logError(requestId, "executing API by ID", e.getMessage(), e);
 
@@ -772,7 +903,6 @@ public class AutomationEngineController {
         errorResponse.put("message", "An error occurred while executing API: " + e.getMessage());
         errorResponse.put("path", apiId);
 
-        // Add detailed error info in development mode
         if (log.isDebugEnabled()) {
             errorResponse.put("exception", e.getClass().getName());
             errorResponse.put("stackTrace", Arrays.stream(e.getStackTrace())
@@ -784,9 +914,6 @@ public class AutomationEngineController {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
     }
 
-    /**
-     * OPTIONS handler for CORS preflight requests
-     */
     @RequestMapping(value = "/gen/{apiId}/**", method = RequestMethod.OPTIONS)
     public ResponseEntity<Void> handleOptions() {
         return ResponseEntity.ok()
@@ -796,7 +923,6 @@ public class AutomationEngineController {
                 .header("Access-Control-Max-Age", "3600")
                 .build();
     }
-
 
     @GetMapping("/gen-engine/check-code")
     @Operation(summary = "Check API code availability",
@@ -814,10 +940,8 @@ public class AutomationEngineController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggingHelper.logGetApiDetails(requestId, apiCode, performedBy); // Reusing log method
+            loggingHelper.logGetApiDetails(requestId, apiCode, performedBy);
 
-            // Create a simple response indicating if the code is available
-            // You'll need to add a method to your service to check this
             boolean isAvailable = automationEngineService.isApiCodeAvailable(apiCode);
 
             Map<String, Object> response = new HashMap<>();
