@@ -2,7 +2,7 @@
 
 // Development environment variables (fallback for local development)
 const developmentEnv = {
-    REACT_APP_API_BASE_URL: "http://192.168.1.119:4789",
+    REACT_APP_API_BASE_URL: "http://192.168.0.127:4789",
     REACT_APP_API_KEY: "sTr@wBerry$!",
     REACT_APP_API_SECRET: "iCeCre@M&!",
     REACT_APP_CLIENT_IP: "127.0.0.1",

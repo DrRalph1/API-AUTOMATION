@@ -50,7 +50,17 @@ const MOCK_COLLECTIONS = [
       { id: 'core-api-cards', name: 'Cards', description: 'Debit and credit card management' },
       { id: 'core-api-trade-finance', name: 'Trade Finance', description: 'Letters of credit, guarantees, and collections' },
       { id: 'core-api-treasury', name: 'Treasury', description: 'Treasury operations and foreign exchange' },
-      { id: 'core-api-enquiry', name: 'Enquiry Services', description: 'Balance enquiries, statement enquiries' }
+      { id: 'core-api-enquiry', name: 'Enquiry Services', description: 'Balance enquiries, statement enquiries' },
+      { 
+        "id": "core-api-security", 
+        "name": "Security", 
+        "description": "Authentication, authorization, fraud prevention, and API protection services" 
+      },
+      { 
+        "id": "core-api-settings", 
+        "name": "Settings", 
+        "description": "System configuration, user preferences, limits, and parameter management" 
+      }
     ]
   },
   {
@@ -7354,11 +7364,11 @@ return ReactDOM.createPortal(
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
                                 borderColor: themeColors.border,
                                 color: themeColors.textSecondary
-                              }}>Data Type</th>
+                              }}>DB Data Type</th>
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
                                 borderColor: themeColors.border,
                                 color: themeColors.textSecondary
-                              }}>API Type</th>
+                              }}>API Data Type</th>
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
                                 borderColor: themeColors.border,
                                 color: themeColors.textSecondary
