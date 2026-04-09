@@ -10,7 +10,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.sql.*;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -235,6 +238,47 @@ public class OracleTableExecutorUtil {
         return extractedParams;
     }
 
+    // ============ HANDLE FILE UPLOADS (ONLY IF PRESENT) ============
+    private void handleFileUploads(Map<String, Object> params, Map<String, MultipartFile> fileMap, MultipartFile singleFile,
+                                   Map<String, String> apiToDbColumnMap) {
+        if ((fileMap != null && !fileMap.isEmpty()) ||
+                (singleFile != null && !singleFile.isEmpty())) {
+
+            log.info("Processing file uploads for Oracle table operation");
+
+            if (fileMap != null && !fileMap.isEmpty()) {
+                for (Map.Entry<String, MultipartFile> entry : fileMap.entrySet()) {
+                    String paramName = entry.getKey();
+                    MultipartFile file = entry.getValue();
+                    try {
+                        byte[] fileBytes = file.getBytes();
+                        String dbColumnName = apiToDbColumnMap.getOrDefault(paramName.toLowerCase(), paramName.toUpperCase());
+                        params.put(dbColumnName, fileBytes);
+                        log.info("✅ Added file to params: {} -> {} ({} bytes) for Oracle BLOB",
+                                paramName, dbColumnName, fileBytes.length);
+                    } catch (IOException e) {
+                        log.error("Failed to read file: {}", e.getMessage());
+                        throw new RuntimeException("Failed to read uploaded file", e);
+                    }
+                }
+            }
+
+            if (singleFile != null && !singleFile.isEmpty()) {
+                MultipartFile file = singleFile;
+                try {
+                    byte[] fileBytes = file.getBytes();
+                    String dbColumnName = apiToDbColumnMap.getOrDefault("file", "FILE");
+                    params.put(dbColumnName, fileBytes);
+                    log.info("✅ Added single file to params: {} -> {} ({} bytes) for Oracle BLOB",
+                            file.getOriginalFilename(), dbColumnName, fileBytes.length);
+                } catch (IOException e) {
+                    log.error("Failed to read file: {}", e.getMessage());
+                    throw new RuntimeException("Failed to read uploaded file", e);
+                }
+            }
+        }
+    }
+
     public Object executeSelect(String tableName, String owner, Map<String, Object> params,
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
         try {
@@ -402,8 +446,13 @@ public class OracleTableExecutorUtil {
                         }
 
                         if (value != null) {
-                            // Handle collection/array values
+                            // Handle collection/array values - Skip byte arrays
                             if (value instanceof List || value.getClass().isArray()) {
+                                // Skip byte arrays - they're file data
+                                if (value instanceof byte[]) {
+                                    log.debug("Skipping byte array parameter '{}' (file data)", paramKey);
+                                    continue;
+                                }
                                 Collection<?> collection = value instanceof List ?
                                         (List<?>) value : Arrays.asList((Object[]) value);
 
@@ -596,6 +645,12 @@ public class OracleTableExecutorUtil {
 
             // Skip if this key is already in processedParams (from XML extraction)
             if (processedParams.containsKey(key) || processedParams.containsKey(key.toUpperCase())) {
+                continue;
+            }
+
+            // Skip byte arrays - they're file data (will be handled separately)
+            if (value instanceof byte[]) {
+                log.debug("Skipping byte array parameter '{}' (file data)", key);
                 continue;
             }
 
@@ -811,14 +866,25 @@ public class OracleTableExecutorUtil {
                 continue;
             }
 
+            // Skip byte arrays - they're file data
+            if (entry.getValue() instanceof byte[]) {
+                log.debug("Skipping byte array parameter '{}' (file data)", key);
+                continue;
+            }
+
             // Map the key to database column name if mapping exists
             String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
             processedParams.put(dbColumnName, entry.getValue());
         }
 
-        // Handle collection/array parameters - convert to single values for database
+        // Handle collection/array parameters - convert to single values for database - Skip byte arrays
         for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
             Object value = entry.getValue();
+            // Skip byte arrays - they're file data
+            if (value instanceof byte[]) {
+                log.debug("Skipping byte array parameter '{}' (file data)", entry.getKey());
+                continue;
+            }
             if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);
@@ -977,14 +1043,25 @@ public class OracleTableExecutorUtil {
                 continue;
             }
 
+            // Skip byte arrays - they're file data
+            if (entry.getValue() instanceof byte[]) {
+                log.debug("Skipping byte array parameter '{}' (file data)", key);
+                continue;
+            }
+
             // Map the key to database column name if mapping exists
             String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
             processedParams.put(dbColumnName, entry.getValue());
         }
 
-        // Handle collection/array parameters - convert to single values for database
+        // Handle collection/array parameters - convert to single values for database - Skip byte arrays
         for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
             Object value = entry.getValue();
+            // Skip byte arrays - they're file data
+            if (value instanceof byte[]) {
+                log.debug("Skipping byte array parameter '{}' (file data)", entry.getKey());
+                continue;
+            }
             if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);

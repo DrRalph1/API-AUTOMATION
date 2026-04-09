@@ -76,6 +76,7 @@ import {
   Layers,
   Package,
   Box,
+  File,
   FolderPlus,
   FilePlus,
   Wifi,
@@ -105,7 +106,7 @@ import {
   Database as DatabaseIcon,
   ChevronsUpDown,
   Book,
-  File
+  File as FileIcon
 } from 'lucide-react';
 
 // Import CollectionsController
@@ -721,6 +722,9 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     const seconds = String(now.getSeconds()).padStart(2, '0');
     return `${year}${month}${day}${hours}${minutes}${seconds}`;
   };
+
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFiles, setSelectedFiles] = useState([]);
 
   // Add these memoized callbacks near the top of the Collections component
   const memoizedSetSelectedLanguage = useCallback((lang) => {
@@ -3154,6 +3158,12 @@ const updateRequestTabs = useCallback((request, collectionId, folderId) => {
 
 
 const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
+
+  if (loading.request && selectedRequest?.id === request.id) {
+    console.log('⏭️ Request already loading, skipping duplicate call');
+    return;
+  }
+
   // Reset the auto-tab-change flag when loading a new request
   skipAutoTabChange.current = false;
   isUserInitiatedTabChange.current = false;
@@ -3561,123 +3571,152 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
         
         // ============== PROCESS PARAMETERS WITH DATA TYPES ==============
         if (details.parameters) {
-          const queryParams = [];
-          const pathParams = [];
-          const headerParams = [];
-          let bodyParams = [];
-          
-          details.parameters.forEach(param => {
-            if (param && param.key) {
-              const isAutoGenerate = param.oracleType === 'AUTOGENERATE';
-              const currentTimestamp = getCurrentTimestamp();
-              
-              // Get data type
-              let dataType = param.dataType || param.apiType || param.type || 'string';
-              const normalizedType = dataType.toLowerCase();
-              if (normalizedType === 'jsonb' || normalizedType === 'json') dataType = 'jsonb';
-              else if (normalizedType === 'integer' || normalizedType === 'int') dataType = 'integer';
-              else if (normalizedType === 'float' || normalizedType === 'double' || normalizedType === 'decimal') dataType = 'float';
-              else if (normalizedType === 'boolean' || normalizedType === 'bool') dataType = 'boolean';
-              
-              const defaultValue = getDefaultValueByType(dataType, param.key);
-              
-              let paramValue;
-              const hasValidValue = param.value !== undefined && 
-                                   param.value !== null && 
-                                   !(typeof param.value === 'string' && param.value === '');
-              
-              if (hasValidValue) {
-                paramValue = param.value;
-                // Parse based on data type
-                if (dataType === 'jsonb' && typeof paramValue === 'string') {
-                  try {
-                    paramValue = JSON.parse(paramValue);
-                  } catch (e) {
-                    paramValue = defaultValue;
-                  }
-                }
-                else if (dataType === 'integer' && typeof paramValue === 'string') {
-                  paramValue = parseInt(paramValue, 10);
-                  if (isNaN(paramValue)) paramValue = defaultValue;
-                }
-                else if (dataType === 'float' && typeof paramValue === 'string') {
-                  paramValue = parseFloat(paramValue);
-                  if (isNaN(paramValue)) paramValue = defaultValue;
-                }
-                else if (dataType === 'boolean' && typeof paramValue === 'string') {
-                  paramValue = paramValue === 'true' || paramValue === '1';
-                }
-                console.log(`📝 [${param.key}] Using existing value:`, paramValue);
-              } 
-              else if (isAutoGenerate) {
-                paramValue = currentTimestamp;
-                console.log(`🔄 [${param.key}] Auto-generate timestamp:`, paramValue);
-              } 
-              else {
-                paramValue = defaultValue;
-                console.log(`🔧 [${param.key}] Using default value for type ${dataType}:`, JSON.stringify(paramValue));
-              }
-              
-              const paramObject = {
-                id: param.id || `${param.key}-${Date.now()}-${Math.random()}`,
-                key: param.key,
-                value: paramValue,
-                displayValue: getDisplayValue(paramValue, dataType),
-                description: param.description || (isAutoGenerate ? 'Auto-generated timestamp field' : ''),
-                enabled: param.enabled !== false,
-                required: isAutoGenerate ? false : (param.required || false),
-                parameterLocation: param.parameterLocation || 'query',
-                oracleType: param.oracleType || 'VARCHAR2',
-                example: isAutoGenerate ? currentTimestamp : (param.example || defaultValue),
-                defaultValue: isAutoGenerate ? currentTimestamp : (param.defaultValue || defaultValue),
-                apiType: dataType,
-                dataType: dataType,
-                validationPattern: param.validationPattern || '',
-                inBody: param.parameterLocation === 'body',
-                isPrimaryKey: param.isPrimaryKey || false,
-                paramMode: param.paramMode || 'IN'
-              };
-              
-              const location = (param.parameterLocation || '').toLowerCase();
-              
-              if (location === 'path') {
-                pathParams.push(paramObject);
-                console.log(`🛣️ Added ${param.key} to PATH params (${dataType}) = ${JSON.stringify(paramValue)}`);
-              } else if (location === 'query') {
-                queryParams.push(paramObject);
-                console.log(`🔍 Added ${param.key} to QUERY params (${dataType}) = ${JSON.stringify(paramValue)}`);
-              } else if (location === 'header') {
-                headerParams.push(paramObject);
-                console.log(`📋 Added ${param.key} to HEADER params (${dataType}) = ${JSON.stringify(paramValue)}`);
-              } else if (location === 'body') {
-                bodyParams.push(paramObject);
-                console.log(`📦 Added ${param.key} to BODY params (${dataType}) = ${JSON.stringify(paramValue)}`);
-              } else {
-                if (requestMethod === 'POST' || requestMethod === 'PUT' || requestMethod === 'PATCH') {
-                  bodyParams.push(paramObject);
-                  console.log(`📦 Default: ${param.key} added to BODY params (${requestMethod} request, ${dataType}) = ${JSON.stringify(paramValue)}`);
-                } else {
-                  queryParams.push(paramObject);
-                  console.log(`🔍 Default: ${param.key} added to QUERY params (${requestMethod} request, ${dataType}) = ${JSON.stringify(paramValue)}`);
-                }
-              }
-            }
+  const queryParams = [];
+  const pathParams = [];
+  const headerParams = [];
+  let bodyParams = [];
+  
+  details.parameters.forEach(param => {
+    if (param && param.key) {
+      // DETECT FILE PARAMETERS DYNAMICALLY
+      const isFileParam = param.parameterType === 'FILE' || 
+                          param.oracleType === 'BLOB' || 
+                          param.oracleType === 'BYTEA' ||
+                          param.apiType === 'file' ||
+                          param.parameterLocation === 'file';
+      
+      const isAutoGenerate = param.oracleType === 'AUTOGENERATE';
+      const currentTimestamp = getCurrentTimestamp();
+      
+      // Get data type
+      let dataType = param.dataType || param.apiType || param.type || 'string';
+      const normalizedType = dataType.toLowerCase();
+      if (normalizedType === 'jsonb' || normalizedType === 'json') dataType = 'jsonb';
+      else if (normalizedType === 'integer' || normalizedType === 'int') dataType = 'integer';
+      else if (normalizedType === 'float' || normalizedType === 'double' || normalizedType === 'decimal') dataType = 'float';
+      else if (normalizedType === 'boolean' || normalizedType === 'bool') dataType = 'boolean';
+      
+      const defaultValue = getDefaultValueByType(dataType, param.key);
+      
+      let paramValue;
+      const hasValidValue = param.value !== undefined && 
+                           param.value !== null && 
+                           !(typeof param.value === 'string' && param.value === '');
+      
+      if (hasValidValue) {
+        paramValue = param.value;
+        // Parse based on data type
+        if (dataType === 'jsonb' && typeof paramValue === 'string') {
+          try {
+            paramValue = JSON.parse(paramValue);
+          } catch (e) {
+            paramValue = defaultValue;
+          }
+        }
+        else if (dataType === 'integer' && typeof paramValue === 'string') {
+          paramValue = parseInt(paramValue, 10);
+          if (isNaN(paramValue)) paramValue = defaultValue;
+        }
+        else if (dataType === 'float' && typeof paramValue === 'string') {
+          paramValue = parseFloat(paramValue);
+          if (isNaN(paramValue)) paramValue = defaultValue;
+        }
+        else if (dataType === 'boolean' && typeof paramValue === 'string') {
+          paramValue = paramValue === 'true' || paramValue === '1';
+        }
+        console.log(`📝 [${param.key}] Using existing value:`, paramValue);
+      } 
+      else if (isAutoGenerate) {
+        paramValue = currentTimestamp;
+        console.log(`🔄 [${param.key}] Auto-generate timestamp:`, paramValue);
+      } 
+      else {
+        paramValue = defaultValue;
+        console.log(`🔧 [${param.key}] Using default value for type ${dataType}:`, JSON.stringify(paramValue));
+      }
+      
+      const paramObject = {
+        id: param.id || `${param.key}-${Date.now()}-${Math.random()}`,
+        key: param.key,
+        value: paramValue,
+        displayValue: getDisplayValue(paramValue, dataType),
+        description: param.description || (isAutoGenerate ? 'Auto-generated timestamp field' : ''),
+        enabled: param.enabled !== false,
+        required: isAutoGenerate ? false : (param.required || false),
+        parameterLocation: param.parameterLocation || 'query',
+        oracleType: param.oracleType || 'VARCHAR2',
+        example: isAutoGenerate ? currentTimestamp : (param.example || defaultValue),
+        defaultValue: isAutoGenerate ? currentTimestamp : (param.defaultValue || defaultValue),
+        apiType: dataType,
+        dataType: dataType,
+        validationPattern: param.validationPattern || '',
+        inBody: param.parameterLocation === 'body',
+        isPrimaryKey: param.isPrimaryKey || false,
+        paramMode: param.paramMode || 'IN'
+      };
+      
+      const location = (param.parameterLocation || '').toLowerCase();
+      
+      if (location === 'path') {
+        pathParams.push(paramObject);
+        console.log(`🛣️ Added ${param.key} to PATH params (${dataType}) = ${JSON.stringify(paramValue)}`);
+      } else if (location === 'query') {
+        queryParams.push(paramObject);
+        console.log(`🔍 Added ${param.key} to QUERY params (${dataType}) = ${JSON.stringify(paramValue)}`);
+      } else if (location === 'header') {
+        headerParams.push(paramObject);
+        console.log(`📋 Added ${param.key} to HEADER params (${dataType}) = ${JSON.stringify(paramValue)}`);
+      } else if (location === 'body' || location === 'file') {
+        // For body parameters, ALSO create a form-data friendly version
+        bodyParams.push({
+          id: param.id || `${param.key}-${Date.now()}`,
+          key: param.key,
+          value: paramValue,
+          description: param.description || '',
+          enabled: param.enabled !== false,
+          required: param.required || false,
+          type: isFileParam ? 'file' : 'text',
+          dataType: dataType,
+          oracleType: param.oracleType,
+          isFile: isFileParam
+        });
+        console.log(`📦 Added ${param.key} to BODY params (${dataType}) = ${JSON.stringify(paramValue)}`);
+      } else {
+        if (requestMethod === 'POST' || requestMethod === 'PUT' || requestMethod === 'PATCH') {
+          bodyParams.push({
+            id: param.id || `${param.key}-${Date.now()}`,
+            key: param.key,
+            value: paramValue,
+            description: param.description || '',
+            enabled: param.enabled !== false,
+            required: param.required || false,
+            type: 'text',
+            dataType: dataType,
+            oracleType: param.oracleType,
+            isFile: false
           });
-          
-          // Set query params (merge with existing if any)
-          if (queryParams.length > 0) {
-            setRequestParams(queryParams);
-          } else if (request.queryParams && request.queryParams.length > 0) {
-            // Keep existing query params if no new ones from API
-            // Already set above
-          } else {
-            setRequestParams([]);
-          }
-          
-          // Set path params
-          if (pathParams.length > 0 && initialPathParams.length === 0) {
-            setRequestPathParams(pathParams);
-          }
+          console.log(`📦 Default: ${param.key} added to BODY params (${requestMethod} request, ${dataType}) = ${JSON.stringify(paramValue)}`);
+        } else {
+          queryParams.push(paramObject);
+          console.log(`🔍 Default: ${param.key} added to QUERY params (${requestMethod} request, ${dataType}) = ${JSON.stringify(paramValue)}`);
+        }
+      }
+    }
+  });
+  
+  // Set query params
+  if (queryParams.length > 0) {
+    setRequestParams(queryParams);
+  } else if (request.queryParams && request.queryParams.length > 0) {
+    // Keep existing query params
+  } else {
+    setRequestParams([]);
+  }
+  
+  // Set path params
+  if (pathParams.length > 0 && initialPathParams.length === 0) {
+    setRequestPathParams(pathParams);
+  }
           
           // Process headers
           const allHeaders = [...apiAuthHeaders];
@@ -3726,104 +3765,298 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           
           // ============== PROCESS REQUEST BODY WITH DATA TYPES ==============
           if (details.requestBody || bodyParams.length > 0) {
-            const bodyType = details.requestBody?.bodyType || (bodyParams.length > 0 ? 'raw' : 'none');
+            // Check if there are any file-type parameters
+            const hasFileParams = bodyParams.some(p => 
+              p.oracleType === 'FILE' || 
+              p.oracleType === 'BLOB' || 
+              p.oracleType === 'BYTEA' || 
+              p.oracleType === 'MULTIPART_FILE' ||
+              p.apiType === 'file' ||
+              p.parameterType === 'FILE'
+            );
             
-            switch (bodyType) {
-              case 'json':
-              case 'raw':
-                setRequestBodyType('raw');
-                setRawBodyType('json');
-                if (bodyParams.length > 0) {
-                  const jsonBody = {};
-                  bodyParams.forEach(param => {
-                    if (param.key) {
-                      let value = param.value;
-                      
-                      if (value === undefined || value === null || (typeof value === 'string' && value === '')) {
-                        value = getDefaultValueByType(param.dataType, param.key);
-                        console.log(`📝 [${param.key}] Using default value for JSON body:`, JSON.stringify(value));
-                      }
-                      
-                      if (param.dataType === 'jsonb' || param.dataType === 'json' || param.dataType === 'object') {
-                        if (typeof value === 'string') {
-                          try {
-                            value = JSON.parse(value);
-                          } catch (e) {
-                            value = [];
-                          }
-                        }
-                        if (!Array.isArray(value) && typeof value !== 'object') {
-                          value = [];
-                        }
-                      } 
-                      else if (param.dataType === 'array') {
-                        if (typeof value === 'string') {
-                          try {
-                            value = JSON.parse(value);
-                          } catch (e) {
-                            value = [];
-                          }
-                        }
-                        if (!Array.isArray(value)) {
-                          value = [];
-                        }
-                      } 
-                      else if (param.dataType === 'integer') {
-                        if (typeof value === 'string') {
-                          value = parseInt(value, 10);
-                        }
-                        if (isNaN(value)) {
-                          value = 1;
-                        }
-                      }
-                      else if (param.dataType === 'float') {
-                        if (typeof value === 'string') {
-                          value = parseFloat(value);
-                        }
-                        if (isNaN(value)) {
-                          value = 0.0;
-                        }
-                      }
-                      else if (param.dataType === 'boolean') {
-                        if (typeof value === 'string') {
-                          value = value === 'true' || value === '1';
-                        }
-                      }
-                      
-                      jsonBody[param.key] = value;
+            console.log('📦 Processing request body - hasFileParams:', hasFileParams);
+            console.log('📦 bodyParams length:', bodyParams.length);
+            console.log('📦 bodyParams types:', bodyParams.map(p => ({ key: p.key, oracleType: p.oracleType, apiType: p.apiType })));
+            
+            // Determine body type based on file parameters and API details
+            let bodyType = details.requestBody?.bodyType || 
+                        (hasFileParams ? 'form-data' : 
+                        (bodyParams.length > 0 ? 'raw' : 'none'));
+            
+            // If there are file parameters, force body type to 'form-data'
+            if (hasFileParams && bodyParams.length > 0) {
+              // Force active tab to 'body' so user sees the file upload UI
+              setActiveTab('body');
+              console.log('📎 File parameters detected, switching to Body tab');
+            }
+            
+            // Set the body type
+            setRequestBodyType(bodyType === 'json' || bodyType === 'raw' ? 'raw' : bodyType);
+            if (bodyType === 'raw') {
+              setRawBodyType('json');
+            }
+            
+            // ========== HANDLE FORM-DATA WITH FILE SUPPORT ==========
+           if (bodyType === 'form-data' && bodyParams.length > 0) {
+            setRequestBodyType('form-data');
+            setActiveTab('body');
+            skipAutoTabChange.current = true;
+            console.log('📎 Creating form-data fields from body parameters');
+            
+            // Convert body params to formData array (these already have the type info)
+            console.log('🔍 BodyParams before form-data creation:', bodyParams.map(p => ({ 
+              key: p.key, 
+              type: p.type, 
+              isFile: p.isFile,
+              oracleType: p.oracleType 
+            })));
+
+            const newFormData = bodyParams.map((param, index) => {
+              // Determine if this is a file parameter
+              const isFileParam = param.type === 'file' || param.isFile === true || param.oracleType === 'FILE';
+              
+              console.log(`🔍 Processing ${param.key}: isFileParam=${isFileParam}, type=${param.type}, oracleType=${param.oracleType}`);
+              
+              return {
+                id: param.id || `form-${Date.now()}-${index}-${Math.random()}`,
+                key: param.key,
+                value: param.value,
+                type: isFileParam ? 'file' : 'text',
+                enabled: param.enabled !== false,
+                file: null,
+                description: param.description || `Parameter: ${param.key}`,
+                required: param.required || false,
+                dataType: param.dataType
+              };
+            });
+            
+            setFormData(newFormData);
+            console.log('📎 Created form-data fields:', newFormData.map(f => ({ key: f.key, type: f.type, value: f.value })));
+            
+            // Clear other body states
+            setRequestBody('');
+            setUrlEncodedData([]);
+            setBinaryFile(null);
+            setGraphqlQuery('');
+            setGraphqlVariables('');
+          }
+            // ========== HANDLE JSON/RAW BODY ==========
+            else if (bodyType === 'raw' || bodyType === 'json') {
+              setRequestBodyType('raw');
+              setRawBodyType('json');
+              setActiveTab('body');
+              skipAutoTabChange.current = true;
+              
+              if (bodyParams.length > 0) {
+                const jsonBody = {};
+                bodyParams.forEach(param => {
+                  if (param.key) {
+                    let value = param.value;
+                    
+                    if (value === undefined || value === null || (typeof value === 'string' && value === '')) {
+                      value = getDefaultValueByType(param.dataType, param.key);
+                      console.log(`📝 [${param.key}] Using default value for JSON body:`, JSON.stringify(value));
                     }
-                  });
-                  
-                  let jsonString = JSON.stringify(jsonBody, null, 2);
-                  
-                  if (details.requestBody?.sample && details.requestBody.sample !== '{}') {
-                    try {
-                      const parsedSample = JSON.parse(details.requestBody.sample);
-                      const merged = { ...parsedSample, ...jsonBody };
-                      jsonString = JSON.stringify(merged, null, 2);
-                    } catch (e) {}
+                    
+                    // Parse based on data type
+                    if (param.dataType === 'jsonb' || param.dataType === 'json' || param.dataType === 'object') {
+                      if (typeof value === 'string') {
+                        try {
+                          value = JSON.parse(value);
+                        } catch (e) {
+                          value = [];
+                        }
+                      }
+                      if (!Array.isArray(value) && typeof value !== 'object') {
+                        value = [];
+                      }
+                    } 
+                    else if (param.dataType === 'array') {
+                      if (typeof value === 'string') {
+                        try {
+                          value = JSON.parse(value);
+                        } catch (e) {
+                          value = [];
+                        }
+                      }
+                      if (!Array.isArray(value)) {
+                        value = [];
+                      }
+                    } 
+                    else if (param.dataType === 'integer') {
+                      if (typeof value === 'string') {
+                        value = parseInt(value, 10);
+                      }
+                      if (isNaN(value)) {
+                        value = 1;
+                      }
+                    }
+                    else if (param.dataType === 'float') {
+                      if (typeof value === 'string') {
+                        value = parseFloat(value);
+                      }
+                      if (isNaN(value)) {
+                        value = 0.0;
+                      }
+                    }
+                    else if (param.dataType === 'boolean') {
+                      if (typeof value === 'string') {
+                        value = value === 'true' || value === '1';
+                      }
+                    }
+                    
+                    jsonBody[param.key] = value;
                   }
-                  setRequestBody(jsonString);
-                  console.log('📦 Generated JSON body:', jsonString);
-                } else if (details.requestBody?.sample) {
-                  setRequestBody(details.requestBody.sample);
-                } else {
-                  setRequestBody('{}');
-                }
-                break;
+                });
                 
-              // Other body types remain the same...
-              default:
-                // Keep existing body handling
-                break;
+                let jsonString = JSON.stringify(jsonBody, null, 2);
+                
+                if (details.requestBody?.sample && details.requestBody.sample !== '{}') {
+                  try {
+                    const parsedSample = JSON.parse(details.requestBody.sample);
+                    const merged = { ...parsedSample, ...jsonBody };
+                    jsonString = JSON.stringify(merged, null, 2);
+                  } catch (e) {}
+                }
+                setRequestBody(jsonString);
+                console.log('📦 Generated JSON body:', jsonString);
+              } else if (details.requestBody?.sample) {
+                setRequestBody(details.requestBody.sample);
+              } else {
+                setRequestBody('{}');
+              }
+              
+              // Clear other body states
+              setFormData([]);
+              setUrlEncodedData([]);
+              setBinaryFile(null);
+              setGraphqlQuery('');
+              setGraphqlVariables('');
+            }
+            // ========== HANDLE XML BODY ==========
+            else if (bodyType === 'xml') {
+              setRequestBodyType('xml');
+              setActiveTab('body');
+              skipAutoTabChange.current = true;
+              if (details.requestBody?.sample) {
+                setRequestBody(details.requestBody.sample);
+              } else if (bodyParams.length > 0) {
+                // Build XML from parameters
+                let xmlBody = '<?xml version="1.0" encoding="UTF-8"?>\n<request>\n';
+                bodyParams.forEach(param => {
+                  if (param.key) {
+                    const value = param.value !== undefined && param.value !== null && param.value !== '' 
+                      ? param.value 
+                      : getDefaultValueByType(param.dataType, param.key);
+                    xmlBody += `  <${param.key}>${value}</${param.key}>\n`;
+                  }
+                });
+                xmlBody += '</request>';
+                setRequestBody(xmlBody);
+              } else {
+                setRequestBody('<request>\n  \n</request>');
+              }
+              
+              // Clear other body states
+              setFormData([]);
+              setUrlEncodedData([]);
+              setBinaryFile(null);
+              setGraphqlQuery('');
+              setGraphqlVariables('');
+            }
+            // ========== HANDLE URLENCODED BODY ==========
+            else if (bodyType === 'x-www-form-urlencoded' || bodyType === 'urlencoded') {
+              setRequestBodyType('x-www-form-urlencoded');
+              setActiveTab('body');
+              skipAutoTabChange.current = true;
+              if (bodyParams.length > 0) {
+                const newUrlEncodedData = bodyParams.map((param, index) => ({
+                  id: param.id || `url-${Date.now()}-${index}-${Math.random()}`,
+                  key: param.key,
+                  value: param.value !== undefined && param.value !== null && param.value !== '' 
+                    ? param.value 
+                    : getDefaultValueByType(param.dataType, param.key),
+                  description: param.description || '',
+                  enabled: param.enabled !== false
+                }));
+                setUrlEncodedData(newUrlEncodedData);
+              } else {
+                setUrlEncodedData([]);
+              }
+              
+              // Clear other body states
+              setFormData([]);
+              setRequestBody('');
+              setBinaryFile(null);
+              setGraphqlQuery('');
+              setGraphqlVariables('');
+            }
+            // ========== HANDLE BINARY BODY ==========
+            else if (bodyType === 'binary') {
+              setRequestBodyType('binary');
+              setActiveTab('body');
+              skipAutoTabChange.current = true;
+              // Clear other body states
+              setFormData([]);
+              setUrlEncodedData([]);
+              setRequestBody('');
+              setGraphqlQuery('');
+              setGraphqlVariables('');
+              // Don't clear binaryFile - it might be set from previous selection
+            }
+            // ========== HANDLE GRAPHQL BODY ==========
+            else if (bodyType === 'graphql') {
+              setRequestBodyType('graphql');
+              setActiveTab('body');
+              skipAutoTabChange.current = true;
+              if (details.requestBody?.sample) {
+                try {
+                  const parsed = JSON.parse(details.requestBody.sample);
+                  if (parsed.query) {
+                    setGraphqlQuery(parsed.query);
+                  }
+                  if (parsed.variables) {
+                    setGraphqlVariables(JSON.stringify(parsed.variables, null, 2));
+                  }
+                } catch (e) {
+                  setGraphqlQuery(details.requestBody.sample);
+                  setGraphqlVariables('');
+                }
+              } else {
+                setGraphqlQuery('');
+                setGraphqlVariables('');
+              }
+              
+              // Clear other body states
+              setFormData([]);
+              setUrlEncodedData([]);
+              setRequestBody('');
+              setBinaryFile(null);
+            }
+            // ========== HANDLE NONE BODY ==========
+            else {
+              setRequestBodyType('none');
+              // Clear all body states
+              setRequestBody('');
+              setFormData([]);
+              setUrlEncodedData([]);
+              setBinaryFile(null);
+              setGraphqlQuery('');
+              setGraphqlVariables('');
             }
           }
         }
         
         setTimeout(() => {
-          const newActiveTab = determineActiveTab();
-          console.log('🎯 [After API Load] Setting active tab to:', newActiveTab);
-          setActiveTab(newActiveTab);
+          // Don't override if body tab was explicitly set during processing
+          if (!skipAutoTabChange.current) {
+            const newActiveTab = determineActiveTab();
+            console.log('🎯 [After API Load] Setting active tab to:', newActiveTab);
+            setActiveTab(newActiveTab);
+          } else {
+            console.log('🎯 [After API Load] Skipping auto-tab - body tab was explicitly set');
+          }
         }, 100);
       }
     } catch (apiError) {
@@ -3837,10 +4070,14 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     }
   } else {
     setTimeout(() => {
-      const newActiveTab = determineActiveTab();
-      console.log('🎯 [No API] Setting active tab to:', newActiveTab);
-      setActiveTab(newActiveTab);
-      setLoading(prev => ({ ...prev, request: false }));
+      // Don't override if body tab was explicitly set during processing
+      if (!skipAutoTabChange.current) {
+        const newActiveTab = determineActiveTab();
+        console.log('🎯 [After API Load] Setting active tab to:', newActiveTab);
+        setActiveTab(newActiveTab);
+      } else {
+        console.log('🎯 [After API Load] Skipping auto-tab - body tab was explicitly set');
+      }
     }, 100);
   }
   
@@ -6126,169 +6363,199 @@ const renderBodyTab = () => {
     }
 
     switch (requestBodyType) {
+  
       case 'form-data':
-        return (
-          <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-            <table className="w-full">
-              <thead style={{ backgroundColor: colors.tableHeader }}>
-                <tr>
-                  <th className="w-12 px-4 py-3">
-                    <div className="flex items-center">
-                      <input 
-                        type="checkbox" 
-                        className="rounded-sm hover-lift"
-                        checked={formData.every(f => f.enabled)}
-                        onChange={() => {
-                          const allEnabled = formData.every(f => f.enabled);
-                          setFormData(formData.map(f => ({ ...f, enabled: !allEnabled })));
+  return (
+    <div className="border rounded overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead style={{ backgroundColor: colors.tableHeader }}>
+            <tr>
+              <th className="w-12 px-4 py-3">Enabled</th>
+              <th className="text-left px-4 py-3">KEY</th>
+              <th className="text-left px-4 py-3">VALUE</th>
+              <th className="text-left px-4 py-3">TYPE</th>
+              <th className="text-left px-4 py-3">DESCRIPTION</th>
+              <th className="w-20 px-4 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {formData.map((item, index) => (
+              <tr key={item.id}>
+                <td className="px-4 py-3">
+                  <input 
+                    type="checkbox" 
+                    checked={item.enabled} 
+                    onChange={() => {
+                      const newFormData = [...formData];
+                      newFormData[index].enabled = !newFormData[index].enabled;
+                      setFormData(newFormData);
+                    }}
+                  />
+                </td>
+                <td className="px-4 py-3">
+                  <input 
+                    type="text" 
+                    value={item.key} 
+                    onChange={(e) => {
+                      const newFormData = [...formData];
+                      newFormData[index].key = e.target.value;
+                      setFormData(newFormData);
+                    }}
+                    className="w-full px-2 py-1 border rounded text-sm"
+                    style={{ 
+                      borderColor: colors.border,
+                      backgroundColor: colors.inputBg,
+                      color: colors.text
+                    }}
+                    placeholder="Parameter name" 
+                  />
+                </td>
+                <td className="px-4 py-3">
+                  {item.type === 'file' ? (
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => {
+                          const input = document.createElement('input');
+                          input.type = 'file';
+                          input.onchange = (e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              const newFormData = [...formData];
+                              newFormData[index].file = file;
+                              newFormData[index].value = file.name;
+                              setFormData(newFormData);
+                            }
+                          };
+                          input.click();
                         }}
+                        className="px-3 py-1 border rounded text-sm hover:bg-opacity-50 transition-colors"
                         style={{ 
                           borderColor: colors.border,
-                          backgroundColor: colors.card,
-                          cursor: 'pointer'
-                        }}
-                      />
-                    </div>
-                  </th>
-                  <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>KEY</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>VALUE</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>TYPE</th>
-                  <th className="w-20 px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => setFormData([...formData, { id: `form-${Date.now()}`, key: '', value: '', type: 'text', enabled: true }])}
-                      className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                      style={{ backgroundColor: colors.hover }}>
-                      <Plus size={14} style={{ color: colors.textSecondary }} />
-                    </button>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {formData.map((item, index) => (
-                  <tr key={item.id} className="border-b last:border-b-0 hover-lift" style={{ borderColor: colors.border }}>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={item.enabled}
-                          onChange={() => {
-                            const newData = [...formData];
-                            newData[index].enabled = !newData[index].enabled;
-                            setFormData(newData);
-                          }}
-                          className="rounded-sm hover-lift"
-                          style={{ 
-                            borderColor: colors.border,
-                            backgroundColor: colors.card,
-                            cursor: 'pointer'
-                          }}
-                        />
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <input
-                        type="text"
-                        value={item.key}
-                        onChange={(e) => {
-                          const newData = [...formData];
-                          newData[index].key = e.target.value;
-                          setFormData(newData);
-                        }}
-                        className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
-                        style={{ 
-                          borderColor: colors.border,
-                          color: colors.text,
-                          backgroundColor: colors.inputBg
-                        }}
-                        placeholder="Key"
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      {item.type === 'text' ? (
-                        <input
-                          type="text"
-                          value={item.value}
-                          onChange={(e) => {
-                            const newData = [...formData];
-                            newData[index].value = e.target.value;
-                            setFormData(newData);
-                          }}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
-                          style={{ 
-                            borderColor: colors.border,
-                            color: colors.text,
-                            backgroundColor: colors.inputBg
-                          }}
-                          placeholder="Value"
-                        />
-                      ) : (
-                        <button type="button" className="w-full px-2 py-1.5 border rounded-sm text-sm text-left hover:bg-opacity-50 transition-colors hover-lift"
-                          style={{ 
-                            borderColor: colors.border,
-                            color: colors.textSecondary,
-                            backgroundColor: colors.inputBg
-                          }}
+                          backgroundColor: colors.inputBg,
+                          color: colors.text
+                        }}>
+                        {item.file ? item.file.name : `Click to select ${item.key || 'file'} file`}
+                      </button>
+                      {item.file && (
+                        <button 
                           onClick={() => {
-                            const input = document.createElement('input');
-                            input.type = 'file';
-                            input.onchange = (e) => {
-                              const file = e.target.files[0];
-                              if (file) {
-                                const newData = [...formData];
-                                newData[index].file = file;
-                                newData[index].value = file.name;
-                                setFormData(newData);
-                                showToast(`File selected: ${file.name}`, 'success');
-                              }
-                            };
-                            input.click();
-                          }}>
-                          Select File
+                            const newFormData = [...formData];
+                            newFormData[index].file = null;
+                            newFormData[index].value = '';
+                            setFormData(newFormData);
+                          }}
+                          className="px-2 py-1 rounded text-sm hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.error + '20', color: colors.error }}
+                        >
+                          Clear
                         </button>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <select
-                        value={item.type}
-                        onChange={(e) => {
-                          const newData = [...formData];
-                          newData[index].type = e.target.value;
-                          if (e.target.value === 'file') {
-                            newData[index].value = '';
-                          }
-                          setFormData(newData);
-                        }}
-                        className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
-                        style={{ 
-                          borderColor: colors.border,
-                          color: colors.text,
-                          backgroundColor: colors.inputBg
-                        }}>
-                        <option value="text">Text</option>
-                        <option value="file">File</option>
-                      </select>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newData = formData.filter((_, i) => i !== index);
-                          setFormData(newData);
-                        }}
-                        className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                        style={{ backgroundColor: colors.hover }}>
-                        <Trash2 size={13} style={{ color: colors.textSecondary }} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        );
+                    </div>
+                  ) : (
+                    <input 
+                      type="text" 
+                      value={item.value} 
+                      onChange={(e) => {
+                        const newFormData = [...formData];
+                        newFormData[index].value = e.target.value;
+                        setFormData(newFormData);
+                      }}
+                      className="w-full px-2 py-1 border rounded text-sm"
+                      style={{ 
+                        borderColor: colors.border,
+                        backgroundColor: colors.inputBg,
+                        color: colors.text
+                      }}
+                      placeholder={`Enter ${item.key || 'value'}`} 
+                    />
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <select 
+                    value={item.type} 
+                    onChange={(e) => {
+                      const newFormData = [...formData];
+                      newFormData[index].type = e.target.value;
+                      if (e.target.value === 'file') {
+                        newFormData[index].value = '';
+                        newFormData[index].file = null;
+                      }
+                      setFormData(newFormData);
+                    }}
+                    className="w-full px-2 py-1 border rounded text-sm"
+                    style={{ 
+                      borderColor: colors.border,
+                      backgroundColor: colors.inputBg,
+                      color: colors.text
+                    }}>
+                    <option value="text">Text</option>
+                    <option value="file">File</option>
+                  </select>
+                </td>
+                <td className="px-4 py-3">
+                  <input 
+                    type="text" 
+                    value={item.description || ''} 
+                    onChange={(e) => {
+                      const newFormData = [...formData];
+                      newFormData[index].description = e.target.value;
+                      setFormData(newFormData);
+                    }}
+                    className="w-full px-2 py-1 border rounded text-sm"
+                    style={{ 
+                      borderColor: colors.border,
+                      backgroundColor: colors.inputBg,
+                      color: colors.text
+                    }}
+                    placeholder="Description" 
+                  />
+                </td>
+                <td className="px-4 py-3">
+                  {!item.required && (
+                    <button 
+                      onClick={() => {
+                        setFormData(formData.filter((_, i) => i !== index));
+                      }}
+                      className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                      style={{ color: colors.error }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      
+      {/* Add button for new fields */}
+      <div className="p-3 border-t" style={{ borderColor: colors.border }}>
+        <button
+          onClick={() => {
+            setFormData([...formData, {
+              id: `form-${Date.now()}`,
+              key: '',
+              value: '',
+              type: 'text',
+              enabled: true,
+              file: null,
+              description: '',
+              required: false
+            }]);
+          }}
+          className="px-3 py-1.5 rounded text-sm flex items-center gap-2 hover:opacity-90 transition-colors"
+          style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+        >
+          <Plus size={12} />
+          Add Field
+        </button>
+      </div>
+    </div>
+  );
 
-      case 'x-www-form-urlencoded':
+  case 'x-www-form-urlencoded':
         return (
           <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
             <table className="w-full">
@@ -6568,52 +6835,109 @@ const renderBodyTab = () => {
         );
       
       case 'binary':
-        return (
-          <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
-            <FileBinary size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-            <p className="text-xs mb-2" style={{ color: colors.text }}>Upload a file</p>
-            <p className="text-xs mb-6 max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
-              Select a file to send as the request body. Files are sent as-is without any processing.
-            </p>
-            <button type="button" className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 mx-auto hover-lift"
-              style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-              onClick={() => {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = '*/*';
-                input.onchange = (e) => {
-                  const file = e.target.files[0];
-                  if (file) {
-                    setBinaryFile(file);
-                    showToast(`File selected: ${file.name}`, 'success');
-                  }
-                };
-                input.click();
-              }}>
-              <Upload size={14} />
-              Choose File
+  return (
+    <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
+      <FileIcon size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
+      <p className="text-xs mb-2" style={{ color: colors.text }}>Upload a file</p>
+      <p className="text-xs mb-6 max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
+        Select a file to send as the request body. Files are sent as-is without any processing.
+      </p>
+      
+      {/* Single file upload */}
+      <div className="mb-4">
+        <button type="button" className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 mx-auto hover-lift"
+          style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+          onClick={() => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '*/*';
+            input.onchange = (e) => {
+              const file = e.target.files[0];
+              if (file) {
+                setSelectedFile(file);
+                setBinaryFile(file);
+                showToast(`File selected: ${file.name}`, 'success');
+              }
+            };
+            input.click();
+          }}>
+          <Upload size={14} />
+          Choose File
+        </button>
+      </div>
+      
+      {/* Multiple files upload (optional) */}
+      <div>
+        <button type="button" className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 mx-auto hover-lift"
+          style={{ backgroundColor: colors.info, color: colors.white }}
+          onClick={() => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.multiple = true;
+            input.accept = '*/*';
+            input.onchange = (e) => {
+              const files = Array.from(e.target.files);
+              if (files.length > 0) {
+                setSelectedFiles(files);
+                setBinaryFile(files[0]); // For backward compatibility
+                showToast(`${files.length} file(s) selected`, 'success');
+              }
+            };
+            input.click();
+          }}>
+          <Upload size={14} />
+          Choose Multiple Files
+        </button>
+      </div>
+      
+      {/* Single file preview */}
+      {selectedFile && (
+        <div className="mt-4 p-3 rounded hover-lift" style={{ backgroundColor: colors.hover }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileIcon size={14} style={{ color: colors.textSecondary }} />
+              <span className="text-sm" style={{ color: colors.text }}>{selectedFile.name}</span>
+            </div>
+            <button type="button" onClick={() => { setSelectedFile(null); setBinaryFile(null); }} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              style={{ backgroundColor: colors.card }}>
+              <X size={12} style={{ color: colors.textSecondary }} />
             </button>
-            {binaryFile && (
-              <div className="mt-4 p-3 rounded hover-lift" style={{ backgroundColor: colors.hover }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <File size={14} style={{ color: colors.textSecondary }} />
-                    <span className="text-sm" style={{ color: colors.text }}>{binaryFile.name}</span>
-                  </div>
-                  <button type="button" onClick={() => setBinaryFile(null)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                    style={{ backgroundColor: colors.card }}>
-                    <X size={12} style={{ color: colors.textSecondary }} />
-                  </button>
-                </div>
-                <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-                  Size: {(binaryFile.size / 1024).toFixed(2)} KB
-                </p>
-              </div>
-            )}
           </div>
-        );
-
-      case 'graphql':
+          <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+            Size: {(selectedFile.size / 1024).toFixed(2)} KB • Type: {selectedFile.type || 'unknown'}
+          </p>
+        </div>
+      )}
+      
+      {/* Multiple files preview */}
+      {selectedFiles.length > 0 && !selectedFile && (
+        <div className="mt-4 space-y-2">
+          {selectedFiles.map((file, idx) => (
+            <div key={idx} className="p-2 rounded hover-lift" style={{ backgroundColor: colors.hover }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileIcon size={12} style={{ color: colors.textSecondary }} />
+                  <span className="text-xs" style={{ color: colors.text }}>{file.name}</span>
+                </div>
+                <span className="text-xs" style={{ color: colors.textSecondary }}>
+                  {(file.size / 1024).toFixed(2)} KB
+                </span>
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => { setSelectedFiles([]); setBinaryFile(null); }}
+            className="text-xs px-2 py-1 rounded mt-2 hover:bg-opacity-50 transition-colors"
+            style={{ backgroundColor: colors.error + '20', color: colors.error }}
+          >
+            Clear all files
+          </button>
+        </div>
+      )}
+    </div>
+  );
+       case 'graphql':
         return (
           <div className="space-y-4">
             <div>
@@ -7029,6 +7353,7 @@ const renderBodyTab = () => {
     }
   }, [abortController]);
  
+ 
   const handleExecuteRequest = useCallback(async () => {
   const validationErrors = validateExecuteRequest({
     method: requestMethod,
@@ -7040,7 +7365,6 @@ const renderBodyTab = () => {
     return;
   }
 
-  // Create new AbortController for this request
   const controller = new AbortController();
   setAbortController(controller);
   
@@ -7051,10 +7375,8 @@ const renderBodyTab = () => {
   const startTime = Date.now();
 
   try {
-    // ============== STEP 1: BUILD THE FINAL URL WITH PATH PARAMETERS ==============
     let finalUrl = requestUrl;
     
-    // Get the path parameters from state
     const pathParamsArray = requestPathParams
       .filter(p => p.enabled && p.key && p.key.trim() !== '')
       .map(p => ({
@@ -7064,7 +7386,6 @@ const renderBodyTab = () => {
 
     console.log('📤 Path params from UI:', pathParamsArray);
 
-    // Replace path parameters in the URL
     if (pathParamsArray.length > 0) {
       pathParamsArray.forEach(param => {
         const placeholder = `{${param.key}}`;
@@ -7082,7 +7403,6 @@ const renderBodyTab = () => {
       });
     }
 
-    // ============== STEP 2: BUILD THE REQUEST BODY ==============
     let body = null;
     let contentType = '';
 
@@ -7129,27 +7449,42 @@ const renderBodyTab = () => {
         }
       } 
       else if (requestBodyType === 'form-data') {
-        const hasFiles = formData.some(f => f.type === 'file' && f.file);
+        const formDataObj = new FormData();
         
-        if (hasFiles) {
-          const formDataObj = new FormData();
-          formData.filter(f => f.enabled && f.key && f.key.trim() !== '').forEach(field => {
-            if (field.type === 'file' && field.file) {
-              formDataObj.append(field.key, field.file);
-            } else {
-              formDataObj.append(field.key, field.value || '');
+        console.log('📎 Building FormData with fields:', formData.length);
+        
+        formData.forEach(field => {
+          if (!field.enabled) {
+            console.log(`⏭️ Skipping disabled field: ${field.key}`);
+            return;
+          }
+          
+          if (field.type === 'file' && field.file) {
+            formDataObj.append(field.key, field.file);
+            console.log(`📎 Appending file: ${field.key} = ${field.file.name} (${field.file.size} bytes, type: ${field.file.type})`);
+          } else if (field.type === 'text') {
+            let value = field.value;
+            
+            if (field.dataType === 'jsonb' || field.dataType === 'json') {
+              try {
+                if (typeof value === 'object') {
+                  value = JSON.stringify(value);
+                } else if (value && typeof value === 'string') {
+                  JSON.parse(value);
+                }
+              } catch(e) {
+                console.log(`⚠️ Invalid JSON for ${field.key}, sending as string:`, e.message);
+              }
             }
-          });
-          body = formDataObj;
-        } else {
-          contentType = 'application/json';
-          const jsonBody = {};
-          formData.filter(f => f.enabled && f.key && f.key.trim() !== '').forEach(field => {
-            jsonBody[field.key] = field.value || '';
-          });
-          body = JSON.stringify(jsonBody);
-        }
-      } 
+            
+            const stringValue = value !== undefined && value !== null ? String(value) : '';
+            formDataObj.append(field.key, stringValue);
+            console.log(`📝 Appending text: ${field.key} = ${stringValue.substring(0, 100)}${stringValue.length > 100 ? '...' : ''}`);
+          }
+        });
+        
+        body = formDataObj;
+      }
       else if (requestBodyType === 'x-www-form-urlencoded') {
         contentType = 'application/x-www-form-urlencoded';
         const params = new URLSearchParams();
@@ -7180,14 +7515,26 @@ const renderBodyTab = () => {
         }
         body = JSON.stringify(graphqlBody);
       }
-      else if (requestBodyType === 'binary' && binaryFile) {
-        body = binaryFile;
+      else if (requestBodyType === 'binary') {
+        if (selectedFiles.length > 0) {
+          const formDataObj = new FormData();
+          selectedFiles.forEach((file, index) => {
+            formDataObj.append(`file_${index}`, file);
+          });
+          body = formDataObj;
+          console.log(`📎 Sending ${selectedFiles.length} files as multipart/form-data`);
+        } else if (selectedFile) {
+          body = selectedFile;
+          contentType = selectedFile.type || 'application/octet-stream';
+          console.log(`📎 Sending file as binary: ${selectedFile.name} (${selectedFile.size} bytes, type: ${contentType})`);
+        } else if (binaryFile) {
+          body = binaryFile;
+          contentType = binaryFile.type || 'application/octet-stream';
+          console.log(`📎 Sending binary file: ${binaryFile.name} (${binaryFile.size} bytes)`);
+        }
       }
-    } else {
-      console.log('📭 No body parameters to send');
     }
 
-    // ============== STEP 3: BUILD HEADERS ==============
     const headers = {};
     
     requestHeaders.filter(h => h.enabled && h.key && h.key.trim() !== '').forEach(header => {
@@ -7220,10 +7567,16 @@ const renderBodyTab = () => {
       headers['Authorization'] = `Bearer ${authConfig.token}`;
     }
 
-    if (body && !(body instanceof FormData)) {
+    const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+    
+    if (body && !isFormData) {
       if (!headers['Content-Type'] && contentType) {
         headers['Content-Type'] = contentType;
       }
+    } else if (isFormData) {
+      delete headers['Content-Type'];
+      delete headers['content-type'];
+      console.log('📎 FormData detected - Content-Type header removed');
     }
 
     if (!headers['Accept']) {
@@ -7239,19 +7592,23 @@ const renderBodyTab = () => {
       url: finalUrl,
       headers: headers,
       hasBody: !!body,
-      bodyType: body instanceof FormData ? 'FormData' : (body ? typeof body : 'none'),
+      bodyType: isFormData ? 'FormData' : (body ? typeof body : 'none'),
       pathParams: pathParamsArray
     });
 
-    // ============== STEP 4: MAKE THE REQUEST WITH ABORT CONTROLLER ==============
     const fetchOptions = {
       method: requestMethod,
       headers: headers,
       mode: 'cors',
       credentials: 'omit',
       redirect: 'follow',
-      signal: controller.signal // Add the abort signal
+      signal: controller.signal
     };
+
+    if (isFormData) {
+      delete fetchOptions.headers['Content-Type'];
+      delete fetchOptions.headers['content-type'];
+    }
 
     if (body) {
       fetchOptions.body = body;
@@ -7292,13 +7649,13 @@ const renderBodyTab = () => {
     }
 
     const formattedResponse = {
-      responseBody,  // Make sure this is set correctly
+      responseBody,
       statusCode: fetchResponse.status,
       statusText: fetchResponse.statusText,
       headers: responseHeaders,
       responseTime,
       responseSize: Math.round(new Blob([responseBody]).size / 1024),
-      data: responseBody  // Also set data for compatibility
+      data: responseBody
     };
 
     setResponse(formattedResponse);
@@ -7312,7 +7669,6 @@ const renderBodyTab = () => {
     }
 
   } catch (error) {
-    // Check if this was an abort error
     if (error.name === 'AbortError' || error.message === 'The user aborted a request.') {
       console.log('🛑 Request cancelled by user');
       setResponse({
@@ -7359,7 +7715,7 @@ const renderBodyTab = () => {
   }
 }, [authToken, requestMethod, requestUrl, requestHeaders, requestBody, requestParams, requestPathParams, 
     authType, authConfig, requestBodyType, rawBodyType, formData, urlEncodedData, binaryFile, 
-    graphqlQuery, graphqlVariables]);
+    graphqlQuery, graphqlVariables, selectedFiles, selectedFile]);
     
 
 // Also update the addFormData function to handle file uploads properly
@@ -7370,7 +7726,8 @@ const addFormData = () => {
     value: '', 
     type: 'text', 
     enabled: true,
-    file: null
+    file: null,
+    description: ''
   };
   setFormData([...formData, newItem]);
 };

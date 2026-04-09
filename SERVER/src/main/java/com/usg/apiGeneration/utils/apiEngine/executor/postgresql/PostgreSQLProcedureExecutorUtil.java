@@ -15,8 +15,10 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.*;
 import org.springframework.stereotype.Component;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.sql.DataSource;
+import java.io.IOException;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -47,9 +49,6 @@ public class PostgreSQLProcedureExecutorUtil {
         this.objectResolver = objectResolver;
     }
 
-    /**
-     * Execute a PostgreSQL procedure (stored procedure)
-     */
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String procedureName, String schema, ExecuteApiRequestDTO request,
                           List<ApiParameterDTO> configuredParamDTOs) {
@@ -95,7 +94,6 @@ public class PostgreSQLProcedureExecutorUtil {
                     log.info("XML BODY DETECTED! Length: {} characters", xmlBody.length());
                 } else if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
                     log.info("JSON BODY DETECTED!");
-                    // Parse JSON body
                     try {
                         Map<String, Object> jsonMap = objectMapper.readValue(bodyString, new TypeReference<Map<String, Object>>() {});
                         for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
@@ -134,7 +132,6 @@ public class PostgreSQLProcedureExecutorUtil {
                 log.info("✅ Extracted {} parameters from XML and added to dbParams", extractedXmlParams.size());
             }
 
-            // Look for explicit XML/JSON parameter in API configuration
             boolean hasBodyParameter = false;
             for (ApiParameterEntity param : api.getParameters()) {
                 String paramKey = param.getKey().toLowerCase();
@@ -156,7 +153,6 @@ public class PostgreSQLProcedureExecutorUtil {
                 }
             }
 
-            // If no explicit parameter found, look for text parameter
             if (!hasBodyParameter && extractedXmlParams.isEmpty()) {
                 for (ApiParameterEntity param : api.getParameters()) {
                     String dbParamName = getDbParamName(param);
@@ -175,6 +171,42 @@ public class PostgreSQLProcedureExecutorUtil {
         // ============ ADD PATH, QUERY, HEADER PARAMETERS ============
         addParameters(request, api, apiToDbParamMap, dbParams);
 
+        // ============ HANDLE FILE UPLOADS (ONLY IF PRESENT) ============
+        if ((request.getFileMap() != null && !request.getFileMap().isEmpty()) ||
+                (request.getFile() != null && !request.getFile().isEmpty())) {
+
+            log.info("Processing file uploads for procedure execution");
+
+            if (request.getFileMap() != null && !request.getFileMap().isEmpty()) {
+                for (Map.Entry<String, MultipartFile> entry : request.getFileMap().entrySet()) {
+                    String paramName = entry.getKey();
+                    MultipartFile file = entry.getValue();
+                    try {
+                        byte[] fileBytes = file.getBytes();
+                        String dbParamName = apiToDbParamMap.getOrDefault(paramName.toLowerCase(), paramName.toLowerCase());
+                        dbParams.put(dbParamName, fileBytes);
+                        log.info("✅ Added file to dbParams: {} -> {} ({} bytes)", paramName, dbParamName, fileBytes.length);
+                    } catch (IOException e) {
+                        log.error("Failed to read file: {}", e.getMessage());
+                        throw new RuntimeException("Failed to read uploaded file", e);
+                    }
+                }
+            }
+
+            if (request.getFile() != null && !request.getFile().isEmpty()) {
+                MultipartFile file = request.getFile();
+                try {
+                    byte[] fileBytes = file.getBytes();
+                    String dbParamName = apiToDbParamMap.getOrDefault("file", "file");
+                    dbParams.put(dbParamName, fileBytes);
+                    log.info("✅ Added single file to dbParams: {} -> {} ({} bytes)", file.getOriginalFilename(), dbParamName, fileBytes.length);
+                } catch (IOException e) {
+                    log.error("Failed to read file: {}", e.getMessage());
+                    throw new RuntimeException("Failed to read uploaded file", e);
+                }
+            }
+        }
+
         // ============ HANDLE AUTOGENERATE PARAMETERS ============
         if (api != null && api.getParameters() != null && !api.getParameters().isEmpty()) {
             log.info("Checking for AUTOGENERATE parameters to auto-populate");
@@ -185,7 +217,6 @@ public class PostgreSQLProcedureExecutorUtil {
                     String dbParamName = getDbParamName(param);
                     String timestamp = getCurrentTimestamp();
 
-                    // Check if this parameter already has a value
                     boolean hasExistingValue = false;
 
                     if (dbParams.containsKey(dbParamName)) {
@@ -227,9 +258,12 @@ public class PostgreSQLProcedureExecutorUtil {
             }
         }
 
-        // Handle collection/array parameters
+        // Handle collection/array parameters (skip byte arrays)
         for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
             Object value = entry.getValue();
+            if (value instanceof byte[]) {
+                continue; // Skip byte arrays - they're file data
+            }
             if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);
@@ -275,24 +309,19 @@ public class PostgreSQLProcedureExecutorUtil {
 
         // ============ EXECUTE PROCEDURE WITH PROPER CONNECTION MANAGEMENT ============
         try {
-            // Get DataSource from JdbcTemplate
             DataSource dataSource = postgresqlJdbcTemplate.getDataSource();
             if (dataSource == null) {
                 throw new SQLException("No DataSource available");
             }
 
-            // Use try-with-resources to ensure connection is properly closed
             try (Connection conn = dataSource.getConnection()) {
-                // Set network timeout
                 conn.setNetworkTimeout(Executors.newSingleThreadExecutor(), CONNECTION_TIMEOUT_MS);
 
-                // Set session statement timeout
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute("SET statement_timeout = '" + STATEMENT_TIMEOUT_SECONDS + "s'");
                     stmt.execute("SET lock_timeout = '" + STATEMENT_TIMEOUT_SECONDS + "s'");
                 }
 
-                // Build the CALL statement with proper type casting
                 String callSql = buildCallStatement(pgSchema, pgProcedureName, api.getParameters(), dbParams);
                 log.info("Executing PostgreSQL procedure with CALL syntax: {}", callSql);
                 log.info("Parameters: {}", dbParams);
@@ -300,23 +329,14 @@ public class PostgreSQLProcedureExecutorUtil {
                 List<String> capturedNotices = new ArrayList<>();
                 Map<String, Object> finalResult = new HashMap<>();
 
-                // Use try-with-resources for CallableStatement
                 try (CallableStatement cs = conn.prepareCall(callSql)) {
-                    // Set statement timeout
                     cs.setQueryTimeout(STATEMENT_TIMEOUT_SECONDS);
-
-                    // Set IN parameters
                     setParameters(cs, api.getParameters(), dbParams);
-
-                    // Register OUT parameters (calculate indices based on IN parameters)
                     int outParamIndex = registerOutParameters(cs, api.getResponseMappings(), api.getParameters(), dbParams);
-
-                    // Execute the procedure
                     log.info("Executing procedure {}.{}", pgSchema, pgProcedureName);
                     boolean hasResultSet = cs.execute();
                     log.info("Procedure executed successfully");
 
-                    // Capture NOTICE messages (SQLWarnings)
                     SQLWarning warning = cs.getWarnings();
                     while (warning != null) {
                         if (warning.getMessage() != null) {
@@ -326,7 +346,6 @@ public class PostgreSQLProcedureExecutorUtil {
                         warning = warning.getNextWarning();
                     }
 
-                    // Process captured notices
                     if (!capturedNotices.isEmpty()) {
                         log.info("Captured {} NOTICE messages from procedure", capturedNotices.size());
 
@@ -353,10 +372,8 @@ public class PostgreSQLProcedureExecutorUtil {
                         }
                     }
 
-                    // Process results
                     Map<String, Object> responseData = processResults(cs, api, dbParams, hasResultSet);
 
-                    // Merge captured notices into response
                     if (!finalResult.isEmpty()) {
                         responseData.putAll(finalResult);
                     }
@@ -389,9 +406,6 @@ public class PostgreSQLProcedureExecutorUtil {
         }
     }
 
-    /**
-     * Set IN and INOUT parameters
-     */
     private void setParameters(CallableStatement cs, List<ApiParameterEntity> parameters,
                                Map<String, Object> dbParams) throws SQLException {
         int index = 1;
@@ -425,16 +439,12 @@ public class PostgreSQLProcedureExecutorUtil {
         }
     }
 
-    /**
-     * Register OUT parameters and return the next available index
-     */
     private int registerOutParameters(CallableStatement cs, List<ApiResponseMappingEntity> responseMappings,
                                       List<ApiParameterEntity> parameters, Map<String, Object> dbParams) throws SQLException {
         if (responseMappings == null || responseMappings.isEmpty()) {
             return 1;
         }
 
-        // Calculate how many IN parameters we have
         int inParamCount = 0;
         if (parameters != null) {
             for (ApiParameterEntity param : parameters) {
@@ -447,7 +457,6 @@ public class PostgreSQLProcedureExecutorUtil {
             }
         }
 
-        // Register OUT parameters starting after IN parameters
         int outParamIndex = inParamCount + 1;
         for (ApiResponseMappingEntity mapping : responseMappings) {
             if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
@@ -465,9 +474,6 @@ public class PostgreSQLProcedureExecutorUtil {
         return outParamIndex;
     }
 
-    /**
-     * Build the CALL statement with proper type casting for PostgreSQL
-     */
     private String buildCallStatement(String schema, String procedureName,
                                       List<ApiParameterEntity> parameters,
                                       Map<String, Object> dbParams) {
@@ -491,46 +497,27 @@ public class PostgreSQLProcedureExecutorUtil {
                 if ((paramMode.contains("IN") || paramMode.equals("INOUT")) && dbParams.containsKey(dbParamName)) {
                     String pgType = param.getOracleType();
 
-                    // Add explicit casts for specific types
                     if (pgType != null) {
                         String lowerType = pgType.toLowerCase();
                         if (lowerType.contains("jsonb")) {
                             paramPlaceholders.add("?::jsonb");
-                            log.debug("Added JSONB cast for parameter: {}", dbParamName);
-                        }
-                        else if (lowerType.contains("json")) {
+                        } else if (lowerType.contains("json")) {
                             paramPlaceholders.add("?::json");
-                            log.debug("Added JSON cast for parameter: {}", dbParamName);
-                        }
-                        else if (lowerType.contains("uuid")) {
+                        } else if (lowerType.contains("uuid")) {
                             paramPlaceholders.add("?::uuid");
-                            log.debug("Added UUID cast for parameter: {}", dbParamName);
-                        }
-                        else if (lowerType.contains("timestamp")) {
+                        } else if (lowerType.contains("timestamp")) {
                             paramPlaceholders.add("?::timestamp");
-                            log.debug("Added TIMESTAMP cast for parameter: {}", dbParamName);
-                        }
-                        else if (lowerType.contains("date")) {
+                        } else if (lowerType.contains("date")) {
                             paramPlaceholders.add("?::date");
-                            log.debug("Added DATE cast for parameter: {}", dbParamName);
-                        }
-                        else if (lowerType.contains("integer") || lowerType.contains("int")) {
+                        } else if (lowerType.contains("integer") || lowerType.contains("int")) {
                             paramPlaceholders.add("?::integer");
-                            log.debug("Added INTEGER cast for parameter: {}", dbParamName);
-                        }
-                        else if (lowerType.contains("bigint")) {
+                        } else if (lowerType.contains("bigint")) {
                             paramPlaceholders.add("?::bigint");
-                            log.debug("Added BIGINT cast for parameter: {}", dbParamName);
-                        }
-                        else if (lowerType.contains("numeric") || lowerType.contains("decimal")) {
+                        } else if (lowerType.contains("numeric") || lowerType.contains("decimal")) {
                             paramPlaceholders.add("?::numeric");
-                            log.debug("Added NUMERIC cast for parameter: {}", dbParamName);
-                        }
-                        else if (lowerType.contains("boolean") || lowerType.contains("bool")) {
+                        } else if (lowerType.contains("boolean") || lowerType.contains("bool")) {
                             paramPlaceholders.add("?::boolean");
-                            log.debug("Added BOOLEAN cast for parameter: {}", dbParamName);
-                        }
-                        else {
+                        } else {
                             paramPlaceholders.add("?");
                         }
                     } else {
@@ -540,7 +527,6 @@ public class PostgreSQLProcedureExecutorUtil {
             }
         }
 
-        // If no parameters from config, use generic placeholders
         if (paramPlaceholders.isEmpty() && !dbParams.isEmpty()) {
             for (int i = 0; i < dbParams.size(); i++) {
                 paramPlaceholders.add("?");
@@ -554,17 +540,12 @@ public class PostgreSQLProcedureExecutorUtil {
         return callBuilder.toString();
     }
 
-    /**
-     * Process results from procedure execution
-     */
     private Map<String, Object> processResults(CallableStatement callableStatement, GeneratedApiEntity api,
                                                Map<String, Object> dbParams, boolean hasResultSet)
             throws SQLException {
         Map<String, Object> responseData = new HashMap<>();
 
-        // Process OUT parameters
         if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-            // Calculate OUT parameter indices
             int inParamCount = 0;
             if (api.getParameters() != null) {
                 for (ApiParameterEntity param : api.getParameters()) {
@@ -594,7 +575,6 @@ public class PostgreSQLProcedureExecutorUtil {
             }
         }
 
-        // Process result set
         if (hasResultSet) {
             try (ResultSet rs = callableStatement.getResultSet()) {
                 if (rs != null) {
@@ -618,7 +598,6 @@ public class PostgreSQLProcedureExecutorUtil {
             }
         }
 
-        // Default success response
         if (responseData.isEmpty()) {
             responseData.put("success", true);
             responseData.put("message", "Procedure executed successfully");
@@ -627,12 +606,8 @@ public class PostgreSQLProcedureExecutorUtil {
         return responseData;
     }
 
-    /**
-     * Add parameters from request (path, query, headers)
-     */
     private void addParameters(ExecuteApiRequestDTO request, GeneratedApiEntity api,
                                Map<String, String> apiToDbParamMap, Map<String, Object> dbParams) {
-        // Add path parameters
         if (request.getPathParams() != null) {
             for (Map.Entry<String, Object> entry : request.getPathParams().entrySet()) {
                 String dbParamName = apiToDbParamMap.getOrDefault(entry.getKey().toLowerCase(), entry.getKey().toLowerCase());
@@ -641,7 +616,6 @@ public class PostgreSQLProcedureExecutorUtil {
             }
         }
 
-        // Add query parameters
         if (request.getQueryParams() != null) {
             for (Map.Entry<String, Object> entry : request.getQueryParams().entrySet()) {
                 String dbParamName = apiToDbParamMap.getOrDefault(entry.getKey().toLowerCase(), entry.getKey().toLowerCase());
@@ -650,7 +624,6 @@ public class PostgreSQLProcedureExecutorUtil {
             }
         }
 
-        // Add headers that are defined as parameters
         if (request.getHeaders() != null && api.getParameters() != null) {
             for (Map.Entry<String, String> entry : request.getHeaders().entrySet()) {
                 boolean headerIsParameter = api.getParameters().stream()
@@ -664,9 +637,6 @@ public class PostgreSQLProcedureExecutorUtil {
         }
     }
 
-    /**
-     * Extract JSON from RAISE NOTICE message
-     */
     private String extractJsonFromNotice(String notice) {
         if (notice == null) return null;
 
@@ -689,9 +659,6 @@ public class PostgreSQLProcedureExecutorUtil {
         return null;
     }
 
-    /**
-     * Extract PostgreSQL error message
-     */
     private String extractPostgreSQLError(String errorMessage) {
         if (errorMessage == null) return "Unknown error";
 
@@ -704,9 +671,6 @@ public class PostgreSQLProcedureExecutorUtil {
         return errorMessage.length() > 200 ? errorMessage.substring(0, 200) + "..." : errorMessage;
     }
 
-    /**
-     * Map PostgreSQL type to JDBC SQL type
-     */
     private int mapToSqlType(String pgType) {
         if (pgType == null) return Types.VARCHAR;
 
@@ -735,30 +699,23 @@ public class PostgreSQLProcedureExecutorUtil {
         return Types.VARCHAR;
     }
 
-    /**
-     * Resolve schema from multiple sources
-     */
     private String resolveSchema(String schema, ApiSourceObjectDTO sourceObject,
                                  GeneratedApiEntity api, String procedureName) {
-        // Strategy 1: Use the schema parameter
         if (schema != null && !schema.trim().isEmpty()) {
             log.info("Strategy 1 - Using schema parameter: {}", schema);
             return schema.trim().toLowerCase();
         }
 
-        // Strategy 2: Try sourceObject.getOwner()
         if (sourceObject != null && sourceObject.getOwner() != null && !sourceObject.getOwner().trim().isEmpty()) {
             log.info("Strategy 2 - Using sourceObject.getOwner(): {}", sourceObject.getOwner());
             return sourceObject.getOwner().trim().toLowerCase();
         }
 
-        // Strategy 3: Try sourceObject.getSchemaName()
         if (sourceObject != null && sourceObject.getSchemaName() != null && !sourceObject.getSchemaName().trim().isEmpty()) {
             log.info("Strategy 3 - Using sourceObject.getSchemaName(): {}", sourceObject.getSchemaName());
             return sourceObject.getSchemaName().trim().toLowerCase();
         }
 
-        // Strategy 4: Get from API's source_object_info
         if (api != null && api.getSourceObjectInfo() != null) {
             try {
                 if (api.getSourceObjectInfo() instanceof Map) {
@@ -784,7 +741,6 @@ public class PostgreSQLProcedureExecutorUtil {
             }
         }
 
-        // Strategy 5: Try to get current schema
         try {
             DataSource dataSource = postgresqlJdbcTemplate.getDataSource();
             if (dataSource != null) {
@@ -804,7 +760,6 @@ public class PostgreSQLProcedureExecutorUtil {
             log.warn("Could not get current schema: {}", e.getMessage());
         }
 
-        // Strategy 6: Try to locate the procedure in accessible schemas
         try {
             String findProcedureSql = "SELECT n.nspname FROM pg_proc p " +
                     "JOIN pg_namespace n ON p.pronamespace = n.oid " +
@@ -821,14 +776,10 @@ public class PostgreSQLProcedureExecutorUtil {
             log.warn("Error searching for procedure: {}", e.getMessage());
         }
 
-        // Strategy 7: Default to 'public' schema
         log.info("Strategy 7 - Using default 'public' schema");
         return "public";
     }
 
-    /**
-     * Get database parameter name from API parameter entity
-     */
     private String getDbParamName(ApiParameterEntity param) {
         if (param.getDbParameter() != null && !param.getDbParameter().isEmpty()) {
             return param.getDbParameter().toLowerCase();
@@ -839,9 +790,6 @@ public class PostgreSQLProcedureExecutorUtil {
         return param.getKey().toLowerCase();
     }
 
-    /**
-     * Get current timestamp for AUTOGENERATE
-     */
     private String getCurrentTimestamp() {
         LocalDateTime now = LocalDateTime.now();
         return String.format("%04d%02d%02d%02d%02d%02d",
@@ -853,9 +801,6 @@ public class PostgreSQLProcedureExecutorUtil {
                 now.getSecond());
     }
 
-    /**
-     * Parse XML body and extract parameter values
-     */
     private Map<String, Object> parseXmlParameters(String xmlBody, List<ApiParameterDTO> configuredParamDTOs,
                                                    Map<String, String> apiToDbParamMap) {
         Map<String, Object> extractedParams = new HashMap<>();

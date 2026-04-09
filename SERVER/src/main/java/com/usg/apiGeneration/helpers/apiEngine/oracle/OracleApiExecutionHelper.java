@@ -420,6 +420,9 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
     /**
      * Extract path parameters from the URL based on the API's endpoint path pattern
      */
+    /**
+     * Extract path parameters from the URL based on the API's endpoint path pattern
+     */
     private void extractPathParamsFromUrl(GeneratedApiEntity api, ExecuteApiRequestDTO executeRequest, Map<String, Object> pathParams) {
         try {
             String url = executeRequest.getUrl();
@@ -427,7 +430,7 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
 
             log.info("Extracting path params from URL: {} using pattern: {}", url, endpointPattern);
 
-            // STEP 1: Extract all parameter names from the pattern (e.g., {acct_link}, {global_bra})
+            // Extract all parameter names from the pattern (e.g., {acct_link})
             Pattern pattern = Pattern.compile("\\{([^}]+)\\}");
             Matcher matcher = pattern.matcher(endpointPattern);
 
@@ -443,35 +446,95 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
 
             log.info("Found {} path parameters in pattern: {}", paramNames.size(), paramNames);
 
-            // STEP 2: Split the pattern into segments to understand the structure
-            String[] patternSegments = endpointPattern.split("/");
-            String[] urlSegments = url.split("/");
+            // Find the position where the endpoint path starts in the URL
+            // The URL format is: http://server:port/plx/api/gen/{apiId}/api/v1/{endpoint}/{params}
 
-            log.debug("Pattern segments: {}", Arrays.toString(patternSegments));
-            log.debug("URL segments: {}", Arrays.toString(urlSegments));
+            // First, find the API ID in the URL
+            String apiId = api.getId();
+            String apiIdPattern = "/gen/" + apiId;
+            int apiIdIndex = url.indexOf(apiIdPattern);
 
-            // STEP 3: Match each pattern segment with URL segment
-            int paramIndex = 0;
-            for (int i = 0; i < patternSegments.length && i < urlSegments.length; i++) {
-                String patternSegment = patternSegments[i];
-                String urlSegment = urlSegments[i];
+            if (apiIdIndex == -1) {
+                log.warn("Could not find API ID pattern '{}' in URL: {}", apiIdPattern, url);
+                return;
+            }
 
-                // If this pattern segment is a parameter placeholder
-                if (patternSegment.startsWith("{") && patternSegment.endsWith("}")) {
-                    String paramName = patternSegment.substring(1, patternSegment.length() - 1);
-                    pathParams.put(paramName, urlSegment);
-                    log.info("Extracted path parameter: {} = {}", paramName, urlSegment);
-                    paramIndex++;
+            // Get the substring after the API ID
+            String afterApiId = url.substring(apiIdIndex + apiIdPattern.length());
+            log.info("URL after API ID: {}", afterApiId);
+
+            // Now afterApiId looks like: /api/v1/get-acctdescrp/001020551601
+            // Split by "/" and filter out empty strings
+            String[] urlSegments = afterApiId.split("/");
+            List<String> filteredUrlSegments = new ArrayList<>();
+            for (String segment : urlSegments) {
+                if (segment != null && !segment.isEmpty()) {
+                    filteredUrlSegments.add(segment);
                 }
             }
 
-            log.info("Total extracted {} path parameters", paramIndex);
+            log.info("URL segments: {}", filteredUrlSegments);
+
+            // Split the endpoint pattern by "/"
+            String[] patternSegments = endpointPattern.split("/");
+            List<String> filteredPatternSegments = new ArrayList<>();
+            for (String segment : patternSegments) {
+                if (segment != null && !segment.isEmpty()) {
+                    filteredPatternSegments.add(segment);
+                }
+            }
+
+            log.info("Pattern segments: {}", filteredPatternSegments);
+
+            // Find where the pattern starts in the URL segments
+            // The pattern might be at the end of the URL
+            int patternStartIndex = -1;
+            for (int i = 0; i <= filteredUrlSegments.size() - filteredPatternSegments.size(); i++) {
+                boolean matches = true;
+                for (int j = 0; j < filteredPatternSegments.size(); j++) {
+                    String patternSegment = filteredPatternSegments.get(j);
+                    String urlSegment = filteredUrlSegments.get(i + j);
+
+                    // If pattern segment is a placeholder, it matches anything
+                    if (patternSegment.startsWith("{") && patternSegment.endsWith("}")) {
+                        continue;
+                    }
+                    // Otherwise, they must match exactly
+                    if (!patternSegment.equals(urlSegment)) {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (matches) {
+                    patternStartIndex = i;
+                    break;
+                }
+            }
+
+            if (patternStartIndex == -1) {
+                log.warn("Could not find pattern in URL segments");
+                return;
+            }
+
+            log.info("Pattern starts at URL segment index: {}", patternStartIndex);
+
+            // Extract path parameters
+            for (int i = 0; i < filteredPatternSegments.size(); i++) {
+                String patternSegment = filteredPatternSegments.get(i);
+                if (patternSegment.startsWith("{") && patternSegment.endsWith("}")) {
+                    String paramName = patternSegment.substring(1, patternSegment.length() - 1);
+                    String paramValue = filteredUrlSegments.get(patternStartIndex + i);
+                    pathParams.put(paramName, paramValue);
+                    log.info("Extracted path parameter: {} = {}", paramName, paramValue);
+                }
+            }
+
+            log.info("Total extracted {} path parameters: {}", pathParams.size(), pathParams);
 
         } catch (Exception e) {
             log.error("Failed to extract path parameters from URL: {}", e.getMessage(), e);
         }
     }
-
 
 
     public Map<String, Object> createConsolidatedParams(ExecuteApiRequestDTO request) {

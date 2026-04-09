@@ -15,8 +15,10 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.*;
 import org.springframework.stereotype.Component;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.sql.DataSource;
+import java.io.IOException;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.Executors;
@@ -139,6 +141,43 @@ public class PostgreSQLFunctionExecutorUtil {
             }
         }
 
+        // ============ HANDLE FILE UPLOADS (ONLY IF PRESENT) ============
+        if ((request.getFileMap() != null && !request.getFileMap().isEmpty()) ||
+                (request.getFile() != null && !request.getFile().isEmpty())) {
+
+            log.info("Processing file uploads for PostgreSQL function execution");
+
+            if (request.getFileMap() != null && !request.getFileMap().isEmpty()) {
+                for (Map.Entry<String, MultipartFile> entry : request.getFileMap().entrySet()) {
+                    String paramName = entry.getKey();
+                    MultipartFile file = entry.getValue();
+                    try {
+                        byte[] fileBytes = file.getBytes();
+                        String dbParamName = apiToDbParamMap.getOrDefault(paramName.toLowerCase(), paramName.toLowerCase());
+                        dbParams.put(dbParamName, fileBytes);
+                        log.info("✅ Added file to dbParams: {} -> {} ({} bytes)", paramName, dbParamName, fileBytes.length);
+                    } catch (IOException e) {
+                        log.error("Failed to read file: {}", e.getMessage());
+                        throw new RuntimeException("Failed to read uploaded file", e);
+                    }
+                }
+            }
+
+            if (request.getFile() != null && !request.getFile().isEmpty()) {
+                MultipartFile file = request.getFile();
+                try {
+                    byte[] fileBytes = file.getBytes();
+                    // Use mapping for the single file parameter name (e.g., "file" or whatever the API expects)
+                    String dbParamName = apiToDbParamMap.getOrDefault("file", "file");
+                    dbParams.put(dbParamName, fileBytes);
+                    log.info("✅ Added single file to dbParams: {} -> {} ({} bytes)", file.getOriginalFilename(), dbParamName, fileBytes.length);
+                } catch (IOException e) {
+                    log.error("Failed to read file: {}", e.getMessage());
+                    throw new RuntimeException("Failed to read uploaded file", e);
+                }
+            }
+        }
+
         // ============ PROCESS XML BODY ============
         if (isXmlBody && xmlBody != null) {
             log.info("Processing XML body for function execution");
@@ -227,8 +266,14 @@ public class PostgreSQLFunctionExecutorUtil {
         }
 
         // ============ HANDLE COLLECTION/ARRAY PARAMETERS ============
+        // Skip byte arrays - they're file data
         for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
             Object value = entry.getValue();
+            // Skip byte arrays - they're file data
+            if (value instanceof byte[]) {
+                log.debug("Skipping byte array parameter '{}' (file data)", entry.getKey());
+                continue;
+            }
             if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);
@@ -452,6 +497,8 @@ public class PostgreSQLFunctionExecutorUtil {
                             paramPlaceholders.add("?::jsonb");
                         } else if (lowerType.contains("json")) {
                             paramPlaceholders.add("?::json");
+                        } else if (lowerType.contains("bytea")) {
+                            paramPlaceholders.add("?::bytea");
                         } else if (lowerType.contains("uuid")) {
                             paramPlaceholders.add("?::uuid");
                         } else if (lowerType.contains("timestamp")) {
@@ -514,6 +561,8 @@ public class PostgreSQLFunctionExecutorUtil {
                 Object value = dbParams.get(dbParamName);
                 if (value == null) {
                     cs.setNull(index++, Types.NULL);
+                } else if (value instanceof byte[]) {
+                    cs.setBytes(index++, (byte[]) value);
                 } else {
                     cs.setObject(index++, value);
                 }

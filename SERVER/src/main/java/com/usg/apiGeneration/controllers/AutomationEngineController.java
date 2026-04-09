@@ -1,5 +1,6 @@
 package com.usg.apiGeneration.controllers;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiGeneration.dtos.apiGenerationEngine.*;
 import com.usg.apiGeneration.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
 import com.usg.apiGeneration.helpers.*;
@@ -11,6 +12,7 @@ import com.usg.apiGeneration.services.AutomationEngineService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.Part;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +25,10 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
+import org.springframework.web.multipart.MultipartResolver;
+import org.springframework.web.multipart.support.StandardServletMultipartResolver;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -41,6 +46,7 @@ public class AutomationEngineController {
     private final ResponseBuilderHelper responseBuilderHelper;
     private final RequestValidatorHelper requestValidatorHelper;
     private final LoggingHelper loggingHelper;
+    private final ObjectMapper objectMapper;
 
     @PostMapping("/gen-engine/generate")
     @Operation(summary = "Generate API", description = "Generate a new API based on configuration")
@@ -84,11 +90,13 @@ public class AutomationEngineController {
         }
     }
 
-    @PostMapping("/gen-engine/{apiId}/execute")
+    @PostMapping(value = "/gen-engine/{apiId}/execute", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE, MediaType.APPLICATION_JSON_VALUE})
     @Operation(summary = "Execute API", description = "Execute a generated API - Accepts any content type including multipart/form-data for file uploads")
     public ResponseEntity<?> executeApi(
             @PathVariable String apiId,
-            HttpServletRequest req,
+            @RequestParam(required = false) Map<String, String> allParams,
+            @RequestPart(required = false) MultipartFile file,
+            @RequestPart(required = false) Map<String, MultipartFile> fileMap,
             HttpServletRequest request) {
 
         String requestId = UUID.randomUUID().toString();
@@ -101,12 +109,144 @@ public class AutomationEngineController {
 
             loggingHelper.logApiExecution(requestId, apiId, performedBy, contentType, clientIp, userAgent);
 
-            // Extract all request components with file support
-            ExecuteApiRequestDTO executeRequest = extractRequestComponentsWithFileSupport(request, requestId, apiId);
+            // Create execute request DTO
+            ExecuteApiRequestDTO executeRequest = new ExecuteApiRequestDTO();
+            executeRequest.setRequestId(requestId);
+            executeRequest.setHttpMethod(request.getMethod());
+
+            // Set URL
+            StringBuffer requestURL = request.getRequestURL();
+            String queryString = request.getQueryString();
+            String fullUrl = requestURL.toString();
+            if (queryString != null && !queryString.isEmpty()) {
+                fullUrl = fullUrl + "?" + queryString;
+            }
+            executeRequest.setUrl(fullUrl);
+            log.info("Request ID: {} - Set URL: {}", requestId, fullUrl);
+
+            // Extract headers
+            Enumeration<String> headerNames = request.getHeaderNames();
+            Map<String, String> headers = new HashMap<>();
+            if (headerNames != null) {
+                while (headerNames.hasMoreElements()) {
+                    String headerName = headerNames.nextElement();
+                    String headerValue = request.getHeader(headerName);
+                    headers.put(headerName, headerValue);
+                }
+            }
+            executeRequest.setHeaders(headers);
+            log.info("Request ID: {} - Extracted {} headers", requestId, headers.size());
+
+            // Extract query parameters
+            if (queryString != null && !queryString.isEmpty()) {
+                Map<String, Object> queryParams = new HashMap<>();
+                String[] pairs = queryString.split("&");
+                for (String pair : pairs) {
+                    String[] keyValue = pair.split("=");
+                    String key = keyValue[0];
+                    String value = keyValue.length > 1 ? keyValue[1] : "";
+                    queryParams.put(key, value);
+                }
+                executeRequest.setQueryParams(queryParams);
+                log.info("Request ID: {} - Set query params: {}", requestId, queryParams.keySet());
+            }
+
+            // Handle file uploads from @RequestPart
+            Map<String, MultipartFile> finalFileMap = new HashMap<>();
+
+            // Check for fileMap parameter (multiple files with names)
+            if (fileMap != null && !fileMap.isEmpty()) {
+                finalFileMap.putAll(fileMap);
+                log.info("Request ID: {} - Received fileMap with {} files", requestId, fileMap.size());
+                for (Map.Entry<String, MultipartFile> entry : fileMap.entrySet()) {
+                    log.info("Request ID: {} - File in fileMap: '{}' -> {} ({} bytes)",
+                            requestId, entry.getKey(), entry.getValue().getOriginalFilename(), entry.getValue().getSize());
+                }
+            }
+
+            // Check for single file parameter
+            if (file != null && !file.isEmpty()) {
+                // Try to determine the parameter name from the API configuration
+                // For now, use "file" as default, but you can look up from API parameters
+                finalFileMap.put("file", file);
+                log.info("Request ID: {} - Received single file: {} ({} bytes)",
+                        requestId, file.getOriginalFilename(), file.getSize());
+            }
+
+            // Also try to extract from multipart request directly if not found via @RequestPart
+            if (finalFileMap.isEmpty() && request instanceof MultipartHttpServletRequest) {
+                MultipartHttpServletRequest multipartRequest = (MultipartHttpServletRequest) request;
+                Map<String, MultipartFile> directFileMap = multipartRequest.getFileMap();
+                if (directFileMap != null && !directFileMap.isEmpty()) {
+                    finalFileMap.putAll(directFileMap);
+                    log.info("Request ID: {} - Found {} files via direct multipart extraction", requestId, directFileMap.size());
+                    for (Map.Entry<String, MultipartFile> entry : directFileMap.entrySet()) {
+                        log.info("Request ID: {} - File: '{}' -> {} ({} bytes)",
+                                requestId, entry.getKey(), entry.getValue().getOriginalFilename(), entry.getValue().getSize());
+                    }
+                }
+            }
+
+            // Set files in DTO
+            if (!finalFileMap.isEmpty()) {
+                executeRequest.setFileMap(finalFileMap);
+                executeRequest.setFiles(new ArrayList<>(finalFileMap.values()));
+                if (finalFileMap.size() == 1) {
+                    executeRequest.setFile(finalFileMap.values().iterator().next());
+                }
+                log.info("Request ID: {} - Set fileMap with {} entries, file={}, files list size={}",
+                        requestId, finalFileMap.size(),
+                        executeRequest.getFile() != null ? executeRequest.getFile().getOriginalFilename() : "null",
+                        executeRequest.getFiles() != null ? executeRequest.getFiles().size() : 0);
+            } else {
+                log.info("Request ID: {} - No files found in request", requestId);
+            }
+
+            // Extract form parameters (non-file fields)
+            if (allParams != null && !allParams.isEmpty()) {
+                executeRequest.setBody(new HashMap<>(allParams));
+                log.info("Request ID: {} - Set body with form parameters: {}", requestId, allParams.keySet());
+            }
+
+            // Also check for body in the original request (for JSON requests)
+            if (executeRequest.getBody() == null && request.getContentType() != null &&
+                    request.getContentType().contains("application/json")) {
+                // Read JSON body
+                StringBuilder requestBody = new StringBuilder();
+                try (java.io.BufferedReader reader = request.getReader()) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        requestBody.append(line);
+                    }
+                }
+                String bodyString = requestBody.toString();
+                if (bodyString != null && !bodyString.isEmpty()) {
+                    try {
+                        Map<String, Object> bodyMap = objectMapper.readValue(bodyString,
+                                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                        executeRequest.setBody(bodyMap);
+                        log.info("Request ID: {} - Set body from JSON: {}", requestId, bodyMap.keySet());
+                    } catch (Exception e) {
+                        executeRequest.setBody(bodyString);
+                        log.info("Request ID: {} - Set body as raw string", requestId);
+                    }
+                }
+            }
+
+            // Log final extracted request details
+            log.info("Request ID: {} - FINAL EXTRACTED REQUEST: fileMap={}, file={}, files={}, bodyType={}",
+                    requestId,
+                    executeRequest.getFileMap() != null ? executeRequest.getFileMap().size() : 0,
+                    executeRequest.getFile() != null ? executeRequest.getFile().getOriginalFilename() : "null",
+                    executeRequest.getFiles() != null ? executeRequest.getFiles().size() : 0,
+                    executeRequest.getBody() != null ? executeRequest.getBody().getClass().getSimpleName() : "null");
 
             // Execute the API
             ExecuteApiResponseDTO response = automationEngineService.executeApi(
-                    requestId, performedBy, apiId, executeRequest, clientIp, userAgent, req);
+                    requestId, performedBy, apiId, executeRequest, clientIp, userAgent, request);
+
+            log.debug("Request ID: {} - API execution completed with status: {}",
+                    requestId, response.getResponseCode());
 
             return responseBuilderHelper.buildSuccessResponse(
                     requestId,
@@ -133,35 +273,61 @@ public class AutomationEngineController {
             String contentType = request.getContentType();
             boolean isMultipart = contentType != null && contentType.startsWith("multipart/form-data");
 
+            log.info("Request ID: {} - Content-Type: {}, isMultipart: {}", requestId, contentType, isMultipart);
+
             if (isMultipart && request instanceof MultipartHttpServletRequest) {
-                // Handle file upload request
                 MultipartHttpServletRequest multipartRequest = (MultipartHttpServletRequest) request;
 
-                // Extract files
-                Map<String, MultipartFile> fileMap = multipartRequest.getFileMap();
-                if (fileMap != null && !fileMap.isEmpty()) {
-                    executeRequest.setFileMap(fileMap);
+                // CRITICAL: Get all file names from the request
+                java.util.Iterator<String> fileNames = multipartRequest.getFileNames();
+                Map<String, MultipartFile> fileMap = new HashMap<>();
 
-                    // Set single file if there's exactly one
+                log.info("Request ID: {} - Iterating through file names", requestId);
+
+                while (fileNames != null && fileNames.hasNext()) {
+                    String paramName = fileNames.next();
+                    MultipartFile file = multipartRequest.getFile(paramName);
+
+                    if (file != null && !file.isEmpty()) {
+                        fileMap.put(paramName, file);
+                        log.info("Request ID: {} - Found file: param='{}', filename='{}', size={} bytes",
+                                requestId, paramName, file.getOriginalFilename(), file.getSize());
+                    }
+                }
+
+                // Also try getFileMap as a backup
+                if (fileMap.isEmpty()) {
+                    Map<String, MultipartFile> directFileMap = multipartRequest.getFileMap();
+                    if (directFileMap != null && !directFileMap.isEmpty()) {
+                        fileMap.putAll(directFileMap);
+                        log.info("Request ID: {} - Found {} files via getFileMap()", requestId, directFileMap.size());
+                        for (Map.Entry<String, MultipartFile> entry : directFileMap.entrySet()) {
+                            log.info("Request ID: {} - File in fileMap: '{}' -> {}",
+                                    requestId, entry.getKey(), entry.getValue().getOriginalFilename());
+                        }
+                    }
+                }
+
+                // Set the file map in the DTO
+                if (!fileMap.isEmpty()) {
+                    executeRequest.setFileMap(fileMap);
+                    executeRequest.setFiles(new ArrayList<>(fileMap.values()));
+
+                    // Set single file if only one
                     if (fileMap.size() == 1) {
                         executeRequest.setFile(fileMap.values().iterator().next());
                     }
 
-                    // Set multiple files list
-                    executeRequest.setFiles(new ArrayList<>(fileMap.values()));
-
-                    log.info("Extracted {} file(s) from multipart request", fileMap.size());
-                    for (Map.Entry<String, MultipartFile> entry : fileMap.entrySet()) {
-                        log.info("  File field '{}': {} ({} bytes)",
-                                entry.getKey(),
-                                entry.getValue().getOriginalFilename(),
-                                entry.getValue().getSize());
-                    }
+                    log.info("Request ID: {} - Set fileMap with {} entries", requestId, fileMap.size());
+                } else {
+                    log.warn("Request ID: {} - NO FILES FOUND in multipart request!", requestId);
                 }
 
                 // Extract form parameters (excluding files)
                 Map<String, String[]> parameterMap = multipartRequest.getParameterMap();
                 Map<String, Object> formData = new HashMap<>();
+
+                log.info("Request ID: {} - Processing {} form parameters", requestId, parameterMap.size());
 
                 for (Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
                     String key = entry.getKey();
@@ -169,34 +335,20 @@ public class AutomationEngineController {
                     if (values != null && values.length > 0) {
                         if (values.length == 1) {
                             formData.put(key, values[0]);
+                            log.info("Request ID: {} - Form parameter: {} = {}", requestId, key, values[0]);
                         } else {
                             formData.put(key, Arrays.asList(values));
+                            log.info("Request ID: {} - Form parameter: {} = {}", requestId, key, Arrays.asList(values));
                         }
                     }
                 }
 
                 if (!formData.isEmpty()) {
                     executeRequest.setBody(formData);
-                    log.info("Extracted form parameters: {}", formData.keySet());
-                }
-
-                // Check for base64 encoded files in form data
-                boolean hasBase64Files = false;
-                for (Object value : formData.values()) {
-                    if (value instanceof String) {
-                        String strValue = (String) value;
-                        if (strValue != null && strValue.startsWith("data:") && strValue.contains(";base64,")) {
-                            hasBase64Files = true;
-                            break;
-                        }
-                    }
-                }
-                executeRequest.setHasBase64Files(hasBase64Files);
-                if (hasBase64Files) {
-                    log.info("Detected base64 encoded files in form data");
+                    log.info("Request ID: {} - Set body with form data keys: {}", requestId, formData.keySet());
                 }
             } else {
-                // Not a multipart request - use existing extractor
+                log.info("Request ID: {} - Not a multipart request, using standard extraction", requestId);
                 ExecuteApiRequestDTO extracted = requestExtractorHelper.extractRequestComponents(request, requestId, apiId);
                 if (extracted != null) {
                     executeRequest.setUrl(extracted.getUrl());
@@ -209,7 +361,7 @@ public class AutomationEngineController {
                 }
             }
 
-            // Extract headers (common for all request types)
+            // Extract headers
             Enumeration<String> headerNames = request.getHeaderNames();
             Map<String, String> headers = new HashMap<>();
             if (headerNames != null) {
@@ -221,7 +373,7 @@ public class AutomationEngineController {
             }
             executeRequest.setHeaders(headers);
 
-            // Set URL if not already set
+            // Set URL
             if (executeRequest.getUrl() == null) {
                 StringBuffer requestURL = request.getRequestURL();
                 String queryString = request.getQueryString();
@@ -232,25 +384,18 @@ public class AutomationEngineController {
                 executeRequest.setUrl(fullUrl);
             }
 
-            // Set query params if not already set
-            if (executeRequest.getQueryParams() == null && request.getQueryString() != null) {
-                Map<String, Object> queryParams = new HashMap<>();
-                String[] pairs = request.getQueryString().split("&");
-                for (String pair : pairs) {
-                    String[] keyValue = pair.split("=");
-                    String key = keyValue[0];
-                    String value = keyValue.length > 1 ? keyValue[1] : "";
-                    queryParams.put(key, value);
-                }
-                executeRequest.setQueryParams(queryParams);
-            }
-
             // Set HTTP method
             executeRequest.setHttpMethod(request.getMethod());
 
+            // Final summary log
+            log.info("Request ID: {} - FINAL EXTRACTED REQUEST: fileMap={}, file={}, files={}",
+                    requestId,
+                    executeRequest.getFileMap() != null ? executeRequest.getFileMap().size() : 0,
+                    executeRequest.getFile() != null ? executeRequest.getFile().getOriginalFilename() : "null",
+                    executeRequest.getFiles() != null ? executeRequest.getFiles().size() : 0);
+
         } catch (Exception e) {
-            log.error("Error extracting request components with file support: {}", e.getMessage(), e);
-            // Fall back to standard extraction
+            log.error("Request ID: {} - Error extracting request components: {}", requestId, e.getMessage(), e);
             ExecuteApiRequestDTO fallback = requestExtractorHelper.extractRequestComponents(request, requestId, apiId);
             if (fallback != null) {
                 executeRequest = fallback;
@@ -851,36 +996,151 @@ public class AutomationEngineController {
             value = "/gen/{apiId}/**",
             method = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT,
                     RequestMethod.DELETE, RequestMethod.PATCH, RequestMethod.HEAD,
-                    RequestMethod.OPTIONS}
+                    RequestMethod.OPTIONS},
+            consumes = {MediaType.MULTIPART_FORM_DATA_VALUE, MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_FORM_URLENCODED_VALUE}
     )
     @Operation(summary = "Execute API by ID", description = "Execute a generated API using its ID in the URL path")
     public ResponseEntity<?> executeApiById(
             @PathVariable String apiId,
-            HttpServletRequest req,
-            @RequestParam(required = false) MultiValueMap<String, String> formParams) {
+            HttpServletRequest request,
+            @RequestParam(required = false) MultiValueMap<String, String> formParams,
+            @RequestParam(required = false) Map<String, MultipartFile> fileMap,
+            @RequestParam(required = false) MultipartFile file) {
 
         String requestId = UUID.randomUUID().toString();
 
-        log.debug("Request ID: {} - Received {} request for API ID: {}", requestId, req.getMethod(), apiId);
-        log.debug("Request ID: {} - Full URL: {}", requestId, req.getRequestURL().toString());
+        log.debug("Request ID: {} - Received {} request for API ID: {}", requestId, request.getMethod(), apiId);
+        log.debug("Request ID: {} - Full URL: {}", requestId, request.getRequestURL().toString());
+        log.debug("Request ID: {} - Content-Type: {}", requestId, request.getContentType());
 
         try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            String clientIp = requestExtractorHelper.extractClientIp(req);
-            String userAgent = req.getHeader("User-Agent");
+            String performedBy = jwtHelper.extractPerformedBy(request);
+            String clientIp = requestExtractorHelper.extractClientIp(request);
+            String userAgent = request.getHeader("User-Agent");
+            String contentType = request.getContentType();
 
             loggingHelper.logApiExecution(requestId, apiId, performedBy,
-                    req.getContentType(), clientIp, userAgent);
+                    contentType, clientIp, userAgent);
 
-            // Extract request components with file support
-            ExecuteApiRequestDTO executeRequest = extractRequestComponentsWithFileSupport(req, requestId, apiId);
+            // Create execute request DTO
+            ExecuteApiRequestDTO executeRequest = new ExecuteApiRequestDTO();
+            executeRequest.setRequestId(requestId);
+            executeRequest.setHttpMethod(request.getMethod());
 
-            // Set HTTP method
-            executeRequest.setHttpMethod(req.getMethod());
+            // Set URL
+            StringBuffer requestURL = request.getRequestURL();
+            String queryString = request.getQueryString();
+            String fullUrl = requestURL.toString();
+            if (queryString != null && !queryString.isEmpty()) {
+                fullUrl = fullUrl + "?" + queryString;
+            }
+            executeRequest.setUrl(fullUrl);
+            log.info("Request ID: {} - Set URL: {}", requestId, fullUrl);
+
+            // Extract headers
+            Enumeration<String> headerNames = request.getHeaderNames();
+            Map<String, String> headers = new HashMap<>();
+            if (headerNames != null) {
+                while (headerNames.hasMoreElements()) {
+                    String headerName = headerNames.nextElement();
+                    String headerValue = request.getHeader(headerName);
+                    headers.put(headerName, headerValue);
+                }
+            }
+            executeRequest.setHeaders(headers);
+            log.info("Request ID: {} - Extracted {} headers", requestId, headers.size());
+
+            // Extract query parameters
+            if (queryString != null && !queryString.isEmpty()) {
+                Map<String, Object> queryParams = new HashMap<>();
+                String[] pairs = queryString.split("&");
+                for (String pair : pairs) {
+                    String[] keyValue = pair.split("=");
+                    String key = keyValue[0];
+                    String value = keyValue.length > 1 ? keyValue[1] : "";
+                    queryParams.put(key, value);
+                }
+                executeRequest.setQueryParams(queryParams);
+                log.info("Request ID: {} - Set query params: {}", requestId, queryParams.keySet());
+            }
+
+            // Handle file uploads
+            Map<String, Object> formData = new HashMap<>();
+
+            // Check for fileMap parameter (multiple files with names)
+            if (fileMap != null && !fileMap.isEmpty()) {
+                executeRequest.setFileMap(fileMap);
+                executeRequest.setFiles(new ArrayList<>(fileMap.values()));
+                if (fileMap.size() == 1) {
+                    executeRequest.setFile(fileMap.values().iterator().next());
+                }
+                log.info("Request ID: {} - Set fileMap with {} entries", requestId, fileMap.size());
+            }
+
+            // Check for single file parameter
+            if (file != null && !file.isEmpty()) {
+                Map<String, MultipartFile> singleFileMap = new HashMap<>();
+                singleFileMap.put("file", file);
+                executeRequest.setFileMap(singleFileMap);
+                executeRequest.setFiles(Collections.singletonList(file));
+                executeRequest.setFile(file);
+                log.info("Request ID: {} - Set single file: {}", requestId, file.getOriginalFilename());
+            }
+
+            // Extract form parameters
+            if (formParams != null && !formParams.isEmpty()) {
+                for (Map.Entry<String, List<String>> entry : formParams.entrySet()) {
+                    List<String> values = entry.getValue();
+                    if (values != null && !values.isEmpty()) {
+                        if (values.size() == 1) {
+                            formData.put(entry.getKey(), values.get(0));
+                        } else {
+                            formData.put(entry.getKey(), values);
+                        }
+                    }
+                }
+                if (!formData.isEmpty()) {
+                    executeRequest.setBody(formData);
+                    log.info("Request ID: {} - Set body with form parameters: {}", requestId, formData.keySet());
+                }
+            }
+
+            // Also check for body in the original request (for JSON requests)
+            if (executeRequest.getBody() == null && request.getContentType() != null &&
+                    request.getContentType().contains("application/json")) {
+                // Read JSON body
+                StringBuilder requestBody = new StringBuilder();
+                try (java.io.BufferedReader reader = request.getReader()) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        requestBody.append(line);
+                    }
+                }
+                String bodyString = requestBody.toString();
+                if (bodyString != null && !bodyString.isEmpty()) {
+                    try {
+                        Map<String, Object> bodyMap = objectMapper.readValue(bodyString,
+                                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                        executeRequest.setBody(bodyMap);
+                        log.info("Request ID: {} - Set body from JSON: {}", requestId, bodyMap.keySet());
+                    } catch (Exception e) {
+                        executeRequest.setBody(bodyString);
+                        log.info("Request ID: {} - Set body as raw string", requestId);
+                    }
+                }
+            }
+
+            // Log final extracted request details
+            log.info("Request ID: {} - FINAL EXTRACTED REQUEST: fileMap={}, file={}, files={}, bodyType={}",
+                    requestId,
+                    executeRequest.getFileMap() != null ? executeRequest.getFileMap().size() : 0,
+                    executeRequest.getFile() != null ? executeRequest.getFile().getOriginalFilename() : "null",
+                    executeRequest.getFiles() != null ? executeRequest.getFiles().size() : 0,
+                    executeRequest.getBody() != null ? executeRequest.getBody().getClass().getSimpleName() : "null");
 
             // Execute the API
             ExecuteApiResponseDTO response = automationEngineService.executeApi(
-                    requestId, performedBy, apiId, executeRequest, clientIp, userAgent, req);
+                    requestId, performedBy, apiId, executeRequest, clientIp, userAgent, request);
 
             log.debug("Request ID: {} - API execution completed with status: {}",
                     requestId, response.getResponseCode());
@@ -891,6 +1151,62 @@ public class AutomationEngineController {
             return handleException(requestId, apiId, e);
         }
     }
+
+
+    /**
+     * Helper class to convert Servlet Part to Spring MultipartFile
+     */
+    private static class StandardMultipartFile implements MultipartFile {
+        private final Part part;
+
+        public StandardMultipartFile(Part part) {
+            this.part = part;
+        }
+
+        @Override
+        public String getName() {
+            return part.getName();
+        }
+
+        @Override
+        public String getOriginalFilename() {
+            return part.getSubmittedFileName();
+        }
+
+        @Override
+        public String getContentType() {
+            return part.getContentType();
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return part.getSize() == 0;
+        }
+
+        @Override
+        public long getSize() {
+            return part.getSize();
+        }
+
+        @Override
+        public byte[] getBytes() throws IOException {
+            return part.getInputStream().readAllBytes();
+        }
+
+        @Override
+        public java.io.InputStream getInputStream() throws IOException {
+            return part.getInputStream();
+        }
+
+        @Override
+        public void transferTo(java.io.File dest) throws IOException, IllegalStateException {
+            try (java.io.InputStream in = part.getInputStream();
+                 java.io.FileOutputStream out = new java.io.FileOutputStream(dest)) {
+                in.transferTo(out);
+            }
+        }
+    }
+
 
     private ResponseEntity<Map<String, Object>> handleException(String requestId, String apiId, Exception e) {
         loggingHelper.logError(requestId, "executing API by ID", e.getMessage(), e);

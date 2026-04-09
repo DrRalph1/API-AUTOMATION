@@ -18,7 +18,10 @@ import org.springframework.jdbc.core.SqlOutParameter;
 import org.springframework.jdbc.core.SqlParameter;
 import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 import org.springframework.stereotype.Component;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -142,6 +145,44 @@ public class OracleProcedureExecutorUtil {
                         dbParams.put(dbParamName, value);
                         log.debug("Added JSON param: {} -> {} = {}", entry.getKey(), dbParamName, value);
                     }
+                }
+            }
+        }
+
+        // ============ HANDLE FILE UPLOADS (ONLY IF PRESENT) ============
+        if ((request.getFileMap() != null && !request.getFileMap().isEmpty()) ||
+                (request.getFile() != null && !request.getFile().isEmpty())) {
+
+            log.info("Processing file uploads for Oracle procedure execution");
+
+            if (request.getFileMap() != null && !request.getFileMap().isEmpty()) {
+                for (Map.Entry<String, MultipartFile> entry : request.getFileMap().entrySet()) {
+                    String paramName = entry.getKey();
+                    MultipartFile file = entry.getValue();
+                    try {
+                        byte[] fileBytes = file.getBytes();
+                        String dbParamName = apiToDbParamMap.getOrDefault(paramName.toLowerCase(), paramName.toUpperCase());
+                        dbParams.put(dbParamName, fileBytes);
+                        log.info("✅ Added file to dbParams: {} -> {} ({} bytes) for Oracle BLOB",
+                                paramName, dbParamName, fileBytes.length);
+                    } catch (IOException e) {
+                        log.error("Failed to read file: {}", e.getMessage());
+                        throw new RuntimeException("Failed to read uploaded file", e);
+                    }
+                }
+            }
+
+            if (request.getFile() != null && !request.getFile().isEmpty()) {
+                MultipartFile file = request.getFile();
+                try {
+                    byte[] fileBytes = file.getBytes();
+                    String dbParamName = apiToDbParamMap.getOrDefault("file", "FILE");
+                    dbParams.put(dbParamName, fileBytes);
+                    log.info("✅ Added single file to dbParams: {} -> {} ({} bytes) for Oracle BLOB",
+                            file.getOriginalFilename(), dbParamName, fileBytes.length);
+                } catch (IOException e) {
+                    log.error("Failed to read file: {}", e.getMessage());
+                    throw new RuntimeException("Failed to read uploaded file", e);
                 }
             }
         }
@@ -290,22 +331,41 @@ public class OracleProcedureExecutorUtil {
             }
         }
 
-        // ============ HANDLE COLLECTION/ARRAY PARAMETERS ============
-        // Convert collection/array parameters to single values for database
+        // ============ HANDLE COLLECTION/ARRAY PARAMETERS - SKIP byte arrays ============
+        Map<String, Object> processedParams = new HashMap<>();
         for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
             Object value = entry.getValue();
-            if (value instanceof List || (value != null && value.getClass().isArray())) {
-                Collection<?> collection = value instanceof List ?
-                        (List<?>) value : Arrays.asList((Object[]) value);
-                if (!collection.isEmpty()) {
-                    // Take the first value
-                    dbParams.put(entry.getKey(), collection.iterator().next());
-                    log.info("Converted collection parameter '{}' to single value", entry.getKey());
+
+            // Skip byte arrays - they're file data for BLOB
+            if (value instanceof byte[]) {
+                processedParams.put(entry.getKey(), value);
+                log.debug("Preserved byte array for key: {} (file data for BLOB)", entry.getKey());
+                continue;
+            }
+
+            if (value instanceof List) {
+                List<?> list = (List<?>) value;
+                if (!list.isEmpty()) {
+                    processedParams.put(entry.getKey(), list.get(0));
+                    log.info("Converted list parameter '{}' to single value", entry.getKey());
                 } else {
-                    dbParams.put(entry.getKey(), null);
+                    processedParams.put(entry.getKey(), null);
                 }
+            } else if (value != null && value.getClass().isArray()) {
+                // Handle object arrays (not byte arrays - those are skipped above)
+                int length = java.lang.reflect.Array.getLength(value);
+                if (length > 0) {
+                    Object firstElement = java.lang.reflect.Array.get(value, 0);
+                    processedParams.put(entry.getKey(), firstElement);
+                    log.info("Converted array parameter '{}' to single value", entry.getKey());
+                } else {
+                    processedParams.put(entry.getKey(), null);
+                }
+            } else {
+                processedParams.put(entry.getKey(), value);
             }
         }
+        dbParams = processedParams;
 
         log.info("Final DB params prepared: {}", dbParams.keySet());
 

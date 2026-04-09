@@ -11,8 +11,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.sql.DataSource;
+import java.io.IOException;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.Executors;
@@ -288,6 +290,45 @@ public class PostgreSQLTableExecutorUtil {
         return extractedParams;
     }
 
+    // ============ HANDLE FILE UPLOADS (ONLY IF PRESENT) ============
+    private void handleFileUploads(Map<String, Object> params, Map<String, MultipartFile> fileMap, MultipartFile singleFile,
+                                   Map<String, String> apiToDbParamMap) {
+        if ((fileMap != null && !fileMap.isEmpty()) ||
+                (singleFile != null && !singleFile.isEmpty())) {
+
+            log.info("Processing file uploads for table operation");
+
+            if (fileMap != null && !fileMap.isEmpty()) {
+                for (Map.Entry<String, MultipartFile> entry : fileMap.entrySet()) {
+                    String paramName = entry.getKey();
+                    MultipartFile file = entry.getValue();
+                    try {
+                        byte[] fileBytes = file.getBytes();
+                        String dbParamName = apiToDbParamMap.getOrDefault(paramName.toLowerCase(), paramName.toLowerCase());
+                        params.put(dbParamName, fileBytes);
+                        log.info("✅ Added file to params: {} -> {} ({} bytes)", paramName, dbParamName, fileBytes.length);
+                    } catch (IOException e) {
+                        log.error("Failed to read file: {}", e.getMessage());
+                        throw new RuntimeException("Failed to read uploaded file", e);
+                    }
+                }
+            }
+
+            if (singleFile != null && !singleFile.isEmpty()) {
+                MultipartFile file = singleFile;
+                try {
+                    byte[] fileBytes = file.getBytes();
+                    String dbParamName = apiToDbParamMap.getOrDefault("file", "file");
+                    params.put(dbParamName, fileBytes);
+                    log.info("✅ Added single file to params: {} -> {} ({} bytes)", file.getOriginalFilename(), dbParamName, fileBytes.length);
+                } catch (IOException e) {
+                    log.error("Failed to read file: {}", e.getMessage());
+                    throw new RuntimeException("Failed to read uploaded file", e);
+                }
+            }
+        }
+    }
+
     public Object executeSelect(String tableName, String schema, Map<String, Object> params,
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
 
@@ -479,6 +520,11 @@ public class PostgreSQLTableExecutorUtil {
                         if (value != null) {
                             // Handle collection/array values
                             if (value instanceof List || value.getClass().isArray()) {
+                                // Skip byte arrays - they're file data
+                                if (value instanceof byte[]) {
+                                    log.debug("Skipping byte array parameter '{}' (file data)", paramKey);
+                                    continue;
+                                }
                                 Collection<?> collection = value instanceof List ?
                                         (List<?>) value : Arrays.asList((Object[]) value);
 
@@ -815,9 +861,14 @@ public class PostgreSQLTableExecutorUtil {
                 }
             }
 
-            // Handle collection/array parameters
+            // Handle collection/array parameters - Skip byte arrays
             for (Map.Entry<String, Object> entry : typedParams.entrySet()) {
                 Object value = entry.getValue();
+                // Skip byte arrays - they're file data
+                if (value instanceof byte[]) {
+                    log.debug("Skipping byte array parameter '{}' (file data)", entry.getKey());
+                    continue;
+                }
                 if (value instanceof List || (value != null && value.getClass().isArray())) {
                     Collection<?> collection = value instanceof List ?
                             (List<?>) value : Arrays.asList((Object[]) value);
@@ -1069,9 +1120,14 @@ public class PostgreSQLTableExecutorUtil {
                 processedParams.put(dbColumnName, entry.getValue());
             }
 
-            // Handle collection/array parameters
+            // Handle collection/array parameters - Skip byte arrays
             for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
                 Object value = entry.getValue();
+                // Skip byte arrays - they're file data
+                if (value instanceof byte[]) {
+                    log.debug("Skipping byte array parameter '{}' (file data)", entry.getKey());
+                    continue;
+                }
                 if (value instanceof List || (value != null && value.getClass().isArray())) {
                     Collection<?> collection = value instanceof List ?
                             (List<?>) value : Arrays.asList((Object[]) value);
@@ -1300,9 +1356,14 @@ public class PostgreSQLTableExecutorUtil {
                 processedParams.put(dbColumnName, entry.getValue());
             }
 
-            // Handle collection/array parameters
+            // Handle collection/array parameters - Skip byte arrays
             for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
                 Object value = entry.getValue();
+                // Skip byte arrays - they're file data
+                if (value instanceof byte[]) {
+                    log.debug("Skipping byte array parameter '{}' (file data)", entry.getKey());
+                    continue;
+                }
                 if (value instanceof List || (value != null && value.getClass().isArray())) {
                     Collection<?> collection = value instanceof List ?
                             (List<?>) value : Arrays.asList((Object[]) value);

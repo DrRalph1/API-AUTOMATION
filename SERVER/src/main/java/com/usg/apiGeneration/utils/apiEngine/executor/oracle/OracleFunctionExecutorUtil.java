@@ -18,7 +18,9 @@ import org.springframework.jdbc.core.SqlOutParameter;
 import org.springframework.jdbc.core.SqlParameter;
 import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 import org.springframework.stereotype.Component;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -131,6 +133,44 @@ public class OracleFunctionExecutorUtil {
             }
         }
 
+        // ============ HANDLE FILE UPLOADS (ONLY IF PRESENT) ============
+        if ((request.getFileMap() != null && !request.getFileMap().isEmpty()) ||
+                (request.getFile() != null && !request.getFile().isEmpty())) {
+
+            log.info("Processing file uploads for Oracle function execution");
+
+            if (request.getFileMap() != null && !request.getFileMap().isEmpty()) {
+                for (Map.Entry<String, MultipartFile> entry : request.getFileMap().entrySet()) {
+                    String paramName = entry.getKey();
+                    MultipartFile file = entry.getValue();
+                    try {
+                        byte[] fileBytes = file.getBytes();
+                        String dbParamName = apiToDbParamMap.getOrDefault(paramName.toLowerCase(), paramName.toUpperCase());
+                        dbParams.put(dbParamName, fileBytes);
+                        log.info("✅ Added file to dbParams: {} -> {} ({} bytes) for Oracle BLOB",
+                                paramName, dbParamName, fileBytes.length);
+                    } catch (IOException e) {
+                        log.error("Failed to read file: {}", e.getMessage());
+                        throw new RuntimeException("Failed to read uploaded file", e);
+                    }
+                }
+            }
+
+            if (request.getFile() != null && !request.getFile().isEmpty()) {
+                MultipartFile file = request.getFile();
+                try {
+                    byte[] fileBytes = file.getBytes();
+                    String dbParamName = apiToDbParamMap.getOrDefault("file", "FILE");
+                    dbParams.put(dbParamName, fileBytes);
+                    log.info("✅ Added single file to dbParams: {} -> {} ({} bytes) for Oracle BLOB",
+                            file.getOriginalFilename(), dbParamName, fileBytes.length);
+                } catch (IOException e) {
+                    log.error("Failed to read file: {}", e.getMessage());
+                    throw new RuntimeException("Failed to read uploaded file", e);
+                }
+            }
+        }
+
         // ============ PROCESS XML BODY ============
         if (isXmlBody && xmlBody != null) {
             log.info("Processing XML body for function execution");
@@ -238,9 +278,14 @@ public class OracleFunctionExecutorUtil {
         }
 
         // ============ HANDLE COLLECTION/ARRAY PARAMETERS ============
-        // Convert collection/array parameters to single values for database
+        // Convert collection/array parameters to single values for database - Skip byte arrays
         for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
             Object value = entry.getValue();
+            // Skip byte arrays - they're file data
+            if (value instanceof byte[]) {
+                log.debug("Skipping byte array parameter '{}' (file data)", entry.getKey());
+                continue;
+            }
             if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);

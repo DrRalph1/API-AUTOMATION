@@ -2912,6 +2912,7 @@ public class AutomationEngineService {
         log.info("=== Creating Consolidated Params with Headers ===");
         log.info("Request has file: {}", executeRequest.getFile() != null ? "YES - " + executeRequest.getFile().getOriginalFilename() : "NO");
         log.info("Request has multiple files: {}", executeRequest.getFiles() != null ? executeRequest.getFiles().size() : "NO");
+        log.info("Request has fileMap: {}", executeRequest.getFileMap() != null ? executeRequest.getFileMap().size() : "NO");
 
         // ============ 1. ADD PATH PARAMETERS ============
         if (executeRequest.getPathParams() != null && !executeRequest.getPathParams().isEmpty()) {
@@ -2959,7 +2960,55 @@ public class AutomationEngineService {
             }
         }
 
-        // ============ 5. HANDLE SINGLE FILE UPLOAD ============
+        // ============ 5. HANDLE FILE UPLOADS FROM FILE MAP (PREFERRED) ============
+        // This handles named file parameters sent via multipart/form-data
+        if (executeRequest.getFileMap() != null && !executeRequest.getFileMap().isEmpty()) {
+            log.info("Processing named file map: {} entries", executeRequest.getFileMap().size());
+
+            for (Map.Entry<String, MultipartFile> entry : executeRequest.getFileMap().entrySet()) {
+                String paramName = entry.getKey();
+                MultipartFile file = entry.getValue();
+
+                log.info("  Processing named file: {} -> {}", paramName, file.getOriginalFilename());
+
+                try {
+                    byte[] fileBytes = file.getBytes();
+                    String databaseType = api.getDatabaseType() != null ? api.getDatabaseType() : "oracle";
+
+                    // Store the file in multiple formats for flexibility
+                    allParams.put(paramName, fileBytes);           // Raw bytes
+                    allParams.put(paramName + "_file", file);      // Original MultipartFile
+                    allParams.put(paramName + "_name", file.getOriginalFilename());
+                    allParams.put(paramName + "_size", file.getSize());
+                    allParams.put(paramName + "_content_type", file.getContentType());
+
+                    // Database-specific storage
+                    if ("postgresql".equalsIgnoreCase(databaseType)) {
+                        allParams.put(paramName + "_bytea", fileBytes);
+                        log.info("Stored file for parameter '{}' as bytea ({} bytes) for PostgreSQL", paramName, fileBytes.length);
+                    } else if ("oracle".equalsIgnoreCase(databaseType)) {
+                        allParams.put(paramName + "_blob", fileBytes);
+                        log.info("Stored file for parameter '{}' as BLOB ({} bytes) for Oracle", paramName, fileBytes.length);
+                    }
+
+                    // Also add to body if body is a Map (for consistency)
+                    if (executeRequest.getBody() instanceof Map) {
+                        ((Map<String, Object>) executeRequest.getBody()).put(paramName, file);
+                        ((Map<String, Object>) executeRequest.getBody()).put(paramName + "_data", fileBytes);
+                        ((Map<String, Object>) executeRequest.getBody()).put(paramName + "_name", file.getOriginalFilename());
+                    }
+
+                    log.info("Successfully stored file for parameter: {}", paramName);
+
+                } catch (IOException e) {
+                    log.error("Failed to read uploaded file for parameter {}: {}", paramName, e.getMessage(), e);
+                    throw new RuntimeException("Failed to process file upload for parameter '" + paramName + "': " + e.getMessage(), e);
+                }
+            }
+        }
+
+        // ============ 6. HANDLE SINGLE FILE UPLOAD (LEGACY/STANDARD) ============
+        // This handles cases where a single file is sent without a parameter name
         if (executeRequest.getFile() != null && !executeRequest.getFile().isEmpty()) {
             MultipartFile file = executeRequest.getFile();
             log.info("Processing single file upload: {}", file.getOriginalFilename());
@@ -2967,65 +3016,48 @@ public class AutomationEngineService {
             try {
                 // Find which parameter should receive this file
                 ApiParameterEntity fileParameter = findFileParameter(api);
+                byte[] fileBytes = file.getBytes();
+                String databaseType = api.getDatabaseType() != null ? api.getDatabaseType() : "oracle";
 
                 if (fileParameter != null) {
                     String paramKey = fileParameter.getKey();
-                    String databaseType = api.getDatabaseType() != null ? api.getDatabaseType() : "oracle";
-
-                    log.info("Mapping file to parameter: {} for database: {}", paramKey, databaseType);
+                    log.info("Mapping single file to parameter: {} for database: {}", paramKey, databaseType);
 
                     // Store file data based on database type
+                    allParams.put(paramKey, fileBytes);
+                    allParams.put(paramKey + "_file", file);
+                    allParams.put(paramKey + "_name", file.getOriginalFilename());
+                    allParams.put(paramKey + "_size", file.getSize());
+                    allParams.put(paramKey + "_content_type", file.getContentType());
+
                     if ("postgresql".equalsIgnoreCase(databaseType)) {
-                        // PostgreSQL - store as bytea
-                        byte[] fileBytes = file.getBytes();
-                        allParams.put(paramKey, fileBytes);
+                        allParams.put(paramKey + "_bytea", fileBytes);
                         log.info("Stored file as bytea ({} bytes) for PostgreSQL", fileBytes.length);
-
-                        // Also store metadata
-                        Map<String, Object> fileMetadata = new HashMap<>();
-                        fileMetadata.put("fileName", file.getOriginalFilename());
-                        fileMetadata.put("contentType", file.getContentType());
-                        fileMetadata.put("size", file.getSize());
-                        fileMetadata.put("data", fileBytes);
-                        allParams.put(paramKey + "_metadata", fileMetadata);
-
                     } else if ("oracle".equalsIgnoreCase(databaseType)) {
-                        // Oracle - store as BLOB
-                        byte[] fileBytes = file.getBytes();
-
-                        // For Oracle, we need to handle BLOB specially
-                        // Store both the bytes and metadata
-                        allParams.put(paramKey, fileBytes);
-                        allParams.put(paramKey + "_oracle_blob", fileBytes);
-
-                        // Oracle often needs filename and MIME type for certain operations
-                        allParams.put(paramKey + "_filename", file.getOriginalFilename());
-                        allParams.put(paramKey + "_mime_type", file.getContentType());
-                        allParams.put(paramKey + "_file_size", file.getSize());
-
+                        allParams.put(paramKey + "_blob", fileBytes);
                         log.info("Stored file as BLOB ({} bytes) for Oracle", fileBytes.length);
-                    } else {
-                        // Generic handling for other databases
-                        byte[] fileBytes = file.getBytes();
-                        allParams.put(paramKey, fileBytes);
-                        log.info("Stored file as byte array ({} bytes) for database: {}", fileBytes.length, databaseType);
                     }
 
                     // Also add to body if body is a Map (for consistency)
                     if (executeRequest.getBody() instanceof Map) {
                         ((Map<String, Object>) executeRequest.getBody()).put(paramKey, file);
-                        ((Map<String, Object>) executeRequest.getBody()).put(paramKey + "_data", file.getBytes());
+                        ((Map<String, Object>) executeRequest.getBody()).put(paramKey + "_data", fileBytes);
                         ((Map<String, Object>) executeRequest.getBody()).put(paramKey + "_name", file.getOriginalFilename());
                     }
 
                 } else {
                     // No specific file parameter found, store with default key
                     log.warn("No file parameter configured for API, storing with default key 'file'");
-                    byte[] fileBytes = file.getBytes();
                     allParams.put("file", fileBytes);
                     allParams.put("file_name", file.getOriginalFilename());
                     allParams.put("file_content_type", file.getContentType());
                     allParams.put("file_size", file.getSize());
+
+                    if ("postgresql".equalsIgnoreCase(databaseType)) {
+                        allParams.put("file_bytea", fileBytes);
+                    } else if ("oracle".equalsIgnoreCase(databaseType)) {
+                        allParams.put("file_blob", fileBytes);
+                    }
                 }
 
             } catch (IOException e) {
@@ -3034,7 +3066,7 @@ public class AutomationEngineService {
             }
         }
 
-        // ============ 6. HANDLE MULTIPLE FILES UPLOAD ============
+        // ============ 7. HANDLE MULTIPLE FILES UPLOAD ============
         if (executeRequest.getFiles() != null && !executeRequest.getFiles().isEmpty()) {
             log.info("Processing multiple file upload: {} files", executeRequest.getFiles().size());
 
@@ -3068,7 +3100,12 @@ public class AutomationEngineService {
                         String paramKey = fileParameters.get(i).getKey();
                         filesByParam.put(paramKey, fileBytes);
                         filesByParam.put(paramKey + "_metadata", fileInfo);
+                        filesByParam.put(paramKey + "_name", file.getOriginalFilename());
                         log.info("  Mapped file {} to parameter: {}", file.getOriginalFilename(), paramKey);
+                    } else {
+                        // Store with index if no specific mapping
+                        filesByParam.put("file_" + i, fileBytes);
+                        filesByParam.put("file_" + i + "_name", file.getOriginalFilename());
                     }
 
                 } catch (IOException e) {
@@ -3082,46 +3119,6 @@ public class AutomationEngineService {
             allParams.putAll(filesByParam);
 
             log.info("Added {} files to consolidated params", fileList.size());
-        }
-
-        // ============ 7. HANDLE NAMED FILE MAP ============
-        if (executeRequest.getFileMap() != null && !executeRequest.getFileMap().isEmpty()) {
-            log.info("Processing named file map: {} entries", executeRequest.getFileMap().size());
-
-            Map<String, Object> processedFileMap = new HashMap<>();
-
-            for (Map.Entry<String, MultipartFile> entry : executeRequest.getFileMap().entrySet()) {
-                String paramName = entry.getKey();
-                MultipartFile file = entry.getValue();
-
-                log.info("  Processing named file: {} -> {}", paramName, file.getOriginalFilename());
-
-                try {
-                    byte[] fileBytes = file.getBytes();
-                    String databaseType = api.getDatabaseType() != null ? api.getDatabaseType() : "oracle";
-
-                    Map<String, Object> fileInfo = new HashMap<>();
-                    fileInfo.put("data", fileBytes);
-                    fileInfo.put("name", file.getOriginalFilename());
-                    fileInfo.put("contentType", file.getContentType());
-                    fileInfo.put("size", file.getSize());
-
-                    if ("oracle".equalsIgnoreCase(databaseType)) {
-                        fileInfo.put("oracle_blob", fileBytes);
-                    }
-
-                    processedFileMap.put(paramName, fileInfo);
-                    allParams.put(paramName, fileBytes);
-                    allParams.put(paramName + "_info", fileInfo);
-
-                } catch (IOException e) {
-                    log.error("Failed to read named file {}: {}", paramName, e.getMessage(), e);
-                    throw new RuntimeException("Failed to process file upload: " + e.getMessage(), e);
-                }
-            }
-
-            allParams.put("named_files", processedFileMap);
-            log.info("Added {} named files to consolidated params", processedFileMap.size());
         }
 
         // ============ 8. HANDLE BASE64 ENCODED FILES (from JSON body) ============
@@ -3155,6 +3152,7 @@ public class AutomationEngineService {
                                 allParams.put(key + "_content_type", contentType);
                                 allParams.put(key + "_size", fileBytes.length);
                                 allParams.put(key + "_is_base64", true);
+                                allParams.put(key + "_file_name", key + "_base64_decoded");
 
                                 log.info("Decoded base64 file for {}: {} bytes, type: {}", key, fileBytes.length, contentType);
                             }
@@ -3222,28 +3220,39 @@ public class AutomationEngineService {
         allParams.keySet().stream()
                 .filter(key -> key.toLowerCase().contains("file") ||
                         key.toLowerCase().contains("blob") ||
-                        key.toLowerCase().contains("byte"))
+                        key.toLowerCase().contains("byte") ||
+                        key.toLowerCase().contains("_name") ||
+                        key.toLowerCase().contains("_size"))
                 .forEach(key -> {
                     Object value = allParams.get(key);
                     if (value instanceof byte[]) {
                         log.info("  File param '{}' : {} bytes", key, ((byte[]) value).length);
+                    } else if (value instanceof MultipartFile) {
+                        MultipartFile file = (MultipartFile) value;
+                        log.info("  File param '{}' : {} ({} bytes)", key, file.getOriginalFilename(), file.getSize());
                     } else {
                         log.info("  File param '{}' : {}", key, value);
                     }
                 });
 
-        // Check specifically for ac_no in any form
-        boolean hasAcNo = false;
-        for (String key : allParams.keySet()) {
-            if (key.equalsIgnoreCase("ac_no")) {
-                hasAcNo = true;
-                log.info("Found ac_no (case-insensitive) with key: {} and value: {}", key, allParams.get(key));
-                break;
+        // Check specifically for required parameters in consolidated params
+        if (api != null && api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if (param.getRequired()) {
+                    String paramKey = param.getKey();
+                    boolean found = false;
+                    for (String key : allParams.keySet()) {
+                        if (key.equalsIgnoreCase(paramKey)) {
+                            found = true;
+                            log.info("Required parameter '{}' found in consolidated params as '{}'", paramKey, key);
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        log.warn("WARNING: Required parameter '{}' NOT found in consolidated params!", paramKey);
+                    }
+                }
             }
-        }
-
-        if (!hasAcNo) {
-            log.warn("WARNING: ac_no parameter NOT found in consolidated params!");
         }
 
         return allParams;
@@ -3316,7 +3325,6 @@ public class AutomationEngineService {
         log.info("Consolidated params keys: {}", consolidatedParams.keySet());
 
         for (ApiParameterEntity param : parameters) {
-            // Skip AUTOGENERATE parameters - they are auto-populated
             if ("AUTOGENERATE".equalsIgnoreCase(param.getOracleType())) {
                 log.info("Skipping validation for AUTOGENERATE parameter: {}", param.getKey());
                 continue;
@@ -3333,10 +3341,26 @@ public class AutomationEngineService {
 
             Object value = null;
 
-            // Strategy 1: Check in consolidated params (case-sensitive)
-            value = consolidatedParams.get(paramKey);
+            // Check if this is a file parameter
+            boolean isFileParam = "FILE".equals(param.getParameterType()) ||
+                    "BLOB".equals(param.getOracleType()) ||
+                    "BYTEA".equals(param.getOracleType());
 
-            // Strategy 2: Try case-insensitive match in consolidated params
+            // For file parameters, check fileMap first
+            if (isFileParam && executeRequest != null && executeRequest.getFileMap() != null) {
+                MultipartFile file = executeRequest.getFileMap().get(paramKey);
+                if (file != null && !file.isEmpty()) {
+                    value = file;
+                    log.info("Found file for parameter {}: {} ({} bytes)", paramKey, file.getOriginalFilename(), file.getSize());
+                }
+            }
+
+            // Check in consolidated params
+            if (value == null) {
+                value = consolidatedParams.get(paramKey);
+            }
+
+            // Check case-insensitive
             if (value == null) {
                 for (Map.Entry<String, Object> entry : consolidatedParams.entrySet()) {
                     if (entry.getKey().equalsIgnoreCase(paramKey)) {
@@ -3347,31 +3371,47 @@ public class AutomationEngineService {
                 }
             }
 
-            // Strategy 3: For headers, check in the executeRequest headers directly
-            if (value == null && "header".equalsIgnoreCase(location) &&
-                    executeRequest != null && executeRequest.getHeaders() != null) {
-
-                Map<String, String> headers = executeRequest.getHeaders();
-
-                // Check exact match
-                value = headers.get(paramKey);
-
-                // Check case-insensitive
-                if (value == null) {
-                    for (Map.Entry<String, String> entry : headers.entrySet()) {
-                        if (entry.getKey().equalsIgnoreCase(paramKey)) {
-                            value = entry.getValue();
-                            log.info("Found header in executeRequest headers: {} = {}", entry.getKey(), value);
+            // Check for file in executeRequest if it's a file parameter
+            if (value == null && isFileParam && executeRequest != null) {
+                if (executeRequest.getFile() != null && paramKey.equalsIgnoreCase("file")) {
+                    value = executeRequest.getFile();
+                } else if (executeRequest.getFiles() != null && !executeRequest.getFiles().isEmpty()) {
+                    // Check if files are mapped to this parameter
+                    for (int i = 0; i < executeRequest.getFiles().size(); i++) {
+                        MultipartFile file = executeRequest.getFiles().get(i);
+                        // You might need additional logic here based on your mapping
+                        if (file != null && !file.isEmpty()) {
+                            value = file;
                             break;
                         }
                     }
                 }
             }
 
-            // Check if value exists and is not empty
-            if (value == null || value.toString().trim().isEmpty()) {
+            // Validate the value
+            if (value == null) {
                 log.error("Required parameter [{}] not found or empty", paramKey);
                 errors.put(paramKey, "Required parameter '" + paramKey + "' is missing");
+            } else if (value instanceof MultipartFile) {
+                MultipartFile file = (MultipartFile) value;
+                if (file.isEmpty()) {
+                    log.error("Required file parameter [{}] is empty", paramKey);
+                    errors.put(paramKey, "Required file parameter '" + paramKey + "' is empty");
+                } else {
+                    log.info("Required file parameter [{}] found with file: {} ({} bytes)",
+                            paramKey, file.getOriginalFilename(), file.getSize());
+                }
+            } else if (value instanceof String && ((String) value).trim().isEmpty()) {
+                log.error("Required parameter [{}] is empty string", paramKey);
+                errors.put(paramKey, "Required parameter '" + paramKey + "' is empty");
+            } else if (value instanceof byte[]) {
+                byte[] bytes = (byte[]) value;
+                if (bytes.length == 0) {
+                    log.error("Required file parameter [{}] has empty bytes", paramKey);
+                    errors.put(paramKey, "Required file parameter '" + paramKey + "' has no data");
+                } else {
+                    log.info("Required file parameter [{}] found with {} bytes", paramKey, bytes.length);
+                }
             } else {
                 log.info("Required parameter [{}] found with value: {}", paramKey, value);
             }

@@ -12,7 +12,7 @@ import {
   BellOff, ShieldOff, Clock as ClockIcon, BarChart, Cpu as CpuIcon,
   Server, Cloud, CloudOff, FileCode, BookOpen, FileKey, GitBranch,
   Folder, FolderOpen, FolderTree, Layers as LayersIcon, Archive,
-  Edit, Edit3, Asterisk, Table, ChevronLeft, Wand2
+  Edit, Edit3, Asterisk, Table, ChevronLeft, Wand2, File
 } from 'lucide-react';
 
 // Import the API Generation Engine controller functions
@@ -226,7 +226,9 @@ const BODY_TYPES = [
   { value: 'xml', label: 'XML (application/xml)', icon: <Code className="h-4 w-4" /> },
   { value: 'form-data', label: 'Form Data (multipart/form-data)', icon: <Upload className="h-4 w-4" /> },
   { value: 'urlencoded', label: 'URL Encoded (application/x-www-form-urlencoded)', icon: <Link className="h-4 w-4" /> },
-  { value: 'raw', label: 'Raw Text (text/plain)', icon: <FileText className="h-4 w-4" /> }
+  { value: 'raw', label: 'Raw Text (text/plain)', icon: <FileText className="h-4 w-4" /> },
+  // NEW: Add binary file upload
+  { value: 'binary', label: 'Binary File (application/octet-stream)', icon: <File className="h-4 w-4" /> }
 ];
 
 // Authentication types (simplified to just the 4 requested)
@@ -267,13 +269,16 @@ const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'
 const ORACLE_DATA_TYPES = [
   'VARCHAR2', 'NUMBER', 'DATE', 'TIMESTAMP', 'TIMESTAMP WITH TIME ZONE',
   'TIMESTAMP WITH LOCAL TIME ZONE', 'INTERVAL YEAR TO MONTH', 'INTERVAL DAY TO SECOND',
-  'RAW', 'LONG RAW', 'CHAR', 'NCHAR', 'NVARCHAR2', 'CLOB', 'NCLOB', 'BLOB', 'JSONB', 'SYS_REFCURSOR',
-  'BFILE', 'ROWID', 'UROWID', 'AUTOGENERATE'
+  'RAW', 'LONG RAW', 'CHAR', 'NCHAR', 'NVARCHAR2', 'CLOB', 'NCLOB', 'BLOB', 'BYTEA', 'JSONB', 'SYS_REFCURSOR',
+  'BFILE', 'ROWID', 'UROWID', 'AUTOGENERATE',
+  // NEW: Add file-specific types
+  'FILE', 'MULTIPART_FILE', 'BINARY'
 ];
 
 // API Data Types
 const API_DATA_TYPES = [
-  'string', 'integer', 'number', 'boolean', 'array', 'object', 'null'
+  'STRING', 'INTEGER', 'NUMBER', 'BOOLEAN', 'ARRAY', 'OBJECT',
+  'FILE', 'BINARY', 'NULL'
 ];
 
 // Parameter Modes for procedures/functions
@@ -1837,6 +1842,16 @@ export default function ApiGenerationModal({
   const [isEditingCustomQuery, setIsEditingCustomQuery] = useState(false);
   const [originalCustomQuery, setOriginalCustomQuery] = useState('');
 
+  // Add this with your other useState declarations
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [fileUploadConfig, setFileUploadConfig] = useState({
+    maxFileSize: 10485760, // 10MB default
+    allowedFileTypes: ['*/*'],
+    multipleFiles: false,
+    fileParameterName: 'file'
+  });
+
   // ============ DETECT CUSTOM QUERY IN EDIT MODE ============
 // This effect runs when editing an existing API to check if it's a custom query
 useEffect(() => {
@@ -2281,6 +2296,12 @@ useEffect(() => {
           collectionType: selectedCollection.type,
           folderId: selectedFolder.id,
           folderName: selectedFolder.name
+        },
+        fileUploadConfig: {
+          maxFileSize: fileUploadConfig.maxFileSize,
+          allowedFileTypes: fileUploadConfig.allowedFileTypes,
+          multipleFiles: fileUploadConfig.multipleFiles,
+          fileParameterName: fileUploadConfig.fileParameterName
         },
         // Handle custom query
         useCustomQuery: isCustomQueryMode,
@@ -2755,6 +2776,19 @@ useEffect(() => {
   setParameters([...parameters, newParam]);
 };
 
+
+// Helper function to check if a parameter is a file upload type
+const isFileParameter = (param) => {
+  const fileTypes = ['FILE', 'BLOB', 'BYTEA', 'MULTIPART_FILE', 'BINARY'];
+  return fileTypes.includes(param.oracleType?.toUpperCase()) ||
+         param.parameterType?.toUpperCase() === 'FILE' ||
+         param.apiType?.toUpperCase() === 'FILE';
+};
+
+// Helper function to get all file parameters
+const getFileParameters = () => {
+  return getInParameters().filter(p => isFileParameter(p));
+};
 
 // Helper function to get current timestamp in numeric format (YYYYMMDDHHMMSS)
 const getCurrentTimestamp = () => {
@@ -8101,191 +8135,418 @@ return ReactDOM.createPortal(
                   </div>
                 )}
 
-                {/* Request Tab */}
-                {activeTab === 'request' && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                      Request Configuration
-                    </h3>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Body Type
-                          </label>
-                          <select
-                            value={requestBody.bodyType}
-                            onChange={(e) => handleRequestBodyChange('bodyType', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.bg,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                          >
-                            {BODY_TYPES.map(type => (
-                              <option key={type.value} value={type.value}>{type.label}</option>
-                            ))}
-                          </select>
-                          {requestBody.bodyType === 'none' && (
-                            <p className="text-xs mt-2" style={{ color: themeColors.warning }}>
-                              <AlertCircle className="h-3 w-3 inline mr-1" />
-                              No request body will be sent. Only GET and DELETE methods typically use no body.
-                            </p>
-                          )}
-                        </div>
+                {/* Request Tab - UPDATED WITH FILE UPLOAD SUPPORT */}
+{activeTab === 'request' && (
+  <div className="space-y-6">
+    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+      Request Configuration
+    </h3>
+    
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+            Body Type
+          </label>
+          <select
+            value={requestBody.bodyType}
+            onChange={(e) => handleRequestBodyChange('bodyType', e.target.value)}
+            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+            style={{ 
+              backgroundColor: themeColors.bg,
+              borderColor: themeColors.border,
+              color: themeColors.text
+            }}
+          >
+            {BODY_TYPES.map(type => (
+              <option key={type.value} value={type.value}>{type.label}</option>
+            ))}
+          </select>
+          {requestBody.bodyType === 'none' && (
+            <p className="text-xs mt-2" style={{ color: themeColors.warning }}>
+              <AlertCircle className="h-3 w-3 inline mr-1" />
+              No request body will be sent. Only GET and DELETE methods typically use no body.
+            </p>
+          )}
+          {requestBody.bodyType === 'binary' && (
+            <p className="text-xs mt-2" style={{ color: themeColors.info }}>
+              <Info className="h-3 w-3 inline mr-1" />
+              Binary file upload - The entire file will be sent as the request body.
+            </p>
+          )}
+          {requestBody.bodyType === 'form-data' && (
+            <p className="text-xs mt-2" style={{ color: themeColors.info }}>
+              <Upload className="h-3 w-3 inline mr-1" />
+              Multipart form data - Supports both text fields and file uploads.
+            </p>
+          )}
+        </div>
 
-                        {/* Only show these fields if body type is not 'none' */}
-                        {requestBody.bodyType !== 'none' && (
-                          <>
-                            <div className="space-y-2">
-                              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                                Max Request Size (bytes)
-                              </label>
-                              <input
-                                type="number"
-                                value={requestBody.maxSize}
-                                onChange={(e) => handleRequestBodyChange('maxSize', parseInt(e.target.value))}
-                                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.card,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                                min="1024"
-                                max="10485760"
-                              />
-                            </div>
+        {/* Only show these fields if body type is not 'none' */}
+        {requestBody.bodyType !== 'none' && requestBody.bodyType !== 'binary' && (
+          <>
+            <div className="space-y-2">
+              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                Max Request Size (bytes)
+              </label>
+              <input
+                type="number"
+                value={requestBody.maxSize}
+                onChange={(e) => handleRequestBodyChange('maxSize', parseInt(e.target.value))}
+                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                style={{ 
+                  backgroundColor: themeColors.card,
+                  borderColor: themeColors.border,
+                  color: themeColors.text
+                }}
+                min="1024"
+                max="10485760"
+              />
+            </div>
 
-                            <div className="space-y-2">
-                              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                                Validate Schema
-                              </label>
-                              <div className="flex items-center">
-                                <input
-                                  type="checkbox"
-                                  checked={requestBody.validateSchema}
-                                  onChange={(e) => handleRequestBodyChange('validateSchema', e.target.checked)}
-                                  className="h-4 w-4 rounded"
-                                  style={{ accentColor: themeColors.info }}
-                                />
-                                <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
-                                  Validate request body against schema
-                                </span>
-                              </div>
-                            </div>
-                          </>
+            <div className="space-y-2">
+              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                Validate Schema
+              </label>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={requestBody.validateSchema}
+                  onChange={(e) => handleRequestBodyChange('validateSchema', e.target.checked)}
+                  className="h-4 w-4 rounded"
+                  style={{ accentColor: themeColors.info }}
+                />
+                <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
+                  Validate request body against schema
+                </span>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {requestBody.bodyType !== 'none' && requestBody.bodyType !== 'binary' && (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+              Allowed Media Types
+            </label>
+            <input
+              type="text"
+              value={requestBody.allowedMediaTypes.join(', ')}
+              onChange={(e) => handleRequestBodyChange('allowedMediaTypes', e.target.value.split(',').map(type => type.trim()))}
+              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+              style={{ 
+                backgroundColor: themeColors.card,
+                borderColor: themeColors.border,
+                color: themeColors.text
+              }}
+              placeholder="application/json, application/xml"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+              Required Fields (in body)
+            </label>
+            <input
+              type="text"
+              value={requestBody.requiredFields.join(', ')}
+              onChange={(e) => handleRequestBodyChange('requiredFields', e.target.value.split(',').map(field => field.trim()))}
+              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+              style={{ 
+                backgroundColor: themeColors.card,
+                borderColor: themeColors.border,
+                color: themeColors.text
+              }}
+              placeholder="id, name, email"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* File Upload Configuration - NEW SECTION */}
+      {requestBody.bodyType === 'binary' && (
+        <div className="space-y-4">
+          <div className="p-4 rounded-lg border" style={{ 
+            borderColor: themeColors.info + '40',
+            backgroundColor: themeColors.info + '10'
+          }}>
+            <h4 className="font-medium mb-3 flex items-center gap-2" style={{ color: themeColors.info }}>
+              <Upload className="h-4 w-4" />
+              File Upload Configuration
+            </h4>
+            
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Max File Size (bytes)
+                </label>
+                <input
+                  type="number"
+                  value={fileUploadConfig.maxFileSize}
+                  onChange={(e) => setFileUploadConfig(prev => ({ ...prev, maxFileSize: parseInt(e.target.value) }))}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  min="1024"
+                  max="104857600"
+                />
+                <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                  Maximum allowed file size in bytes (e.g., 10MB = 10485760)
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Allowed File Types
+                </label>
+                <input
+                  type="text"
+                  value={fileUploadConfig.allowedFileTypes.join(', ')}
+                  onChange={(e) => setFileUploadConfig(prev => ({ 
+                    ...prev, 
+                    allowedFileTypes: e.target.value.split(',').map(t => t.trim())
+                  }))}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="image/*, application/pdf, .docx"
+                />
+                <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                  Comma-separated list of MIME types or extensions
+                </p>
+              </div>
+
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={fileUploadConfig.multipleFiles}
+                  onChange={(e) => setFileUploadConfig(prev => ({ ...prev, multipleFiles: e.target.checked }))}
+                  className="h-4 w-4 rounded mr-2"
+                  style={{ accentColor: themeColors.info }}
+                />
+                <span className="text-xs" style={{ color: themeColors.text }}>
+                  Allow multiple file uploads
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  File Parameter Name
+                </label>
+                <input
+                  type="text"
+                  value={fileUploadConfig.fileParameterName}
+                  onChange={(e) => setFileUploadConfig(prev => ({ ...prev, fileParameterName: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="file"
+                />
+                <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                  Name of the parameter that will receive the file
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+
+    {/* Request Body Sample - Only show if body type is not 'none' and not 'binary' */}
+    {requestBody.bodyType !== 'none' && requestBody.bodyType !== 'binary' && (
+      <div className="space-y-4">
+        <h4 className="font-semibold" style={{ color: themeColors.text }}>
+          Request Body Sample
+        </h4>
+        <div className="border rounded-lg" style={{ 
+          borderColor: themeColors.border,
+          backgroundColor: themeColors.card
+        }}>
+          <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
+            <span className="text-xs font-medium" style={{ color: themeColors.text }}>
+              Sample {requestBody.bodyType.toUpperCase()}
+            </span>
+            <button
+              onClick={() => {
+                const sample = {};
+                const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
+                bodyParams.forEach(p => {
+                  sample[p.key] = p.example || (p.apiType === 'integer' ? 123 : 'sample');
+                });
+                handleRequestBodyChange('sample', JSON.stringify(sample, null, 2));
+              }}
+              className="px-3 py-1 text-xs rounded border transition-colors hover-lift"
+              style={{ 
+                backgroundColor: themeColors.hover,
+                borderColor: themeColors.border,
+                color: themeColors.text
+              }}
+            >
+              Generate from Parameters
+            </button>
+          </div>
+          <textarea
+            value={requestBody.sample || ''}
+            onChange={(e) => handleRequestBodyChange('sample', e.target.value)}
+            className="w-full h-48 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
+            style={{ 
+              backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+              color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+            }}
+            placeholder={requestBody.bodyType === 'json' ? '{\n  "key": "value"\n}' : 
+                       requestBody.bodyType === 'xml' ? '<request>\n  <key>value</key>\n</request>' :
+                       requestBody.bodyType === 'form-data' ? 'Field1: value1\nField2: value2' :
+                       'Enter request body...'}
+          />
+        </div>
+      </div>
+    )}
+
+    {/* Binary File Upload Preview - NEW SECTION */}
+    {requestBody.bodyType === 'binary' && (
+      <div className="space-y-4">
+        <h4 className="font-semibold" style={{ color: themeColors.text }}>
+          File Upload Preview
+        </h4>
+        <div className="border rounded-lg p-6 text-center" style={{ 
+          borderColor: themeColors.border,
+          backgroundColor: themeColors.card
+        }}>
+          <div className="p-8 border-2 border-dashed rounded-lg" style={{ 
+            borderColor: themeColors.info + '40',
+            backgroundColor: themeColors.info + '10'
+          }}>
+            <Upload className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.info }} />
+            <p className="text-sm" style={{ color: themeColors.text }}>
+              File Upload API
+            </p>
+            <p className="text-xs mt-2" style={{ color: themeColors.textSecondary }}>
+              This API will accept binary file uploads via {fileUploadConfig.multipleFiles ? 'multipart/form-data (multiple files)' : 'multipart/form-data (single file)'}
+            </p>
+            <div className="mt-4 text-left text-xs space-y-1" style={{ color: themeColors.textSecondary }}>
+              <div><strong>Parameter Name:</strong> {fileUploadConfig.fileParameterName}</div>
+              <div><strong>Max File Size:</strong> {(fileUploadConfig.maxFileSize / 1024 / 1024).toFixed(2)} MB</div>
+              <div><strong>Allowed Types:</strong> {fileUploadConfig.allowedFileTypes.join(', ')}</div>
+              <div><strong>Multiple Files:</strong> {fileUploadConfig.multipleFiles ? 'Yes' : 'No'}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Form Data with Files - Enhanced Section */}
+    {requestBody.bodyType === 'form-data' && (
+      <div className="space-y-4">
+        <h4 className="font-semibold flex items-center gap-2" style={{ color: themeColors.text }}>
+          <Upload className="h-4 w-4" />
+          Form Data Fields (with File Support)
+        </h4>
+        <div className="border rounded-lg overflow-hidden" style={{ 
+          borderColor: themeColors.border,
+          backgroundColor: themeColors.card
+        }}>
+          <div className="px-4 py-2 border-b" style={{ borderColor: themeColors.border }}>
+            <span className="text-xs font-medium" style={{ color: themeColors.text }}>
+              Form fields will be auto-generated from body parameters with location 'body'
+            </span>
+          </div>
+          <div className="p-4">
+            {getInParameters().filter(p => p.parameterLocation === 'body').length === 0 ? (
+              <div className="text-center py-4">
+                <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                  No body parameters defined. Add parameters with location 'body' in the Parameters tab.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {getInParameters().filter(p => p.parameterLocation === 'body').map((param, idx) => (
+                  <div key={idx} className="flex items-center gap-3 p-2 rounded" style={{ backgroundColor: themeColors.hover }}>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          {param.key}
+                        </span>
+                        {param.required && (
+                          <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                            backgroundColor: themeColors.error + '20',
+                            color: themeColors.error
+                          }}>
+                            Required
+                          </span>
+                        )}
+                        {param.oracleType === 'FILE' || param.oracleType === 'BLOB'  || param.oracleType === 'BYTEA' || param.oracleType === 'MULTIPART_FILE' ? (
+                          <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                            backgroundColor: themeColors.info + '20',
+                            color: themeColors.info
+                          }}>
+                            <Upload className="h-3 w-3 inline mr-1" />
+                            File Upload
+                          </span>
+                        ) : (
+                          <span className="text-xs" style={{ color: themeColors.textSecondary }}>
+                            ({param.oracleType} → {param.apiType})
+                          </span>
                         )}
                       </div>
-
-                      {requestBody.bodyType !== 'none' && (
-                        <div className="space-y-4">
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              Allowed Media Types
-                            </label>
-                            <input
-                              type="text"
-                              value={requestBody.allowedMediaTypes.join(', ')}
-                              onChange={(e) => handleRequestBodyChange('allowedMediaTypes', e.target.value.split(',').map(type => type.trim()))}
-                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                              style={{ 
-                                backgroundColor: themeColors.card,
-                                borderColor: themeColors.border,
-                                color: themeColors.text
-                              }}
-                              placeholder="application/json, application/xml"
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              Required Fields (in body)
-                            </label>
-                            <input
-                              type="text"
-                              value={requestBody.requiredFields.join(', ')}
-                              onChange={(e) => handleRequestBodyChange('requiredFields', e.target.value.split(',').map(field => field.trim()))}
-                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                              style={{ 
-                                backgroundColor: themeColors.card,
-                                borderColor: themeColors.border,
-                                color: themeColors.text
-                              }}
-                              placeholder="id, name, email"
-                            />
-                          </div>
-                        </div>
+                      <p className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
+                        {param.description}
+                      </p>
+                      {param.example && (
+                        <p className="text-xs mt-1 font-mono" style={{ color: themeColors.info }}>
+                          Example: {param.example}
+                        </p>
                       )}
                     </div>
-
-                    {/* Request Body Sample - Only show if body type is not 'none' */}
-                    {requestBody.bodyType !== 'none' && (
-                      <div className="space-y-4">
-                        <h4 className="font-semibold" style={{ color: themeColors.text }}>
-                          Request Body Sample
-                        </h4>
-                        <div className="border rounded-lg" style={{ 
-                          borderColor: themeColors.border,
-                          backgroundColor: themeColors.card
-                        }}>
-                          <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
-                            <span className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              Sample {requestBody.bodyType.toUpperCase()}
-                            </span>
-                            <button
-                              onClick={() => {
-                                const sample = {};
-                                const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
-                                bodyParams.forEach(p => {
-                                  sample[p.key] = p.example || (p.apiType === 'integer' ? 123 : 'sample');
-                                });
-                                handleRequestBodyChange('sample', JSON.stringify(sample, null, 2));
-                              }}
-                              className="px-3 py-1 text-xs rounded border transition-colors hover-lift"
-                              style={{ 
-                                backgroundColor: themeColors.hover,
-                                borderColor: themeColors.border,
-                                color: themeColors.text
-                              }}
-                            >
-                              Generate from Parameters
-                            </button>
-                          </div>
-                          <textarea
-                            value={requestBody.sample || ''}
-                            onChange={(e) => handleRequestBodyChange('sample', e.target.value)}
-                            className="w-full h-48 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
-                            style={{ 
-                              backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
-                              color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
-                            }}
-                            placeholder={requestBody.bodyType === 'json' ? '{\n  "key": "value"\n}' : 
-                                       requestBody.bodyType === 'xml' ? '<request>\n  <key>value</key>\n</request>' :
-                                       'Enter request body...'}
-                          />
-                        </div>
+                    {param.oracleType === 'FILE' || param.oracleType === 'BLOB' || param.oracleType === 'BYTEA' || param.oracleType === 'MULTIPART_FILE' ? (
+                      <div className="p-2 rounded" style={{ backgroundColor: themeColors.card }}>
+                        <File className="h-5 w-5" style={{ color: themeColors.info }} />
                       </div>
-                    )}
-
-                    {/* Show message when no body */}
-                    {requestBody.bodyType === 'none' && (
-                      <div className="p-8 text-center border rounded-lg" style={{ 
-                        borderColor: themeColors.border,
-                        backgroundColor: themeColors.hover
-                      }}>
-                        <FileText className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
-                        <p style={{ color: themeColors.textSecondary }}>
-                          No request body will be sent with this API.
-                        </p>
-                        <p className="text-xs mt-2" style={{ color: themeColors.info }}>
-                          This is typical for GET and DELETE operations.
-                        </p>
+                    ) : (
+                      <div className="p-2 rounded" style={{ backgroundColor: themeColors.card }}>
+                        <FileText className="h-5 w-5" style={{ color: themeColors.textSecondary }} />
                       </div>
                     )}
                   </div>
-                )}
+                ))}
+                <p className="text-xs mt-2" style={{ color: themeColors.info }}>
+                  <Info className="h-3 w-3 inline mr-1" />
+                  For file uploads, set the parameter's Oracle Type to 'FILE', 'BLOB', 'BYTEA' or 'MULTIPART_FILE' in the Parameters tab.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Show message when no body */}
+    {requestBody.bodyType === 'none' && (
+      <div className="p-8 text-center border rounded-lg" style={{ 
+        borderColor: themeColors.border,
+        backgroundColor: themeColors.hover
+      }}>
+        <FileText className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
+        <p style={{ color: themeColors.textSecondary }}>
+          No request body will be sent with this API.
+        </p>
+        <p className="text-xs mt-2" style={{ color: themeColors.info }}>
+          This is typical for GET and DELETE operations.
+        </p>
+      </div>
+    )}
+  </div>
+)}
 
                 {/* Response Tab */}
                 {activeTab === 'response' && (
