@@ -1022,73 +1022,37 @@ public class AutomationEngineController {
             loggingHelper.logApiExecution(requestId, apiId, performedBy,
                     contentType, clientIp, userAgent);
 
-            // Create execute request DTO
-            ExecuteApiRequestDTO executeRequest = new ExecuteApiRequestDTO();
-            executeRequest.setRequestId(requestId);
-            executeRequest.setHttpMethod(request.getMethod());
+            // ============ FIX: USE REQUEST EXTRACTOR HELPER (like Oracle does) ============
+            ExecuteApiRequestDTO executeRequest = requestExtractorHelper.extractRequestComponents(
+                    request, requestId, apiId);
 
-            // Set URL
-            StringBuffer requestURL = request.getRequestURL();
-            String queryString = request.getQueryString();
-            String fullUrl = requestURL.toString();
-            if (queryString != null && !queryString.isEmpty()) {
-                fullUrl = fullUrl + "?" + queryString;
-            }
-            executeRequest.setUrl(fullUrl);
-            log.info("Request ID: {} - Set URL: {}", requestId, fullUrl);
-
-            // Extract headers
-            Enumeration<String> headerNames = request.getHeaderNames();
-            Map<String, String> headers = new HashMap<>();
-            if (headerNames != null) {
-                while (headerNames.hasMoreElements()) {
-                    String headerName = headerNames.nextElement();
-                    String headerValue = request.getHeader(headerName);
-                    headers.put(headerName, headerValue);
-                }
-            }
-            executeRequest.setHeaders(headers);
-            log.info("Request ID: {} - Extracted {} headers", requestId, headers.size());
-
-            // Extract query parameters
-            if (queryString != null && !queryString.isEmpty()) {
-                Map<String, Object> queryParams = new HashMap<>();
-                String[] pairs = queryString.split("&");
-                for (String pair : pairs) {
-                    String[] keyValue = pair.split("=");
-                    String key = keyValue[0];
-                    String value = keyValue.length > 1 ? keyValue[1] : "";
-                    queryParams.put(key, value);
-                }
-                executeRequest.setQueryParams(queryParams);
-                log.info("Request ID: {} - Set query params: {}", requestId, queryParams.keySet());
+            // Set HTTP method if not set
+            if (executeRequest.getHttpMethod() == null) {
+                executeRequest.setHttpMethod(request.getMethod());
             }
 
-            // Handle file uploads
-            Map<String, Object> formData = new HashMap<>();
+            // Override file uploads from parameters if present (for multipart support)
+            Map<String, MultipartFile> finalFileMap = new HashMap<>();
 
-            // Check for fileMap parameter (multiple files with names)
             if (fileMap != null && !fileMap.isEmpty()) {
-                executeRequest.setFileMap(fileMap);
-                executeRequest.setFiles(new ArrayList<>(fileMap.values()));
-                if (fileMap.size() == 1) {
-                    executeRequest.setFile(fileMap.values().iterator().next());
-                }
-                log.info("Request ID: {} - Set fileMap with {} entries", requestId, fileMap.size());
+                finalFileMap.putAll(fileMap);
             }
 
-            // Check for single file parameter
             if (file != null && !file.isEmpty()) {
-                Map<String, MultipartFile> singleFileMap = new HashMap<>();
-                singleFileMap.put("file", file);
-                executeRequest.setFileMap(singleFileMap);
-                executeRequest.setFiles(Collections.singletonList(file));
-                executeRequest.setFile(file);
-                log.info("Request ID: {} - Set single file: {}", requestId, file.getOriginalFilename());
+                finalFileMap.put("file", file);
             }
 
-            // Extract form parameters
+            if (!finalFileMap.isEmpty()) {
+                executeRequest.setFileMap(finalFileMap);
+                executeRequest.setFiles(new ArrayList<>(finalFileMap.values()));
+                if (finalFileMap.size() == 1) {
+                    executeRequest.setFile(finalFileMap.values().iterator().next());
+                }
+            }
+
+            // Override form parameters if present
             if (formParams != null && !formParams.isEmpty()) {
+                Map<String, Object> formData = new HashMap<>();
                 for (Map.Entry<String, List<String>> entry : formParams.entrySet()) {
                     List<String> values = entry.getValue();
                     if (values != null && !values.isEmpty()) {
@@ -1101,38 +1065,15 @@ public class AutomationEngineController {
                 }
                 if (!formData.isEmpty()) {
                     executeRequest.setBody(formData);
-                    log.info("Request ID: {} - Set body with form parameters: {}", requestId, formData.keySet());
                 }
             }
-
-            // Also check for body in the original request (for JSON requests)
-            if (executeRequest.getBody() == null && request.getContentType() != null &&
-                    request.getContentType().contains("application/json")) {
-                // Read JSON body
-                StringBuilder requestBody = new StringBuilder();
-                try (java.io.BufferedReader reader = request.getReader()) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        requestBody.append(line);
-                    }
-                }
-                String bodyString = requestBody.toString();
-                if (bodyString != null && !bodyString.isEmpty()) {
-                    try {
-                        Map<String, Object> bodyMap = objectMapper.readValue(bodyString,
-                                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
-                        executeRequest.setBody(bodyMap);
-                        log.info("Request ID: {} - Set body from JSON: {}", requestId, bodyMap.keySet());
-                    } catch (Exception e) {
-                        executeRequest.setBody(bodyString);
-                        log.info("Request ID: {} - Set body as raw string", requestId);
-                    }
-                }
-            }
+            // ============ END FIX ============
 
             // Log final extracted request details
-            log.info("Request ID: {} - FINAL EXTRACTED REQUEST: fileMap={}, file={}, files={}, bodyType={}",
+            log.info("Request ID: {} - FINAL EXTRACTED REQUEST: pathParams={}, queryParams={}, fileMap={}, file={}, files={}, bodyType={}",
                     requestId,
+                    executeRequest.getPathParams() != null ? executeRequest.getPathParams().keySet() : "null",
+                    executeRequest.getQueryParams() != null ? executeRequest.getQueryParams().keySet() : "null",
                     executeRequest.getFileMap() != null ? executeRequest.getFileMap().size() : 0,
                     executeRequest.getFile() != null ? executeRequest.getFile().getOriginalFilename() : "null",
                     executeRequest.getFiles() != null ? executeRequest.getFiles().size() : 0,
