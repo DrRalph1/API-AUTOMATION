@@ -267,7 +267,7 @@ const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'
 
 // Oracle Data Types
 const ORACLE_DATA_TYPES = [
-  'VARCHAR2', 'NUMBER', 'DATE', 'TIMESTAMP', 'TIMESTAMP WITH TIME ZONE',
+  'VARCHAR2', 'NUMBER', 'DATE', 'TEXT', 'TIMESTAMP', 'TIMESTAMP WITH TIME ZONE',
   'TIMESTAMP WITH LOCAL TIME ZONE', 'INTERVAL YEAR TO MONTH', 'INTERVAL DAY TO SECOND',
   'RAW', 'LONG RAW', 'CHAR', 'NCHAR', 'NVARCHAR2', 'CLOB', 'NCLOB', 'BLOB', 'BYTEA', 'JSONB', 'SYS_REFCURSOR',
   'BFILE', 'ROWID', 'UROWID', 'AUTOGENERATE',
@@ -282,7 +282,7 @@ const API_DATA_TYPES = [
 ];
 
 // Parameter Modes for procedures/functions
-const PARAMETER_MODES = ['IN', 'OUT', 'IN/OUT'];
+const PARAMETER_MODES = ['IN', 'OUT', 'IN/OUT', 'IN_OUT'];
 
 // Required fields configuration
 const REQUIRED_FIELDS = {
@@ -694,12 +694,12 @@ function ApiPreviewModal({
 
   // Filter parameters to only show IN parameters (not OUT)
   const inParameters = (apiData.parameters || []).filter(p => 
-    !p.paramMode || p.paramMode === 'IN' || p.paramMode === 'IN/OUT'
+    !p.paramMode || p.paramMode === 'IN'
   );
 
   // Filter response mappings to only show OUT parameters (and any other response fields)
   const outMappings = (apiData.responseMappings || []).filter(m => 
-    (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || !m.paramMode)
+    (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
   );
 
   return (
@@ -3750,7 +3750,7 @@ const populateFormFromObject = useCallback((object, preserveExistingApiDetails =
     
     // Normalize the mode
     let normalizedMode = paramMode?.toString().toUpperCase().replace(/\s+/g, '_') || 'IN';
-    if (normalizedMode === 'INOUT') {
+    if (normalizedMode === 'INOUT' || normalizedMode === 'IN_OUT') {
       normalizedMode = 'IN/OUT';
     }
     
@@ -3781,8 +3781,8 @@ const populateFormFromObject = useCallback((object, preserveExistingApiDetails =
     // Determine parameter location based on mode and HTTP method
     let parameterLocation = param.parameterLocation || 'query';
     
-    const isInParam = normalizedMode === 'IN' || normalizedMode === 'IN/OUT';
-    const isOutParam = normalizedMode === 'OUT' || normalizedMode === 'IN/OUT';
+    const isInParam = normalizedMode === 'IN';
+    const isOutParam = normalizedMode === 'OUT' || normalizedMode === 'IN/OUT' || normalizedMode === 'IN_OUT';
     
     // If parameter location is not set, determine from HTTP method
     if (!param.parameterLocation) {
@@ -4041,7 +4041,7 @@ const populateFormFromObject = useCallback((object, preserveExistingApiDetails =
   console.log('📊 Final results:', {
     parametersCount: newParameters.length,
     mappingsCount: newMappings.length,
-    inCount: newParameters.filter(p => p.paramMode === 'IN' || p.paramMode === 'IN/OUT' || p.paramMode === null).length,
+    inCount: newParameters.filter(p => p.paramMode === 'IN' || p.paramMode === null).length,
     outCount: newMappings.length
   });
 
@@ -4124,14 +4124,14 @@ const populateFormFromObject = useCallback((object, preserveExistingApiDetails =
   // Helper function to filter parameters to only show IN parameters
   const getInParameters = () => {
     return parameters.filter(p => 
-      !p.paramMode || p.paramMode === 'IN' || p.paramMode === 'IN/OUT'
+      !p.paramMode || p.paramMode === 'IN'
     );
   };
 
   // Helper function to filter response mappings to only show OUT parameters and other mappings
   const getOutMappings = () => {
     return responseMappings.filter(m => 
-      (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || !m.paramMode)
+      (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
     );
   };
 
@@ -6515,7 +6515,7 @@ return ReactDOM.createPortal(
                             {selectedDbObject.parameters
                               .filter(p => {
                                 const mode = p.mode || p.IN_OUT || p.in_out;
-                                return !mode || mode === 'IN' || mode === 'IN/OUT';
+                                return !mode || mode === 'IN';
                               })
                               .map((param, index) => {
                                 const mode = param.mode || param.IN_OUT || param.in_out || 'IN';
@@ -6553,7 +6553,7 @@ return ReactDOM.createPortal(
                           {/* Show OUT parameters separately in a note */}
                           {selectedDbObject.parameters.some(p => {
                             const mode = p.mode || p.IN_OUT || p.in_out;
-                            return mode === 'OUT' || mode === 'IN/OUT';
+                            return mode === 'OUT' || mode === 'IN/OUT' || mode === 'IN_OUT';
                           }) && (
                             <p className="text-xs mt-2" style={{ color: themeColors.info }}>
                               Note: OUT/IN OUT parameters will appear in the Response Mapping tab.
@@ -7633,7 +7633,7 @@ return ReactDOM.createPortal(
                                 </td>
                                 <td className="px-3 py-2">
                                   <select
-                                    value={param.paramMode || 'IN'}
+                                    value={param.paramMode === 'IN' ? 'IN' : 'IN OUT'}
                                     onChange={(e) => handleParameterChange(param.id, 'paramMode', e.target.value)}
                                     className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                     style={{ 
@@ -7797,7 +7797,7 @@ return ReactDOM.createPortal(
                                 </td>
                                 <td className="px-3 py-2">
                                   <select
-                                    value={mapping.paramMode || ''}
+                                    value={mapping.paramMode === 'OUT' ? 'OUT' : 'IN OUT'}
                                     onChange={(e) => handleResponseMappingChange(mapping.id, 'paramMode', e.target.value)}
                                     className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                     style={{ 
