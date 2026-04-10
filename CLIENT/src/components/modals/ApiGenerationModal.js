@@ -2750,32 +2750,6 @@ useEffect(() => {
     setValidationErrors(prev => ({ ...prev, [field]: null }));
   };
 
-  // Handle parameter operations
- const handleAddParameter = () => {
-  const timestamp = getCurrentTimestamp();
-  const newParam = {
-    id: `param-${Date.now()}`,
-    key: '',
-    dbColumn: '',
-    oracleType: 'VARCHAR2', // Default is VARCHAR2, not AUTOGENERATE
-    apiType: 'string',
-    parameterLocation: 'query',
-    required: true, // Default to required for non-AUTOGENERATE
-    description: '',
-    example: 'sample', // Default sample value
-    validationPattern: '',
-    defaultValue: '',
-    inBody: false,
-    isPrimaryKey: false,
-    paramMode: 'IN'
-  };
-  
-  // Only if the default is AUTOGENERATE (which it's not), set special values
-  // This is handled by the change handler if user selects AUTOGENERATE
-  
-  setParameters([...parameters, newParam]);
-};
-
 
 // Helper function to check if a parameter is a file upload type
 const isFileParameter = (param) => {
@@ -2803,20 +2777,66 @@ const getCurrentTimestamp = () => {
   return `${year}${month}${day}${hours}${minutes}${seconds}`;
 };
 
+// Add this function to manage URL endpoint path based on parameters
+const updateEndpointPathFromParameters = useCallback((paramsList) => {
+  // Get all path parameters (those with parameterLocation === 'path')
+  const pathParams = paramsList.filter(p => p.parameterLocation === 'path' && p.key && p.key.trim());
+  
+  // Get current endpoint path
+  let currentPath = apiDetails.endpointPath;
+  
+  // Remove all existing path parameter placeholders from the URL
+  // Pattern matches {paramName} anywhere in the path
+  let cleanedPath = currentPath.replace(/\{[^}]+\}/g, '');
+  
+  // Remove any double slashes that might have been created
+  cleanedPath = cleanedPath.replace(/\/+/g, '/');
+  
+  // Remove trailing slash if present
+  if (cleanedPath.endsWith('/')) {
+    cleanedPath = cleanedPath.slice(0, -1);
+  }
+  
+  // Add the path parameters in order
+  let newPath = cleanedPath;
+  for (const param of pathParams) {
+    // Ensure the path parameter is properly formatted with curly braces
+    const paramPlaceholder = `{${param.key}}`;
+    
+    // Add the parameter to the path (you can customize the order/location)
+    // This adds them in sequence at the end of the path
+    newPath = newPath + `/${paramPlaceholder}`;
+  }
+  
+  // If the path is empty, set to root
+  if (!newPath) {
+    newPath = '/';
+  }
+  
+  // Update the endpoint path if it changed
+  if (newPath !== currentPath) {
+    setApiDetails(prev => ({
+      ...prev,
+      endpointPath: newPath
+    }));
+  }
+}, [apiDetails.endpointPath, setApiDetails]);
+
+// Update the handleParameterChange function to manage URL updates
 const handleParameterChange = (id, field, value) => {
   setParameters(prevParams => {
     // First, find the current parameter to check its type
     const currentParam = prevParams.find(p => p.id === id);
     
     // Update the parameter
-    const updatedParams = prevParams.map(param => 
+    let updatedParams = prevParams.map(param => 
       param.id === id ? { ...param, [field]: value } : param
     );
     
-    // If changing the oracleType to AUTOGENERATE
+    // If changing oracleType to AUTOGENERATE
     if (field === 'oracleType' && value === 'AUTOGENERATE') {
       const timestamp = getCurrentTimestamp();
-      return updatedParams.map(param => 
+      updatedParams = updatedParams.map(param => 
         param.id === id ? { 
           ...param, 
           required: false,
@@ -2827,7 +2847,7 @@ const handleParameterChange = (id, field, value) => {
       );
     }
     
-    // If changing the oracleType FROM AUTOGENERATE to something else
+    // If changing oracleType FROM AUTOGENERATE to something else
     if (field === 'oracleType' && currentParam?.oracleType === 'AUTOGENERATE' && value !== 'AUTOGENERATE') {
       // Generate a default sample value based on the new data type
       let defaultExample = 'sample';
@@ -2848,7 +2868,7 @@ const handleParameterChange = (id, field, value) => {
         defaultExample = 'binary_data';
       }
       
-      return updatedParams.map(param => 
+      updatedParams = updatedParams.map(param => 
         param.id === id ? { 
           ...param, 
           required: true, // Reset required to true for non-AUTOGENERATE fields
@@ -2860,20 +2880,86 @@ const handleParameterChange = (id, field, value) => {
       );
     }
     
-    // If changing location to/from body, update inBody flag for that parameter
+    // If changing location to 'path', automatically set required to true and disable it
     if (field === 'parameterLocation') {
-      return updatedParams.map(param => 
-        param.id === id ? { ...param, inBody: value === 'body' } : param
+      updatedParams = updatedParams.map(param => 
+        param.id === id ? { 
+          ...param, 
+          inBody: value === 'body',
+          required: value === 'path' ? true : param.required, // Set required to true for path parameters
+          _isPathParam: value === 'path' // Add a flag to track if it's a path parameter
+        } : param
       );
+    }
+    
+    // If changing location from 'path' to something else, don't force required
+    if (field === 'parameterLocation' && currentParam?.parameterLocation === 'path' && value !== 'path') {
+      updatedParams = updatedParams.map(param => 
+        param.id === id ? { 
+          ...param, 
+          required: param.required, // Keep the existing required value
+          _isPathParam: false
+        } : param
+      );
+    }
+    
+    // IMPORTANT: When parameter location changes, update the URL endpoint path
+    if (field === 'parameterLocation') {
+      // Use setTimeout to ensure state is updated before updating URL
+      setTimeout(() => {
+        updateEndpointPathFromParameters(updatedParams);
+      }, 0);
     }
     
     return updatedParams;
   });
 };
 
-  const handleRemoveParameter = (id) => {
-    setParameters(parameters.filter(param => param.id !== id));
+// Add this effect to update URL when parameters are loaded initially or when parameters array changes
+useEffect(() => {
+  if (parameters.length > 0) {
+    updateEndpointPathFromParameters(parameters);
+  }
+}, [parameters, updateEndpointPathFromParameters]);
+
+// Update the handleAddParameter function to check for path parameters
+const handleAddParameter = () => {
+  const timestamp = getCurrentTimestamp();
+  const newParam = {
+    id: `param-${Date.now()}`,
+    key: '',
+    dbColumn: '',
+    oracleType: 'VARCHAR2', // Default is VARCHAR2, not AUTOGENERATE
+    apiType: 'string',
+    parameterLocation: 'query', // Default to query
+    required: true,
+    description: '',
+    example: 'sample',
+    validationPattern: '',
+    defaultValue: '',
+    inBody: false,
+    isPrimaryKey: false,
+    paramMode: 'IN'
   };
+  
+  setParameters([...parameters, newParam]);
+};
+
+// Update the handleRemoveParameter function to update URL when removing a path parameter
+const handleRemoveParameter = (id) => {
+  const paramToRemove = parameters.find(p => p.id === id);
+  const wasPathParam = paramToRemove?.parameterLocation === 'path';
+  
+  setParameters(parameters.filter(param => param.id !== id));
+  
+  // If removing a path parameter, update the URL
+  if (wasPathParam) {
+    setTimeout(() => {
+      const remainingParams = parameters.filter(param => param.id !== id);
+      updateEndpointPathFromParameters(remainingParams);
+    }, 0);
+  }
+};
 
   // Handle response mapping operations
   const handleAddResponseMapping = () => {
@@ -6273,6 +6359,7 @@ return ReactDOM.createPortal(
                     <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
                       API Definition
                     </h3>
+    
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-4">
                         <div className="space-y-2">
@@ -7499,13 +7586,23 @@ return ReactDOM.createPortal(
                                     style={{ 
                                       backgroundColor: themeColors.bg,
                                       borderColor: themeColors.border,
-                                      color: themeColors.text
+                                      color: themeColors.text,
+                                      fontWeight: 'normal'
                                     }}
                                   >
                                     {PARAMETER_LOCATIONS.map(loc => (
-                                      <option key={loc.value} value={loc.value}>{loc.label}</option>
+                                      <option key={loc.value} value={loc.value}>
+                                        {loc.label}
+                                        {/* {loc.label} {loc.value === 'path' ? '→ Added to URL' : ''} */}
+                                      </option>
                                     ))}
                                   </select>
+                                  {/* {param.parameterLocation === 'path' && (
+                                    <div className="text-xs mt-1" style={{ color: themeColors.warning }}>
+                                      <Link className="h-3 w-3 inline mr-1" />
+                                      In URL: {`{${param.key || 'param'}}`}
+                                    </div>
+                                  )} */}
                                 </td>
                                 <td className="px-3 py-2 text-center">
                                   <input
@@ -7514,7 +7611,11 @@ return ReactDOM.createPortal(
                                     onChange={(e) => handleParameterChange(param.id, 'required', e.target.checked)}
                                     className="h-4 w-4 rounded"
                                     style={{ accentColor: themeColors.info }}
+                                    disabled={param.parameterLocation === 'path'} // Path parameters are always required
                                   />
+                                  {param.parameterLocation === 'path' && (
+                                    <div className="text-xs" style={{ color: themeColors.textSecondary }}>(always)</div>
+                                  )}
                                 </td>
                                 <td className="px-3 py-2">
                                   <input
@@ -7527,7 +7628,7 @@ return ReactDOM.createPortal(
                                       borderColor: themeColors.border,
                                       color: themeColors.text
                                     }}
-                                    placeholder="Example"
+                                    placeholder={param.parameterLocation === 'path' ? 'e.g., 123' : 'Example'}
                                   />
                                 </td>
                                 <td className="px-3 py-2">
@@ -7561,6 +7662,7 @@ return ReactDOM.createPortal(
                         </table>
                       </div>
                     )}
+                    
                   </div>
                 )}
 
