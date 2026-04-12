@@ -219,10 +219,11 @@ const SyntaxHighlighter = ({ language, code }) => {
         
         const pythonKeywords = [
           'def', 'class', 'import', 'from', 'if', 'elif', 
-          'else', 'for', 'while', 'try', 'except', 'finally', 
-          'with', 'as', 'return', 'yield', 'async', 'await', 
-          'lambda', 'in', 'is', 'not', 'and', 'or', 'True', 
-          'False', 'None', 'pass', 'break', 'continue', 'raise'
+          'else', 'for', 'while', 'return', 'class', 'import', 
+          'export', 'from', 'default', 'async', 'await', 
+          'try', 'catch', 'finally', 'throw', 'new', 'this',
+          'true', 'false', 'null', 'undefined', 'typeof',
+          'instanceof', 'in', 'of', 'yield', 'delete'
         ];
         
         pythonKeywords.forEach(keyword => {
@@ -370,6 +371,53 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
+
+  // Fixed copyToClipboard function with proper toast feedback
+  const copyToClipboard = useCallback((text) => {
+    if (!text) {
+      showToast('No code to copy', 'warning');
+      return;
+    }
+    
+    // Modern clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => {
+          showToast('Copied to clipboard!', 'success');
+        })
+        .catch((err) => {
+          console.error('Clipboard write failed:', err);
+          fallbackCopy(text);
+        });
+    } else {
+      fallbackCopy(text);
+    }
+    
+    function fallbackCopy(text) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-9999px';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      
+      try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+          showToast('Copied to clipboard!', 'success');
+        } else {
+          showToast('Failed to copy to clipboard', 'error');
+        }
+      } catch (err) {
+        console.error('Fallback copy failed:', err);
+        showToast('Failed to copy to clipboard', 'error');
+      }
+      
+      document.body.removeChild(textarea);
+    }
+  }, []);
 
   // Enhanced loading overlay component matching UserManagement style
   const LoadingOverlay = () => {
@@ -1363,16 +1411,6 @@ const handleSelectRequest = async (request, collection, folder) => {
 
 
 
-  const copyToClipboard = (text) => {
-    if (!text) {
-      showToast('No code to copy', 'warning');
-      return;
-    }
-    
-    navigator.clipboard.writeText(text);
-    showToast('Copied to clipboard!', 'success');
-  };
-
   const generateDownloadPackage = async () => {
     if (!selectedRequest || !selectedLanguage) {
       showToast('Please select a request and language first', 'warning');
@@ -1818,19 +1856,6 @@ const renderImplementationContent = () => {
               <h1 className="text-xl font-semibold mb-4" style={{ color: colors.text }}>
                 {selectedRequest.name}
               </h1>
-              {/* <div className="flex items-center gap-3 mb-2">
-                {selectedRequest.method && (
-                  <div className="px-3 py-1 rounded text-sm font-medium" style={{ 
-                    backgroundColor: getMethodColor(selectedRequest.method),
-                    color: 'white'
-                  }}>
-                    {selectedRequest.method}
-                  </div>
-                )}
-                <code className="text-lg font-mono" style={{ color: colors.text }}>
-                  {selectedRequest.url || ''}
-                </code>
-              </div> */}
               
               <div className="flex flex-wrap items-center gap-4 text-xs mb-4 mt-4">
                 {selectedCollection && (
@@ -1859,10 +1884,6 @@ const renderImplementationContent = () => {
                 )}
               </div>
               
-              {/* <p className="text-base mb-4 mt-4" style={{ color: colors.textSecondary }}>
-                {selectedRequest.description || 'No description available'}
-              </p> */}
-              
             </>
           ) : (
             <div className="text-center py-12">
@@ -1878,40 +1899,6 @@ const renderImplementationContent = () => {
         {selectedRequest && (
           <>
 
-          {/* Display Headers */}
-              {/* {selectedRequest.headers && selectedRequest.headers.length > 0 && (
-                <div className="mb-6 p-4 rounded-lg" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
-                  <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Request Headers</h3>
-                  <div className="space-y-2">
-                    {selectedRequest.headers.map((header, index) => (
-                      <div key={index} className="flex items-start gap-2 text-sm">
-                        <span className="font-medium" style={{ color: colors.textSecondary, minWidth: '120px' }}>
-                          {header.key}:
-                        </span>
-                        <span style={{ color: colors.text }}>
-                          {header.value}
-                          {header.disabled && (
-                            <span className="ml-2 text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: colors.error + '20', color: colors.error }}>
-                              Disabled
-                            </span>
-                          )}
-                          {header.required && (
-                            <span className="ml-2 text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: colors.primary + '20', color: colors.primary }}>
-                              Required
-                            </span>
-                          )}
-                        </span>
-                        {header.description && (
-                          <span className="text-xs" style={{ color: colors.textTertiary }}>
-                            - {header.description}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )} */}
-              
             {/* Language & Framework Selection */}
             <div className="mb-8 p-6 rounded-xl border hover-lift" style={{ 
               backgroundColor: colors.card,

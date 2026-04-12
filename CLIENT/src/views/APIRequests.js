@@ -251,6 +251,12 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
   if (!isOpen || !request) return null;
 
   const [activeTab, setActiveTab] = useState('request');
+  const [toast, setToast] = useState(null);
+
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const isRequestSuccessfulHelper = (request) => {
     return request?.responseStatusCode >= 200 && request?.responseStatusCode < 300;
@@ -268,7 +274,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
   const formatExecutionTimeHelper = (ms) => {
     if (ms === null || ms === undefined) return 'N/A';
 
-    const time = Number(ms); // 🔥 force conversion
+    const time = Number(ms);
 
     if (isNaN(time)) return 'N/A';
 
@@ -277,8 +283,91 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
     return `${(time / 60000).toFixed(2)}m`;
   };
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = (text, type = 'json') => {
+    if (!text) {
+      showToast(`Nothing to copy`, 'warning');
+      return;
+    }
+    
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => {
+          showToast(`Copied ${type} to clipboard!`, 'success');
+        })
+        .catch((err) => {
+          console.error('Clipboard write failed:', err);
+          fallbackCopy(text, type);
+        });
+    } else {
+      fallbackCopy(text, type);
+    }
+    
+    function fallbackCopy(text, type) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-9999px';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      
+      try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+          showToast(`Copied ${type} to clipboard!`, 'success');
+        } else {
+          showToast(`Failed to copy ${type}`, 'error');
+        }
+      } catch (err) {
+        console.error('Fallback copy failed:', err);
+        showToast(`Failed to copy ${type}`, 'error');
+      }
+      
+      document.body.removeChild(textarea);
+    }
+  };
+
+  // Helper functions to get request and response data
+  const getRequestData = () => {
+    const requestData = {
+      method: request.httpMethod,
+      url: request.url,
+      headers: request.headers,
+      body: request.requestBody,
+      correlationId: request.correlationId,
+      requestName: request.requestName,
+      timestamp: request.requestTimestamp || request.createdAt
+    };
+    return JSON.stringify(requestData, null, 2);
+  };
+
+  const getResponseData = () => {
+    const responseData = {
+      statusCode: request.responseStatusCode,
+      statusMessage: request.responseStatusMessage,
+      body: request.responseBody,
+      headers: request.responseHeaders,
+      size: request.responseSizeBytes,
+      timestamp: request.responseTimestamp,
+      duration: request.executionDurationMs
+    };
+    return JSON.stringify(responseData, null, 2);
+  };
+
+  const getFullJsonData = () => {
+    return JSON.stringify(request, null, 2);
+  };
+
+  // Get button color based on response status code
+  const getResponseButtonColor = () => {
+    const statusCode = request.responseStatusCode;
+    if (!statusCode) return colors.textSecondary;
+    if (statusCode >= 200 && statusCode < 300) return colors.success;
+    if (statusCode >= 300 && statusCode < 400) return colors.info;
+    if (statusCode >= 400 && statusCode < 500) return colors.warning;
+    if (statusCode >= 500) return colors.error;
+    return colors.textSecondary;
   };
 
   return (
@@ -492,16 +581,59 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
         </div>
 
         <div className="flex items-center justify-end gap-2 px-6 py-3 border-t" style={{ borderColor: colors.border }}>
-          <button
-            onClick={() => {
-              copyToClipboard(JSON.stringify(request, null, 2));
-            }}
-            className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
-            style={{ backgroundColor: colors.hover, color: colors.text }}
-          >
-            <Copy size={12} />
-            Copy JSON
-          </button>
+          {activeTab === 'request' && (
+            <>
+              <button
+                onClick={() => copyToClipboard(getFullJsonData(), 'JSON')}
+                className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                <Copy size={12} />
+                Copy JSON
+              </button>
+              <button
+                onClick={() => copyToClipboard(getRequestData(), 'Request')}
+                className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
+                style={{ backgroundColor: colors.info, color: 'white' }}
+              >
+                <Copy size={12} />
+                Copy Request
+              </button>
+            </>
+          )}
+          
+          {activeTab === 'response' && (
+            <>
+              <button
+                onClick={() => copyToClipboard(getFullJsonData(), 'JSON')}
+                className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                <Copy size={12} />
+                Copy JSON
+              </button>
+              <button
+                onClick={() => copyToClipboard(getResponseData(), 'Response')}
+                className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
+                style={{ backgroundColor: getResponseButtonColor(), color: 'white' }}
+              >
+                <Copy size={12} />
+                Copy Response
+              </button>
+            </>
+          )}
+          
+          {activeTab !== 'request' && activeTab !== 'response' && (
+            <button
+              onClick={() => copyToClipboard(getFullJsonData(), 'JSON')}
+              className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
+              style={{ backgroundColor: colors.hover, color: colors.text }}
+            >
+              <Copy size={12} />
+              Copy JSON
+            </button>
+          )}
+          
           <button
             onClick={onClose}
             className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
@@ -511,6 +643,20 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
           </button>
         </div>
       </div>
+
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed bottom-4 right-4 px-4 py-2 rounded text-sm font-medium z-[60] animate-fade-in-up"
+          style={{ 
+            backgroundColor: toast.type === 'error' ? colors.error : 
+                          toast.type === 'success' ? colors.success : 
+                          toast.type === 'warning' ? colors.warning : 
+                          colors.info,
+            color: 'white'
+          }}>
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 };
@@ -1076,14 +1222,43 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const copyToClipboard = (text) => {
-    if (!text) {
-      showToast('No data to copy', 'warning');
-      return;
+   const copyToClipboard = (text) => {
+  if (!text) return;
+  
+  // Modern clipboard API
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        // Optional: show success feedback
+        console.log('Copied to clipboard!');
+      })
+      .catch((err) => {
+        console.error('Clipboard write failed:', err);
+        fallbackCopy(text);
+      });
+  } else {
+    fallbackCopy(text);
+  }
+  
+  function fallbackCopy(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-9999px';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    
+    try {
+      document.execCommand('copy');
+    } catch (err) {
+      console.error('Fallback copy failed:', err);
     }
-    navigator.clipboard.writeText(text);
-    showToast('Copied to clipboard!', 'success');
-  };
+    
+    document.body.removeChild(textarea);
+  }
+};
 
  // Enhanced getStatusText function with more status codes
 const getStatusText = (statusCode) => {
@@ -2076,7 +2251,7 @@ const renderRequestsTable = () => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          copyToClipboard(JSON.stringify(request, null, 2));
+                          copyToClipboard(getFullJsonData(), 'JSON');
                         }}
                         className="p-1 rounded hover:bg-opacity-50 transition-colors"
                         style={{ backgroundColor: colors.hover }}

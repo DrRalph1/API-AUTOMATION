@@ -641,27 +641,8 @@ try (Response response = client.newCall(request).execute()) {
               // Clean up the text (remove extra whitespace)
               textToCopy = textToCopy.replace(/\n\s*\n/g, '\n\n').trim();
               
-              // Copy to clipboard
-              navigator.clipboard.writeText(textToCopy)
-                .then(() => {
-                  showToast('Copied to clipboard!', 'success');
-                })
-                .catch((err) => {
-                  console.error('Failed to copy:', err);
-                  // Fallback method
-                  const textarea = document.createElement('textarea');
-                  textarea.value = textToCopy;
-                  document.body.appendChild(textarea);
-                  textarea.select();
-                  const success = document.execCommand('copy');
-                  document.body.removeChild(textarea);
-                  
-                  if (success) {
-                    showToast('Copied to clipboard!', 'success');
-                  } else {
-                    showToast('Failed to copy to clipboard', 'error');
-                  }
-                });
+              // Use the copyToClipboard function
+              copyToClipboard(textToCopy, showToast);
             }}
             disabled={loading.generateSnippet}
             style={{ 
@@ -722,6 +703,54 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     const seconds = String(now.getSeconds()).padStart(2, '0');
     return `${year}${month}${day}${hours}${minutes}${seconds}`;
   };
+
+const copyToClipboard = useCallback((text, showToastFn) => {
+  if (!text) {
+    showToastFn('Nothing to copy', 'warning');
+    return;
+  }
+  
+  // Modern clipboard API
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        showToastFn('Copied to clipboard!', 'success');
+      })
+      .catch((err) => {
+        console.error('Clipboard write failed:', err);
+        // Fallback to older method
+        fallbackCopy(text, showToastFn);
+      });
+  } else {
+    // Fallback for older browsers
+    fallbackCopy(text, showToastFn);
+  }
+  
+  function fallbackCopy(text, showToastFn) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-9999px';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    
+    try {
+      const successful = document.execCommand('copy');
+      if (successful) {
+        showToastFn('Copied to clipboard!', 'success');
+      } else {
+        showToastFn('Failed to copy to clipboard', 'error');
+      }
+    } catch (err) {
+      console.error('Fallback copy failed:', err);
+      showToastFn('Failed to copy to clipboard', 'error');
+    }
+    
+    document.body.removeChild(textarea);
+  }
+}, []);
 
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -2151,55 +2180,6 @@ useEffect(() => {
   }
 }, [requestPathParams.map(p => `${p.key}:${p.value}`).join('|')]); // Only run when key:value pairs change
 
-
-// Add this utility function for copying text
-const copyToClipboard = useCallback((text, showToastFn) => {
-  if (!text) {
-    showToastFn('Nothing to copy', 'warning');
-    return;
-  }
-  
-  // Modern clipboard API
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text)
-      .then(() => {
-        showToastFn('Copied to clipboard!', 'success');
-      })
-      .catch((err) => {
-        console.error('Clipboard write failed:', err);
-        // Fallback to older method
-        fallbackCopy(text, showToastFn);
-      });
-  } else {
-    // Fallback for older browsers
-    fallbackCopy(text, showToastFn);
-  }
-  
-  function fallbackCopy(text, showToastFn) {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.top = '-9999px';
-    textarea.style.left = '-9999px';
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    
-    try {
-      const successful = document.execCommand('copy');
-      if (successful) {
-        showToastFn('Copied to clipboard!', 'success');
-      } else {
-        showToastFn('Failed to copy to clipboard', 'error');
-      }
-    } catch (err) {
-      console.error('Fallback copy failed:', err);
-      showToastFn('Failed to copy to clipboard', 'error');
-    }
-    
-    document.body.removeChild(textarea);
-  }
-}, []);
 
 // Helper function for sync URL update
 const updateUrlWithPathParamSync = (url, key, value) => {
@@ -5733,8 +5713,7 @@ useEffect(() => {
                   <button
                     type="button"
                     onClick={() => {
-                      navigator.clipboard.writeText(authConfig.token);
-                      showToast('Token copied to clipboard!', 'success');
+                      copyToClipboard(authConfig.token, showToast);
                     }}
                     className="p-1 rounded hover:bg-opacity-50 transition-colors"
                     style={{ backgroundColor: colors.card }}
@@ -5825,8 +5804,7 @@ useEffect(() => {
               }}
               onClick={() => {
                 const text = requestPathParams.map(p => `${p.key}=${p.value}`).join('\n');
-                navigator.clipboard.writeText(text);
-                showToast('Parameters copied as text', 'success');
+                copyToClipboard(text, showToast);
               }}>
                 Bulk Edit
               </button>
@@ -5978,19 +5956,16 @@ const renderQueryParamsTab = () => {
         <div className="flex items-center gap-4">
           <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Query Parameters</h3>
           {hasParams && (
-            <div className="flex items-center gap-2">
-              <button type="button" className="text-xs px-2 py-1 rounded hover-lift" style={{ 
-                backgroundColor: colors.hover,
-                color: colors.textSecondary
-              }}
-              onClick={() => {
-                const text = requestParams.map(p => `${p.key}=${p.value}`).join('\n');
-                navigator.clipboard.writeText(text);
-                showToast('Parameters copied as text', 'success');
-              }}>
-                Bulk Edit
-              </button>
-            </div>
+            <button type="button" className="text-xs px-2 py-1 rounded hover-lift" style={{ 
+              backgroundColor: colors.hover,
+              color: colors.textSecondary
+            }}
+            onClick={() => {
+              const text = requestParams.map(p => `${p.key}=${p.value}`).join('\n');
+              copyToClipboard(text, showToast);
+            }}>
+              Bulk Edit
+            </button>
           )}
         </div>
         <button type="button" onClick={addQueryParam} className="px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
@@ -6200,8 +6175,7 @@ const renderQueryParamsTab = () => {
             }}
             onClick={() => {
               const text = requestHeaders.map(h => `${h.key}: ${h.value}`).join('\n');
-              navigator.clipboard.writeText(text);
-              showToast('Headers copied as text', 'success');
+              copyToClipboard(text, showToast);
             }}>
               Bulk Edit
             </button>
@@ -6740,8 +6714,7 @@ const renderBodyTab = () => {
                   className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift" 
                   style={{ backgroundColor: colors.hover }}
                   onClick={() => {
-                    navigator.clipboard.writeText(requestBody);
-                    showToast('Copied to clipboard!', 'success');
+                    copyToClipboard(requestBody, showToast);
                   }}>
                   <Copy size={13} style={{ color: colors.textSecondary }} />
                 </button>
@@ -7291,22 +7264,21 @@ const renderBodyTab = () => {
                   className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift flex items-center gap-1"
                   style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
                   onClick={() => {
+                    // Get the content to copy
                     let contentToCopy = '';
                     
-                    if (responseView === 'headers') {
-                      const headers = response.headers || [];
-                      const headerArray = Array.isArray(headers) 
-                        ? headers 
-                        : Object.entries(headers).map(([k, v]) => ({ key: k, value: v }));
-                      contentToCopy = headerArray.map(h => `${h.key}: ${h.value}`).join('\n');
-                    } else {
+                    // Get based on current view
+                    if (responseView === 'raw' || responseView === 'preview') {
                       contentToCopy = response.responseBody || 
-                                    (typeof response.data === 'string' ? response.data : JSON.stringify(response.data, null, 2)) || 
-                                    (typeof response.body === 'string' ? response.body : JSON.stringify(response.body, null, 2)) ||
+                                    JSON.stringify(response.data, null, 2) || 
                                     JSON.stringify(response, null, 2);
+                    } else if (responseView === 'headers') {
+                      const headers = response.headers || [];
+                      const headerArray = Array.isArray(headers) ? headers : Object.entries(headers);
+                      contentToCopy = headerArray.map(([key, value]) => `${key}: ${value}`).join('\n');
                     }
                     
-                    // Use the copyToClipboard utility function
+                    // Use the copyToClipboard function
                     copyToClipboard(contentToCopy, showToast);
                   }}
                 >
@@ -8286,8 +8258,7 @@ const renderResponseContent = () => {
                   />
                   <button type="button" className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                     onClick={() => {
-                      navigator.clipboard.writeText(shareLink);
-                      showToast('Link copied to clipboard!', 'success');
+                      copyToClipboard(shareLink, showToast);
                     }}
                     style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                     Copy

@@ -9,10 +9,10 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.usg</groupId>
-    <artifactId>apiGeneration</artifactId>
+    <artifactId>autoAPIGenerator</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <packaging>war</packaging>
-    <name>Dynamic API Generation Platform</name>
+    <name>Dynamic Auto API Generator</name>
     <description>A fintech solution that dynamically generates UI&apos;s based on the tParty Endpoints.</description>
     <url/>
     <licenses>
