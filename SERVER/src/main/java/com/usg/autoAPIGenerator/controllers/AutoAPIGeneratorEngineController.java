@@ -88,7 +88,9 @@ public class AutoAPIGeneratorEngineController {
         }
     }
 
-    @PostMapping(value = "/gen-engine/{apiId}/execute", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE, MediaType.APPLICATION_JSON_VALUE})
+    @PostMapping(value = "/gen-engine/{apiId}/execute"
+//            consumes = {MediaType.MULTIPART_FORM_DATA_VALUE, MediaType.APPLICATION_JSON_VALUE}
+    )
     @Operation(summary = "Execute API", description = "Execute a generated API - Accepts any content type including multipart/form-data for file uploads")
     public ResponseEntity<?> executeApi(
             @PathVariable String apiId,
@@ -994,12 +996,8 @@ public class AutoAPIGeneratorEngineController {
             value = "/gen/{apiId}/**",
             method = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT,
                     RequestMethod.DELETE, RequestMethod.PATCH, RequestMethod.HEAD,
-                    RequestMethod.OPTIONS},
-            consumes = {MediaType.MULTIPART_FORM_DATA_VALUE,
-                    MediaType.APPLICATION_JSON_VALUE,
-                    MediaType.APPLICATION_FORM_URLENCODED_VALUE,
-                    MediaType.APPLICATION_XML_VALUE,
-                    MediaType.TEXT_XML_VALUE}
+                    RequestMethod.OPTIONS}
+//            consumes = {MediaType.MULTIPART_FORM_DATA_VALUE, MediaType.APPLICATION_JSON_VALUE}
     )
     @Operation(summary = "Execute API by ID", description = "Execute a generated API using its ID in the URL path")
     public ResponseEntity<?> executeApiById(
@@ -1016,8 +1014,7 @@ public class AutoAPIGeneratorEngineController {
         log.debug("Request ID: {} - Content-Type: {}", requestId, request.getContentType());
 
         try {
-            // REMOVED JWT VALIDATION - authentication handled by API's own config
-            String performedBy = "api_user"; // Default user, will be overridden by auth in service
+            String performedBy = jwtHelper.extractPerformedBy(request);
             String clientIp = requestExtractorHelper.extractClientIp(request);
             String userAgent = request.getHeader("User-Agent");
             String contentType = request.getContentType();
@@ -1025,7 +1022,7 @@ public class AutoAPIGeneratorEngineController {
             loggingHelper.logApiExecution(requestId, apiId, performedBy,
                     contentType, clientIp, userAgent);
 
-            // Use request extractor helper
+            // ============ FIX: USE REQUEST EXTRACTOR HELPER (like Oracle does) ============
             ExecuteApiRequestDTO executeRequest = requestExtractorHelper.extractRequestComponents(
                     request, requestId, apiId);
 
@@ -1070,6 +1067,7 @@ public class AutoAPIGeneratorEngineController {
                     executeRequest.setBody(formData);
                 }
             }
+            // ============ END FIX ============
 
             // Log final extracted request details
             log.info("Request ID: {} - FINAL EXTRACTED REQUEST: pathParams={}, queryParams={}, fileMap={}, file={}, files={}, bodyType={}",
@@ -1085,34 +1083,9 @@ public class AutoAPIGeneratorEngineController {
             ExecuteApiResponseDTO response = autoAPIGeneratorEngineService.executeApi(
                     requestId, performedBy, apiId, executeRequest, clientIp, userAgent, request);
 
-            log.debug("Request ID: {} - API execution completed with status: {}, protocol: {}",
-                    requestId, response.getResponseCode(), response.getProtocolType());
+            log.debug("Request ID: {} - API execution completed with status: {}",
+                    requestId, response.getResponseCode());
 
-            // Return raw response for SOAP and GraphQL
-            String protocolType = response.getProtocolType();
-
-            // For SOAP APIs, return raw XML
-            if ("soap".equalsIgnoreCase(protocolType)) {
-                if (response.getData() instanceof String) {
-                    String soapXml = (String) response.getData();
-                    log.info("Returning raw SOAP XML response (length: {} characters)", soapXml.length());
-                    return ResponseEntity.status(response.getResponseCode())
-                            .contentType(MediaType.APPLICATION_XML)
-                            .body(soapXml);
-                }
-            }
-
-            // For GraphQL APIs, return the GraphQL response structure
-            if ("graphql".equalsIgnoreCase(protocolType)) {
-                if (response.getData() != null) {
-                    log.info("Returning GraphQL response");
-                    return ResponseEntity.status(response.getResponseCode())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .body(response.getData());
-                }
-            }
-
-            // For REST APIs, return the standard response DTO
             return ResponseEntity.status(response.getResponseCode()).body(response);
 
         } catch (Exception e) {
