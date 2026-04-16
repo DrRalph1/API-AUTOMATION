@@ -242,6 +242,141 @@ public class AutoAPIGeneratorEngineService {
     }
 
 
+    /**
+     * Clear ALL protocol-specific configurations when switching protocols
+     * This completely resets the API configuration for the target protocol
+     */
+    private void clearProtocolSpecificConfigurations(GeneratedApiEntity api, String targetProtocolType) {
+        String oldProtocol = api.getProtocolType();
+        log.info("🔄 Switching protocol from {} to {} - Clearing ALL previous configurations",
+                oldProtocol, targetProtocolType);
+
+        // ============ CLEAR ALL PROTOCOL CONFIGURATIONS ============
+
+        // Clear SOAP config
+        api.setSoapConfig(null);
+
+        // Clear GraphQL config
+        api.setGraphqlConfig(null);
+
+        // Clear FileUpload config
+        api.setFileUploadConfig(null);
+
+        // ============ CLEAR ALL PARAMETERS ============
+        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+            log.info("Clearing {} parameters", api.getParameters().size());
+            api.getParameters().clear();
+        }
+
+        // ============ CLEAR ALL HEADERS ============
+        if (api.getHeaders() != null && !api.getHeaders().isEmpty()) {
+            log.info("Clearing {} headers", api.getHeaders().size());
+            api.getHeaders().clear();
+        }
+
+        // ============ CLEAR RESPONSE MAPPINGS ============
+        if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+            log.info("Clearing {} response mappings", api.getResponseMappings().size());
+            api.getResponseMappings().clear();
+        }
+
+        // ============ RESET REQUEST CONFIGURATION ============
+        if (api.getRequestConfig() != null) {
+            api.getRequestConfig().setBodyType(getDefaultBodyTypeForProtocol(targetProtocolType));
+            api.getRequestConfig().setSample(null);
+            api.getRequestConfig().setRequiredFields(null);
+            log.info("Reset request config - body type: {}", api.getRequestConfig().getBodyType());
+        }
+
+        // ============ RESET RESPONSE CONFIGURATION ============
+        if (api.getResponseConfig() != null) {
+            api.getResponseConfig().setSuccessSchema(null);
+            api.getResponseConfig().setErrorSchema(null);
+            log.info("Reset response config");
+        }
+
+        // ============ SET PROTOCOL-SPECIFIC DEFAULTS ============
+        switch (targetProtocolType.toLowerCase()) {
+            case "soap":
+                // SOAP always uses POST
+                api.setHttpMethod("POST");
+
+                // Create default SOAP config
+                SoapConfigDTO defaultSoapConfig = new SoapConfigDTO();
+                defaultSoapConfig.setVersion("1.1");
+                defaultSoapConfig.setBindingStyle("document");
+                defaultSoapConfig.setEncodingStyle("literal");
+                defaultSoapConfig.setSoapAction(api.getApiCode() != null ? api.getApiCode() : "ProcessRequest");
+                defaultSoapConfig.setNamespace("http://tempuri.org/");
+                defaultSoapConfig.setServiceName(api.getApiName() != null ? api.getApiName().replaceAll("\\s+", "") : "ApiService");
+                api.setSoapConfig(defaultSoapConfig);
+
+                // Set endpoint path for SOAP
+                api.setEndpointPath("/soap/" + (api.getApiCode() != null ? api.getApiCode().toLowerCase() : "service"));
+
+                log.info("✅ SOAP configuration initialized - All previous data cleared");
+                break;
+
+            case "graphql":
+                // GraphQL always uses POST
+                api.setHttpMethod("POST");
+
+                // Create default GraphQL config
+                GraphQLConfigDTO defaultGraphqlConfig = new GraphQLConfigDTO();
+                defaultGraphqlConfig.setOperationType("query");
+                defaultGraphqlConfig.setOperationName(api.getApiCode() != null ? api.getApiCode().toLowerCase() : "query");
+                defaultGraphqlConfig.setEnableIntrospection(true);
+                defaultGraphqlConfig.setMaxQueryDepth(10);
+                api.setGraphqlConfig(defaultGraphqlConfig);
+
+                // Set endpoint path for GraphQL
+                api.setEndpointPath("/graphql");
+
+                log.info("✅ GraphQL configuration initialized - All previous data cleared");
+                break;
+
+            case "rest":
+            default:
+                // REST default HTTP method
+                api.setHttpMethod("GET");
+
+                // Set default base path
+                if (api.getBasePath() == null || api.getBasePath().isEmpty()) {
+                    api.setBasePath("/api/v1");
+                }
+
+                // Set endpoint path for REST
+                api.setEndpointPath("/" + (api.getApiCode() != null ?
+                        api.getApiCode().toLowerCase().replace("_", "-") : "endpoint"));
+
+                // Set default body type based on HTTP method
+                if (api.getRequestConfig() != null) {
+                    api.getRequestConfig().setBodyType("none");
+                }
+
+                log.info("✅ REST configuration initialized - All previous data cleared");
+                break;
+        }
+
+        log.info("🎯 Protocol switch complete - Target: {}, HTTP Method: {}, Endpoint: {}, Parameters: 0, Headers: 0",
+                targetProtocolType, api.getHttpMethod(), api.getEndpointPath());
+    }
+
+    /**
+     * Helper method to get default body type for protocol
+     */
+    private String getDefaultBodyTypeForProtocol(String protocolType) {
+        switch (protocolType.toLowerCase()) {
+            case "soap":
+                return "soap";
+            case "graphql":
+                return "graphql";
+            case "rest":
+            default:
+                return "none";
+        }
+    }
+
 
     @Transactional
     public GeneratedApiResponseDTO updateApi(String requestId, String apiId, String performedBy,
@@ -249,13 +384,6 @@ public class AutoAPIGeneratorEngineService {
         try {
             loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
                     ", Updating API: " + apiId + " by: " + performedBy);
-
-            // Log if this is a custom query update
-            if (Boolean.TRUE.equals(request.getUseCustomQuery()) ||
-                    (request.getCustomSelectStatement() != null && !request.getCustomSelectStatement().trim().isEmpty())) {
-                loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
-                        ", This is a CUSTOM QUERY API update");
-            }
 
             GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
                     .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
@@ -266,6 +394,19 @@ public class AutoAPIGeneratorEngineService {
             }
 
             log.info("Updating API: {} on database: {}", apiId, databaseType);
+
+            // ============ CHECK IF PROTOCOL IS CHANGING ============
+            String currentProtocol = api.getProtocolType();
+            String newProtocol = request.getProtocolType();
+            boolean isProtocolChanging = currentProtocol != null && newProtocol != null &&
+                    !currentProtocol.equalsIgnoreCase(newProtocol);
+
+            if (isProtocolChanging) {
+                log.info("⚠️ PROTOCOL CHANGE DETECTED: {} -> {}", currentProtocol, newProtocol);
+                log.info("Clearing ALL existing configuration (parameters, headers, mappings, etc.)");
+                clearProtocolSpecificConfigurations(api, newProtocol);
+            }
+            // ============ END PROTOCOL CHANGE CHECK ============
 
             BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
             String originalSourceRequestId = api.getSourceRequestId();
@@ -291,49 +432,43 @@ public class AutoAPIGeneratorEngineService {
             api.setSourceRequestId(originalSourceRequestId);
             api.setDatabaseType(databaseType);
 
-            // ============ CORRECTION: UPDATE PROTOCOL-SPECIFIC FIELDS ============
+            // ============ UPDATE PROTOCOL-SPECIFIC FIELDS ============
             if (request.getProtocolType() != null) {
                 api.setProtocolType(request.getProtocolType());
             }
 
+            // Only set configs if they were provided in the request
             if (request.getSoapConfig() != null) {
                 api.setSoapConfig(request.getSoapConfig());
-            } else {
-                api.setSoapConfig(null);
+            }
+            // If protocol is SOAP but no config provided and we didn't already set default, create default
+            else if ("soap".equalsIgnoreCase(api.getProtocolType()) && api.getSoapConfig() == null) {
+                SoapConfigDTO defaultSoapConfig = new SoapConfigDTO();
+                defaultSoapConfig.setVersion("1.1");
+                defaultSoapConfig.setBindingStyle("document");
+                defaultSoapConfig.setEncodingStyle("literal");
+                defaultSoapConfig.setSoapAction(api.getApiCode() != null ? api.getApiCode() : "ProcessRequest");
+                defaultSoapConfig.setNamespace("http://tempuri.org/");
+                defaultSoapConfig.setServiceName(api.getApiName() != null ? api.getApiName().replaceAll("\\s+", "") : "ApiService");
+                api.setSoapConfig(defaultSoapConfig);
             }
 
             if (request.getGraphqlConfig() != null) {
                 api.setGraphqlConfig(request.getGraphqlConfig());
-            } else {
-                api.setGraphqlConfig(null);
+            }
+            else if ("graphql".equalsIgnoreCase(api.getProtocolType()) && api.getGraphqlConfig() == null) {
+                GraphQLConfigDTO defaultGraphqlConfig = new GraphQLConfigDTO();
+                defaultGraphqlConfig.setOperationType("query");
+                defaultGraphqlConfig.setOperationName(api.getApiCode() != null ? api.getApiCode().toLowerCase() : "query");
+                defaultGraphqlConfig.setEnableIntrospection(true);
+                defaultGraphqlConfig.setMaxQueryDepth(10);
+                api.setGraphqlConfig(defaultGraphqlConfig);
             }
 
             if (request.getFileUploadConfig() != null) {
                 api.setFileUploadConfig(request.getFileUploadConfig());
-            } else {
-                api.setFileUploadConfig(null);
             }
-            // ============ END CORRECTION ============
-
-            // CRITICAL: Store custom query information in the API entity
-            if (Boolean.TRUE.equals(request.getUseCustomQuery()) ||
-                    (request.getCustomSelectStatement() != null && !request.getCustomSelectStatement().trim().isEmpty())) {
-
-                Map<String, Object> sourceObjectMap = api.getSourceObjectInfo();
-                if (sourceObjectMap == null) {
-                    sourceObjectMap = new HashMap<>();
-                }
-                sourceObjectMap.put("isCustomQuery", true);
-                sourceObjectMap.put("customSelectStatement", request.getCustomSelectStatement());
-                sourceObjectMap.put("useCustomQuery", true);
-                sourceObjectMap.put("objectType", "CUSTOM_QUERY");
-                sourceObjectMap.put("operation", "SELECT");
-                sourceObjectMap.put("databaseType", databaseType);
-                api.setSourceObjectInfo(sourceObjectMap);
-
-                log.info("Stored custom query in API entity: {}",
-                        request.getCustomSelectStatement().substring(0, Math.min(100, request.getCustomSelectStatement().length())));
-            }
+            // ============ END UPDATE ============
 
             GeneratedApiEntity savedApi = generatedAPIRepository.save(api);
             entityManager.flush();
@@ -1180,9 +1315,9 @@ public class AutoAPIGeneratorEngineService {
     /**
      * Execute API based on the database type stored in the API entity
      * Supports multiple database types: Oracle, PostgreSQL, etc.
-     * NOW WITH PROPER SOAP XML AND GRAPHQL RESPONSE FORMATTING
+     * NOW WITH PROPER RESPONSE HANDLING - FLATTENS NESTED DATA
      */
-// @Transactional
+    @Transactional
     public ExecuteApiResponseDTO executeApi(String requestId, String performedBy,
                                             String apiId, ExecuteApiRequestDTO executeRequest,
                                             String clientIp, String userAgent,
@@ -1192,7 +1327,7 @@ public class AutoAPIGeneratorEngineService {
         String capturedRequestId = null;
         ApiRequestResponseDTO capturedRequest = null;
         String databaseType = "oracle";
-        String protocolType = "rest"; // Declare here to be accessible in catch block
+        String protocolType = "rest";
 
         try {
             loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
@@ -1596,7 +1731,94 @@ public class AutoAPIGeneratorEngineService {
 
                 executionTime = System.currentTimeMillis() - startTime;
 
-                // ============ GENERIC RESPONSE HANDLING ============
+                // ============ CHECK IF RESULT IS ALREADY A FORMATTED RESPONSE ============
+                // This flattens the nested data structure
+                if (result instanceof Map) {
+                    Map<String, Object> resultMap = (Map<String, Object>) result;
+
+                    // Check if this result already has the structure of a proper response
+                    boolean hasData = resultMap.containsKey("data");
+                    boolean hasSuccess = resultMap.containsKey("success");
+                    boolean hasResponseCode = resultMap.containsKey("responseCode");
+
+                    if (hasData && hasSuccess && hasResponseCode) {
+                        log.info("Result is already a properly formatted response - flattening nested data");
+
+                        // Extract the inner data (the actual payload)
+                        Object innerData = resultMap.get("data");
+                        Boolean innerSuccess = (Boolean) resultMap.get("success");
+                        String innerMessage = (String) resultMap.get("message");
+                        Object innerResponseCode = resultMap.get("responseCode");
+
+                        // Determine HTTP status code from inner response code
+                        Integer httpStatus = 200;
+                        if (innerResponseCode != null) {
+                            String codeStr = innerResponseCode.toString();
+                            if ("000".equals(codeStr) || "200".equals(codeStr)) {
+                                httpStatus = 200;
+                            } else if (codeStr.startsWith("4")) {
+                                try {
+                                    httpStatus = Integer.parseInt(codeStr);
+                                } catch (NumberFormatException e) {
+                                    httpStatus = 400;
+                                }
+                            } else if (codeStr.startsWith("5")) {
+                                try {
+                                    httpStatus = Integer.parseInt(codeStr);
+                                } catch (NumberFormatException e) {
+                                    httpStatus = 500;
+                                }
+                            } else {
+                                httpStatus = 200; // Non-error codes are treated as success
+                            }
+                        }
+
+                        // Update captured request with success
+                        if (capturedRequestId != null) {
+                            try {
+                                apiRequestService.updateRequestWithResponse(
+                                        requestId, capturedRequestId,
+                                        ExecuteApiResponseDTO.builder()
+                                                .responseCode(httpStatus)
+                                                .success(innerSuccess != null ? innerSuccess : true)
+                                                .message(innerMessage != null ? innerMessage : "Success")
+                                                .data(innerData)  // Use the inner data, not the whole map
+                                                .contentType("application/json")
+                                                .protocolType(protocolType)
+                                                .build(),
+                                        httpStatus, innerMessage, executionTime);
+                            } catch (Exception e) {
+                                log.error("Failed to update captured request: {}", e.getMessage());
+                            }
+                        }
+
+                        // Update API statistics
+                        executionHelper.updateApiStats(api, generatedAPIRepository);
+
+                        // Log the successful execution
+                        executionHelper.logExecution(executionLogRepository, api, validatedRequest,
+                                innerData, httpStatus, executionTime, performedBy,
+                                actualClientIp, userAgent, null, objectMapper);
+
+                        loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                                ", API executed successfully: " + apiId +
+                                " on database: " + databaseType +
+                                " with protocol: " + protocolType +
+                                " - Time: " + executionTime + "ms");
+
+                        // Return flattened response - data contains the actual payload (not nested)
+                        return ExecuteApiResponseDTO.builder()
+                                .responseCode(httpStatus)
+                                .success(innerSuccess != null ? innerSuccess : true)
+                                .message(innerMessage != null ? innerMessage : "Success")
+                                .data(innerData)  // This is the actual user data, not wrapped again
+                                .contentType("application/json")
+                                .protocolType(protocolType)
+                                .build();
+                    }
+                }
+
+                // ============ HANDLE PROCEDURE RETURNING STATUS CODES (without data wrapper) ============
                 boolean isResponseWithStatus = false;
                 Integer determinedHttpStatus = null;
                 String responseMessage = null;
@@ -1661,8 +1883,7 @@ public class AutoAPIGeneratorEngineService {
                 }
 
                 if (isResponseWithStatus && determinedHttpStatus != null && determinedHttpStatus >= 400) {
-                    log.info("Procedure returned error status: HTTP={}, responseCode={}",
-                            determinedHttpStatus, ((Map<String, Object>) result).get("responseCode"));
+                    log.info("Procedure returned error status: HTTP={}", determinedHttpStatus);
 
                     if (capturedRequestId != null) {
                         try {

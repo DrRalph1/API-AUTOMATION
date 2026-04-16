@@ -2485,12 +2485,40 @@ const generateGraphQLQueryExample = () => {
 };
 
 
-// Automatically set HTTP method to POST for SOAP and GraphQL protocols
+// Protect body type when SOAP or GraphQL protocol is selected
 useEffect(() => {
+  // For SOAP protocol, force body type to 'soap'
+  if (protocolType === 'soap' && requestBody.bodyType !== 'soap') {
+    console.log('🔄 SOAP protocol requires SOAP envelope body type, setting bodyType to "soap"');
+    setRequestBody(prev => ({ ...prev, bodyType: 'soap' }));
+  }
+  // For GraphQL protocol, force body type to 'graphql'
+  else if (protocolType === 'graphql' && requestBody.bodyType !== 'graphql') {
+    console.log('🔄 GraphQL protocol requires GraphQL query body type, setting bodyType to "graphql"');
+    setRequestBody(prev => ({ ...prev, bodyType: 'graphql' }));
+  }
+}, [protocolType]);
+
+
+// Add this effect to protect against invalid body type configurations
+useEffect(() => {
+  // Skip for SOAP and GraphQL protocols - they have their own body type requirements
   if (protocolType === 'soap' || protocolType === 'graphql') {
-    setApiDetails(prev => ({
+    return;
+  }
+  
+  const method = apiDetails.httpMethod;
+  const currentBodyType = requestBody.bodyType;
+  
+  // Methods that should NEVER have a body
+  const methodsWithoutBody = ['GET', 'DELETE', 'HEAD', 'OPTIONS'];
+  
+  if (methodsWithoutBody.includes(method) && currentBodyType !== 'none') {
+    // Force body type to 'none' for these methods
+    console.log(`🔄 HTTP method ${method} does not support request body, setting bodyType to 'none'`);
+    setRequestBody(prev => ({
       ...prev,
-      httpMethod: 'POST'
+      bodyType: 'none'
     }));
   }
 }, [protocolType]);
@@ -3789,20 +3817,111 @@ const handlePreviewConfirm = async () => {
 
   // ==================== HANDLER FUNCTIONS ====================
 
-  // Handle protocol type change
-  const handleProtocolChange = (protocol) => {
-    setProtocolType(protocol);
-    // Update body type based on protocol
-    if (protocol === 'soap') {
-      setRequestBody(prev => ({ ...prev, bodyType: 'soap' }));
-    } else if (protocol === 'graphql') {
-      setRequestBody(prev => ({ ...prev, bodyType: 'graphql' }));
-    } else {
-      setRequestBody(prev => ({ ...prev, bodyType: 'json' }));
+  // Add this with your other useState declarations (around line 2200)
+const [protocolConfigs, setProtocolConfigs] = useState({
+  rest: {
+    httpMethod: 'GET',
+    bodyType: 'none',
+    endpointPath: '',
+    basePath: '/api/v1',
+    // Add any other REST-specific fields
+  },
+  soap: {
+    httpMethod: 'POST',
+    bodyType: 'soap',
+    soapConfig: {
+      version: '1.1',
+      bindingStyle: 'document',
+      encodingStyle: 'literal',
+      soapAction: '',
+      wsdlUrl: '',
+      namespace: 'http://tempuri.org/',
+      serviceName: '',
+      portName: '',
+      useAsyncPattern: false,
+      includeMtom: false,
+      soapHeaderElements: []
     }
-    // Clear validation errors for protocol-specific fields
-    setValidationErrors(prev => ({ ...prev, soapAction: null, serviceName: null, operationName: null, graphqlSchema: null }));
+  },
+  graphql: {
+    httpMethod: 'POST',
+    bodyType: 'graphql',
+    graphqlConfig: {
+      operationType: 'query',
+      operationName: '',
+      schema: '',
+      enableIntrospection: true,
+      enablePersistedQueries: false,
+      maxQueryDepth: 10,
+      enableBatching: false,
+      subscriptionsEnabled: false,
+      customDirectives: []
+    }
+  }
+});
+
+
+const handleProtocolChange = (protocol) => {
+  // Step 1: Save current configuration for the current protocol
+  const currentConfig = {
+    httpMethod: apiDetails.httpMethod,
+    bodyType: requestBody.bodyType,
+    endpointPath: apiDetails.endpointPath,
+    basePath: apiDetails.basePath,
+    ...(protocolType === 'soap' && { soapConfig }),
+    ...(protocolType === 'graphql' && { graphqlConfig })
   };
+  
+  // Save to protocolConfigs
+  setProtocolConfigs(prev => ({
+    ...prev,
+    [protocolType]: {
+      ...prev[protocolType],
+      ...currentConfig
+    }
+  }));
+  
+  // Step 2: Load configuration for the new protocol
+  // Use a function to get the latest saved config
+  const loadConfigForProtocol = () => {
+    setProtocolConfigs(prev => {
+      const savedConfig = prev[protocol];
+      
+      // Apply the saved config
+      setApiDetails(prevDetails => ({
+        ...prevDetails,
+        httpMethod: savedConfig?.httpMethod || (protocol === 'rest' ? 'GET' : 'POST'),
+        endpointPath: savedConfig?.endpointPath || (protocol === 'rest' ? prevDetails.endpointPath : ''),
+        basePath: savedConfig?.basePath || prevDetails.basePath
+      }));
+      
+      setRequestBody(prevBody => ({
+        ...prevBody,
+        bodyType: savedConfig?.bodyType || (protocol === 'soap' ? 'soap' : protocol === 'graphql' ? 'graphql' : 'none')
+      }));
+      
+      if (protocol === 'soap' && savedConfig?.soapConfig) {
+        setSoapConfig(savedConfig.soapConfig);
+      } else if (protocol === 'graphql' && savedConfig?.graphqlConfig) {
+        setGraphqlConfig(savedConfig.graphqlConfig);
+      }
+      
+      setValidationErrors(prev => ({ 
+        ...prev, 
+        soapAction: null, 
+        serviceName: null, 
+        operationName: null, 
+        graphqlSchema: null 
+      }));
+      
+      return prev; // No change to protocolConfigs
+    });
+  };
+  
+  // Step 3: Switch protocol and load config
+  setProtocolType(protocol);
+  loadConfigForProtocol();
+};
 
   // Handle SOAP config change
   const handleSoapConfigChange = (field, value) => {
@@ -3901,37 +4020,49 @@ const handlePreviewConfirm = async () => {
     setValidationErrors(prev => ({ ...prev, folder: null }));
   };
 
-  // Handle API detail change
-  const handleApiDetailChange = (field, value) => {
-    setApiDetails(prev => ({ ...prev, [field]: value }));
-    
-    // Clear validation error for this field
-    setValidationErrors(prev => ({ ...prev, [field]: null }));
-    
-    // Check code availability when API code changes (only for new APIs)
-    if (field === 'apiCode' && value.length >= 3 && !isEditing) {
-      // Clear previous timeout
-      if (codeCheckTimeout) {
-        clearTimeout(codeCheckTimeout);
-      }
-      
-      // Set new timeout for debouncing
-      const timerId = setTimeout(async () => {
-        console.log('🔍 Checking API code availability after change:', value);
-        const available = await checkCodeAvailability(value);
-        console.log('📊 Code availability result:', available);
-        
-        if (!available) {
-          setValidationErrors(prev => ({ 
-            ...prev, 
-            apiCode: `API code "${value}" is not available` 
-          }));
-        }
-      }, 500); // Wait 500ms after user stops typing
-      
-      setCodeCheckTimeout(timerId);
+  // Update the handleApiDetailChange function (around line 1535)
+const handleApiDetailChange = (field, value) => {
+  setApiDetails(prev => ({ ...prev, [field]: value }));
+  
+  // Clear validation error for this field
+  setValidationErrors(prev => ({ ...prev, [field]: null }));
+  
+  // If changing HTTP method, validate body type compatibility (but skip for SOAP/GraphQL)
+  if (field === 'httpMethod' && protocolType !== 'soap' && protocolType !== 'graphql') {
+    const methodsWithoutBody = ['GET', 'DELETE', 'HEAD', 'OPTIONS'];
+    if (methodsWithoutBody.includes(value)) {
+      // Force body type to 'none' for methods that shouldn't have a body
+      setRequestBody(prev => ({
+        ...prev,
+        bodyType: 'none'
+      }));
     }
-  };
+  }
+  
+  // Check code availability when API code changes (only for new APIs)
+  if (field === 'apiCode' && value.length >= 3 && !isEditing) {
+    // Clear previous timeout
+    if (codeCheckTimeout) {
+      clearTimeout(codeCheckTimeout);
+    }
+    
+    // Set new timeout for debouncing
+    const timerId = setTimeout(async () => {
+      console.log('🔍 Checking API code availability after change:', value);
+      const available = await checkCodeAvailability(value);
+      console.log('📊 Code availability result:', available);
+      
+      if (!available) {
+        setValidationErrors(prev => ({ 
+          ...prev, 
+          apiCode: `API code "${value}" is not available` 
+        }));
+      }
+    }, 500);
+    
+    setCodeCheckTimeout(timerId);
+  }
+};
 
   // Handle schema configuration with validation
   const handleSchemaConfigChange = (field, value) => {
@@ -4118,27 +4249,31 @@ const handlePreviewConfirm = async () => {
 
   // Update the handleAddParameter function to check for path parameters
   const handleAddParameter = () => {
-    const timestamp = getCurrentTimestamp();
-    const newParam = {
-      id: `param-${Date.now()}`,
-      key: '',
-      dbColumn: '',
-      oracleType: 'VARCHAR2', // Default is VARCHAR2, not AUTOGENERATE
-      apiType: 'string',
-      parameterLocation: protocolType === 'soap' ? 'body' : 
-                     protocolType === 'graphql' ? 'query' : 'query',
-      required: true,
-      description: '',
-      example: 'sample',
-      validationPattern: '',
-      defaultValue: '',
-      inBody: false,
-      isPrimaryKey: false,
-      paramMode: 'IN'
-    };
-    
-    setParameters([...parameters, newParam]);
+  const timestamp = getCurrentTimestamp();
+  const defaultLocation = protocolType === 'soap' ? 'body' : 
+                         protocolType === 'graphql' ? 'query' : 'query';
+  const isPathParam = defaultLocation === 'path';
+  
+  const newParam = {
+    id: `param-${Date.now()}`,
+    key: '',
+    dbColumn: '',
+    oracleType: 'VARCHAR2',
+    apiType: 'string',
+    parameterLocation: defaultLocation,
+    required: isPathParam ? true : true, // Path params are required by default
+    description: '',
+    example: 'sample',
+    validationPattern: '',
+    defaultValue: '',
+    inBody: false,
+    isPrimaryKey: false,
+    paramMode: 'IN',
+    _isPathParam: isPathParam
   };
+  
+  setParameters([...parameters, newParam]);
+};
 
   // Update the handleRemoveParameter function to update URL when removing a path parameter
   const handleRemoveParameter = (id) => {
@@ -4687,25 +4822,30 @@ const populateFormFromApiData = useCallback(async (apiData) => {
 
     // ============ SET PARAMETERS ============
     if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
-        const paramsWithIds = sourceData.parameters.map((p, idx) => ({
-            ...p,
-            id: p.id || `param-${Date.now()}-${idx}`,
-            key: p.key || p.parameterName,
-            dbColumn: p.dbColumn || p.key,
-            oracleType: p.oracleType || p.dataType || 'VARCHAR2',
-            apiType: p.apiType || 'string',
-            parameterLocation: p.parameterLocation || (isCustomQueryApi ? 'query' : 'body'),
-            required: p.required !== undefined ? p.required : true,
-            description: p.description || `Parameter: ${p.key || p.parameterName}`,
-            example: p.example || '',
-            validationPattern: p.validationPattern || '',
-            defaultValue: p.defaultValue || '',
-            inBody: p.inBody !== undefined ? p.inBody : (p.parameterLocation === 'body'),
-            isPrimaryKey: p.isPrimaryKey || false,
-            paramMode: p.paramMode || (isCustomQueryApi ? 'IN' : 'IN')
-        }));
-        setParameters(paramsWithIds);
-        console.log('📦 Loaded parameters from API data:', paramsWithIds.length);
+      const paramsWithIds = sourceData.parameters.map((p, idx) => {
+        // Force path parameters to be required
+        const isPathParam = p.parameterLocation === 'path';
+        return {
+          ...p,
+          id: p.id || `param-${Date.now()}-${idx}`,
+          key: p.key || p.parameterName,
+          dbColumn: p.dbColumn || p.key,
+          oracleType: p.oracleType || p.dataType || 'VARCHAR2',
+          apiType: p.apiType || 'string',
+          parameterLocation: p.parameterLocation || (isCustomQueryApi ? 'query' : 'body'),
+          required: isPathParam ? true : (p.required !== undefined ? p.required : true), // Force path params to required
+          description: p.description || `Parameter: ${p.key || p.parameterName}`,
+          example: p.example || '',
+          validationPattern: p.validationPattern || '',
+          defaultValue: p.defaultValue || '',
+          inBody: p.inBody !== undefined ? p.inBody : (p.parameterLocation === 'body'),
+          isPrimaryKey: p.isPrimaryKey || false,
+          paramMode: p.paramMode || (isCustomQueryApi ? 'IN' : 'IN'),
+          _isPathParam: isPathParam // Add flag for path params
+        };
+      });
+      setParameters(paramsWithIds);
+      console.log('📦 Loaded parameters from API data:', paramsWithIds.length);
     }
 
     // ============ SET RESPONSE MAPPINGS ============
@@ -5106,6 +5246,9 @@ const populateFormFromApiData = useCallback(async (apiData) => {
           // Check if the parameter type is AUTOGENERATE
           const isAutoGenerate = oracleType === 'AUTOGENERATE';
           
+          // Determine if this should be a path parameter
+          let isPathParam = parameterLocation === 'path';
+          
           newParameters.push({
             id: param.id || `proc-param-${Date.now()}-${index}`,
             key: cleanKey,
@@ -5113,14 +5256,15 @@ const populateFormFromApiData = useCallback(async (apiData) => {
             oracleType: oracleType,
             apiType: apiType,
             parameterLocation: parameterLocation,
-            required: isAutoGenerate ? false : required, // AUTO GENERATE = NOT required
+            required: isPathParam ? true : (isAutoGenerate ? false : required), // Path params always required
             description: description,
             example: isAutoGenerate ? 'Auto-generated timestamp' : example,
             validationPattern: param.validationPattern || '',
-            defaultValue: isAutoGenerate ? getCurrentTimestamp() : defaultValue, // Set timestamp default
+            defaultValue: isAutoGenerate ? getCurrentTimestamp() : defaultValue,
             inBody: inBody,
             isPrimaryKey: param.isPrimaryKey || false,
-            paramMode: normalizedMode
+            paramMode: normalizedMode,
+            _isPathParam: isPathParam // Add flag
           });
           console.log(`✅ Added to PARAMETERS tab: ${cleanKey} (${normalizedMode})`);
         }
@@ -5252,7 +5396,9 @@ const populateFormFromApiData = useCallback(async (apiData) => {
           } else if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
             parameterLocation = 'body';
           }
-          
+
+          const isPathParam = parameterLocation === 'path';
+
           newParameters.push({
             id: `param-col-${Date.now()}-${index}`,
             key: cleanKey,
@@ -5260,7 +5406,7 @@ const populateFormFromApiData = useCallback(async (apiData) => {
             oracleType: oracleType,
             apiType: apiType,
             parameterLocation: parameterLocation,
-            required: isPrimaryKey || colNullable === 'N',
+            required: isPathParam ? true : (isPrimaryKey || colNullable === 'N'), // Path params always required
             description: col.comment || col.COMMENTS || `From ${object.name || object.objectName}.${colName}`,
             example: colName.includes('ID') ? '1' : 
                     colName.includes('DATE') ? '2024-01-01' :
@@ -5269,7 +5415,8 @@ const populateFormFromApiData = useCallback(async (apiData) => {
             defaultValue: col.DATA_DEFAULT || col.defaultValue || '',
             inBody: parameterLocation === 'body',
             isPrimaryKey: isPrimaryKey,
-            paramMode: null
+            paramMode: null,
+            _isPathParam: isPathParam // Add flag
           });
 
           newMappings.push({
@@ -5761,27 +5908,80 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     checkInitialCode();
   }, [isOpen, isEditing, apiDetails.apiCode]); // Remove authToken from dependencies to prevent re-run
 
-  // Auto-set body type based on HTTP method
-  useEffect(() => {
-    // Skip for editing mode - preserve existing body type
-    if (isEditing) return;
-    
-    const method = apiDetails.httpMethod;
-    
-    if (method === 'GET' || method === 'DELETE') {
-      // For GET and DELETE, set body type to 'none'
-      setRequestBody(prev => ({
-        ...prev,
-        bodyType: 'none'
-      }));
-    } else {
-      // For POST, PUT, PATCH, etc., set body type to 'json'
-      setRequestBody(prev => ({
-        ...prev,
-        bodyType: 'json'
-      }));
+
+// Auto-set body type and HTTP method based on protocol - but preserve saved configs
+useEffect(() => {
+  
+  const savedConfig = protocolConfigs[protocolType];
+  
+  if (protocolType === 'soap') {
+    // Use saved config or defaults
+    if (savedConfig?.httpMethod) {
+      if (apiDetails.httpMethod !== savedConfig.httpMethod) {
+        setApiDetails(prev => ({ ...prev, httpMethod: savedConfig.httpMethod }));
+      }
+    } else if (apiDetails.httpMethod !== 'POST') {
+      setApiDetails(prev => ({ ...prev, httpMethod: 'POST' }));
     }
-  }, [apiDetails.httpMethod, isEditing]); // Run whenever HTTP method changes, skip for editing
+    
+    if (savedConfig?.bodyType) {
+      if (requestBody.bodyType !== savedConfig.bodyType) {
+        setRequestBody(prev => ({ ...prev, bodyType: savedConfig.bodyType }));
+      }
+    } else if (requestBody.bodyType !== 'soap') {
+      setRequestBody(prev => ({ ...prev, bodyType: 'soap' }));
+    }
+    return;
+  }
+  
+  if (protocolType === 'graphql') {
+    if (savedConfig?.httpMethod) {
+      if (apiDetails.httpMethod !== savedConfig.httpMethod) {
+        setApiDetails(prev => ({ ...prev, httpMethod: savedConfig.httpMethod }));
+      }
+    } else if (apiDetails.httpMethod !== 'POST') {
+      setApiDetails(prev => ({ ...prev, httpMethod: 'POST' }));
+    }
+    
+    if (savedConfig?.bodyType) {
+      if (requestBody.bodyType !== savedConfig.bodyType) {
+        setRequestBody(prev => ({ ...prev, bodyType: savedConfig.bodyType }));
+      }
+    } else if (requestBody.bodyType !== 'graphql') {
+      setRequestBody(prev => ({ ...prev, bodyType: 'graphql' }));
+    }
+    return;
+  }
+  
+  // For REST protocol, restore saved method
+  if (protocolType === 'rest' && savedConfig?.httpMethod) {
+    if (apiDetails.httpMethod !== savedConfig.httpMethod) {
+      setApiDetails(prev => ({ ...prev, httpMethod: savedConfig.httpMethod }));
+    }
+    if (savedConfig?.bodyType && requestBody.bodyType !== savedConfig.bodyType) {
+      setRequestBody(prev => ({ ...prev, bodyType: savedConfig.bodyType }));
+    }
+  }
+}, [protocolType]); // Only run when protocol changes
+
+
+// Add this effect to protect against invalid body type configurations
+useEffect(() => {
+  const method = apiDetails.httpMethod;
+  const currentBodyType = requestBody.bodyType;
+  
+  // Methods that should NEVER have a body
+  const methodsWithoutBody = ['GET', 'DELETE', 'HEAD', 'OPTIONS'];
+  
+  if (methodsWithoutBody.includes(method) && currentBodyType !== 'none') {
+    // Force body type to 'none' for these methods
+    console.log(`🔄 HTTP method ${method} does not support request body, setting bodyType to 'none'`);
+    setRequestBody(prev => ({
+      ...prev,
+      bodyType: 'none'
+    }));
+  }
+}, [apiDetails.httpMethod, requestBody.bodyType]);
 
   // ==================== GENERATION FUNCTIONS ====================
 
@@ -9278,7 +9478,7 @@ COMMIT;
                                     disabled={param.parameterLocation === 'path'}
                                   />
                                   {param.parameterLocation === 'path' && (
-                                    <div className="text-xs" style={{ color: themeColors.textSecondary }}>(always)</div>
+                                    <div className="text-xs" style={{ color: themeColors.textSecondary }}>(always required)</div>
                                   )}
                                 </td>
                                 <td className="px-3 py-2">
@@ -9287,7 +9487,7 @@ COMMIT;
                                     value={param.example || ''}
                                     onChange={(e) => handleParameterChange(param.id, 'example', e.target.value)}
                                     className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                    style={{ 
+                                    style={{
                                       backgroundColor: themeColors.card,
                                       borderColor: themeColors.border,
                                       color: themeColors.text
@@ -9494,9 +9694,15 @@ COMMIT;
                     
                     {/* Show note about IN parameters */}
                     {getInParameters().length > 0 && (
-                      <p className="text-xs mt-2" style={{ color: themeColors.info }}>
-                        Note: Input parameters (IN/IN OUT) are shown in the Parameters tab.
-                      </p>
+                      <div className="mb-3 p-2 rounded-lg text-xs" style={{ 
+                        backgroundColor: themeColors.info + '10',
+                        borderLeft: `3px solid ${themeColors.info}`
+                      }}>
+                        <span className="font-medium" style={{ color: themeColors.info }}>Note:</span>
+                        <span style={{ color: themeColors.textSecondary }}>
+                          Path parameters (location = "path") are automatically marked as required and cannot be changed.
+                        </span>
+                      </div>
                     )}
                   </div>
                 )}
@@ -10273,6 +10479,7 @@ COMMIT;
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-4">
+                        {/* Body Type Selector - Updated for SOAP/GraphQL */}
                         <div className="space-y-2">
                           <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             Body Type
@@ -10286,40 +10493,83 @@ COMMIT;
                               borderColor: themeColors.border,
                               color: themeColors.text
                             }}
+                            disabled={protocolType === 'soap' || protocolType === 'graphql' || ['GET', 'DELETE', 'HEAD', 'OPTIONS'].includes(apiDetails.httpMethod)}
                           >
                             {BODY_TYPES.map(type => (
                               <option key={type.value} value={type.value}>{type.label}</option>
                             ))}
                           </select>
-                          {requestBody.bodyType === 'none' && (
-                            <p className="text-xs mt-2" style={{ color: themeColors.warning }}>
-                              <AlertCircle className="h-3 w-3 inline mr-1" />
-                              No request body will be sent. Only GET and DELETE methods typically use no body.
-                            </p>
+                          
+                          {/* SOAP-specific message */}
+                          {protocolType === 'soap' && (
+                            <div className="mt-2 p-2 rounded-lg flex items-start gap-2" style={{ 
+                              backgroundColor: themeColors.info + '20',
+                              border: `1px solid ${themeColors.info}`
+                            }}>
+                              <Send className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: themeColors.info }} />
+                              <div>
+                                <p className="text-xs font-medium" style={{ color: themeColors.info }}>
+                                  SOAP Web Service - Request Body Fixed to SOAP Envelope
+                                </p>
+                                <p className="text-xs mt-0.5" style={{ color: themeColors.textSecondary }}>
+                                  SOAP APIs use XML envelopes. Parameters will be sent inside the SOAP body.
+                                </p>
+                              </div>
+                            </div>
                           )}
-                          {requestBody.bodyType === 'binary' && (
-                            <p className="text-xs mt-2" style={{ color: themeColors.info }}>
-                              <Info className="h-3 w-3 inline mr-1" />
-                              Binary file upload - The entire file will be sent as the request body.
-                            </p>
+                          
+                          {/* GraphQL-specific message */}
+                          {protocolType === 'graphql' && (
+                            <div className="mt-2 p-2 rounded-lg flex items-start gap-2" style={{ 
+                              backgroundColor: themeColors.success + '20',
+                              border: `1px solid ${themeColors.success}`
+                            }}>
+                              <GitMerge className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: themeColors.success }} />
+                              <div>
+                                <p className="text-xs font-medium" style={{ color: themeColors.success }}>
+                                  GraphQL API - Request Body Fixed to GraphQL Query
+                                </p>
+                                <p className="text-xs mt-0.5" style={{ color: themeColors.textSecondary }}>
+                                  GraphQL APIs use JSON with a "query" field containing the GraphQL operation.
+                                </p>
+                              </div>
+                            </div>
                           )}
-                          {requestBody.bodyType === 'form-data' && (
-                            <p className="text-xs mt-2" style={{ color: themeColors.info }}>
-                              <Upload className="h-3 w-3 inline mr-1" />
-                              Multipart form data - Supports both text fields and file uploads.
-                            </p>
+                          
+                          {/* Show warning for GET/DELETE methods (only for REST) */}
+                          {protocolType === 'rest' && ['GET', 'DELETE', 'HEAD', 'OPTIONS'].includes(apiDetails.httpMethod) && (
+                            <div className="mt-2 p-2 rounded-lg flex items-start gap-2" style={{ 
+                              backgroundColor: themeColors.warning + '20',
+                              border: `1px solid ${themeColors.warning}`
+                            }}>
+                              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: themeColors.warning }} />
+                              <div>
+                                <p className="text-xs font-medium" style={{ color: themeColors.warning }}>
+                                  {apiDetails.httpMethod} requests do not support request bodies
+                                </p>
+                                <p className="text-xs mt-0.5" style={{ color: themeColors.textSecondary }}>
+                                  Body type is locked to "No Body" for this HTTP method. Parameters will be sent as query parameters or path parameters.
+                                </p>
+                              </div>
+                            </div>
                           )}
-                          {requestBody.bodyType === 'soap' && (
-                            <p className="text-xs mt-2" style={{ color: themeColors.info }}>
-                              <Send className="h-3 w-3 inline mr-1" />
-                              SOAP envelope - XML-based request body for SOAP web services.
-                            </p>
-                          )}
-                          {requestBody.bodyType === 'graphql' && (
-                            <p className="text-xs mt-2" style={{ color: themeColors.success }}>
-                              <GitMerge className="h-3 w-3 inline mr-1" />
-                              GraphQL query - Request body will contain GraphQL query/mutation.
-                            </p>
+                          
+                          {/* Show info for POST/PUT/PATCH methods (only for REST) */}
+                          {protocolType === 'rest' && ['POST', 'PUT', 'PATCH'].includes(apiDetails.httpMethod) && requestBody.bodyType === 'none' && (
+                            <div className="mt-2 p-2 rounded-lg flex items-start gap-2" style={{ 
+                              backgroundColor: themeColors.info + '20',
+                              border: `1px solid ${themeColors.info}`
+                            }}>
+                              <Info className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: themeColors.info }} />
+                              <div>
+                                <p className="text-xs font-medium" style={{ color: themeColors.info }}>
+                                  {apiDetails.httpMethod} requests typically include a request body
+                                </p>
+                                <p className="text-xs mt-0.5" style={{ color: themeColors.textSecondary }}>
+                                  Consider setting a body type (JSON, XML, etc.) for your API.
+                                </p>
+                              </div>
+                            </div>
                           )}
                         </div>
 
