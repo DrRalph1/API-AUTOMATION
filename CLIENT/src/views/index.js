@@ -869,7 +869,7 @@ export default function EntryPage({ userRole }) {
     { id: "api-docs", label: "Documentation", icon: Activity, component: <Documentation authToken={`Bearer ${token}`} />, roles: ["system administrator", "user"] },
     { id: "code-base", label: "Code Base", icon: Code, component: <CodeBase authToken={`Bearer ${token}`} />, roles: ["system administrator", "user"] },
     { id: "user-mgt", label: "User Management", icon: UserCog, component: <UserMangement authToken={`Bearer ${token}`} />, roles: ["system administrator"] },
-    { id: "api-requests", label: "API Requests", icon: FileCode, component: <APIRequests authToken={`Bearer ${token}`} />, roles: ["system administrator"] },
+    { id: "api-requests", label: "API Requests", icon: FileCode, component: <APIRequests authToken={`Bearer ${token}`} />, roles: ["system administrator", "user"] },
     { id: "api-security", label: "API Security", icon: Shield, component: <APISecurity authToken={`Bearer ${token}`} />, roles: ["system administrator"] },
   ];
 
