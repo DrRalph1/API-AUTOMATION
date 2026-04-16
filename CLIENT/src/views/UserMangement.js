@@ -63,7 +63,7 @@ import {
 } from "lucide-react";
 
 // Import the API controllers
-import UserManagementAPI, {
+import {
   getUsersList,
   getUserDetails,
   createUser,
@@ -95,28 +95,16 @@ import UserManagementAPI, {
   extractUpdateStatusResults,
   extractRolesAndPermissions as extractRoles,
   extractValidationResults,
-  validateCreateUser,
-  validateUpdateUser,
-  validateBulkOperation,
-  validateSearchUsers,
-  validateImportUsers,
-  validateExportUsers,
-  validateUpdateStatus,
-  validateUserDataRequest,
   getUserStatusDisplayName,
   getStatusColor,
   getRoleColor,
   getSecurityScoreColor,
-  formatDateForDisplay,
-  getDefaultUserFilters
+  formatDateForDisplay
 } from '@/controllers/UserManagementController.js';
-
 
 // Import UserRoleController methods
 import {
-  getAllRoles,
-  handleRoleResponse,
-  extractRolePaginationInfo
+  getAllRoles
 } from '@/controllers/UserRoleController.js';
 
 // Custom debounce hook
@@ -156,16 +144,13 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
   
-  // API states
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [rolesLoading, setRolesLoading] = useState(false);
   const [rolesError, setRolesError] = useState(false);
   
-  // Pagination states from API
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
-  const [apiCurrentPage, setApiCurrentPage] = useState(1);
   
   const [stats, setStats] = useState({
     totalUsers: 0,
@@ -178,214 +163,163 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     avgSecurityScore: 0
   });
   
-  // Modal states
   const [modalStack, setModalStack] = useState([]);
-  
-  // Mobile states
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
-  const [isRightSidebarVisible, setIsRightSidebarVisible] = useState(false);
-
-  // Fix: Add states to prevent multiple modal openings
   const [openingModalForUserId, setOpeningModalForUserId] = useState(null);
   const [isOpeningModal, setIsOpeningModal] = useState(false);
   const pendingRequestRef = useRef(null);
+  const isInitialMountRef = useRef(true);
 
   const formatLastActive = (lastActiveDate, totalLogins) => {
-      // If user has never logged in (totalLogins is 0), show "Never logged in"
-      if (totalLogins === 0 && !lastActiveDate) {
-          return 'Never logged in';
-      }
-      
-      // If no date provided, also show never logged in
-      if (!lastActiveDate) {
-          return 'Never logged in';
-      }
-      
-      // Check if it's a valid date
-      const date = new Date(lastActiveDate);
-      if (isNaN(date.getTime())) {
-          return 'Never logged in';
-      }
-      
-      return formatDateForDisplay(lastActiveDate, false);
+    if (totalLogins === 0 && !lastActiveDate) return 'Never logged in';
+    if (!lastActiveDate) return 'Never logged in';
+    const date = new Date(lastActiveDate);
+    if (isNaN(date.getTime())) return 'Never logged in';
+    return formatDateForDisplay(lastActiveDate, false);
   };
 
-  // Load roles on component mount
-  useEffect(() => {
-    if (authToken) {
-      loadRoles();
-    }
-  }, [authToken]);
-
-  // Load users on component mount
-  useEffect(() => {
-  if (authToken) {
-    // Use a ref to track if this is the initial load
-    const isInitialMount = isInitialMountRef.current;
-    if (isInitialMount) {
-      isInitialMountRef.current = false;
-      loadUsers();
-      loadStatistics();
-    } else {
-      // For subsequent changes, load with current page
-      loadUsers({ page: currentPage });
-    }
-  } else {
-    console.warn('No auth token available');
-  }
-}, [authToken, currentPage, usersPerPage, sortField, sortDirection, selectedRole, selectedStatus]);
-
-// Add this ref at the top of your component
-const isInitialMountRef = useRef(true);
-
-  // Load roles from API - NO STATIC FALLBACKS
-  const loadRoles = async (showLoading = false) => {
-    const authHeader = authToken;
-    if (!authHeader) {
-      console.warn('No auth token available for loading roles');
-      setRolesError(true);
-      return;
-    }
-
-    if (showLoading) setRolesLoading(true);
-    setRolesError(false);
-    
-    try {
-      const response = await getAllRoles(authHeader, { page: 0, size: 100 });
-      
-      // Handle your exact API response structure
-      if (response && response.responseCode === 200 && response.data) {
-        // Extract content from the paginated response
-        const content = response.data.content || [];
-        
-        // Map the roles to a consistent format using the actual field names from your API
-        const mappedRoles = content.map(role => ({
-          id: role.roleId,
-          roleId: role.roleId,
-          roleName: role.roleName,
-          description: role.description || '',
-          roleCode: role.roleName?.replace(/\s+/g, '_').toUpperCase() || ''
-        }));
-        
-        setRoles(mappedRoles);
-        
-        if (mappedRoles.length === 0) {
-          setRolesError(true);
-        }
-      } else {
-        console.error('Invalid API response structure:', response);
-        setRolesError(true);
-        setRoles([]);
-      }
-    } catch (error) {
-      console.error('Error loading roles:', error);
-      setRolesError(true);
-      setRoles([]);
-    } finally {
-      if (showLoading) setRolesLoading(false);
-    }
-  };
-
-  // Get role display name from role ID - NO STATIC FALLBACKS
-  const getRoleDisplayName = (roleId) => {
-    if (!roleId) return 'Unknown';
-    if (roleId === 'all') return 'All Roles';
-    
-    // Try to find by id or roleId
-    const role = roles.find(r => r.id === roleId || r.roleId === roleId);
-    if (role) return role.roleName;
-    
-    // If not found, just return the roleId as is
-    return roleId;
-  };
-
-  // Get role color from UUID - Uses the controller's getRoleColor function
-  const getRoleColorFromId = (roleId) => {
-    if (!roleId || roleId === 'all') return '#6B7280'; // Default gray
-    return getRoleColor(roleId);
-  };
-
-  // Load users with filters - FIXED to handle pagination from your backend
-const loadUsers = async (filters = {}) => {
+  // In the main component, update the loadRoles function
+const loadRoles = async (showLoading = false) => {
   const authHeader = authToken;
   if (!authHeader) {
-    showToast('error', 'Authentication required. Please log in.');
+    console.warn('No auth token available for loading roles');
+    setRolesError(true);
     return;
   }
 
-  setLoading(true);
+  if (showLoading) setRolesLoading(true);
+  setRolesError(false);
+  
   try {
-    // IMPORTANT: Your backend expects 1-based page numbers
-    const pageToSend = filters.page !== undefined ? filters.page : currentPage;
+    const response = await getAllRoles(authHeader, { page: 0, size: 100 });
     
-    const response = await getUsersList(authHeader, {
-      searchQuery: filters.searchQuery !== undefined ? filters.searchQuery : searchQuery,
-      roleFilter: filters.roleFilter !== undefined ? filters.roleFilter : selectedRole,
-      statusFilter: filters.statusFilter !== undefined ? filters.statusFilter : selectedStatus,
-      sortField: filters.sortField !== undefined ? filters.sortField : sortField,
-      sortDirection: filters.sortDirection !== undefined ? filters.sortDirection : sortDirection,
-      page: pageToSend,  // Send 1-based page number
-      pageSize: filters.pageSize !== undefined ? filters.pageSize : usersPerPage
-    });
-    
-    const processedResponse = handleUserManagementResponse(response);
-    const userList = extractUsersList(processedResponse);
-    
-    // FIXED: Your backend returns pagination data directly in response.data
-    // UsersListResponseDTO has fields: total, page, pageSize, totalPages, hasNext, hasPrevious
-    const usersData = processedResponse?.data || {};
-    
-    // Extract pagination fields from the correct location
-    const totalElements = usersData.total || userList.length;
-    const totalPagesFromApi = usersData.totalPages || Math.ceil(totalElements / usersPerPage);
-    const currentPageFromApi = usersData.page || pageToSend;
-    
-    // Update pagination state
-    setTotalItems(totalElements);
-    setTotalPages(totalPagesFromApi);
-    
-    // Sync currentPage with API if needed (previes infinite loop)
-    if (currentPage !== currentPageFromApi && currentPageFromApi > 0 && !filters.page) {
-      setCurrentPage(currentPageFromApi);
+    if (response && response.responseCode === 200 && response.data) {
+      const content = response.data.content || [];
+      
+      // Enhanced deduplication
+      const uniqueRolesMap = new Map();
+      content.forEach(role => {
+        const roleId = role.roleId;
+        if (!uniqueRolesMap.has(roleId)) {
+          uniqueRolesMap.set(roleId, {
+            id: role.roleId,
+            roleId: role.roleId,
+            roleName: role.roleName,
+            description: role.description || '',
+            roleCode: role.roleName?.replace(/\s+/g, '_').toUpperCase() || ''
+          });
+        }
+      });
+      
+      let mappedRoles = Array.from(uniqueRolesMap.values());
+      
+      // Also deduplicate by name (case-insensitive)
+      const uniqueByNameMap = new Map();
+      mappedRoles.forEach(role => {
+        const nameLower = role.roleName.toLowerCase();
+        if (!uniqueByNameMap.has(nameLower)) {
+          uniqueByNameMap.set(nameLower, role);
+        }
+      });
+      
+      mappedRoles = Array.from(uniqueByNameMap.values());
+      
+      // Sort alphabetically
+      mappedRoles.sort((a, b) => a.roleName.localeCompare(b.roleName));
+      
+      console.log('Loaded unique roles:', mappedRoles);
+      setRoles(mappedRoles);
+      
+      if (mappedRoles.length === 0) {
+        setRolesError(true);
+      }
+    } else {
+      console.error('Invalid API response structure:', response);
+      setRolesError(true);
+      setRoles([]);
     }
-    
-    // Map role IDs to role names for display
-    const mappedUserList = (userList || []).map(user => ({
-      ...user,
-      roleDisplayName: getRoleDisplayName(user.role || user.roleId),
-      roleDisplayColor: getRoleColorFromId(user.role || user.roleId)
-    }));
-    
-    setUsers(mappedUserList);
-    
-    // If current page is beyond total pages, reset to last page
-    if (currentPageFromApi > totalPagesFromApi && totalPagesFromApi > 0) {
-      setCurrentPage(totalPagesFromApi);
-    }
-    
   } catch (error) {
-    console.error('Error loading users:', error);
-    showToast('error', error.message || 'Failed to load users');
-    setUsers([]);
-    setTotalItems(0);
-    setTotalPages(0);
+    console.error('Error loading roles:', error);
+    setRolesError(true);
+    setRoles([]);
   } finally {
-    setLoading(false);
+    if (showLoading) setRolesLoading(false);
   }
 };
-  
 
-  // Load statistics
-  const loadStatistics = async () => {
-    const authHeader = authToken;
-    if (!authHeader) {
+  const getRoleDisplayName = (roleId) => {
+    if (!roleId) return 'Unknown';
+    if (roleId === 'all') return 'All Roles';
+    const role = roles.find(r => r.id === roleId || r.roleId === roleId);
+    return role ? role.roleName : roleId;
+  };
+
+  const getRoleColorFromId = (roleId) => {
+    if (!roleId || roleId === 'all') return '#6B7280';
+    return getRoleColor(roleId);
+  };
+
+  // Load users with deduplication
+  const loadUsers = async (filters = {}) => {
+    if (!authToken) {
       showToast('error', 'Authentication required. Please log in.');
       return;
     }
 
+    setLoading(true);
     try {
-      const response = await getUserStatistics(authHeader);
+      const pageToSend = filters.page !== undefined ? filters.page : currentPage;
+      
+      const response = await getUsersList(authToken, {
+        searchQuery: filters.searchQuery !== undefined ? filters.searchQuery : searchQuery,
+        roleFilter: filters.roleFilter !== undefined ? filters.roleFilter : selectedRole,
+        statusFilter: filters.statusFilter !== undefined ? filters.statusFilter : selectedStatus,
+        sortField: filters.sortField !== undefined ? filters.sortField : sortField,
+        sortDirection: filters.sortDirection !== undefined ? filters.sortDirection : sortDirection,
+        page: pageToSend,
+        pageSize: filters.pageSize !== undefined ? filters.pageSize : usersPerPage
+      });
+      
+      const processedResponse = handleUserManagementResponse(response);
+      let userList = extractUsersList(processedResponse);
+      
+      // Deduplicate users
+      const uniqueUsersMap = new Map();
+      (userList || []).forEach(user => {
+        if (user.id && !uniqueUsersMap.has(user.id)) {
+          uniqueUsersMap.set(user.id, user);
+        }
+      });
+      userList = Array.from(uniqueUsersMap.values());
+      
+      const usersData = processedResponse?.data || {};
+      const totalElements = usersData.total || userList.length;
+      const totalPagesFromApi = usersData.totalPages || Math.ceil(totalElements / usersPerPage);
+      const currentPageFromApi = usersData.page || pageToSend;
+      
+      setTotalItems(totalElements);
+      setTotalPages(totalPagesFromApi);
+      
+      const mappedUserList = userList.map(user => ({
+        ...user,
+        roleDisplayName: getRoleDisplayName(user.role || user.roleId),
+        roleDisplayColor: getRoleColorFromId(user.role || user.roleId)
+      }));
+      
+      setUsers(mappedUserList);
+      
+    } catch (error) {
+      console.error('Error loading users:', error);
+      showToast('error', error.message || 'Failed to load users');
+      setUsers([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadStatistics = async () => {
+    if (!authToken) return;
+    try {
+      const response = await getUserStatistics(authToken);
       const processedResponse = handleUserManagementResponse(response);
       const statistics = extractStats(processedResponse);
       setStats(statistics || {
@@ -400,134 +334,296 @@ const loadUsers = async (filters = {}) => {
       });
     } catch (error) {
       console.error('Error loading statistics:', error);
-      showToast('error', error.message || 'Failed to load statistics');
     }
   };
 
-  // Load user details
   const loadUserDetails = async (userId) => {
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
-      return null;
-    }
-
+    if (!authToken) return null;
     setLoading(true);
     try {
-      const response = await getUserDetails(authHeader, userId);
+      const response = await getUserDetails(authToken, userId);
       const processedResponse = handleUserManagementResponse(response);
       const userDetails = extractUserDetails(processedResponse);
-      
-      // Add role display name
       if (userDetails) {
         userDetails.roleDisplayName = getRoleDisplayName(userDetails.roleId || userDetails.role);
         userDetails.roleDisplayColor = getRoleColorFromId(userDetails.roleId || userDetails.role);
       }
-      
       return userDetails;
     } catch (error) {
       console.error('Error loading user details:', error);
-      showToast('error', error.message || 'Failed to load user details');
       return null;
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle create user
-  const handleCreateUser = async (userData) => {
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
+  // FIXED: Handle update user - use 'role' field name (not 'roleId') for your backend
+const handleUpdateUser = async (userId, userData) => {
+  if (!authToken) {
+    showToast('error', 'Authentication required. Please log in.');
+    return false;
+  }
+
+  setLoading(true);
+  try {
+    // IMPORTANT: Your backend expects 'role' (role name string), not 'roleId' (UUID)
+    // Find the role name from the role ID
+    let roleName = null;
+    if (userData.roleId) {
+      const selectedRole = roles.find(r => r.id === userData.roleId || r.roleId === userData.roleId);
+      roleName = selectedRole?.roleName || userData.roleId;
+    }
+    
+    const updatePayload = {
+      fullName: userData.fullName,
+      role: roleName,  // Send role name, not roleId
+      status: userData.status,
+      department: userData.department,
+      location: userData.location,
+      mfaEnabled: userData.mfaEnabled,
+      phoneNumber: userData.phoneNumber,
+      emailVerified: userData.emailVerified,
+      phoneVerified: userData.phoneVerified,
+      tags: userData.tags || []
+    };
+    
+    console.log('Updating user with payload:', updatePayload);
+    
+    const response = await updateUser(authToken, userId, updatePayload);
+    const processedResponse = handleUserManagementResponse(response);
+    const result = extractUpdateUserResults(processedResponse);
+    
+    if (result.success) {
+      showToast('success', result.message || 'User updated successfully');
+      await loadUsers();
+      await loadStatistics();
+      return true;
+    } else {
+      showToast('error', result.message || 'Failed to update user');
       return false;
     }
+  } catch (error) {
+    console.error('Error updating user:', error);
+    showToast('error', error.message || 'Failed to update user');
+    return false;
+  } finally {
+    setLoading(false);
+  }
+};
 
-    setLoading(true);
-    try {
-      const response = await createUser(authHeader, userData);
-      const processedResponse = handleUserManagementResponse(response);
-      const result = extractCreateUserResults(processedResponse);
+
+// Add this function after handleResetPassword (around line 530)
+const handleBulkAction = async (action) => {
+  if (!authToken) return;
+  if (selectedUsers.length === 0) {
+    showToast('warning', 'No users selected');
+    return;
+  }
+  
+  const actionMessages = {
+    activate: 'activate',
+    suspend: 'suspend',
+    delete: 'delete'
+  };
+  
+  const confirmMessage = `Are you sure you want to ${actionMessages[action]} ${selectedUsers.length} user(s)?`;
+  if (!window.confirm(confirmMessage)) return;
+  
+  setLoading(true);
+  try {
+    const response = await bulkUserOperation(authToken, {
+      userIds: selectedUsers,
+      action: action
+    });
+    const processedResponse = handleUserManagementResponse(response);
+    const result = extractBulkOperationResults(processedResponse);
+    
+    if (result.success) {
+      showToast('success', `${selectedUsers.length} user(s) ${actionMessages[action]}d successfully`);
+      setSelectedUsers([]);
+      await loadUsers();
+      await loadStatistics();
+    } else {
+      showToast('error', result.message || `Failed to ${action} users`);
+    }
+  } catch (error) {
+    console.error('Error in bulk action:', error);
+    showToast('error', error.message || `Failed to ${action} users`);
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+// Add after handleBulkAction
+const handleImportUsersFromFile = async (importData) => {
+  if (!authToken) return false;
+  setLoading(true);
+  try {
+    const response = await importUsers(authToken, importData);
+    const processedResponse = handleUserManagementResponse(response);
+    const result = extractImportUsersResults(processedResponse);
+    
+    if (result.success) {
+      showToast('success', result.message || `${result.importedCount || 0} users imported successfully`);
+      await loadUsers();
+      await loadStatistics();
+      return true;
+    } else {
+      showToast('error', result.message || 'Failed to import users');
+      return false;
+    }
+  } catch (error) {
+    console.error('Error importing users:', error);
+    showToast('error', error.message || 'Failed to import users');
+    return false;
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleExportData = async (exportData) => {
+  if (!authToken) return;
+  setLoading(true);
+  try {
+    const response = await exportUsers(authToken, exportData);
+    const processedResponse = handleUserManagementResponse(response);
+    const result = extractExportUsersResults(processedResponse);
+    
+    if (result.success && result.data) {
+      // Create download link
+      const blob = new Blob([result.data], { type: getContentType(exportData.format) });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `users_export.${exportData.format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      showToast('success', 'Users exported successfully');
+    } else {
+      showToast('error', result.message || 'Failed to export users');
+    }
+  } catch (error) {
+    console.error('Error exporting users:', error);
+    showToast('error', error.message || 'Failed to export users');
+  } finally {
+    setLoading(false);
+  }
+};
+
+const getContentType = (format) => {
+  switch(format) {
+    case 'csv': return 'text/csv';
+    case 'json': return 'application/json';
+    case 'excel': return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    case 'pdf': return 'application/pdf';
+    default: return 'text/plain';
+  }
+};
+
+  // Handle create user - FIXED to send roleId (UUID) not role name
+const handleCreateUser = async (userData) => {
+  if (!authToken) {
+    showToast('error', 'Authentication required. Please log in.');
+    return false;
+  }
+
+  setLoading(true);
+  try {
+    // IMPORTANT: Your backend expects 'roleId' (UUID), not 'role' (name)
+    // Find the role by ID or name and get the actual role ID
+    let roleId = null;
+    if (userData.roleId) {
+      // First check if it's already a UUID
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userData.roleId);
       
-      if (result.success) {
-        showToast('success', result.message || 'User created successfully');
-        // Reset to first page to show the new user
-        setCurrentPage(1);
-        loadUsers();
-        loadStatistics();
-        return true;
+      if (isUUID) {
+        // It's already a UUID, use it directly
+        roleId = userData.roleId;
       } else {
-        showToast('error', result.message || 'Failed to create user');
-        return false;
+        // It's a role name, find the corresponding role ID
+        const selectedRole = roles.find(r => 
+          r.roleName.toLowerCase() === userData.roleId.toLowerCase()
+        );
+        roleId = selectedRole?.roleId || selectedRole?.id;
       }
-    } catch (error) {
-      console.error('Error creating user:', error);
+    }
+    
+    // If still no roleId, try to find by the role name
+    if (!roleId && userData.role) {
+      const selectedRole = roles.find(r => 
+        r.roleName.toLowerCase() === userData.role.toLowerCase()
+      );
+      roleId = selectedRole?.roleId || selectedRole?.id;
+    }
+    
+    console.log('Found role ID:', roleId);
+    
+    const createPayload = {
+      username: userData.username,
+      email: userData.email,
+      phoneNumber: userData.phoneNumber,
+      fullName: userData.fullName,
+      roleId: roleId,  // Send role ID (UUID), not role name
+      department: userData.department || 'General',
+      location: userData.location || 'Not specified',
+      mfaEnabled: userData.mfaEnabled || false,
+      status: userData.status || 'pending'
+    };
+    
+    console.log('Creating user with payload:', createPayload);
+    
+    const response = await createUser(authToken, createPayload);
+    const processedResponse = handleUserManagementResponse(response);
+    const result = extractCreateUserResults(processedResponse);
+    
+    if (result.success) {
+      showToast('success', result.message || 'User created successfully');
+      setCurrentPage(1);
+      await loadUsers();
+      await loadStatistics();
+      return true;
+    } else {
+      showToast('error', result.message || 'Failed to create user');
+      return false;
+    }
+  } catch (error) {
+    console.error('Error creating user:', error);
+    // Check for specific error messages
+    if (error.message?.includes('already exists')) {
+      showToast('error', 'User with this email or username already exists');
+    } else if (error.message?.includes('id must not be null')) {
+      showToast('error', 'Invalid role selected. Please try again.');
+    } else {
       showToast('error', error.message || 'Failed to create user');
-      return false;
-    } finally {
-      setLoading(false);
     }
-  };
+    return false;
+  } finally {
+    setLoading(false);
+  }
+};
 
-  // Handle update user
-  const handleUpdateUser = async (userId, userData) => {
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
-      return false;
-    }
-
-    setLoading(true);
-    try {
-      const response = await updateUser(authHeader, userId, userData);
-      const processedResponse = handleUserManagementResponse(response);
-      const result = extractUpdateUserResults(processedResponse);
-      
-      if (result.success) {
-        showToast('success', result.message || 'User updated successfully');
-        loadUsers();
-        return true;
-      } else {
-        showToast('error', result.message || 'Failed to update user');
-        return false;
-      }
-    } catch (error) {
-      console.error('Error updating user:', error);
-      showToast('error', error.message || 'Failed to update user');
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle delete user
   const handleDeleteUser = async (user) => {
-    if (!window.confirm(`Are you sure you want to delete ${user.fullName || user.username}?`)) {
-      return;
-    }
-
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
-      return;
-    }
+    if (!window.confirm(`Are you sure you want to delete ${user.fullName || user.username}?`)) return;
+    if (!authToken) return;
 
     setLoading(true);
     try {
-      const response = await deleteUser(authHeader, user.id);
+      const response = await deleteUser(authToken, user.id);
       const processedResponse = handleUserManagementResponse(response);
       const result = extractDeleteUserResults(processedResponse);
       
       if (result.success) {
         showToast('success', result.message || 'User deleted successfully');
         setSelectedUsers(prev => prev.filter(id => id !== user.id));
-        
-        // Check if we need to go to previous page
         if (users.length === 1 && currentPage > 1) {
           setCurrentPage(currentPage - 1);
         } else {
-          loadUsers();
+          await loadUsers();
         }
-        loadStatistics();
+        await loadStatistics();
       } else {
         showToast('error', result.message || 'Failed to delete user');
       }
@@ -539,84 +635,13 @@ const loadUsers = async (filters = {}) => {
     }
   };
 
-  // Handle bulk operations
-  const handleBulkAction = async (action) => {
-    if (selectedUsers.length === 0) {
-      showToast('warning', 'No users selected');
-      return;
-    }
-
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
-      return;
-    }
-
-    const confirmationMessages = {
-      activate: `Activate ${selectedUsers.length} selected user(s)?`,
-      suspend: `Suspend ${selectedUsers.length} selected user(s)?`,
-      deactivate: `Deactivate ${selectedUsers.length} selected user(s)?`,
-      delete: `Delete ${selectedUsers.length} selected user(s)?`,
-      reset_password: `Reset password for ${selectedUsers.length} selected user(s)?`
-    };
-
-    if (!window.confirm(confirmationMessages[action] || 'Confirm action?')) {
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const response = await bulkUserOperation(authHeader, {
-        operation: action,
-        userIds: selectedUsers
-      });
-      
-      const processedResponse = handleUserManagementResponse(response);
-      const result = extractBulkOperationResults(processedResponse);
-      
-      if (result.processedCount > 0) {
-        showToast('success', `${action} completed for ${result.processedCount} user(s)`);
-        if (result.failedCount > 0) {
-          showToast('warning', `${result.failedCount} user(s) failed: ${result.failedUsers?.join(', ') || 'Unknown'}`);
-        }
-        
-        // Check if we need to go to previous page after bulk delete
-        if (action === 'delete') {
-          setSelectedUsers([]);
-          if (users.length === selectedUsers.length && currentPage > 1) {
-            setCurrentPage(currentPage - 1);
-          } else {
-            loadUsers();
-          }
-        } else {
-          loadUsers();
-        }
-        loadStatistics();
-      } else {
-        showToast('error', 'No users were processed');
-      }
-    } catch (error) {
-      console.error('Error performing bulk operation:', error);
-      showToast('error', error.message || 'Failed to perform bulk operation');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle reset password
   const handleResetPassword = async (user, resetData) => {
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
-      return false;
-    }
-
+    if (!authToken) return false;
     setLoading(true);
     try {
-      const response = await resetUserPassword(authHeader, user.id, resetData);
+      const response = await resetUserPassword(authToken, user.id, resetData);
       const processedResponse = handleUserManagementResponse(response);
       const result = extractResetPasswordResults(processedResponse);
-      
       if (result.success) {
         showToast('success', result.message || 'Password reset successful');
         return true;
@@ -633,21 +658,14 @@ const loadUsers = async (filters = {}) => {
     }
   };
 
-  // Handle search users
   const handleSearchUsers = async (searchData) => {
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
-      return;
-    }
-
+    if (!authToken) return;
     setLoading(true);
     try {
-      const response = await searchUsers(authHeader, searchData);
+      const response = await searchUsers(authToken, searchData);
       const processedResponse = handleUserManagementResponse(response);
       const result = extractSearchUsersResults(processedResponse);
       
-      // Map role IDs to role names for display
       const mappedResults = (result.results || []).map(user => ({
         ...user,
         roleDisplayName: getRoleDisplayName(user.role || user.roleId),
@@ -656,9 +674,8 @@ const loadUsers = async (filters = {}) => {
       
       setUsers(mappedResults);
       setTotalItems(mappedResults.length);
-      setTotalPages(1); // Search results are typically not paginated or we handle differently
+      setTotalPages(1);
       setCurrentPage(1);
-      
     } catch (error) {
       console.error('Error searching users:', error);
       showToast('error', error.message || 'Failed to search users');
@@ -667,174 +684,8 @@ const loadUsers = async (filters = {}) => {
     }
   };
 
-  // Handle import users
-  const handleImportUsersFromFile = async (importData) => {
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
-      return false;
-    }
-
-    setLoading(true);
-    try {
-      const response = await importUsers(authHeader, importData);
-      const processedResponse = handleUserManagementResponse(response);
-      const result = extractImportUsersResults(processedResponse);
-      
-      if (result.status === 'completed') {
-        showToast('success', `Imported ${result.importedCount} users successfully`);
-        setCurrentPage(1); // Reset to first page after import
-        loadUsers();
-        loadStatistics();
-        return true;
-      } else {
-        showToast('error', `Import failed: ${result.summary?.validationErrors || 'Unknown error'}`);
-        return false;
-      }
-    } catch (error) {
-      console.error('Error importing users:', error);
-      showToast('error', error.message || 'Failed to import users');
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle export users
-  const handleExportData = async (exportData) => {
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const response = await exportUsers(authHeader, exportData);
-      const processedResponse = handleUserManagementResponse(response);
-      const result = extractExportUsersResults(processedResponse);
-      
-      if (result.status === 'ready') {
-        const downloadLink = document.createElement('a');
-        downloadLink.href = result.exportData?.downloadUrl || '#';
-        downloadLink.download = `users-export-${new Date().toISOString().split('T')[0]}.${exportData.format}`;
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-        
-        showToast('success', 'Export completed successfully');
-      } else {
-        showToast('error', 'Export failed');
-      }
-    } catch (error) {
-      console.error('Error exporting users:', error);
-      showToast('error', error.message || 'Failed to export users');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle update user status
-  const handleToggleUserStatus = async (user, newStatus) => {
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const response = await updateUserStatus(authHeader, user.id, newStatus);
-      const processedResponse = handleUserManagementResponse(response);
-      const result = extractUpdateStatusResults(processedResponse);
-      
-      if (result.success) {
-        showToast('success', result.message || 'Status updated successfully');
-        loadUsers();
-        loadStatistics();
-      } else {
-        showToast('error', result.message || 'Failed to update status');
-      }
-    } catch (error) {
-      console.error('Error updating user status:', error);
-      showToast('error', error.message || 'Failed to update user status');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle load roles and permissions
-  const handleLoadRolesAndPermissions = async () => {
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
-      return null;
-    }
-
-    setLoading(true);
-    try {
-      const response = await getRolesAndPermissions(authHeader);
-      const processedResponse = handleUserManagementResponse(response);
-      return extractRoles(processedResponse);
-    } catch (error) {
-      console.error('Error loading roles and permissions:', error);
-      showToast('error', error.message || 'Failed to load roles and permissions');
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle validate user data
-  const handleValidateUserData = async (validationData) => {
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
-      return null;
-    }
-
-    try {
-      const response = await validateUserData(authHeader, validationData);
-      const processedResponse = handleUserManagementResponse(response);
-      return extractValidationResults(processedResponse);
-    } catch (error) {
-      console.error('Error validating user data:', error);
-      showToast('error', error.message || 'Failed to validate user data');
-      return null;
-    }
-  };
-
-  // Load user activity
-  const handleLoadUserActivity = async (userId, startDate = null, endDate = null) => {
-    const authHeader = authToken;
-    if (!authHeader) {
-      showToast('error', 'Authentication required. Please log in.');
-      return null;
-    }
-
-    setLoading(true);
-    try {
-      const response = await getUserActivity(authHeader, userId, startDate, endDate);
-      const processedResponse = handleUserManagementResponse(response);
-      return extractUserActivityResults(processedResponse);
-    } catch (error) {
-      console.error('Error loading user activity:', error);
-      showToast('error', error.message || 'Failed to load user activity');
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Toast notification
   const showToast = (type, message) => {
-    if (type === 'error') {
-      alert(`Error: ${message}`);
-    } else if (type === 'warning') {
-      alert(`Warning: ${message}`);
-    } else {
-      alert(`Success: ${message}`);
-    }
+    alert(`${type.toUpperCase()}: ${message}`);
   };
 
   // Color scheme
@@ -849,8 +700,6 @@ const loadUsers = async (filters = {}) => {
     textSecondary: 'rgb(148 163 184)',
     textTertiary: 'rgb(100 116 139)',
     border: 'rgb(51 65 85 / 19%)',
-    borderLight: 'rgb(45 55 72)',
-    borderDark: 'rgb(71 85 105)',
     hover: 'rgb(45 46 72 / 33%)',
     active: 'rgb(59 74 99)',
     selected: 'rgb(44 82 130)',
@@ -861,26 +710,13 @@ const loadUsers = async (filters = {}) => {
     warning: 'rgb(251 191 36)',
     error: 'rgb(248 113 113)',
     info: 'rgb(96 165 250)',
-    tabActive: 'rgb(96 165 250)',
-    tabInactive: 'rgb(148 163 184)',
-    sidebarActive: 'rgb(96 165 250)',
-    sidebarHover: 'rgb(45 46 72 / 33%)',
     inputBg: 'rgb(41 53 72 / 19%)',
     inputBorder: 'rgb(51 65 85 / 19%)',
     tableHeader: 'rgb(41 53 72 / 19%)',
     tableRow: 'rgb(41 53 72 / 19%)',
     tableRowHover: 'rgb(45 46 72 / 33%)',
-    dropdownBg: 'rgb(41 53 72 / 19%)',
-    dropdownBorder: 'rgb(51 65 85 / 19%)',
     modalBg: 'rgb(41 53 72 / 19%)',
     modalBorder: 'rgb(51 65 85 / 19%)',
-    codeBg: 'rgb(41 53 72 / 19%)',
-    connectionOnline: 'rgb(52 211 153)',
-    connectionOffline: 'rgb(248 113 113)',
-    connectionIdle: 'rgb(251 191 36)',
-    accentPurple: 'rgb(167 139 250)',
-    accentPink: 'rgb(244 114 182)',
-    accentCyan: 'rgb(34 211 238)'
   } : {
     bg: '#f8fafc',
     white: '#f8fafc',
@@ -892,8 +728,6 @@ const loadUsers = async (filters = {}) => {
     textSecondary: '#64748b',
     textTertiary: '#94a3b8',
     border: '#e2e8f0',
-    borderLight: '#f1f5f9',
-    borderDark: '#cbd5e1',
     hover: '#f1f5f9',
     active: '#e2e8f0',
     selected: '#dbeafe',
@@ -904,44 +738,25 @@ const loadUsers = async (filters = {}) => {
     warning: '#f59e0b',
     error: '#ef4444',
     info: '#3b82f6',
-    tabActive: '#3b82f6',
-    tabInactive: '#64748b',
-    sidebarActive: '#3b82f6',
-    sidebarHover: '#f1f5f9',
     inputBg: '#ffffff',
     inputBorder: '#e2e8f0',
     tableHeader: '#f8fafc',
     tableRow: '#ffffff',
     tableRowHover: '#f8fafc',
-    dropdownBg: '#ffffff',
-    dropdownBorder: '#e2e8f0',
     modalBg: '#ffffff',
     modalBorder: '#e2e8f0',
-    codeBg: '#f1f5f9',
-    connectionOnline: '#10b981',
-    connectionOffline: '#ef4444',
-    connectionIdle: '#f59e0b'
   };
 
-  // Role colors - Uses the controller's getRoleColor function
   const getRoleColorStyle = (roleId) => {
     const color = getRoleColorFromId(roleId) || colors.textSecondary;
-    return {
-      backgroundColor: `${color}20`,
-      color: color
-    };
+    return { backgroundColor: `${color}20`, color: color };
   };
 
-  // Status colors
   const getStatusColorStyle = (status) => {
     const color = getStatusColor(status) || colors.textSecondary;
-    return {
-      backgroundColor: `${color}20`,
-      color: color
-    };
+    return { backgroundColor: `${color}20`, color: color };
   };
 
-  // Security score color
   const getSecurityColor = (score) => {
     return getSecurityScoreColor(score) || colors.textSecondary;
   };
@@ -953,7 +768,6 @@ const loadUsers = async (filters = {}) => {
 
   const closeModal = () => {
     setModalStack(prev => prev.slice(0, -1));
-    // Clear opening state when modal closes
     setTimeout(() => {
       setOpeningModalForUserId(null);
       setIsOpeningModal(false);
@@ -961,19 +775,6 @@ const loadUsers = async (filters = {}) => {
     }, 100);
   };
 
-  const closeAllModals = () => {
-    setModalStack([]);
-    setOpeningModalForUserId(null);
-    setIsOpeningModal(false);
-    pendingRequestRef.current = null;
-  };
-
-  const getCurrentModal = () => {
-    if (modalStack.length === 0) return null;
-    return modalStack[modalStack.length - 1];
-  };
-
-  // Handlers
   const handleSelectAll = (e) => {
     if (e.target.checked) {
       setSelectedUsers(users.map(user => user.id));
@@ -984,46 +785,26 @@ const loadUsers = async (filters = {}) => {
 
   const handleSelectUser = (userId) => {
     setSelectedUsers(prev => 
-      prev.includes(userId)
-        ? prev.filter(id => id !== userId)
-        : [...prev, userId]
+      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
     );
-  };
-
-  const handleRefresh = async () => {
-    setCurrentPage(1); // Reset to first page on refresh
-    await loadUsers();
-    await loadStatistics();
-    await loadRoles(true);
   };
 
   const handleSort = (field) => {
     if (sortField === field) {
       const newDirection = sortDirection === 'asc' ? 'desc' : 'asc';
       setSortDirection(newDirection);
-      setCurrentPage(1); // Reset to first page when sorting
-      
-      loadUsers({
-        sortField: field,
-        sortDirection: newDirection,
-        page: 0
-      });
+      loadUsers({ sortField: field, sortDirection: newDirection, page: 0 });
     } else {
       setSortField(field);
       setSortDirection('asc');
-      setCurrentPage(1); // Reset to first page when sorting
-      
-      loadUsers({
-        sortField: field,
-        sortDirection: 'asc',
-        page: 0
-      });
+      loadUsers({ sortField: field, sortDirection: 'asc', page: 0 });
     }
+    setCurrentPage(1);
   };
 
   const handleSearchChange = (value) => {
     setSearchQuery(value);
-    setCurrentPage(1); // Reset to first page when searching
+    setCurrentPage(1);
     clearTimeout(window.searchTimeout);
     window.searchTimeout = setTimeout(() => {
       if (value.trim()) {
@@ -1036,97 +817,54 @@ const loadUsers = async (filters = {}) => {
 
   const handleRoleFilterChange = (value) => {
     setSelectedRole(value);
-    setCurrentPage(1); // Reset to first page when changing filters
+    setCurrentPage(1);
     loadUsers({ roleFilter: value, page: 0 });
   };
 
   const handleStatusFilterChange = (value) => {
     setSelectedStatus(value);
-    setCurrentPage(1); // Reset to first page when changing filters
+    setCurrentPage(1);
     loadUsers({ statusFilter: value, page: 0 });
   };
 
-  // Pagination handlers - UPDATED
-  const goToFirstPage = () => {
-    if (currentPage !== 1) {
-      setCurrentPage(1);
-      // loadUsers will be triggered by the useEffect
-    }
-  };
-
   const goToPreviousPage = () => {
-    if (currentPage > 1) {
-      setCurrentPage(currentPage - 1);
-    }
+    if (currentPage > 1) setCurrentPage(currentPage - 1);
   };
 
   const goToNextPage = () => {
-    if (currentPage < totalPages) {
-      setCurrentPage(currentPage + 1);
-    }
+    if (currentPage < totalPages) setCurrentPage(currentPage + 1);
   };
 
-  const goToLastPage = () => {
-    if (currentPage !== totalPages && totalPages > 0) {
-      setCurrentPage(totalPages);
-    }
-  };
-
-  // FIXED: Debounced view user details to prevent multiple API calls
   const debouncedViewUserDetails = useDebounce(async (user) => {
-    // Don't proceed if no user or already loading
     if (!user || !user.id) return;
-    
-    // Check if already loading this user
-    if (openingModalForUserId === user.id || isOpeningModal) {
-      console.log('Already loading this user, skipping...');
-      return;
-    }
-
-    // Check if we already have a pending request for this user
-    if (pendingRequestRef.current === user.id) {
-      console.log('Request already pending for this user, skipping...');
-      return;
-    }
+    if (openingModalForUserId === user.id || isOpeningModal) return;
+    if (pendingRequestRef.current === user.id) return;
 
     pendingRequestRef.current = user.id;
     setOpeningModalForUserId(user.id);
     setIsOpeningModal(true);
 
     try {
-      console.log('Loading user details (debounced):', user.id);
       const userDetails = await loadUserDetails(user.id);
-      
-      if (userDetails) {
-        openModal('userDetails', userDetails);
-      }
+      if (userDetails) openModal('userDetails', userDetails);
     } catch (error) {
       console.error('Error loading user details:', error);
       showToast('error', error.message || 'Failed to load user details');
     } finally {
-      // Clear states after a delay to prevent rapid clicking
       setTimeout(() => {
         setOpeningModalForUserId(null);
         setIsOpeningModal(false);
         pendingRequestRef.current = null;
       }, 500);
     }
-  }, 300); // 300ms debounce
+  }, 300);
 
-  // FIXED: Handle view user details with debouncing
   const handleViewUserDetails = (user) => {
     debouncedViewUserDetails(user);
   };
 
-  // FIXED: Handle row click with proper event handling
   const handleRowClick = (user, e) => {
-    // Only open modal if clicking on the row itself, not buttons/checkboxes
-    if (e.target.closest('button') || 
-        e.target.closest('input') || 
-        e.target.closest('a')) {
-      return;
-    }
-    
+    if (e.target.closest('button') || e.target.closest('input') || e.target.closest('a')) return;
     handleViewUserDetails(user);
   };
 
@@ -1138,872 +876,453 @@ const loadUsers = async (filters = {}) => {
     openModal('importUsers', {});
   };
 
-  const getResponsiveIconSize = () => {
-    if (typeof window !== 'undefined') {
-      if (window.innerWidth < 480) return 12;
-      if (window.innerWidth < 768) return 14;
-      return 14;
-    }
-    return 14;
+  const handleExportClick = () => {
+    openModal('exportUsers', {});
   };
 
-  // Calculate the range of items being displayed
+  useEffect(() => {
+    if (authToken) loadRoles();
+  }, [authToken]);
+
+  useEffect(() => {
+    if (authToken) {
+      if (isInitialMountRef.current) {
+        isInitialMountRef.current = false;
+        loadUsers();
+        loadStatistics();
+      } else {
+        loadUsers({ page: currentPage });
+      }
+    }
+  }, [authToken, currentPage, usersPerPage, sortField, sortDirection, selectedRole, selectedStatus]);
+
   const getDisplayRange = () => {
     const start = ((currentPage - 1) * usersPerPage) + 1;
     const end = Math.min(currentPage * usersPerPage, totalItems);
     return { start, end };
   };
 
-  // Side Navigation Component
-  const SideNavigation = () => {
-    const [expandedSections, setExpandedSections] = useState(['users', 'security', 'roles']);
+  // Mobile Modal Component
+  const MobileModal = ({ children, title, onClose, showBackButton = false, onBack }) => {
+    const modalCount = modalStack.length;
+    const zIndex = 1000 + (modalCount * 10);
     
-    const sideNavItems = [
-      {
-        id: 'users',
-        label: 'User Management',
-        icon: <Users size={16} />,
-        subItems: [
-          { id: 'all-users', label: 'All Users', icon: <UsersIcon size={12} /> },
-          { id: 'active-users', label: 'Active Users', icon: <UserCheck size={12} /> },
-          { id: 'inactive-users', label: 'Inactive Users', icon: <Clock size={12} /> },
-          { id: 'pending-users', label: 'Pending Users', icon: <Clock size={12} /> },
-          { id: 'suspended-users', label: 'Suspended Users', icon: <UserX size={12} /> }
-        ]
-      },
-      // {
-      //   id: 'roles',
-      //   label: 'Roles & Permissions',
-      //   icon: <Shield size={16} />,
-      //   subItems: [
-      //     { id: 'role-management', label: 'Role Management', icon: <ShieldIcon size={12} /> },
-      //     { id: 'permission-sets', label: 'Permission Sets', icon: <KeyRound size={12} /> },
-      //     { id: 'access-control', label: 'Access Control', icon: <Lock size={12} /> }
-      //   ]
-      // }
-    ];
-
-    const toggleSection = (sectionId) => {
-      setExpandedSections(prev =>
-        prev.includes(sectionId)
-          ? prev.filter(id => id !== sectionId)
-          : [...prev, sectionId]
-      );
-    };
-
     return (
-      <div className="w-80 border-r flex flex-col h-full" style={{ 
-        backgroundColor: colors.sidebar,
-        borderColor: colors.border
-      }}>
-        <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-          <div className="relative mb-3">
-            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-            <input 
-              type="text" 
-              placeholder="Search users..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
-              style={{ 
-                backgroundColor: colors.inputBg, 
-                border: `1px solid ${colors.border}`, 
-                color: colors.text 
-              }} 
-            />
-          </div>
-          
-          <div className="flex gap-2">
-            <button 
-              onClick={() => openModal('editUser', { 
-                id: 'new',
-                username: '',
-                email: '',
-                phoneNumber: '',
-                fullName: '',
-                roleId: '',
-                status: 'pending',
-                department: '',
-                location: '',
-                mfaEnabled: false,
-                emailVerified: false,
-                phoneVerified: false,
-                tags: []
-              })}
-              className="flex-1 px-3 py-2 rounded text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2 justify-center"
-              style={{ 
-                backgroundColor: colors.primaryDark,
-                color: 'white'
-              }}
-            >
-              <UserPlus size={12} />
-              <span>Add User</span>
-            </button>
-            <button 
-              onClick={handleImportUsers}
-              className="px-3 py-2 rounded text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
-              style={{ 
-                backgroundColor: colors.hover,
-                color: colors.text
-              }}
-            >
-              <Upload size={12} />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-auto p-2 space-y-4">
-          {sideNavItems.map((item) => (
-            <div key={item.id} className="mb-1">
-              <button
-                onClick={() => toggleSection(item.id)}
-                className={`w-full flex items-center gap-2 px-3 py-2.5 rounded text-sm transition-all duration-200 hover-lift mb-1`}
-                style={{ 
-                  backgroundColor: expandedSections.includes(item.id) ? colors.selected : colors.hover,
-                  color: expandedSections.includes(item.id) ? colors.primary : colors.text
-                }}
-              >
-                <span style={{ 
-                  color: expandedSections.includes(item.id) ? colors.primary : colors.textSecondary 
-                }}>
-                  {item.icon}
-                </span>
-                <span className="flex-1 text-left truncate">{item.label}</span>
-                {item.subItems && (
-                  <ChevronDown 
-                    size={12} 
-                    className={`transition-transform duration-200 ${
-                      expandedSections.includes(item.id) ? 'rotate-0' : '-rotate-90'
-                    }`}
-                    style={{ color: colors.textSecondary }}
-                  />
-                )}
-              </button>
-
-              {item.subItems && expandedSections.includes(item.id) && (
-                <div className="ml-6 mb-2 border-l-2" style={{ borderColor: colors.border }}>
-                  {item.subItems.map((subItem) => (
-                    <button
-                      key={subItem.id}
-                      onClick={() => {
-                        console.log(`Navigating to ${subItem.label}`);
-                        if (subItem.id === 'all-users') {
-                          setSelectedRole('all');
-                          setSelectedStatus('all');
-                          setCurrentPage(1);
-                        } else if (subItem.id === 'active-users') {
-                          setSelectedStatus('active');
-                          setCurrentPage(1);
-                        } else if (subItem.id === 'inactive-users') {
-                          setSelectedStatus('inactive');
-                          setCurrentPage(1);
-                        } else if (subItem.id === 'pending-users') {
-                          setSelectedStatus('pending');
-                          setCurrentPage(1);
-                        } else if (subItem.id === 'suspended-users') {
-                          setSelectedStatus('suspended');
-                          setCurrentPage(1);
-                        }
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors hover:bg-opacity-50 ml-2 mt-0.5 hover-lift"
-                      style={{ 
-                        backgroundColor: colors.hover,
-                        color: colors.textSecondary
-                      }}
-                    >
-                      <span style={{ color: colors.textTertiary }}>
-                        {subItem.icon}
-                      </span>
-                      <span className="truncate">{subItem.label}</span>
-                    </button>
-                  ))}
-                </div>
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4"
+        style={{ zIndex: zIndex - 5 }}
+        onClick={onClose}
+      >
+        <div 
+          className="border rounded-xl w-[55rem] max-h-[90vh] overflow-auto animate-fade-in"
+          onClick={(e) => e.stopPropagation()}
+          style={{ backgroundColor: colors.bg, borderColor: colors.modalBorder, zIndex: zIndex }}
+        >
+          <div className="sticky top-0 p-3 sm:p-4 border-b flex items-center justify-between backdrop-blur-sm" style={{ borderColor: colors.border, backgroundColor: colors.modalBg }}>
+            <div className="flex items-center gap-2">
+              {showBackButton && (
+                <button onClick={onBack} className="p-1 sm:p-1.5 rounded hover:bg-opacity-50 transition-colors shrink-0" style={{ backgroundColor: colors.hover }}>
+                  <ChevronLeft size={16} style={{ color: colors.text }} />
+                </button>
               )}
+              <h3 className="text-base sm:text-lg font-semibold truncate" style={{ color: colors.text }}>{title}</h3>
             </div>
-          ))}
+            <button onClick={onClose} className="p-1 sm:p-1.5 rounded hover:bg-opacity-50 transition-colors shrink-0" style={{ backgroundColor: colors.hover }}>
+              <X size={18} style={{ color: colors.text }} />
+            </button>
+          </div>
+          <div className="p-3 sm:p-4 overflow-auto">{children}</div>
         </div>
       </div>
     );
   };
 
-  // Modal Components
-  const MobileModal = ({ children, title, onClose, showBackButton = false, onBack }) => {
-      const iconSize = getResponsiveIconSize();
-      const modalCount = modalStack.length;
-      const zIndex = 1000 + (modalCount * 10);
-      
-      return (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4"
-          style={{ zIndex: zIndex - 5 }}
-          onClick={onClose}
-        >
-          <div 
-            className="border rounded-xl w-[55rem] max-h-[90vh] overflow-auto animate-fade-in"
-            onClick={(e) => e.stopPropagation()}
-            style={{ 
-              backgroundColor: colors.bg,
-              borderColor: colors.modalBorder,
-              zIndex: zIndex
-            }}
-          >
-            <div className="sticky top-0 p-3 sm:p-4 border-b flex items-center justify-between backdrop-blur-sm" style={{ 
-              borderColor: colors.border,
-              backgroundColor: colors.modalBg
-            }}>
-              <div className="flex items-center gap-2">
-                {showBackButton && (
-                  <button 
-                    onClick={onBack}
-                    className="p-1 sm:p-1.5 rounded hover:bg-opacity-50 transition-colors shrink-0"
-                    style={{ backgroundColor: colors.hover }}
-                  >
-                    <ChevronLeft size={16} style={{ color: colors.text }} />
-                  </button>
-                )}
-                <h3 className="text-base sm:text-lg font-semibold truncate" style={{ color: colors.text }}>
-                  {title}
-                </h3>
-              </div>
-              <button 
-                onClick={onClose}
-                className="p-1 sm:p-1.5 rounded hover:bg-opacity-50 transition-colors shrink-0"
-                style={{ backgroundColor: colors.hover }}
-              >
-                <X size={18} style={{ color: colors.text }} />
-              </button>
-            </div>
-            <div className="p-3 sm:p-4 overflow-auto">
-              {children}
-            </div>
-          </div>
-        </div>
-      );
-    };
+  // Edit User Modal - COMPLETE FIXED VERSION with validationResult
+const EditUserModal = ({ data: user }) => {
+  const [formData, setFormData] = useState({
+    username: user?.username || '',
+    email: user?.email || '',
+    phoneNumber: user?.phoneNumber || '',
+    fullName: user?.fullName || '',
+    roleId: user?.roleId || user?.role || '',
+    roleName: user?.role || '',
+    status: user?.status || 'pending',
+    department: user?.department || '',
+    location: user?.location || '',
+    mfaEnabled: user?.mfaEnabled || false,
+    emailVerified: user?.emailVerified || false,
+    phoneVerified: user?.phoneVerified || false,
+    tags: user?.tags || []
+  });
 
-  // User Details Modal
-  const UserDetailsModal = ({ data: user }) => {
-    const [userDetails, setUserDetails] = useState(user);
-    const [activityLog, setActivityLog] = useState([]);
+  const [localRoles, setLocalRoles] = useState([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [rolesError, setRolesError] = useState(false);
+  const [validationResult, setValidationResult] = useState(null); // ADD THIS LINE
+  const rolesFetchedRef = useRef(false);
 
-    const formatDate = (dateString) => {
-      return formatDateForDisplay(dateString, true) || '';
-    };
-
-    const getPermissionColor = (permission) => {
-      switch(permission) {
-        case 'admin': return colors.error;
-        case 'write': return colors.warning;
-        case 'delete': return colors.error;
-        case 'read': return colors.success;
-        default: return colors.textSecondary;
-      }
-    };
-
-    return (
-      <MobileModal 
-        title="User Details" 
-        onClose={closeModal}
-        showBackButton={modalStack.length > 1}
-        onBack={closeModal}
-      >
-        <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-xl" style={{ 
-            backgroundColor: colors.card,
-            border: `1px solid ${colors.border}`
-          }}>
-            <div 
-              className="w-16 h-16 rounded-full flex items-center justify-center text-white font-medium text-xl"
-              style={{ backgroundColor: userDetails?.avatarColor || colors.primary }}
-            >
-              {userDetails?.fullName?.split(' ').map(n => n[0]).join('') || '??'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h4 className="text-xl font-bold truncate" style={{ color: colors.text }}>
-                {userDetails?.fullName || 'Unknown User'}
-              </h4>
-              <div className="flex flex-wrap items-center gap-2 mt-1">
-                <div className="flex items-center gap-1 text-sm">
-                  <UserCircle size={14} style={{ color: colors.textSecondary }} />
-                  <span style={{ color: colors.textSecondary }}>@{userDetails?.username || 'unknown'}</span>
-                </div>
-                <div 
-                  className="px-2 py-0.5 rounded-full text-xs font-medium uppercase"
-                  style={getRoleColorStyle(userDetails?.roleId || userDetails?.role)}
-                >
-                  {getRoleDisplayName(userDetails?.roleId || userDetails?.role)}
-                </div>
-                <div 
-                  className="px-2 py-0.5 rounded-full text-xs font-medium"
-                  style={getStatusColorStyle(userDetails?.status)}
-                >
-                  {getUserStatusDisplayName(userDetails?.status)}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-4">
-              <div>
-                <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
-                  <UserCircle size={16} />
-                  Basic Information
-                </h5>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Mail size={14} style={{ color: colors.textSecondary }} />
-                    <div className="flex-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Email</div>
-                      <div className="text-sm truncate" style={{ color: colors.text }}>{userDetails?.email || 'No email'}</div>
-                    </div>
-                    {userDetails?.emailVerified ? (
-                      <CheckCircle size={14} style={{ color: colors.success }} />
-                    ) : (
-                      <XCircle size={14} style={{ color: colors.error }} />
-                    )}
-                  </div>
-                   <div className="flex items-center gap-2">
-                    <PhoneCall size={14} style={{ color: colors.textSecondary }} />
-                    <div className="flex-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Phone Number</div>
-                      <div className="text-sm" style={{ color: colors.text }}>{userDetails?.phoneNumber || 'Not specified'}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Building size={14} style={{ color: colors.textSecondary }} />
-                    <div className="flex-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Department</div>
-                      <div className="text-sm" style={{ color: colors.text }}>{userDetails?.department || 'Not specified'}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <MapPin size={14} style={{ color: colors.textSecondary }} />
-                    <div className="flex-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Location</div>
-                      <div className="text-sm" style={{ color: colors.text }}>{userDetails?.location || 'Not specified'}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Globe size={14} style={{ color: colors.textSecondary }} />
-                    <div className="flex-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Timezone</div>
-                      <div className="text-sm" style={{ color: colors.text }}>{userDetails?.timezone || 'Not specified'}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
-                  <Activity size={16} />
-                  Activity
-                </h5>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Clock size={14} style={{ color: colors.textSecondary }} />
-                    <div className="flex-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Last Active</div>
-                      <div className="text-sm" style={{ color: colors.text }}>
-                        {userDetails?.lastActive ? formatDate(userDetails.lastActive) : 'Never logged in'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Calendar size={14} style={{ color: colors.textSecondary }} />
-                    <div className="flex-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Joined Date</div>
-                      <div className="text-sm" style={{ color: colors.text }}>{formatDate(userDetails?.joinedDate)}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <LogIn size={14} style={{ color: colors.textSecondary }} />
-                    <div className="flex-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Total Logins</div>
-                      <div className="text-sm" style={{ color: colors.text }}>{userDetails?.totalLogins || 0}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <ShieldAlert size={14} style={{ color: colors.textSecondary }} />
-                    <div className="flex-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Failed Logins</div>
-                      <div className="text-sm" style={{ color: colors.error }}>{userDetails?.failedLogins || 0}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
-                  <ShieldCheck size={16} />
-                  Security Score
-                </h5>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm" style={{ color: colors.text }}>Score</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold" style={{ 
-                        color: getSecurityColor(userDetails?.securityScore)
-                      }}>
-                        {userDetails?.securityScore || 0}/100
-                      </span>
-                    </div>
-                  </div>
-                  <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full rounded-full transition-all duration-300"
-                      style={{ 
-                        width: `${userDetails?.securityScore || 0}%`,
-                        backgroundColor: getSecurityColor(userDetails?.securityScore)
-                      }}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <div style={{ color: colors.textSecondary }}>Total Logins</div>
-                      <div style={{ color: colors.text }}>{userDetails?.totalLogins || 0}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: colors.textSecondary }}>Failed Logins</div>
-                      <div style={{ color: colors.error }}>{userDetails?.failedLogins || 0}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {userDetails?.tags && userDetails.tags.length > 0 && (
-            <div>
-              <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
-                <Tag size={16} />
-                Tags
-              </h5>
-              <div className="flex flex-wrap gap-2">
-                {userDetails.tags.map((tag, index) => (
-                  <div 
-                    key={index}
-                    className="px-2 py-1 rounded text-xs"
-                    style={{ 
-                      backgroundColor: colors.hover,
-                      color: colors.textSecondary
-                    }}
-                  >
-                    {tag}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {activityLog.length > 0 && (
-            <div>
-              <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
-                <Activity size={16} />
-                Recent Activity
-              </h5>
-              <div className="space-y-2">
-                {activityLog.slice(0, 5).map((activity, index) => (
-                  <div key={index} className="flex items-center gap-2 p-2 rounded border" style={{ 
-                    borderColor: colors.border,
-                    backgroundColor: colors.hover
-                  }}>
-                    <div className="w-2 h-2 rounded-full" style={{ 
-                      backgroundColor: activity.success ? colors.success : colors.error 
-                    }} />
-                    <div className="flex-1">
-                      <div className="text-xs" style={{ color: colors.text }}>{activity.description}</div>
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>
-                        {formatDateForDisplay(activity.timestamp, true)}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <button 
-                onClick={() => {
-                  closeModal();
-                  setTimeout(() => handleEditUser(userDetails), 100);
-                }}
-                className="px-4 py-2 rounded text-sm font-medium transition-colors hover-lift flex items-center justify-center gap-2"
-                style={{ 
-                  backgroundColor: colors.primaryDark,
-                  color: 'white'
-                }}
-              >
-                <Edit size={14} />
-                Edit User
-              </button>
-              <button 
-                onClick={() => {
-                  closeModal();
-                  setTimeout(() => openModal('resetPassword', userDetails), 100);
-                }}
-                className="px-4 py-2 rounded text-sm font-medium transition-colors hover-lift flex items-center justify-center gap-2"
-                style={{ 
-                  backgroundColor: colors.warning,
-                  color: 'white'
-                }}
-              >
-                <Key size={14} />
-                Reset Password
-              </button>
-              <button 
-                onClick={async () => {
-                  closeModal();
-                  await handleDeleteUser(userDetails);
-                }}
-                className="px-4 py-2 rounded text-sm font-medium transition-colors hover-lift flex items-center justify-center gap-2"
-                style={{ 
-                  backgroundColor: colors.error,
-                  color: 'white'
-                }}
-              >
-                <Trash2 size={14} />
-                Delete User
-              </button>
-            </div>
-          </div>
-        </div>
-      </MobileModal>
-    );
-  };
-
-  // Edit User Modal - NO STATIC FALLBACKS
-  const EditUserModal = ({ data: user }) => {
-    const [formData, setFormData] = useState({
-      username: user?.username || '',
-      email: user?.email || '',
-      phoneNumber: user?.phoneNumber || '',
-      fullName: user?.fullName || '',
-      roleId: user?.roleId || user?.role || '',
-      status: user?.status || 'pending',
-      department: user?.department || '',
-      location: user?.location || '',
-      mfaEnabled: user?.mfaEnabled || false,
-      emailVerified: user?.emailVerified || false,
-      phoneVerified: user?.phoneVerified || false,
-      tags: user?.tags || []
-    });
-
-    const [validationResult, setValidationResult] = useState(null);
-    const [localRoles, setLocalRoles] = useState([]);
-    const [rolesLoading, setRolesLoading] = useState(false);
-    const [rolesError, setRolesError] = useState(false);
-
-    // Fetch roles when modal opens - NO STATIC FALLBACKS
-    useEffect(() => {
-      const fetchRoles = async () => {
-        if (!authToken) {
-          setRolesError(true);
-          return;
-        }
-        
-        setRolesLoading(true);
-        setRolesError(false);
-        
-        try {
-          const response = await getAllRoles(authToken, { page: 0, size: 100 });
-          
-          if (response && response.responseCode === 200 && response.data) {
-            const content = response.data.content || [];
-            
-            const mappedRoles = content.map(role => ({
-              id: role.roleId,
-              roleId: role.roleId,
-              roleName: role.roleName,
-              description: role.description || ''
-            }));
-            
-            setLocalRoles(mappedRoles);
-            
-            // Debug: Log loaded roles and current user role
-            console.log('Loaded roles:', mappedRoles);
-            console.log('User role ID:', user?.roleId || user?.role);
-            
-            // IMPORTANT FIX: If user has a role but it's not in the loaded roles yet,
-            // we need to manually add it or set it after roles load
-            const userRoleId = user?.roleId || user?.role;
-            if (userRoleId && userRoleId !== 'new') {
-              // Check if the user's role exists in the loaded roles
-              const roleExists = mappedRoles.some(role => 
-                role.roleId === userRoleId || role.id === userRoleId
-              );
-              
-              if (!roleExists && userRoleId) {
-                console.log('User role not found in loaded roles, adding manually');
-                // Add the user's role to the list if it doesn't exist
-                setLocalRoles(prev => [
-                  ...prev,
-                  {
-                    id: userRoleId,
-                    roleId: userRoleId,
-                    roleName: getRoleDisplayName(userRoleId) || 'Unknown Role'
-                  }
-                ]);
-              }
-              
-              // Ensure formData has the correct roleId
-              setFormData(prev => ({
-                ...prev,
-                roleId: userRoleId
-              }));
-            }
-            
-            if (mappedRoles.length === 0) {
-              setRolesError(true);
-            }
-          } else {
-            console.error('Invalid API response:', response);
-            setRolesError(true);
-            setLocalRoles([]);
-          }
-        } catch (error) {
-          console.error('Error loading roles:', error);
-          setRolesError(true);
-          setLocalRoles([]);
-        } finally {
-          setRolesLoading(false);
-        }
-      };
-      
-      fetchRoles();
-    }, [authToken, user]);
-
-    // FIX: Ensure roleId is set when the component mounts
-    useEffect(() => {
-      // If we have a user with a role, make sure it's selected
-      if (user && (user.roleId || user.role)) {
-        const userRoleId = user.roleId || user.role;
-        setFormData(prev => ({
-          ...prev,
-          roleId: userRoleId
-        }));
-      }
-    }, [user]);
-
-
-    const handleSubmit = async (e) => {
-      e.preventDefault();
-      
-      // Debug: Check what roleId is being used
-      console.log('Selected roleId:', formData.roleId);
-      
-      if (!formData.roleId) {
-        showToast('error', 'Please select a role');
+  // Fetch roles when modal opens - WITH ENHANCED DEDUPLICATION
+  useEffect(() => {
+    // Prevent multiple fetches
+    if (rolesFetchedRef.current) return;
+    
+    const fetchRoles = async () => {
+      if (!authToken) {
+        setRolesError(true);
         return;
       }
       
-      if (user?.id === 'new') {
-        // Create new user
-        const createData = {
-          username: formData.username,
-          email: formData.email,
-          phoneNumber: formData.phoneNumber,
-          fullName: formData.fullName,
-          roleId: formData.roleId,
-          password: 'TemporaryPassword123!',
-          department: formData.department || 'Engineering',
-          location: formData.location || 'New York, NY',
-          mfaEnabled: formData.mfaEnabled,
-          status: formData.status || 'pending'
-        };
+      setRolesLoading(true);
+      setRolesError(false);
+      
+      try {
+        const response = await getAllRoles(authToken, { page: 0, size: 100 });
         
-        console.log('Creating user with data:', createData);
-        const success = await handleCreateUser(createData);
+        console.log('Raw roles response:', response);
         
-        if (success) {
-          closeModal();
+        if (response && response.responseCode === 200 && response.data) {
+          let content = response.data.content || [];
+          
+          // METHOD 1: Deduplicate by roleId (UUID)
+          const uniqueRolesMap = new Map();
+          content.forEach(role => {
+            const roleId = role.roleId;
+            if (!uniqueRolesMap.has(roleId)) {
+              uniqueRolesMap.set(roleId, {
+                id: role.roleId,
+                roleId: role.roleId,
+                roleName: role.roleName,
+                description: role.description || ''
+              });
+            }
+          });
+          
+          let mappedRoles = Array.from(uniqueRolesMap.values());
+          
+          // METHOD 2: Also deduplicate by roleName (case-insensitive)
+          const uniqueByNameMap = new Map();
+          mappedRoles.forEach(role => {
+            const roleNameLower = role.roleName.toLowerCase();
+            if (!uniqueByNameMap.has(roleNameLower)) {
+              uniqueByNameMap.set(roleNameLower, role);
+            }
+          });
+          
+          mappedRoles = Array.from(uniqueByNameMap.values());
+          
+          // METHOD 3: Sort roles alphabetically for consistent display
+          mappedRoles.sort((a, b) => a.roleName.localeCompare(b.roleName));
+          
+          console.log('Deduplicated roles:', mappedRoles);
+          setLocalRoles(mappedRoles);
+          
+          // CRITICAL FIX: Set the user's role after roles load
+          // The user's role could be either an ID or a name
+          const userRoleValue = user?.roleId || user?.role;
+          console.log('User role value from props:', userRoleValue);
+          
+          if (userRoleValue && userRoleValue !== 'new') {
+            // Try to find the role by ID first (UUID format)
+            let foundRole = mappedRoles.find(r => r.roleId === userRoleValue);
+            
+            // If not found by ID, try by name (case-insensitive)
+            if (!foundRole) {
+              foundRole = mappedRoles.find(r => 
+                r.roleName.toLowerCase() === userRoleValue.toLowerCase()
+              );
+            }
+            
+            // If still not found, try by matching the role name from the user object
+            if (!foundRole && user?.role) {
+              foundRole = mappedRoles.find(r => 
+                r.roleName.toLowerCase() === user.role.toLowerCase()
+              );
+            }
+            
+            if (foundRole) {
+              console.log('Found matching role:', foundRole);
+              setFormData(prev => ({ 
+                ...prev, 
+                roleId: foundRole.roleId,
+                roleName: foundRole.roleName
+              }));
+            } else {
+              console.log('No matching role found for:', userRoleValue);
+              // If no match found, keep the original value - it might be a role name
+              setFormData(prev => ({ 
+                ...prev, 
+                roleId: userRoleValue,
+                roleName: userRoleValue
+              }));
+            }
+          }
+          
+          if (mappedRoles.length === 0) {
+            setRolesError(true);
+          }
+          
+          rolesFetchedRef.current = true;
+        } else {
+          console.error('Invalid API response:', response);
+          setRolesError(true);
+          setLocalRoles([]);
         }
-      } else {
-        // Update existing user
-        const success = await handleUpdateUser(user.id, {
-          fullName: formData.fullName,
-          roleId: formData.roleId,
-          status: formData.status,
-          department: formData.department,
-          location: formData.location,
-          mfaEnabled: formData.mfaEnabled,
-          phoneNumber: formData.phoneNumber,
-          emailVerified: formData.emailVerified,
-          phoneVerified: formData.phoneVerified,
-          tags: formData.tags
-        });
-        
-        if (success) {
-          closeModal();
-        }
+      } catch (error) {
+        console.error('Error loading roles:', error);
+        setRolesError(true);
+        setLocalRoles([]);
+      } finally {
+        setRolesLoading(false);
       }
     };
+    
+    fetchRoles();
+    
+    // Cleanup on unmount
+    return () => {
+      rolesFetchedRef.current = false;
+    };
+  }, [authToken, user]);
 
-    const handleTagInput = (e) => {
-      if (e.key === 'Enter' && e.target.value.trim()) {
-        const newTag = e.target.value.trim();
-        if (!formData.tags.includes(newTag)) {
-          setFormData(prev => ({
-            ...prev,
-            tags: [...prev.tags, newTag]
-          }));
-        }
-        e.target.value = '';
+  // Also deduplicate in the render method as a safety net
+  const getUniqueRolesForRender = useCallback(() => {
+    const seen = new Set();
+    return localRoles.filter(role => {
+      const key = `${role.roleId}-${role.roleName.toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [localRoles]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    console.log('Submitting form with roleId:', formData.roleId);
+    console.log('Selected role name:', localRoles.find(r => r.roleId === formData.roleId)?.roleName);
+    
+    if (!formData.roleId) {
+      showToast('error', 'Please select an access type');
+      return;
+    }
+    
+    if (user?.id === 'new') {
+      // Create new user
+      const createData = {
+        username: formData.username,
+        email: formData.email,
+        phoneNumber: formData.phoneNumber,
+        fullName: formData.fullName,
+        roleId: formData.roleId,
+        department: formData.department || 'General',
+        location: formData.location || 'Not specified',
+        mfaEnabled: formData.mfaEnabled,
+        status: formData.status || 'pending'
+      };
+      
+      console.log('Creating user with data:', createData);
+      const success = await handleCreateUser(createData);
+      if (success) closeModal();
+    } else {
+      // Update existing user
+      const updateData = {
+        fullName: formData.fullName,
+        roleId: formData.roleId,
+        status: formData.status,
+        department: formData.department,
+        location: formData.location,
+        mfaEnabled: formData.mfaEnabled,
+        phoneNumber: formData.phoneNumber,
+        emailVerified: formData.emailVerified,
+        phoneVerified: formData.phoneVerified,
+        tags: formData.tags
+      };
+      
+      console.log('Updating user with data:', updateData);
+      const success = await handleUpdateUser(user.id, updateData);
+      if (success) closeModal();
+    }
+  };
+
+  const handleTagInput = (e) => {
+    if (e.key === 'Enter' && e.target.value.trim()) {
+      const newTag = e.target.value.trim();
+      if (!formData.tags.includes(newTag)) {
+        setFormData(prev => ({
+          ...prev,
+          tags: [...prev.tags, newTag]
+        }));
       }
-    };
+      e.target.value = '';
+    }
+  };
 
-    const removeTag = (tagToRemove) => {
-      setFormData(prev => ({
-        ...prev,
-        tags: prev.tags.filter(tag => tag !== tagToRemove)
-      }));
-    };
+  const removeTag = (tagToRemove) => {
+    setFormData(prev => ({
+      ...prev,
+      tags: prev.tags.filter(tag => tag !== tagToRemove)
+    }));
+  };
 
-    return (
-      <MobileModal 
-        title={user?.id === 'new' ? "Add New User" : "Edit User"} 
-        onClose={closeModal}
-        showBackButton={modalStack.length > 1}
-        onBack={closeModal}
-      >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {validationResult && !validationResult.valid && (
-            <div className="p-3 rounded border" style={{ 
-              borderColor: colors.error,
-              backgroundColor: `${colors.error}20`
-            }}>
-              <div className="text-sm font-medium mb-1" style={{ color: colors.error }}>
-                Validation Issues
-              </div>
-              <ul className="text-xs space-y-1">
-                {validationResult.issues.map((issue, index) => (
-                  <li key={index} style={{ color: colors.textSecondary }}>
-                    • {issue.field}: {issue.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+  const uniqueRoles = getUniqueRolesForRender();
+  
+  // Get the display name for the selected role
+  const getSelectedRoleDisplayName = () => {
+    if (!formData.roleId) return '';
+    const role = uniqueRoles.find(r => r.roleId === formData.roleId);
+    if (role) return role.roleName;
+    // If not found by ID, try by name
+    const roleByName = uniqueRoles.find(r => r.roleName.toLowerCase() === formData.roleId.toLowerCase());
+    return roleByName?.roleName || formData.roleId;
+  };
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-                Full Name *
-              </label>
-              <input
-                type="text"
-                value={formData.fullName}
-                onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-                required
-              />
+  return (
+    <MobileModal 
+      title={user?.id === 'new' ? "Add New User" : "Edit User"} 
+      onClose={closeModal}
+      showBackButton={modalStack.length > 1}
+      onBack={closeModal}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {validationResult && !validationResult.valid && (
+          <div className="p-3 rounded border" style={{ 
+            borderColor: colors.error,
+            backgroundColor: `${colors.error}20`
+          }}>
+            <div className="text-sm font-medium mb-1" style={{ color: colors.error }}>
+              Validation Issues
             </div>
-            <div>
-              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-                Username *
-              </label>
-              <input
-                type="text"
-                value={formData.username}
-                onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
+            <ul className="text-xs space-y-1">
+              {validationResult.issues && validationResult.issues.map((issue, index) => (
+                <li key={index} style={{ color: colors.textSecondary }}>
+                  • {issue.field}: {issue.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Full Name *
+            </label>
+            <input
+              type="text"
+              value={formData.fullName}
+              onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+              required
+            />
+          </div>
+          
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Username *
+            </label>
+            <input
+              type="text"
+              value={formData.username}
+              onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+              required={user?.id === 'new'}
+              disabled={user?.id !== 'new'}
+            />
+          </div>
+          
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Email *
+            </label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+              required={user?.id === 'new'}
+              disabled={user?.id !== 'new'}
+            />
+          </div>
+          
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Access Type *
+            </label>
+            {rolesError ? (
+              <div 
+                className="w-full px-3 py-2 rounded border text-sm flex items-center justify-between"
                 style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
+                  backgroundColor: `${colors.error}20`,
+                  borderColor: colors.error,
+                  color: colors.error
                 }}
-                required={user?.id === 'new'}
-                disabled={user?.id !== 'new'}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-                Email *
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-                required={user?.id === 'new'}
-                disabled={user?.id !== 'new'}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-                Access Type *
-              </label>
-              {rolesError ? (
-                <div 
-                  className="w-full px-3 py-2 rounded border text-sm flex items-center justify-between"
-                  style={{ 
-                    backgroundColor: `${colors.error}20`,
-                    borderColor: colors.error,
-                    color: colors.error
-                  }}
-                >
-                  <span>Failed to load roles</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRolesError(false);
+              >
+                <span>Failed to load roles</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRolesError(false);
+                    rolesFetchedRef.current = false;
+                    setLocalRoles([]);
+                    // Refetch roles
+                    const refetch = async () => {
                       setRolesLoading(true);
-                      const fetchRoles = async () => {
-                        try {
-                          const response = await getAllRoles(authToken, { page: 0, size: 100 });
-                          if (response && response.responseCode === 200 && response.data) {
-                            const content = response.data.content || [];
-                            const mappedRoles = content.map(role => ({
-                              id: role.roleId,
-                              roleId: role.roleId,
-                              roleName: role.roleName
-                            }));
-                            setLocalRoles(mappedRoles);
-                            
-                            // Re-set the user's role after reload
-                            const userRoleId = user?.roleId || user?.role;
-                            if (userRoleId && userRoleId !== 'new') {
-                              setFormData(prev => ({ ...prev, roleId: userRoleId }));
+                      try {
+                        const response = await getAllRoles(authToken, { page: 0, size: 100 });
+                        if (response && response.responseCode === 200 && response.data) {
+                          let content = response.data.content || [];
+                          const uniqueMap = new Map();
+                          content.forEach(role => {
+                            if (!uniqueMap.has(role.roleId)) {
+                              uniqueMap.set(role.roleId, {
+                                id: role.roleId,
+                                roleId: role.roleId,
+                                roleName: role.roleName,
+                                description: role.description || ''
+                              });
                             }
-                            
-                            if (mappedRoles.length > 0) {
-                              setRolesError(false);
-                            }
-                          }
-                        } catch (error) {
-                          console.error('Error retrying roles:', error);
-                        } finally {
-                          setRolesLoading(false);
+                          });
+                          let roles = Array.from(uniqueMap.values());
+                          roles.sort((a, b) => a.roleName.localeCompare(b.roleName));
+                          setLocalRoles(roles);
+                          setRolesError(false);
                         }
-                      };
-                      fetchRoles();
-                    }}
-                    className="p-1 rounded hover:bg-opacity-50"
-                    style={{ backgroundColor: `${colors.error}30` }}
-                  >
-                    <RefreshCw size={14} className={rolesLoading ? 'animate-spin' : ''} />
-                  </button>
-                </div>
-              ) : (
+                      } catch (error) {
+                        console.error('Error refetching roles:', error);
+                      } finally {
+                        setRolesLoading(false);
+                      }
+                    };
+                    refetch();
+                  }}
+                  className="p-1 rounded hover:bg-opacity-50"
+                  style={{ backgroundColor: `${colors.error}30` }}
+                >
+                  <RefreshCw size={14} className={rolesLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            ) : (
+              <>
                 <select
-                  key={`role-select-${formData.roleId || 'empty'}`}
+                  key={`role-select-${formData.roleId || 'empty'}-${uniqueRoles.length}`}
                   value={formData.roleId || ''}
                   onChange={(e) => {
-                    console.log('Role selected:', e.target.value);
+                    console.log('Selected role ID:', e.target.value);
                     setFormData(prev => ({ ...prev, roleId: e.target.value }));
                   }}
                   className="w-full px-3 py-2 rounded border text-sm uppercase"
@@ -2014,133 +1333,49 @@ const loadUsers = async (filters = {}) => {
                     opacity: rolesLoading ? 0.7 : 1
                   }}
                   required
-                  disabled={rolesLoading || localRoles.length === 0}
+                  disabled={rolesLoading || uniqueRoles.length === 0}
                 >
                   <option value="">
                     {rolesLoading ? 'Loading access types...' : 
-                     localRoles.length === 0 ? 'No access types available' : 'Select Access Type'}
+                     uniqueRoles.length === 0 ? 'No access types available' : 'Select Access Type'}
                   </option>
-                  {localRoles.map(role => (
+                  {uniqueRoles.map((role, index) => (
                     <option 
-                      key={role.roleId} 
+                      key={`${role.roleId}-${index}`}
                       value={role.roleId}
-                      selected={formData.roleId === role.roleId}
                     >
                       {role.roleName}
                     </option>
                   ))}
                 </select>
-              )}
-              {rolesLoading && (
-                <div className="flex items-center gap-2 text-xs mt-1" style={{ color: colors.textSecondary }}>
-                  <RefreshCw size={12} className="animate-spin" />
-                  <span>Loading roles from server...</span>
-                </div>
-              )}
-            </div>
-            <div>
-              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-                Phone Number *
-              </label>
-              <input
-                type="text"
-                value={formData.phoneNumber}
-                onChange={(e) => setFormData(prev => ({ ...prev, phoneNumber: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-                required
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-                Staff Id
-              </label>
-              <input
-                type="text"
-                value={formData.department}
-                onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-                Location
-              </label>
-              <input
-                type="text"
-                value={formData.location}
-                onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-              />
-            </div>
-            
-            <div>
-              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-                Status *
-              </label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.bg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-                required
-              >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="pending">Pending</option>
-                <option value="suspended">Suspended</option>
-              </select>
-            </div>
+                {formData.roleId && getSelectedRoleDisplayName() && (
+                  <div className="text-xs mt-1" style={{ color: colors.textTertiary }}>
+                    Selected: {getSelectedRoleDisplayName()}
+                  </div>
+                )}
+              </>
+            )}
+            {rolesLoading && (
+              <div className="flex items-center gap-2 text-xs mt-1" style={{ color: colors.textSecondary }}>
+                <RefreshCw size={12} className="animate-spin" />
+                <span>Loading roles from server...</span>
+              </div>
+            )}
+            {!rolesLoading && !rolesError && uniqueRoles.length > 0 && (
+              <div className="text-xs mt-1" style={{ color: colors.textTertiary }}>
+                {uniqueRoles.length} access type(s) available
+              </div>
+            )}
           </div>
-
+          
           <div>
             <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-              Tags
+              Phone Number
             </label>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {formData.tags.map((tag, index) => (
-                <div 
-                  key={index}
-                  className="px-2 py-1 rounded flex items-center gap-1 text-xs"
-                  style={{ 
-                    backgroundColor: colors.hover,
-                    color: colors.textSecondary
-                  }}
-                >
-                  {tag}
-                  <button
-                    type="button"
-                    onClick={() => removeTag(tag)}
-                    className="p-0.5 rounded hover:bg-opacity-50 transition-colors"
-                    style={{ backgroundColor: colors.hover }}
-                  >
-                    <X size={10} />
-                  </button>
-                </div>
-              ))}
-            </div>
             <input
               type="text"
-              placeholder="Type tag and press Enter..."
-              onKeyDown={handleTagInput}
+              value={formData.phoneNumber}
+              onChange={(e) => setFormData(prev => ({ ...prev, phoneNumber: e.target.value }))}
               className="w-full px-3 py-2 rounded border text-sm"
               style={{ 
                 backgroundColor: colors.inputBg,
@@ -2149,61 +1384,246 @@ const loadUsers = async (filters = {}) => {
               }}
             />
           </div>
+          
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Staff Id
+            </label>
+            <input
+              type="text"
+              value={formData.department}
+              onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+            />
+          </div>
+          
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Location
+            </label>
+            <input
+              type="text"
+              value={formData.location}
+              onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+            />
+          </div>
+          
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Status *
+            </label>
+            <select
+              value={formData.status}
+              onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.bg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+              required
+            >
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="pending">Pending</option>
+              <option value="suspended">Suspended</option>
+            </select>
+          </div>
+        </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="mfaEnabled"
-                checked={formData.mfaEnabled}
-                onChange={(e) => setFormData(prev => ({ ...prev, mfaEnabled: e.target.checked }))}
-                className="rounded"
-              />
-              <label htmlFor="mfaEnabled" className="text-sm" style={{ color: colors.text }}>
-                MFA Enabled
-              </label>
+        <div>
+          <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+            Tags
+          </label>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {formData.tags.map((tag, index) => (
+              <div 
+                key={index}
+                className="px-2 py-1 rounded flex items-center gap-1 text-xs"
+                style={{ 
+                  backgroundColor: colors.hover,
+                  color: colors.textSecondary
+                }}
+              >
+                {tag}
+                <button
+                  type="button"
+                  onClick={() => removeTag(tag)}
+                  className="p-0.5 rounded hover:bg-opacity-50 transition-colors"
+                  style={{ backgroundColor: colors.hover }}
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <input
+            type="text"
+            placeholder="Type tag and press Enter..."
+            onKeyDown={handleTagInput}
+            className="w-full px-3 py-2 rounded border text-sm"
+            style={{ 
+              backgroundColor: colors.inputBg,
+              borderColor: colors.inputBorder,
+              color: colors.text
+            }}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="mfaEnabled"
+              checked={formData.mfaEnabled}
+              onChange={(e) => setFormData(prev => ({ ...prev, mfaEnabled: e.target.checked }))}
+              className="rounded"
+            />
+            <label htmlFor="mfaEnabled" className="text-sm" style={{ color: colors.text }}>
+              MFA Enabled
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="emailVerified"
+              checked={formData.emailVerified}
+              onChange={(e) => setFormData(prev => ({ ...prev, emailVerified: e.target.checked }))}
+              className="rounded"
+            />
+            <label htmlFor="emailVerified" className="text-sm" style={{ color: colors.text }}>
+              Email Verified
+            </label>
+          </div>
+        </div>
+
+        <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button 
+              type="submit"
+              className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+              style={{ 
+                backgroundColor: colors.success,
+                color: 'white'
+              }}
+              disabled={rolesLoading || uniqueRoles.length === 0}
+            >
+              {user?.id === 'new' ? 'Create User' : 'Update User'}
+            </button>
+            <button 
+              type="button"
+              onClick={closeModal}
+              className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+              style={{ 
+                backgroundColor: colors.hover,
+                color: colors.text
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </form>
+    </MobileModal>
+  );
+};
+
+  // User Details Modal
+  const UserDetailsModal = ({ data: user }) => {
+    const formatDate = (dateString) => formatDateForDisplay(dateString, true) || '';
+
+    return (
+      <MobileModal title="User Details" onClose={closeModal} showBackButton={modalStack.length > 1} onBack={closeModal}>
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-xl" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
+            <div className="w-16 h-16 rounded-full flex items-center justify-center text-white font-medium text-xl" style={{ backgroundColor: user?.avatarColor || colors.primary }}>
+              {user?.fullName?.split(' ').map(n => n[0]).join('') || '??'}
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="emailVerified"
-                checked={formData.emailVerified}
-                onChange={(e) => setFormData(prev => ({ ...prev, emailVerified: e.target.checked }))}
-                className="rounded"
-              />
-              <label htmlFor="emailVerified" className="text-sm" style={{ color: colors.text }}>
-                Email Verified
-              </label>
+            <div className="flex-1 min-w-0">
+              <h4 className="text-xl font-bold truncate" style={{ color: colors.text }}>{user?.fullName || 'Unknown User'}</h4>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                <div className="flex items-center gap-1 text-sm">
+                  <UserCircle size={14} style={{ color: colors.textSecondary }} />
+                  <span style={{ color: colors.textSecondary }}>@{user?.username || 'unknown'}</span>
+                </div>
+                <div className="px-2 py-0.5 rounded-full text-xs font-medium uppercase" style={getRoleColorStyle(user?.roleId || user?.role)}>
+                  {getRoleDisplayName(user?.roleId || user?.role)}
+                </div>
+                <div className="px-2 py-0.5 rounded-full text-xs font-medium" style={getStatusColorStyle(user?.status)}>
+                  {getUserStatusDisplayName(user?.status)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-4">
+              <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}><UserCircle size={16} />Basic Information</h5>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Mail size={14} style={{ color: colors.textSecondary }} />
+                  <div className="flex-1"><div className="text-xs" style={{ color: colors.textSecondary }}>Email</div><div className="text-sm truncate" style={{ color: colors.text }}>{user?.email || 'No email'}</div></div>
+                  {user?.emailVerified ? <CheckCircle size={14} style={{ color: colors.success }} /> : <XCircle size={14} style={{ color: colors.error }} />}
+                </div>
+                <div className="flex items-center gap-2">
+                  <PhoneCall size={14} style={{ color: colors.textSecondary }} />
+                  <div className="flex-1"><div className="text-xs" style={{ color: colors.textSecondary }}>Phone Number</div><div className="text-sm" style={{ color: colors.text }}>{user?.phoneNumber || 'Not specified'}</div></div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Building size={14} style={{ color: colors.textSecondary }} />
+                  <div className="flex-1"><div className="text-xs" style={{ color: colors.textSecondary }}>Department</div><div className="text-sm" style={{ color: colors.text }}>{user?.department || 'Not specified'}</div></div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <MapPin size={14} style={{ color: colors.textSecondary }} />
+                  <div className="flex-1"><div className="text-xs" style={{ color: colors.textSecondary }}>Location</div><div className="text-sm" style={{ color: colors.text }}>{user?.location || 'Not specified'}</div></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}><Activity size={16} />Activity</h5>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Clock size={14} style={{ color: colors.textSecondary }} />
+                  <div className="flex-1"><div className="text-xs" style={{ color: colors.textSecondary }}>Last Active</div><div className="text-sm" style={{ color: colors.text }}>{user?.lastActive ? formatDate(user.lastActive) : 'Never logged in'}</div></div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Calendar size={14} style={{ color: colors.textSecondary }} />
+                  <div className="flex-1"><div className="text-xs" style={{ color: colors.textSecondary }}>Joined Date</div><div className="text-sm" style={{ color: colors.text }}>{formatDate(user?.joinedDate)}</div></div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <LogIn size={14} style={{ color: colors.textSecondary }} />
+                  <div className="flex-1"><div className="text-xs" style={{ color: colors.textSecondary }}>Total Logins</div><div className="text-sm" style={{ color: colors.text }}>{user?.totalLogins || 0}</div></div>
+                </div>
+              </div>
             </div>
           </div>
 
           <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <button 
-                type="submit"
-                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-                style={{ 
-                  backgroundColor: colors.success,
-                  color: 'white'
-                }}
-                disabled={(validationResult && !validationResult.valid) || rolesLoading || localRoles.length === 0}
-              >
-                {user?.id === 'new' ? 'Create User' : 'Update User'}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button onClick={() => { closeModal(); setTimeout(() => handleEditUser(user), 100); }} className="px-4 py-2 rounded text-sm font-medium transition-colors hover-lift flex items-center justify-center gap-2" style={{ backgroundColor: colors.primaryDark, color: 'white' }}>
+                <Edit size={14} /> Edit User
               </button>
-              <button 
-                type="button"
-                onClick={closeModal}
-                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-                style={{ 
-                  backgroundColor: colors.hover,
-                  color: colors.text
-                }}
-              >
-                Cancel
+              <button onClick={() => { closeModal(); setTimeout(() => openModal('resetPassword', user), 100); }} className="px-4 py-2 rounded text-sm font-medium transition-colors hover-lift flex items-center justify-center gap-2" style={{ backgroundColor: colors.warning, color: 'white' }}>
+                <Key size={14} /> Reset Password
+              </button>
+              <button onClick={async () => { closeModal(); await handleDeleteUser(user); }} className="px-4 py-2 rounded text-sm font-medium transition-colors hover-lift flex items-center justify-center gap-2" style={{ backgroundColor: colors.error, color: 'white' }}>
+                <Trash2 size={14} /> Delete User
               </button>
             </div>
           </div>
-        </form>
+        </div>
       </MobileModal>
     );
   };
@@ -2215,101 +1635,34 @@ const loadUsers = async (filters = {}) => {
 
     const handleSubmit = async (e) => {
       e.preventDefault();
-      
-      const success = await handleResetPassword(user, {
-        forceLogout,
-        resetMethod
-      });
-      
-      if (success) {
-        closeModal();
-      }
+      const success = await handleResetPassword(user, { forceLogout, resetMethod });
+      if (success) closeModal();
     };
 
     return (
-      <MobileModal 
-        title="Reset Password" 
-        onClose={closeModal}
-        showBackButton={modalStack.length > 1}
-        onBack={closeModal}
-      >
+      <MobileModal title="Reset Password" onClose={closeModal} showBackButton={modalStack.length > 1} onBack={closeModal}>
         <div className="space-y-4">
           <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-            <div className="text-sm font-medium" style={{ color: colors.text }}>
-              Resetting password for: {user?.fullName || user?.username}
-            </div>
-            <div className="text-xs" style={{ color: colors.textSecondary }}>
-              {user?.email || 'No email'}
-            </div>
+            <div className="text-sm font-medium" style={{ color: colors.text }}>Resetting password for: {user?.fullName || user?.username}</div>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>{user?.email || 'No email'}</div>
           </div>
-
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-                Reset Method
-              </label>
-              <select
-                value={resetMethod}
-                onChange={(e) => setResetMethod(e.target.value)}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.bg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-              >
+              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>Reset Method</label>
+              <select value={resetMethod} onChange={(e) => setResetMethod(e.target.value)} className="w-full px-3 py-2 rounded border text-sm" style={{ backgroundColor: colors.bg, borderColor: colors.inputBorder, color: colors.text }}>
                 <option value="email">Email Reset Link</option>
                 <option value="temporary">Generate Temporary Password</option>
                 <option value="sms">SMS Reset Code</option>
               </select>
             </div>
-
             <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="forceLogout"
-                checked={forceLogout}
-                onChange={(e) => setForceLogout(e.target.checked)}
-                className="rounded"
-              />
-              <label htmlFor="forceLogout" className="text-sm" style={{ color: colors.text }}>
-                Force logout from all devices
-              </label>
+              <input type="checkbox" id="forceLogout" checked={forceLogout} onChange={(e) => setForceLogout(e.target.checked)} className="rounded" />
+              <label htmlFor="forceLogout" className="text-sm" style={{ color: colors.text }}>Force logout from all devices</label>
             </div>
-
-            <div className="p-3 rounded border" style={{ 
-              borderColor: colors.warning,
-              backgroundColor: `${colors.warning}20`
-            }}>
-              <div className="text-xs" style={{ color: colors.warning }}>
-                <strong>Note:</strong> User will receive password reset instructions via {resetMethod}.
-                {forceLogout && ' All active sessions will be terminated.'}
-              </div>
-            </div>
-
             <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
               <div className="flex flex-col sm:flex-row gap-2">
-                <button 
-                  type="submit"
-                  className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-                  style={{ 
-                    backgroundColor: colors.warning,
-                    color: 'white'
-                  }}
-                >
-                  Reset Password
-                </button>
-                <button 
-                  type="button"
-                  onClick={closeModal}
-                  className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-                  style={{ 
-                    backgroundColor: colors.hover,
-                    color: colors.text
-                  }}
-                >
-                  Cancel
-                </button>
+                <button type="submit" className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift" style={{ backgroundColor: colors.warning, color: 'white' }}>Reset Password</button>
+                <button type="button" onClick={closeModal} className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift" style={{ backgroundColor: colors.hover, color: colors.text }}>Cancel</button>
               </div>
             </div>
           </form>
@@ -2318,572 +1671,77 @@ const loadUsers = async (filters = {}) => {
     );
   };
 
-  // Import Users Modal - NO STATIC FALLBACKS
+  // Import Users Modal
   const ImportUsersModal = () => {
     const [file, setFile] = useState(null);
     const [importType, setImportType] = useState('csv');
-    const [importOptions, setImportOptions] = useState({
-      sendWelcomeEmail: true,
-      generatePasswords: true,
-      defaultRoleId: ''
-    });
+    const [importOptions, setImportOptions] = useState({ sendWelcomeEmail: true, generatePasswords: true, defaultRoleId: '' });
     const [localRoles, setLocalRoles] = useState([]);
     const [rolesLoading, setRolesLoading] = useState(false);
-    const [rolesError, setRolesError] = useState(false);
 
-    // Fetch roles when modal opens - NO STATIC FALLBACKS
     useEffect(() => {
       const fetchRoles = async () => {
-        if (!authToken) {
-          setRolesError(true);
-          return;
-        }
-        
+        if (!authToken) return;
         setRolesLoading(true);
-        setRolesError(false);
-        
         try {
           const response = await getAllRoles(authToken, { page: 0, size: 100 });
-          
           if (response && response.responseCode === 200 && response.data) {
             const content = response.data.content || [];
-            
-            const mappedRoles = content.map(role => ({
-              id: role.roleId,
-              roleId: role.roleId,
-              roleName: role.roleName
-            }));
-            
-            setLocalRoles(mappedRoles);
-            
-            if (mappedRoles.length === 0) {
-              setRolesError(true);
-            }
-          } else {
-            setRolesError(true);
+            const uniqueRolesMap = new Map();
+            content.forEach(role => {
+              if (!uniqueRolesMap.has(role.roleId)) {
+                uniqueRolesMap.set(role.roleId, { id: role.roleId, roleId: role.roleId, roleName: role.roleName });
+              }
+            });
+            setLocalRoles(Array.from(uniqueRolesMap.values()));
           }
         } catch (error) {
           console.error('Error loading roles:', error);
-          setRolesError(true);
         } finally {
           setRolesLoading(false);
         }
       };
-      
       fetchRoles();
     }, [authToken]);
 
-    const handleFileChange = (e) => {
-      setFile(e.target.files[0]);
-    };
-
     const handleSubmit = async (e) => {
       e.preventDefault();
-      if (!file) {
-        showToast('error', 'Please select a file to import');
-        return;
-      }
-
+      if (!file) { showToast('error', 'Please select a file to import'); return; }
       const reader = new FileReader();
       reader.onload = async (event) => {
         const base64Content = event.target.result.split(',')[1];
-        
-        const importData = {
-          fileName: file.name,
-          fileType: importType,
-          fileContent: base64Content,
-          options: importOptions
-        };
-
+        const importData = { fileName: file.name, fileType: importType, fileContent: base64Content, options: importOptions };
         const success = await handleImportUsersFromFile(importData);
-        if (success) {
-          closeModal();
-        }
+        if (success) closeModal();
       };
       reader.readAsDataURL(file);
     };
 
     return (
-      <MobileModal 
-        title="Import Users" 
-        onClose={closeModal}
-        showBackButton={modalStack.length > 1}
-        onBack={closeModal}
-      >
-        <div className="space-y-4">
-          <div className="p-3 rounded border" style={{ 
-            borderColor: colors.border,
-            backgroundColor: colors.hover
-          }}>
-            <div className="text-sm font-medium mb-1" style={{ color: colors.text }}>
-              Supported Formats
-            </div>
-            <div className="text-xs" style={{ color: colors.textSecondary }}>
-              • CSV (Comma-separated values)<br/>
-              • Excel (.xlsx, .xls)<br/>
-              • JSON (JavaScript Object Notation)
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-                File Type
-              </label>
-              <select
-                value={importType}
-                onChange={(e) => setImportType(e.target.value)}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.bg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-              >
-                <option value="csv">CSV</option>
-                <option value="excel">Excel</option>
-                <option value="json">JSON</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-                File *
-              </label>
-              <input
-                type="file"
-                onChange={handleFileChange}
-                accept=".csv,.xlsx,.xls,.json"
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="sendWelcomeEmail"
-                  checked={importOptions.sendWelcomeEmail}
-                  onChange={(e) => setImportOptions(prev => ({ ...prev, sendWelcomeEmail: e.target.checked }))}
-                  className="rounded"
-                />
-                <label htmlFor="sendWelcomeEmail" className="text-sm" style={{ color: colors.text }}>
-                  Send welcome email
-                </label>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="generatePasswords"
-                  checked={importOptions.generatePasswords}
-                  onChange={(e) => setImportOptions(prev => ({ ...prev, generatePasswords: e.target.checked }))}
-                  className="rounded"
-                />
-                <label htmlFor="generatePasswords" className="text-sm" style={{ color: colors.text }}>
-                  Generate passwords automatically
-                </label>
-              </div>
-              <div>
-                <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-                  Default Role
-                </label>
-                {rolesError ? (
-                  <div 
-                    className="w-full px-3 py-2 rounded border text-sm flex items-center justify-between"
-                    style={{ 
-                      backgroundColor: `${colors.error}20`,
-                      borderColor: colors.error,
-                      color: colors.error
-                    }}
-                  >
-                    <span>Failed to load roles</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRolesError(false);
-                        setRolesLoading(true);
-                        const fetchRoles = async () => {
-                          try {
-                            const response = await getAllRoles(authToken, { page: 0, size: 100 });
-                            if (response && response.responseCode === 200 && response.data) {
-                              const content = response.data.content || [];
-                              const mappedRoles = content.map(role => ({
-                                id: role.roleId,
-                                roleId: role.roleId,
-                                roleName: role.roleName
-                              }));
-                              setLocalRoles(mappedRoles);
-                              if (mappedRoles.length > 0) {
-                                setRolesError(false);
-                              }
-                            }
-                          } catch (error) {
-                            console.error('Error retrying roles:', error);
-                          } finally {
-                            setRolesLoading(false);
-                          }
-                        };
-                        fetchRoles();
-                      }}
-                      className="p-1 rounded hover:bg-opacity-50"
-                      style={{ backgroundColor: `${colors.error}30` }}
-                    >
-                      <RefreshCw size={14} className={rolesLoading ? 'animate-spin' : ''} />
-                    </button>
-                  </div>
-                ) : (
-                  <select
-                    value={importOptions.defaultRoleId}
-                    onChange={(e) => setImportOptions(prev => ({ ...prev, defaultRoleId: e.target.value }))}
-                    className="w-full px-3 py-2 rounded border text-sm"
-                    style={{ 
-                      backgroundColor: colors.bg,
-                      borderColor: colors.inputBorder,
-                      color: colors.text,
-                      opacity: rolesLoading ? 0.7 : 1
-                    }}
-                    disabled={rolesLoading || localRoles.length === 0}
-                  >
-                    <option value="">
-                      {rolesLoading ? 'Loading roles...' : 
-                       localRoles.length === 0 ? 'No roles available' : 'Select Default Role'}
-                    </option>
-                    {localRoles.map(role => (
-                      <option key={role.roleId} value={role.roleId}>
-                        {role.roleName}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            </div>
-
-            <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button 
-                  type="submit"
-                  className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-                  style={{ 
-                    backgroundColor: colors.success,
-                    color: 'white'
-                  }}
-                  disabled={rolesLoading || localRoles.length === 0}
-                >
-                  Import Users
-                </button>
-                <button 
-                  type="button"
-                  onClick={closeModal}
-                  className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-                  style={{ 
-                    backgroundColor: colors.hover,
-                    color: colors.text
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </MobileModal>
-    );
-  };
-
-  // Export Users Modal - NO STATIC FALLBACKS
-  const ExportUsersModal = () => {
-    const [exportFormat, setExportFormat] = useState('csv');
-    const [exportFields, setExportFields] = useState([
-      'id', 'username', 'email', 'fullName', 'roleId', 'roleName', 'status', 'department', 'lastActive', 'joinedDate', 'securityScore'
-    ]);
-    const [filters, setFilters] = useState({
-      roleId: '',
-      status: '',
-      department: '',
-      createdAfter: ''
-    });
-    const [localRoles, setLocalRoles] = useState([]);
-    const [rolesLoading, setRolesLoading] = useState(false);
-    const [rolesError, setRolesError] = useState(false);
-
-    // Fetch roles when modal opens - NO STATIC FALLBACKS
-    useEffect(() => {
-      const fetchRoles = async () => {
-        if (!authToken) {
-          setRolesError(true);
-          return;
-        }
-        
-        setRolesLoading(true);
-        setRolesError(false);
-        
-        try {
-          const response = await getAllRoles(authToken, { page: 0, size: 100 });
-          
-          if (response && response.responseCode === 200 && response.data) {
-            const content = response.data.content || [];
-            
-            const mappedRoles = content.map(role => ({
-              id: role.roleId,
-              roleId: role.roleId,
-              roleName: role.roleName
-            }));
-            
-            setLocalRoles(mappedRoles);
-            
-            if (mappedRoles.length === 0) {
-              setRolesError(true);
-            }
-          } else {
-            setRolesError(true);
-          }
-        } catch (error) {
-          console.error('Error loading roles:', error);
-          setRolesError(true);
-        } finally {
-          setRolesLoading(false);
-        }
-      };
-      
-      fetchRoles();
-    }, [authToken]);
-
-    const availableFields = [
-      { value: 'id', label: 'ID' },
-      { value: 'username', label: 'Username' },
-      { value: 'email', label: 'Email' },
-      { value: 'fullName', label: 'Full Name' },
-      { value: 'roleId', label: 'Role ID' },
-      { value: 'roleName', label: 'Role Name' },
-      { value: 'status', label: 'Status' },
-      { value: 'department', label: 'Department' },
-      { value: 'lastActive', label: 'Last Active' },
-      { value: 'joinedDate', label: 'Joined Date' },
-      { value: 'securityScore', label: 'Security Score' },
-      { value: 'mfaEnabled', label: 'MFA Enabled' },
-      { value: 'emailVerified', label: 'Email Verified' },
-      { value: 'location', label: 'Location' },
-      { value: 'timezone', label: 'Timezone' }
-    ];
-
-    const handleSubmit = async (e) => {
-      e.preventDefault();
-      
-      const exportData = {
-        format: exportFormat,
-        fields: exportFields,
-        filters: Object.keys(filters).reduce((acc, key) => {
-          if (filters[key]) acc[key] = filters[key];
-          return acc;
-        }, {})
-      };
-
-      await handleExportData(exportData);
-      closeModal();
-    };
-
-    const toggleField = (field) => {
-      if (exportFields.includes(field)) {
-        setExportFields(prev => prev.filter(f => f !== field));
-      } else {
-        setExportFields(prev => [...prev, field]);
-      }
-    };
-
-    return (
-      <MobileModal 
-        title="Export Users" 
-        onClose={closeModal}
-        showBackButton={modalStack.length > 1}
-        onBack={closeModal}
-      >
+      <MobileModal title="Import Users" onClose={closeModal} showBackButton={modalStack.length > 1} onBack={closeModal}>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
-              Export Format *
-            </label>
-            <select
-              value={exportFormat}
-              onChange={(e) => setExportFormat(e.target.value)}
-              className="w-full px-3 py-2 rounded border text-sm"
-              style={{ 
-                backgroundColor: colors.bg,
-                borderColor: colors.inputBorder,
-                color: colors.text
-              }}
-              required
-            >
-              <option value="csv">CSV</option>
-              <option value="json">JSON</option>
-              <option value="excel">Excel</option>
-              <option value="pdf">PDF</option>
+          <div><label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>File Type</label>
+            <select value={importType} onChange={(e) => setImportType(e.target.value)} className="w-full px-3 py-2 rounded border text-sm" style={{ backgroundColor: colors.bg, borderColor: colors.inputBorder, color: colors.text }}>
+              <option value="csv">CSV</option><option value="excel">Excel</option><option value="json">JSON</option>
             </select>
           </div>
-
-          <div>
-            <label className="text-xs font-medium mb-2 block" style={{ color: colors.textSecondary }}>
-              Fields to Export
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {availableFields.map(field => (
-                <div key={field.value} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id={`field-${field.value}`}
-                    checked={exportFields.includes(field.value)}
-                    onChange={() => toggleField(field.value)}
-                    className="rounded"
-                  />
-                  <label htmlFor={`field-${field.value}`} className="text-xs" style={{ color: colors.text }}>
-                    {field.label}
-                  </label>
-                </div>
-              ))}
-            </div>
+          <div><label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>File *</label>
+            <input type="file" onChange={(e) => setFile(e.target.files[0])} accept=".csv,.xlsx,.xls,.json" className="w-full px-3 py-2 rounded border text-sm" style={{ backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }} required />
           </div>
-
-          <div className="space-y-3">
-            <div className="text-xs font-medium" style={{ color: colors.textSecondary }}>
-              Filter Export Data (Optional)
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {rolesError ? (
-                <div 
-                  className="px-2 py-1 rounded border text-xs flex items-center justify-between col-span-2"
-                  style={{ 
-                    backgroundColor: `${colors.error}20`,
-                    borderColor: colors.error,
-                    color: colors.error
-                  }}
-                >
-                  <span>Failed to load roles</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRolesError(false);
-                      setRolesLoading(true);
-                      const fetchRoles = async () => {
-                        try {
-                          const response = await getAllRoles(authToken, { page: 0, size: 100 });
-                          if (response && response.responseCode === 200 && response.data) {
-                            const content = response.data.content || [];
-                            const mappedRoles = content.map(role => ({
-                              id: role.roleId,
-                              roleId: role.roleId,
-                              roleName: role.roleName
-                            }));
-                            setLocalRoles(mappedRoles);
-                            if (mappedRoles.length > 0) {
-                              setRolesError(false);
-                            }
-                          }
-                        } catch (error) {
-                          console.error('Error retrying roles:', error);
-                        } finally {
-                          setRolesLoading(false);
-                        }
-                      };
-                      fetchRoles();
-                    }}
-                    className="p-0.5 rounded hover:bg-opacity-50"
-                    style={{ backgroundColor: `${colors.error}30` }}
-                  >
-                    <RefreshCw size={12} className={rolesLoading ? 'animate-spin' : ''} />
-                  </button>
-                </div>
-              ) : (
-                <select
-                  value={filters.roleId}
-                  onChange={(e) => setFilters(prev => ({ ...prev, roleId: e.target.value }))}
-                  className="px-2 py-1 rounded border text-xs"
-                  style={{ 
-                    backgroundColor: colors.bg,
-                    borderColor: colors.inputBorder,
-                    color: colors.text,
-                    opacity: rolesLoading ? 0.7 : 1
-                  }}
-                  disabled={rolesLoading}
-                >
-                  <option value="">All Roles</option>
-                  {localRoles.map(role => (
-                    <option key={role.roleId} value={role.roleId}>
-                      {role.roleName}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <select
-                value={filters.status}
-                onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-                className="px-2 py-1 rounded border text-xs"
-                style={{ 
-                  backgroundColor: colors.bg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-              >
-                <option value="">All Status</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="pending">Pending</option>
-                <option value="suspended">Suspended</option>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2"><input type="checkbox" id="sendWelcomeEmail" checked={importOptions.sendWelcomeEmail} onChange={(e) => setImportOptions(prev => ({ ...prev, sendWelcomeEmail: e.target.checked }))} className="rounded" /><label htmlFor="sendWelcomeEmail" className="text-sm" style={{ color: colors.text }}>Send welcome email</label></div>
+            <div className="flex items-center gap-2"><input type="checkbox" id="generatePasswords" checked={importOptions.generatePasswords} onChange={(e) => setImportOptions(prev => ({ ...prev, generatePasswords: e.target.checked }))} className="rounded" /><label htmlFor="generatePasswords" className="text-sm" style={{ color: colors.text }}>Generate passwords automatically</label></div>
+            <div><label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>Default Role</label>
+              <select value={importOptions.defaultRoleId} onChange={(e) => setImportOptions(prev => ({ ...prev, defaultRoleId: e.target.value }))} className="w-full px-3 py-2 rounded border text-sm" style={{ backgroundColor: colors.bg, borderColor: colors.inputBorder, color: colors.text }} disabled={rolesLoading}>
+                <option value="">{rolesLoading ? 'Loading roles...' : 'Select Default Role'}</option>
+                {localRoles.map(role => <option key={role.roleId} value={role.roleId}>{role.roleName}</option>)}
               </select>
-              <input
-                type="text"
-                placeholder="Department"
-                value={filters.department}
-                onChange={(e) => setFilters(prev => ({ ...prev, department: e.target.value }))}
-                className="px-2 py-1 rounded border text-xs"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-              />
-              <input
-                type="date"
-                value={filters.createdAfter}
-                onChange={(e) => setFilters(prev => ({ ...prev, createdAfter: e.target.value }))}
-                className="px-2 py-1 rounded border text-xs"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-              />
             </div>
           </div>
-
           <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
             <div className="flex flex-col sm:flex-row gap-2">
-              <button 
-                type="submit"
-                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-                style={{ 
-                  backgroundColor: colors.success,
-                  color: 'white'
-                }}
-                disabled={rolesLoading}
-              >
-                Export Users
-              </button>
-              <button 
-                type="button"
-                onClick={closeModal}
-                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-                style={{ 
-                  backgroundColor: colors.hover,
-                  color: colors.text
-                }}
-              >
-                Cancel
-              </button>
+              <button type="submit" className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift" style={{ backgroundColor: colors.success, color: 'white' }}>Import Users</button>
+              <button type="button" onClick={closeModal} className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift" style={{ backgroundColor: colors.hover, color: colors.text }}>Cancel</button>
             </div>
           </div>
         </form>
@@ -2891,438 +1749,181 @@ const loadUsers = async (filters = {}) => {
     );
   };
 
-  // Modal Renderer Component
-  const ModalRenderer = () => {
-    if (modalStack.length === 0) return null;
-    
-    return modalStack.map((modal, index) => {
-      const isActive = index === modalStack.length - 1;
-      if (!isActive) return null;
-      
-      switch(modal.type) {
-        case 'userDetails':
-          return <UserDetailsModal key={index} data={modal.data} />;
-        case 'editUser':
-          return <EditUserModal key={index} data={modal.data} />;
-        case 'resetPassword':
-          return <ResetPasswordModal key={index} data={modal.data} />;
-        case 'importUsers':
-          return <ImportUsersModal key={index} />;
-        case 'exportUsers':
-          return <ExportUsersModal key={index} />;
-        default:
-          return null;
-      }
-    });
+  // Export Users Modal
+  const ExportUsersModal = () => {
+    const [exportFormat, setExportFormat] = useState('csv');
+    const [exportFields] = useState(['id', 'username', 'email', 'fullName', 'roleId', 'roleName', 'status', 'department', 'lastActive', 'joinedDate']);
+    const [filters, setFilters] = useState({ roleId: '', status: '', department: '', createdAfter: '' });
+    const [localRoles, setLocalRoles] = useState([]);
+
+    useEffect(() => {
+      const fetchRoles = async () => {
+        if (!authToken) return;
+        try {
+          const response = await getAllRoles(authToken, { page: 0, size: 100 });
+          if (response && response.responseCode === 200 && response.data) {
+            const content = response.data.content || [];
+            const uniqueRolesMap = new Map();
+            content.forEach(role => {
+              if (!uniqueRolesMap.has(role.roleId)) {
+                uniqueRolesMap.set(role.roleId, { id: role.roleId, roleId: role.roleId, roleName: role.roleName });
+              }
+            });
+            setLocalRoles(Array.from(uniqueRolesMap.values()));
+          }
+        } catch (error) {
+          console.error('Error loading roles:', error);
+        }
+      };
+      fetchRoles();
+    }, [authToken]);
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      const exportData = { format: exportFormat, fields: exportFields, filters: Object.keys(filters).reduce((acc, key) => { if (filters[key]) acc[key] = filters[key]; return acc; }, {}) };
+      await handleExportData(exportData);
+      closeModal();
+    };
+
+    return (
+      <MobileModal title="Export Users" onClose={closeModal} showBackButton={modalStack.length > 1} onBack={closeModal}>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div><label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>Export Format *</label>
+            <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value)} className="w-full px-3 py-2 rounded border text-sm" style={{ backgroundColor: colors.bg, borderColor: colors.inputBorder, color: colors.text }} required>
+              <option value="csv">CSV</option><option value="json">JSON</option><option value="excel">Excel</option><option value="pdf">PDF</option>
+            </select>
+          </div>
+          <div className="space-y-3">
+            <div className="text-xs font-medium" style={{ color: colors.textSecondary }}>Filter Export Data (Optional)</div>
+            <div className="grid grid-cols-2 gap-2">
+              <select value={filters.roleId} onChange={(e) => setFilters(prev => ({ ...prev, roleId: e.target.value }))} className="px-2 py-1 rounded border text-xs" style={{ backgroundColor: colors.bg, borderColor: colors.inputBorder, color: colors.text }}>
+                <option value="">All Roles</option>{localRoles.map(role => <option key={role.roleId} value={role.roleId}>{role.roleName}</option>)}
+              </select>
+              <select value={filters.status} onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))} className="px-2 py-1 rounded border text-xs" style={{ backgroundColor: colors.bg, borderColor: colors.inputBorder, color: colors.text }}>
+                <option value="">All Status</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="pending">Pending</option><option value="suspended">Suspended</option>
+              </select>
+              <input type="text" placeholder="Department" value={filters.department} onChange={(e) => setFilters(prev => ({ ...prev, department: e.target.value }))} className="px-2 py-1 rounded border text-xs" style={{ backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }} />
+              <input type="date" value={filters.createdAfter} onChange={(e) => setFilters(prev => ({ ...prev, createdAfter: e.target.value }))} className="px-2 py-1 rounded border text-xs" style={{ backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }} />
+            </div>
+          </div>
+          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button type="submit" className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift" style={{ backgroundColor: colors.success, color: 'white' }}>Export Users</button>
+              <button type="button" onClick={closeModal} className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift" style={{ backgroundColor: colors.hover, color: colors.text }}>Cancel</button>
+            </div>
+          </div>
+        </form>
+      </MobileModal>
+    );
   };
 
-  // Loading Overlay
+  const ModalRenderer = () => {
+    if (modalStack.length === 0) return null;
+    const modal = modalStack[modalStack.length - 1];
+    switch(modal.type) {
+      case 'userDetails': return <UserDetailsModal key={modalStack.length} data={modal.data} />;
+      case 'editUser': return <EditUserModal key={modalStack.length} data={modal.data} />;
+      case 'resetPassword': return <ResetPasswordModal key={modalStack.length} data={modal.data} />;
+      case 'importUsers': return <ImportUsersModal key={modalStack.length} />;
+      case 'exportUsers': return <ExportUsersModal key={modalStack.length} />;
+      default: return null;
+    }
+  };
+
   const LoadingOverlay = () => {
-    // Check if any loading state is active
-    const isLoading = loading || rolesLoading;
-    
-    // Determine loading message based on what's loading
-    const getLoadingMessage = () => {
-      if (loading && rolesLoading) return 'Loading users and roles...';
-      if (loading) return 'Loading users...';
-      if (rolesLoading) return 'Loading roles...';
-      return 'Please wait while we prepare your content';
-    };
-
-    // Determine loading tips based on context
-    const getLoadingTip = () => {
-      if (loading && rolesLoading) {
-        return `Loading ${totalItems || ''} users and role configurations...`;
-      }
-      if (loading) {
-        return `Loading ${totalItems || ''} users...`;
-      }
-      if (rolesLoading) {
-        return 'Loading access types and permissions...';
-      }
-      return 'This won\'t take long';
-    };
-
-    if (!isLoading) return null;
-    
+    if (!loading && !rolesLoading) return null;
     return (
       <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: colors.bg }}>
         <div className="text-center">
-          <div className="relative">
-            <Loader className="animate-spin mx-auto mb-6" size={64} style={{ color: colors.primary }} />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Users size={32} style={{ color: colors.primary, opacity: 0.3 }} />
-            </div>
-          </div>
-          <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>
-            User Management
-          </h3>
-          <p className="text-xs mb-2" style={{ color: colors.textSecondary }}>
-            {getLoadingMessage()}
-          </p>
-          <p className="text-xs mb-1" style={{ color: colors.textTertiary }}>
-            {getLoadingTip()}
-          </p>
+          <Loader className="animate-spin mx-auto mb-6" size={64} style={{ color: colors.primary }} />
+          <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>User Management</h3>
+          <p className="text-xs mb-2" style={{ color: colors.textSecondary }}>{loading ? 'Loading users...' : 'Loading roles...'}</p>
         </div>
       </div>
     );
   };
 
-  // Stat Card Component
-  const StatCard = ({ title, value, icon: Icon, color, onClick, change }) => {
-    return (
-      <div 
-        className="border rounded-xl p-3 hover-lift cursor-pointer transition-all duration-200"
-        onClick={onClick}
-        style={{ 
-          borderColor: colors.border,
-          backgroundColor: colors.card
-        }}
-      >
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-xs font-medium truncate" style={{ color: colors.textSecondary }}>
-            {title}
-          </div>
-          <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: `${color}20` }}>
-            <Icon size={16} style={{ color }} />
-          </div>
-        </div>
-        <div className="flex items-end justify-between">
-          <div className="text-xl font-bold truncate" style={{ color: colors.text }}>
-            {value}
-          </div>
-          {change && (
-            <div className={`text-xs px-2 py-1 rounded-full shrink-0 ${change > 0 ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100'}`}>
-              {change > 0 ? '+' : ''}{change}%
-            </div>
-          )}
-        </div>
+  const StatCard = ({ title, value, icon: Icon, color }) => (
+    <div className="border rounded-xl p-3 hover-lift cursor-pointer transition-all duration-200" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs font-medium truncate" style={{ color: colors.textSecondary }}>{title}</div>
+        <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: `${color}20` }}><Icon size={16} style={{ color }} /></div>
       </div>
-    );
-  };
+      <div className="text-xl font-bold truncate" style={{ color: colors.text }}>{value}</div>
+    </div>
+  );
 
-  // User Card Component for mobile
-  const UserCard = ({ user }) => {
-    const [isOpening, setIsOpening] = useState(false);
-
-    const formatDate = (dateString) => {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    };
-
-    const formatTime = (dateString) => {
-      const date = new Date(dateString);
-      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    };
-
-    const handleClick = async (e) => {
-      e.stopPropagation();
-      if (isOpening || openingModalForUserId === user.id) return;
-      
-      setIsOpening(true);
-      try {
-        await handleViewUserDetails(user);
-      } finally {
-        setTimeout(() => setIsOpening(false), 500);
-      }
-    };
-
-    const handleButtonClick = (e, action) => {
-      e.stopPropagation();
-      action(user);
-    };
-
-    return (
-      <div 
-        className="border rounded-xl p-3 hover-lift transition-all duration-200"
-        onClick={handleClick}
-        style={{ 
-          borderColor: colors.border,
-          backgroundColor: colors.card,
-          cursor: isOpening ? 'wait' : 'pointer'
-        }}
-      >
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <div 
-              className="w-10 h-10 rounded-full flex items-center justify-center text-white font-medium text-sm"
-              style={{ backgroundColor: user.avatarColor || colors.primary }}
-            >
-              {user.fullName?.split(' ').map(n => n[0]).join('') || '??'}
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold truncate" style={{ color: colors.text }}>
-                {user.fullName || 'Unknown User'}
-              </div>
-              <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
-                @{user.username || 'unknown'}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <div 
-              className="px-2 py-1 rounded-full text-xs font-medium"
-              style={getRoleColorStyle(user.role || user.roleId)}
-            >
-              {getRoleDisplayName(user.role || user.roleId)}
-            </div>
-            <button
-              onClick={(e) => handleButtonClick(e, handleViewUserDetails)}
-              className="p-1 rounded hover:bg-opacity-50 transition-colors"
-              style={{ backgroundColor: colors.hover }}
-              disabled={isOpening || openingModalForUserId === user.id}
-            >
-              <MoreVertical size={14} style={{ color: colors.textSecondary }} />
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1">
-              <Mail size={12} style={{ color: colors.textSecondary }} />
-              <span className="text-xs truncate" style={{ color: colors.textSecondary }}>
-                {user.email || 'No email'}
-              </span>
-            </div>
-            {user.emailVerified ? (
-              <CheckCircle size={12} style={{ color: colors.success }} />
-            ) : (
-              <XCircle size={12} style={{ color: colors.error }} />
-            )}
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1">
-              <Building size={12} style={{ color: colors.textSecondary }} />
-              <span className="text-xs" style={{ color: colors.textSecondary }}>
-                {user.department || 'Not specified'}
-              </span>
-            </div>
-            <div 
-              className="px-2 py-0.5 rounded-full text-xs"
-              style={getStatusColorStyle(user.status)}
-            >
-              {getUserStatusDisplayName(user.status)}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between text-xs pt-2 border-t" style={{ borderColor: colors.border }}>
-            <div className="flex items-center gap-1">
-              <Clock size={12} style={{ color: colors.textSecondary }} />
-              <span style={{ color: colors.textSecondary }}>
-                {user.lastActive ? `${formatDate(user.lastActive)} ${formatTime(user.lastActive)}` : 'Never logged in'}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              {user.mfaEnabled && (
-                <Shield size={12} style={{ color: colors.success }} title="MFA Enabled" />
-              )}
-              {(user.apiKeys > 0) && (
-                <Key size={12} style={{ color: colors.info }} title={`${user.apiKeys || 0} API keys`} />
-              )}
-            </div>
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <button
-              onClick={(e) => handleButtonClick(e, handleEditUser)}
-              className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors hover-lift"
-              style={{ 
-                backgroundColor: colors.hover,
-                color: colors.text
-              }}
-              disabled={isOpening}
-            >
-              Edit
-            </button>
-            <button
-              onClick={(e) => handleButtonClick(e, (user) => openModal('resetPassword', user))}
-              className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors hover-lift"
-              style={{ 
-                backgroundColor: colors.primaryDark,
-                color: 'white'
-              }}
-              disabled={isOpening}
-            >
-              Reset PW
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Pagination Component - UPDATED with full pagination controls
   const Pagination = () => {
     const { start, end } = getDisplayRange();
-    
-    const renderPageNumbers = () => {
-      const pages = [];
-      const maxVisiblePages = 5;
-      
-      if (totalPages <= maxVisiblePages) {
-        for (let i = 1; i <= totalPages; i++) {
-          pages.push(i);
-        }
-      } else {
-        if (currentPage <= 3) {
-          for (let i = 1; i <= 4; i++) pages.push(i);
-          pages.push('...');
-          pages.push(totalPages);
-        } else if (currentPage >= totalPages - 2) {
-          pages.push(1);
-          pages.push('...');
-          for (let i = totalPages - 3; i <= totalPages; i++) pages.push(i);
-        } else {
-          pages.push(1);
-          pages.push('...');
-          pages.push(currentPage - 1);
-          pages.push(currentPage);
-          pages.push(currentPage + 1);
-          pages.push('...');
-          pages.push(totalPages);
-        }
-      }
-      
-      return pages;
-    };
-
-    if (totalItems === 0) {
-      return (
-        <div className="p-4 text-center text-sm" style={{ color: colors.textSecondary }}>
-          No users found
-        </div>
-      );
-    }
-
+    if (totalItems === 0) return <div className="p-4 text-center text-sm" style={{ color: colors.textSecondary }}>No users found</div>;
     return (
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t" style={{ borderColor: colors.border }}>
-        <div className="text-xs" style={{ color: colors.textSecondary }}>
-          Showing {start} - {end} of {totalItems} users
-        </div>
-        
+        <div className="text-xs" style={{ color: colors.textSecondary }}>Showing {start} - {end} of {totalItems} users</div>
         <div className="flex items-center gap-1">
-          {/* First Page Button */}
-          <button
-            onClick={goToFirstPage}
-            disabled={currentPage === 1}
-            className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
-            style={{ 
-              backgroundColor: currentPage === 1 ? 'transparent' : colors.hover,
-              color: colors.text,
-              cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
-            }}
-            title="First Page"
-          >
-            <ChevronsLeft size={14} />
-          </button>
-          
-          {/* Previous Page Button */}
-          <button
-            onClick={goToPreviousPage}
-            disabled={currentPage === 1}
-            className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
-            style={{ 
-              backgroundColor: currentPage === 1 ? 'transparent' : colors.hover,
-              color: colors.text,
-              cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
-            }}
-            title="Previous Page"
-          >
+          <button onClick={goToPreviousPage} disabled={currentPage === 1} className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors" style={{ backgroundColor: currentPage === 1 ? 'transparent' : colors.hover, color: colors.text }}>
             <ChevronLeft size={14} />
           </button>
-          
-          {/* Page Numbers */}
-          <div className="flex items-center gap-1">
-            {renderPageNumbers().map((page, index) => (
-              page === '...' ? (
-                <span key={index} className="px-2 text-xs" style={{ color: colors.textSecondary }}>
-                  ...
-                </span>
-              ) : (
-                <button
-                  key={index}
-                  onClick={() => setCurrentPage(page)}
-                  className="w-7 h-7 rounded text-xs font-medium transition-colors hover-lift"
-                  style={{ 
-                    backgroundColor: currentPage === page ? colors.selected : 'transparent',
-                    color: currentPage === page ? colors.primaryDark : colors.textSecondary,
-                    border: currentPage === page ? `1px solid ${colors.primaryDark}` : 'none'
-                  }}
-                >
-                  {page}
-                </button>
-              )
-            ))}
-          </div>
-          
-          {/* Next Page Button */}
-          <button
-            onClick={goToNextPage}
-            disabled={currentPage === totalPages || totalPages === 0}
-            className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
-            style={{ 
-              backgroundColor: currentPage === totalPages || totalPages === 0 ? 'transparent' : colors.hover,
-              color: colors.text,
-              cursor: currentPage === totalPages || totalPages === 0 ? 'not-allowed' : 'pointer'
-            }}
-            title="Next Page"
-          >
+          <span className="px-3 py-1 text-sm" style={{ color: colors.text }}>Page {currentPage} of {totalPages}</span>
+          <button onClick={goToNextPage} disabled={currentPage === totalPages || totalPages === 0} className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors" style={{ backgroundColor: currentPage === totalPages || totalPages === 0 ? 'transparent' : colors.hover, color: colors.text }}>
             <ChevronRight size={14} />
           </button>
-          
-          {/* Last Page Button */}
-          <button
-            onClick={goToLastPage}
-            disabled={currentPage === totalPages || totalPages === 0}
-            className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
-            style={{ 
-              backgroundColor: currentPage === totalPages || totalPages === 0 ? 'transparent' : colors.hover,
-              color: colors.text,
-              cursor: currentPage === totalPages || totalPages === 0 ? 'not-allowed' : 'pointer'
-            }}
-            title="Last Page"
-          >
-            <ChevronsRight size={14} />
-          </button>
         </div>
-
-        {/* Page Size Selector */}
         <div className="flex items-center gap-2">
-          <label className="text-xs" style={{ color: colors.textSecondary }}>
-            Show:
-          </label>
-          <select
-            value={usersPerPage}
-            onChange={(e) => {
-              const newSize = parseInt(e.target.value);
-              setUsersPerPage(newSize);
-              setCurrentPage(1); // Reset to first page when changing page size
-              // loadUsers will be triggered by the useEffect
-            }}
-            className="px-2 py-1 rounded border text-xs"
-            style={{ 
-              backgroundColor: colors.bg,
-              borderColor: colors.inputBorder,
-              color: colors.text
-            }}
-            disabled={loading}
-          >
-            <option value="5">5</option>
-            <option value="7">7</option>
-            <option value="10">10</option>
-            <option value="15">15</option>
-            <option value="20">20</option>
-            <option value="50">50</option>
+          <label className="text-xs" style={{ color: colors.textSecondary }}>Show:</label>
+          <select value={usersPerPage} onChange={(e) => { setUsersPerPage(parseInt(e.target.value)); setCurrentPage(1); }} className="px-2 py-1 rounded border text-xs" style={{ backgroundColor: colors.bg, borderColor: colors.inputBorder, color: colors.text }}>
+            <option value="5">5</option><option value="7">7</option><option value="10">10</option><option value="15">15</option><option value="20">20</option><option value="50">50</option>
           </select>
         </div>
       </div>
     );
   };
 
-  const handleExportClick = () => {
-    openModal('exportUsers', {});
+  const SideNavigation = () => {
+    const [expandedSections, setExpandedSections] = useState(['users']);
+    const sideNavItems = [{ id: 'users', label: 'User Management', icon: <Users size={16} />, subItems: [{ id: 'all-users', label: 'All Users', icon: <UsersIcon size={12} /> }] }];
+
+    const toggleSection = (sectionId) => {
+      setExpandedSections(prev => prev.includes(sectionId) ? prev.filter(id => id !== sectionId) : [...prev, sectionId]);
+    };
+
+    return (
+      <div className="w-80 border-r flex flex-col h-full" style={{ backgroundColor: colors.sidebar, borderColor: colors.border }}>
+        <div className="p-4 border-b" style={{ borderColor: colors.border }}>
+          <div className="relative mb-3">
+            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
+            <input type="text" placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift" style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }} />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => openModal('editUser', { id: 'new', username: '', email: '', phoneNumber: '', fullName: '', roleId: '', status: 'pending', department: '', location: '', mfaEnabled: false, emailVerified: false, phoneVerified: false, tags: [] })} className="flex-1 px-3 py-2 rounded text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2 justify-center" style={{ backgroundColor: colors.primaryDark, color: 'white' }}>
+              <UserPlus size={12} /><span>Add User</span>
+            </button>
+            <button onClick={handleImportUsers} className="px-3 py-2 rounded text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2" style={{ backgroundColor: colors.hover, color: colors.text }}>
+              <Upload size={12} />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto p-2 space-y-4">
+          {sideNavItems.map((item) => (
+            <div key={item.id} className="mb-1">
+              <button onClick={() => toggleSection(item.id)} className={`w-full flex items-center gap-2 px-3 py-2.5 rounded text-sm transition-all duration-200 hover-lift mb-1`} style={{ backgroundColor: expandedSections.includes(item.id) ? colors.selected : colors.hover, color: expandedSections.includes(item.id) ? colors.primary : colors.text }}>
+                <span style={{ color: expandedSections.includes(item.id) ? colors.primary : colors.textSecondary }}>{item.icon}</span>
+                <span className="flex-1 text-left truncate">{item.label}</span>
+                {item.subItems && <ChevronDown size={12} className={`transition-transform duration-200 ${expandedSections.includes(item.id) ? 'rotate-0' : '-rotate-90'}`} style={{ color: colors.textSecondary }} />}
+              </button>
+              {item.subItems && expandedSections.includes(item.id) && (
+                <div className="ml-6 mb-2 border-l-2" style={{ borderColor: colors.border }}>
+                  {item.subItems.map((subItem) => (
+                    <button key={subItem.id} onClick={() => { setSelectedRole('all'); setSelectedStatus('all'); setCurrentPage(1); }} className="w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors hover:bg-opacity-50 ml-2 mt-0.5 hover-lift" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
+                      <span style={{ color: colors.textTertiary }}>{subItem.icon}</span><span className="truncate">{subItem.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   const handleSearchInputChange = (e) => {
@@ -3332,160 +1933,59 @@ const loadUsers = async (filters = {}) => {
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ 
-      backgroundColor: colors.bg,
-      color: colors.text,
-      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
-      fontSize: '13px'
-    }}>
+    <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: colors.bg, color: colors.text, fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif', fontSize: '13px' }}>
       <style>{`
-        .hover-lift:hover {
-          transform: translateY(-2px);
-          transition: transform 0.2s ease;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        
-        .animate-fade-in {
-          animation: fadeIn 0.2s ease-out;
-        }
-        
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        
-        ::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-        
-        ::-webkit-scrollbar-track {
-          background: ${colors.border};
-          border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb {
-          background: ${colors.textTertiary};
-          border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-          background: ${colors.textSecondary};
-        }
-        
-        @media (max-width: 640px) {
-          .text-xs { font-size: 11px; }
-          .text-sm { font-size: 12px; }
-          .text-base { font-size: 14px; }
-          .text-lg { font-size: 16px; }
-          .text-xl { font-size: 18px; }
-          .text-2xl { font-size: 20px; }
-          
-          ::-webkit-scrollbar {
-            width: 4px;
-            height: 4px;
-          }
-        }
+        .hover-lift:hover { transform: translateY(-2px); transition: transform 0.2s ease; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+        .animate-fade-in { animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: ${colors.border}; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: ${colors.textTertiary}; border-radius: 4px; }
       `}</style>
 
       <LoadingOverlay />
-
       <ModalRenderer />
 
-      <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
-        backgroundColor: colors.header,
-        borderColor: colors.border
-      }}>
-        <div className="flex items-center gap-2">
-          <span className="px-3 py-1.5 text-sm font-medium -ml-3 uppercase">User Management</span>
-        </div>
-
+      <div className="flex items-center justify-between h-10 px-4 border-b" style={{ backgroundColor: colors.header, borderColor: colors.border }}>
+        <div className="flex items-center gap-2"><span className="px-3 py-1.5 text-sm font-medium -ml-3 uppercase">User Management</span></div>
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-            <input 
-              type="text" 
-              placeholder="Search user details..."
-              value={searchQuery}
-              onChange={handleSearchInputChange}
-              className="pl-8 pr-3 py-1.5 rounded text-xs focus:outline-none w-64 hover-lift"
-              style={{ 
-                backgroundColor: colors.inputBg, 
-                border: `1px solid ${colors.border}`, 
-                color: colors.text 
-              }} 
-            />
-            {searchQuery && (
-              <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                <button onClick={() => {
-                  setSearchQuery('');
-                  handleSearchChange('');
-                }} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover }}>
-                  <X size={12} style={{ color: colors.textSecondary }} />
-                </button>
-              </div>
-            )}
+            <input type="text" placeholder="Search user details..." value={searchQuery} onChange={handleSearchInputChange} className="pl-8 pr-3 py-1.5 rounded text-xs focus:outline-none w-64 hover-lift" style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }} />
+            {searchQuery && (<div className="absolute right-2 top-1/2 transform -translate-y-1/2"><button onClick={() => { setSearchQuery(''); handleSearchChange(''); }} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift" style={{ backgroundColor: colors.hover }}><X size={12} style={{ color: colors.textSecondary }} /></button></div>)}
           </div>
         </div>
       </div>
 
       <div className="flex-1 overflow-hidden flex">
         <SideNavigation />
-
         <div className="flex-1 overflow-hidden">
           <div className="h-full overflow-auto p-6">
             <div className="max-w-8xl mx-auto ml-2 mr-2">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div>
-                  <h1 className="text-xl font-bold" style={{ color: colors.text }}>
-                    User Management
-                  </h1>
-                  <p className="text-xs" style={{ color: colors.textSecondary }}>
-                    Manage user accounts, roles, and permissions
-                  </p>
-                </div>
+                <div><h1 className="text-xl font-bold" style={{ color: colors.text }}>User Management</h1><p className="text-xs" style={{ color: colors.textSecondary }}>Manage user accounts, roles, and permissions</p></div>
                 <div className="flex items-center gap-3">
+                  <button onClick={handleImportUsers} className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2" style={{ backgroundColor: colors.primaryDark, color: 'white' }} disabled={loading}><Upload size={14} /><span className="hidden sm:inline">Import Users</span><span className="sm:hidden">Import</span></button>
+                  <button onClick={handleExportClick} className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2" style={{ backgroundColor: colors.success, color: 'white' }} disabled={loading}><Download size={14} /><span className="hidden sm:inline">Export Users</span><span className="sm:hidden">Export</span></button>
                   <button 
-                    onClick={handleImportUsers}
-                    className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
-                    style={{ 
-                      backgroundColor: colors.primaryDark,
-                      color: 'white'
-                    }}
-                    disabled={loading}
-                  >
-                    <Upload size={14} />
-                    <span className="hidden sm:inline">Import Users</span>
-                    <span className="sm:hidden">Import</span>
-                  </button>
-                  <button 
-                    onClick={() => openModal('editUser', {
+                    onClick={() => openModal('editUser', { 
                       id: 'new',
                       username: '',
                       email: '',
+                      phoneNumber: '',
                       fullName: '',
-                      roleId: '',
+                      roleId: '',  // This will be set when role is selected
+                      role: '',    // For backward compatibility
                       status: 'pending',
                       department: '',
                       location: '',
-                      phoneNumber: '',
                       mfaEnabled: false,
                       emailVerified: false,
                       phoneVerified: false,
                       tags: []
                     })}
                     className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
-                    style={{ 
-                      backgroundColor: colors.success,
-                      color: 'white'
-                    }}
+                    style={{ backgroundColor: colors.primaryDark, color: 'white' }}
                     disabled={loading}
                   >
                     <UserPlus size={14} />
@@ -3496,347 +1996,69 @@ const loadUsers = async (filters = {}) => {
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                <StatCard
-                  title="Total Users"
-                  value={totalItems}
-                  icon={Users}
-                  color={colors.primary}
-                />
-                <StatCard
-                  title="Active Users"
-                  value={stats.activeUsers}
-                  icon={UserCheck}
-                  color={colors.success}
-                  change={+12}
-                />
-                <StatCard
-                  title="Admins"
-                  value={stats.admins}
-                  icon={Shield}
-                  color={colors.error}
-                />
-                <StatCard
-                  title="Security Score"
-                  value={`${stats.avgSecurityScore}/100`}
-                  icon={ShieldCheck}
-                  color={colors.warning}
-                />
+                <StatCard title="Total Users" value={totalItems} icon={Users} color={colors.primary} />
+                <StatCard title="Active Users" value={stats.activeUsers} icon={UserCheck} color={colors.success} />
+                <StatCard title="Admins" value={stats.admins} icon={Shield} color={colors.error} />
+                <StatCard title="Security Score" value={`${stats.avgSecurityScore}/100`} icon={ShieldCheck} color={colors.warning} />
               </div>
 
-              <div className="border rounded-xl mb-6" style={{ 
-                borderColor: colors.border,
-                backgroundColor: colors.card
-              }}>
+              <div className="border rounded-xl mb-6" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
                 <div className="p-4 border-b" style={{ borderColor: colors.border }}>
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex-1 relative">
                       <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2" style={{ color: colors.textSecondary }} />
-                      <input
-                        type="text"
-                        placeholder="Search users by name, email, or username..."
-                        value={searchQuery}
-                        onChange={handleSearchInputChange}
-                        className="w-full pl-10 pr-3 py-2 rounded border text-sm"
-                        style={{ 
-                          backgroundColor: colors.inputBg,
-                          borderColor: colors.inputBorder,
-                          color: colors.text
-                        }}
-                        disabled={loading}
-                      />
+                      <input type="text" placeholder="Search users by name, email, or username..." value={searchQuery} onChange={handleSearchInputChange} className="w-full pl-10 pr-3 py-2 rounded border text-sm" style={{ backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }} disabled={loading} />
                     </div>
                     <div className="flex gap-2">
-                      <select
-                        value={selectedRole}
-                        onChange={(e) => handleRoleFilterChange(e.target.value)}
-                        className="px-3 py-2 rounded border text-sm"
-                        style={{ 
-                          backgroundColor: colors.bg,
-                          borderColor: colors.inputBorder,
-                          color: colors.text
-                        }}
-                        disabled={loading}
-                      >
+                      <select value={selectedRole} onChange={(e) => handleRoleFilterChange(e.target.value)} className="px-3 py-2 rounded border text-sm" style={{ backgroundColor: colors.bg, borderColor: colors.inputBorder, color: colors.text }} disabled={loading}>
                         <option value="all">All Roles</option>
-                        {roles.map(role => (
-                          <option key={role.id || role.roleId} value={role.id || role.roleId}>
-                            {role.roleName}
-                          </option>
-                        ))}
+                        {roles.map(role => <option key={role.id || role.roleId} value={role.id || role.roleId}>{role.roleName}</option>)}
                       </select>
-                      <select
-                        value={selectedStatus}
-                        onChange={(e) => handleStatusFilterChange(e.target.value)}
-                        className="px-3 py-2 rounded border text-sm"
-                        style={{ 
-                          backgroundColor: colors.bg,
-                          borderColor: colors.inputBorder,
-                          color: colors.text
-                        }}
-                        disabled={loading}
-                      >
+                      <select value={selectedStatus} onChange={(e) => handleStatusFilterChange(e.target.value)} className="px-3 py-2 rounded border text-sm" style={{ backgroundColor: colors.bg, borderColor: colors.inputBorder, color: colors.text }} disabled={loading}>
                         <option value="all">All Status</option>
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                        <option value="pending">Pending</option>
-                        <option value="suspended">Suspended</option>
+                        <option value="active">Active</option><option value="inactive">Inactive</option><option value="pending">Pending</option><option value="suspended">Suspended</option>
                       </select>
-                      <button
-                        onClick={() => setShowFilters(!showFilters)}
-                        className="px-3 py-2 rounded border text-sm font-medium hover-lift transition-colors"
-                        style={{ 
-                          backgroundColor: colors.hover,
-                          borderColor: colors.border,
-                          color: colors.text
-                        }}
-                        disabled={loading}
-                      >
-                        <Filter size={14} />
-                      </button>
+                      <button onClick={() => setShowFilters(!showFilters)} className="px-3 py-2 rounded border text-sm font-medium hover-lift transition-colors" style={{ backgroundColor: colors.hover, borderColor: colors.border, color: colors.text }} disabled={loading}><Filter size={14} /></button>
                     </div>
                   </div>
-
-                  {showFilters && (
-                    <div className="mt-4 p-3 rounded border" style={{ 
-                      borderColor: colors.border,
-                      backgroundColor: colors.hover
-                    }}>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <select className="px-2 py-1 rounded border text-xs" style={{ 
-                          backgroundColor: colors.bg,
-                          borderColor: colors.inputBorder,
-                          color: colors.text
-                        }}>
-                          <option>Department</option>
-                          <option>Engineering</option>
-                          <option>Marketing</option>
-                          <option>Sales</option>
-                        </select>
-                        <select className="px-2 py-1 rounded border text-xs" style={{ 
-                          backgroundColor: colors.bg,
-                          borderColor: colors.inputBorder,
-                          color: colors.text
-                        }}>
-                          <option>MFA Status</option>
-                          <option>Enabled</option>
-                          <option>Disabled</option>
-                        </select>
-                        <select className="px-2 py-1 rounded border text-xs" style={{ 
-                          backgroundColor: colors.bg,
-                          borderColor: colors.inputBorder,
-                          color: colors.text
-                        }}>
-                          <option>Email Verified</option>
-                          <option>Yes</option>
-                          <option>No</option>
-                        </select>
-                        <input
-                          type="date"
-                          className="px-2 py-1 rounded border text-xs"
-                          style={{ 
-                            backgroundColor: colors.inputBg,
-                            borderColor: colors.inputBorder,
-                            color: colors.text
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {selectedUsers.length > 0 && (
-                  <div className="p-3 border-b flex items-center justify-between" style={{ 
-                    borderColor: colors.border,
-                    backgroundColor: colors.selected
-                  }}>
-                    <div className="text-sm font-medium" style={{ color: colors.text }}>
-                      {selectedUsers.length} user{selectedUsers.length > 1 ? 's' : ''} selected
-                    </div>
+                  <div className="p-3 border-b flex items-center justify-between" style={{ borderColor: colors.border, backgroundColor: colors.selected }}>
+                    <div className="text-sm font-medium" style={{ color: colors.text }}>{selectedUsers.length} user{selectedUsers.length > 1 ? 's' : ''} selected</div>
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleBulkAction('activate')}
-                        className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors"
-                        style={{ 
-                          backgroundColor: colors.success,
-                          color: 'white'
-                        }}
-                        disabled={loading}
-                      >
-                        Activate
-                      </button>
-                      <button
-                        onClick={() => handleBulkAction('suspend')}
-                        className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors"
-                        style={{ 
-                          backgroundColor: colors.warning,
-                          color: 'white'
-                        }}
-                        disabled={loading}
-                      >
-                        Suspend
-                      </button>
-                      <button
-                        onClick={() => handleBulkAction('delete')}
-                        className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors"
-                        style={{ 
-                          backgroundColor: colors.error,
-                          color: 'white'
-                        }}
-                        disabled={loading}
-                      >
-                        Delete
-                      </button>
-                      <button
-                        onClick={() => setSelectedUsers([])}
-                        className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors"
-                        style={{ 
-                          backgroundColor: colors.hover,
-                          color: colors.text
-                        }}
-                        disabled={loading}
-                      >
-                        Clear
-                      </button>
+                      <button onClick={() => handleBulkAction('activate')} className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors" style={{ backgroundColor: colors.success, color: 'white' }} disabled={loading}>Activate</button>
+                      <button onClick={() => handleBulkAction('suspend')} className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors" style={{ backgroundColor: colors.warning, color: 'white' }} disabled={loading}>Suspend</button>
+                      <button onClick={() => handleBulkAction('delete')} className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors" style={{ backgroundColor: colors.error, color: 'white' }} disabled={loading}>Delete</button>
+                      <button onClick={() => setSelectedUsers([])} className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors" style={{ backgroundColor: colors.hover, color: colors.text }} disabled={loading}>Clear</button>
                     </div>
                   </div>
                 )}
 
                 <div className="overflow-x-auto">
-                  <table className="w-full" style={{ borderColor: colors.border }}>
+                  <table className="w-full">
                     <thead>
                       <tr style={{ backgroundColor: colors.tableHeader }}>
-                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                          <input
-                            type="checkbox"
-                            checked={selectedUsers.length === users.length && users.length > 0}
-                            onChange={handleSelectAll}
-                            className="rounded border-gray-300"
-                            style={{ borderColor: colors.border }}
-                            disabled={loading}
-                          />
-                        </th>
-                        <th 
-                          className="p-3 text-left text-xs font-medium cursor-pointer hover:bg-opacity-50 transition-colors"
-                          onClick={() => handleSort('fullName')}
-                          style={{ color: colors.textSecondary }}
-                        >
-                          <div className="flex items-center gap-1">
-                            User
-                            {sortField === 'fullName' && (
-                              sortDirection === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-                            )}
-                          </div>
-                        </th>
-                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                          Email
-                        </th>
-                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                          Phone Number
-                        </th>
-                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                          Access Type
-                        </th>
-                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                          Status
-                        </th>
-                        <th 
-                          className="p-3 text-left text-xs font-medium cursor-pointer hover:bg-opacity-50 transition-colors"
-                          onClick={() => handleSort('lastActive')}
-                          style={{ color: colors.textSecondary }}
-                        >
-                          <div className="flex items-center gap-1">
-                            Last Active
-                            {sortField === 'lastActive' && (
-                              sortDirection === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-                            )}
-                          </div>
-                        </th>
-                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                          Security Score
-                        </th>
-                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                          Actions
-                        </th>
-                       </tr>
+                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}><input type="checkbox" checked={selectedUsers.length === users.length && users.length > 0} onChange={handleSelectAll} className="rounded" style={{ borderColor: colors.border }} disabled={loading} /></th>
+                        <th className="p-3 text-left text-xs font-medium cursor-pointer hover:bg-opacity-50 transition-colors" onClick={() => handleSort('fullName')} style={{ color: colors.textSecondary }}><div className="flex items-center gap-1">User{sortField === 'fullName' && (sortDirection === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}</div></th>
+                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>Email</th>
+                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>Phone Number</th>
+                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>Access Type</th>
+                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
+                        <th className="p-3 text-left text-xs font-medium cursor-pointer hover:bg-opacity-50 transition-colors" onClick={() => handleSort('lastActive')} style={{ color: colors.textSecondary }}><div className="flex items-center gap-1">Last Active{sortField === 'lastActive' && (sortDirection === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}</div></th>
+                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>Security Score</th>
+                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
+                      </tr>
                     </thead>
                     <tbody>
                       {users.map(user => (
-                        <tr 
-                          key={user.id}
-                          className="border-t hover-lift transition-colors"
-                          style={{ 
-                            borderColor: colors.border,
-                            backgroundColor: selectedUsers.includes(user.id) ? colors.selected : 'transparent',
-                            cursor: openingModalForUserId === user.id ? 'wait' : 'pointer',
-                            opacity: openingModalForUserId === user.id ? 0.7 : 1
-                          }}
-                          onClick={(e) => {
-                            // Only trigger if clicking on the row itself, not on interactive elements
-                            if (!e.target.closest('button') && 
-                                !e.target.closest('input[type="checkbox"]') &&
-                                !e.target.closest('a')) {
-                              handleRowClick(user, e);
-                            }
-                          }}
-                        >
-                          <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={selectedUsers.includes(user.id)}
-                              onChange={() => handleSelectUser(user.id)}
-                              className="rounded border-gray-300"
-                              style={{ borderColor: colors.border }}
-                              disabled={loading || openingModalForUserId === user.id}
-                            />
-                          </td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-3">
-                              <div 
-                                className="w-8 h-8 rounded-full flex items-center justify-center text-white font-medium text-sm"
-                                style={{ backgroundColor: user.avatarColor || colors.primary }}
-                              >
-                                {user.fullName
-                                ?.split(' ')
-                                .map(n => n[0])
-                                .join('')
-                                .slice(0, 2) || '??'}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="text-sm font-semibold truncate" style={{ color: colors.text }}>
-                                  {user.fullName || 'Unknown User'}
-                                </div>
-                                <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
-                                  @{user.username || 'unknown'}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <div className="text-sm truncate" style={{ color: colors.text }}>
-                              {user.email || 'No email'}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <div className="text-sm truncate" style={{ color: colors.text }}>
-                              {user.phoneNumber || 'No phone number'}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <div 
-                              className="px-2 py-1 rounded-full text-xs font-medium w-fit uppercase"
-                              style={getRoleColorStyle(user.role || user.roleId)}
-                            >
-                              {getRoleDisplayName(user.role || user.roleId)}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <div 
-                              className="px-2 py-1 rounded-full text-xs font-medium w-fit"
-                              style={getStatusColorStyle(user.status)}
-                            >
-                              {getUserStatusDisplayName(user.status)}
-                            </div>
-                          </td>
+                        <tr key={user.id} className="border-t hover-lift transition-colors" style={{ borderColor: colors.border, backgroundColor: selectedUsers.includes(user.id) ? colors.selected : 'transparent', cursor: openingModalForUserId === user.id ? 'wait' : 'pointer' }} onClick={(e) => { if (!e.target.closest('button') && !e.target.closest('input[type="checkbox"]') && !e.target.closest('a')) handleRowClick(user, e); }}>
+                          <td className="p-3" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedUsers.includes(user.id)} onChange={() => handleSelectUser(user.id)} className="rounded" style={{ borderColor: colors.border }} disabled={loading || openingModalForUserId === user.id} /></td>
+                          <td className="p-3"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-medium text-sm" style={{ backgroundColor: user.avatarColor || colors.primary }}>{user.fullName?.split(' ').map(n => n[0]).join('').slice(0, 2) || '??'}</div><div className="min-w-0"><div className="text-sm font-semibold truncate" style={{ color: colors.text }}>{user.fullName || 'Unknown User'}</div><div className="text-xs truncate" style={{ color: colors.textSecondary }}>@{user.username || 'unknown'}</div></div></div></td>
+                          <td className="p-3"><div className="text-sm truncate" style={{ color: colors.text }}>{user.email || 'No email'}</div></td>
+                          <td className="p-3"><div className="text-sm truncate" style={{ color: colors.text }}>{user.phoneNumber || 'No phone number'}</div></td>
+                          <td className="p-3"><div className="px-2 py-1 rounded-full text-xs font-medium w-fit uppercase" style={getRoleColorStyle(user.role || user.roleId)}>{getRoleDisplayName(user.role || user.roleId)}</div></td>
+                          <td className="p-3"><div className="px-2 py-1 rounded-full text-xs font-medium w-fit" style={getStatusColorStyle(user.status)}>{getUserStatusDisplayName(user.status)}</div></td>
                           <td className="p-3">
                             <div className="text-sm" style={{ color: !user.lastActive || user.totalLogins === 0 ? colors.textTertiary : colors.text }}>
                                 {formatLastActive(user.lastActive, user.totalLogins)}
@@ -3848,71 +2070,17 @@ const loadUsers = async (filters = {}) => {
                                 </div>
                             )}
                         </td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-1">
-                              <div className="text-sm font-medium" style={{ color: colors.text }}>
-                                {user.securityScore || 0}
-                              </div>
-                              <div className="w-16 h-1 rounded-full bg-gray-200">
-                                <div 
-                                  className="h-full rounded-full"
-                                  style={{ 
-                                    width: `${user.securityScore || 0}%`,
-                                    backgroundColor: getSecurityColor(user.securityScore)
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  handleViewUserDetails(user);
-                                }}
-                                className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-                                style={{ backgroundColor: colors.hover }}
-                                title="View Details"
-                                disabled={loading || openingModalForUserId === user.id}
-                              >
-                                <Eye size={14} style={{ color: colors.textSecondary }} />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  handleEditUser(user);
-                                }}
-                                className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-                                style={{ backgroundColor: colors.hover }}
-                                title="Edit User"
-                                disabled={loading || openingModalForUserId === user.id}
-                              >
-                                <Edit size={14} style={{ color: colors.textSecondary }} />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  handleDeleteUser(user);
-                                }}
-                                className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-                                style={{ backgroundColor: colors.hover }}
-                                title="Delete User"
-                                disabled={loading || openingModalForUserId === user.id}
-                              >
-                                <Trash2 size={14} style={{ color: colors.error }} />
-                              </button>
-                            </div>
-                          </td>
+                          <td className="p-3"><div className="flex items-center gap-1"><div className="text-sm font-medium" style={{ color: colors.text }}>{user.securityScore || 0}</div><div className="w-16 h-1 rounded-full bg-gray-200"><div className="h-full rounded-full" style={{ width: `${user.securityScore || 0}%`, backgroundColor: getSecurityColor(user.securityScore) }} /></div></div></td>
+                          <td className="p-3" onClick={(e) => e.stopPropagation()}><div className="flex items-center gap-2">
+                            <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleViewUserDetails(user); }} className="p-1.5 rounded hover:bg-opacity-50 transition-colors" style={{ backgroundColor: colors.hover }} title="View Details" disabled={loading || openingModalForUserId === user.id}><Eye size={14} style={{ color: colors.textSecondary }} /></button>
+                            <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleEditUser(user); }} className="p-1.5 rounded hover:bg-opacity-50 transition-colors" style={{ backgroundColor: colors.hover }} title="Edit User" disabled={loading || openingModalForUserId === user.id}><Edit size={14} style={{ color: colors.textSecondary }} /></button>
+                            <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleDeleteUser(user); }} className="p-1.5 rounded hover:bg-opacity-50 transition-colors" style={{ backgroundColor: colors.hover }} title="Delete User" disabled={loading || openingModalForUserId === user.id}><Trash2 size={14} style={{ color: colors.error }} /></button>
+                          </div></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-
                 <Pagination />
               </div>
             </div>

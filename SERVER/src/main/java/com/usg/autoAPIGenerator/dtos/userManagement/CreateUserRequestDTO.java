@@ -31,6 +31,7 @@ public class CreateUserRequestDTO {
     private String phoneNumber;
     private String location;
     private boolean mfaEnabled;
+    private String status;
     private boolean sendWelcomeEmail;
     private List<String> tags;
     private Map<String, Object> customAttributes;

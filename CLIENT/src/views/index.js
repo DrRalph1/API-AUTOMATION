@@ -1,7 +1,6 @@
-// views/index.js
 import React, { useState, useEffect, useCallback } from "react";
 import { useTheme } from "@/context/ThemeContext.js";
-import { useAuth } from "@/context/AuthContext"; // Import auth context
+import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { 
   Database,
@@ -573,12 +572,12 @@ import UserDetailsModal from "@/components/modals/UserDetailsModal";
 import NotificationDetailsModal from "@/components/modals/NotificationDetailsModal";
 import PerformanceMetricsModal from "@/components/modals/PerformanceMetricsModal";
 
-import { useNavigate } from "react-router-dom"; // Import useNavigate
+import { useNavigate } from "react-router-dom";
 
-export default function EntryPage() {
+export default function EntryPage({ userRole }) {
   const { theme, toggle, customTheme, setCustomTheme } = useTheme();
-  const { logout, user, token, isAuthenticated } = useAuth(); // Get auth context including token
-  const navigate = useNavigate(); // Get navigate function
+  const { logout, user, token, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -614,12 +613,21 @@ export default function EntryPage() {
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [selectedMetric, setSelectedMetric] = useState(null);
 
-  // Session management states
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
 
   const isDark = theme === 'dark';
+  
+  // Determine if user is admin
+  const isAdmin = user?.role === "system administrator" || userRole === "admin";
+  
+  // Set default active tab based on role
+  useEffect(() => {
+    if (!isAdmin) {
+      setActiveTab("api-collections"); // Default for regular users
+    }
+  }, [isAdmin]);
 
   // Check screen size on mount and resize
   useEffect(() => {
@@ -654,7 +662,6 @@ export default function EntryPage() {
 
   // Initialize comprehensive data
   useEffect(() => {
-    // Generate dummy notifications
     const dummyNotifications = [
       {
         id: 1,
@@ -685,7 +692,6 @@ export default function EntryPage() {
       }
     ];
 
-    // Generate API performance data
     const dummyApiPerformance = [
       { name: 'Get Customer Orders', latency: 45, calls: 1250, successRate: 99.8, endpoint: '/api/v1/customers/{id}/orders' },
       { name: 'Create User Session', latency: 32, calls: 892, successRate: 99.9, endpoint: '/api/v1/sessions' },
@@ -693,7 +699,6 @@ export default function EntryPage() {
       { name: 'Generate Report', latency: 125, calls: 342, successRate: 99.2, endpoint: '/api/v1/reports' }
     ];
 
-    // Generate schema data
     const dummySchemaData = {
       oracle: {
         tables: 45,
@@ -718,7 +723,6 @@ export default function EntryPage() {
       }
     };
 
-    // Generate database statistics
     const dummyDatabaseStats = {
       totalConnections: 8,
       activeConnections: 6,
@@ -853,32 +857,46 @@ export default function EntryPage() {
     poolUtilization: "78%"
   };
 
-  // Navigation items with icons - Keep all items including user-mgt
-  const navItems = [
-    { id: "overview", label: "Dashboard", icon: LayoutDashboard, component: <Dashboard setActiveTab={setActiveTab} authToken={`Bearer ${token}`} /> },
-    { id: "schema-browser", label: "Schema Browser", icon: DatabaseBackup, component: <SchemaBrowser authToken={`Bearer ${token}`} /> },
-    // { id: "oracle-schema-browser", label: "Oracle Schema Browser", icon: DatabaseIcon, component: <OracleSchemaBrowser authToken={`Bearer ${token}`} /> },
-    // { id: "postgresql-schema-browser", label: "PostgreSQL Schema Browser", icon: DatabaseIcon2, component: <PostgreSQLSchemaBrowser authToken={`Bearer ${token}`} /> },
-    { id: "api-collections", label: "Collections", icon: FileCode, component: <Collections authToken={`Bearer ${token}`} /> },
-    { id: "api-docs", label: "Documentation", icon: Activity, component: <Documentation authToken={`Bearer ${token}`} /> },
-    { id: "code-base", label: "Code Base", icon: Code, component: <CodeBase authToken={`Bearer ${token}`} /> },
-    { id: "user-mgt", label: "User Mgt", icon: UserCog, component: <UserMangement authToken={`Bearer ${token}`} /> },
-    { id: "api-requests", label: "API Requests", icon: FileCode, component: <APIRequests authToken={`Bearer ${token}`} /> },
-    { id: "api-security", label: "API Security", icon: Shield, component: <APISecurity authToken={`Bearer ${token}`} /> },
+  // ========================
+  // NAVIGATION ITEMS - ROLE BASED
+  // ========================
+  
+  // Complete navigation items (all available)
+  const allNavItems = [
+    { id: "overview", label: "Dashboard", icon: LayoutDashboard, component: <Dashboard setActiveTab={setActiveTab} authToken={`Bearer ${token}`} />, roles: ["system administrator"] },
+    { id: "schema-browser", label: "Schema Browser", icon: DatabaseBackup, component: <SchemaBrowser authToken={`Bearer ${token}`} />, roles: ["system administrator"] },
+    { id: "api-collections", label: "Collections", icon: FileCode, component: <Collections authToken={`Bearer ${token}`} />, roles: ["system administrator", "user"] },
+    { id: "api-docs", label: "Documentation", icon: Activity, component: <Documentation authToken={`Bearer ${token}`} />, roles: ["system administrator", "user"] },
+    { id: "code-base", label: "Code Base", icon: Code, component: <CodeBase authToken={`Bearer ${token}`} />, roles: ["system administrator", "user"] },
+    { id: "user-mgt", label: "User Management", icon: UserCog, component: <UserMangement authToken={`Bearer ${token}`} />, roles: ["system administrator"] },
+    { id: "api-requests", label: "API Requests", icon: FileCode, component: <APIRequests authToken={`Bearer ${token}`} />, roles: ["system administrator"] },
+    { id: "api-security", label: "API Security", icon: Shield, component: <APISecurity authToken={`Bearer ${token}`} />, roles: ["system administrator"] },
   ];
 
-  // Filter navigation items for UI display (hide user-mgt)
-  // const visibleNavItems = navItems.filter(item => item.id !== "user-mgt" && item.id !== "api-security-disabled" && item.id !== "oracle-schema-browser" && item.id !== "postgresql-schema-browser");
+  // Filter navigation items based on user role
+  const navItems = allNavItems.filter(item => 
+    item.roles.includes(user?.role || (isAdmin ? "system administrator" : "user"))
+  );
 
-  const visibleNavItems = navItems.filter(item => item.id !== "user-mgt" && item.id !== "api-security-disabled");
+  // Quick actions based on role
+  const getQuickActions = () => {
+    const adminActions = [
+      { id: "new-connection", label: "New Connection", icon: Database, color: "bg-blue-500", onClick: () => setShowConnectionWizard(true) },
+      { id: "generate-api", label: "Generate API", icon: Zap, color: "bg-orange-500", onClick: () => setShowApiWizard(true) },
+      { id: "run-test", label: "Run Test", icon: Play, color: "bg-green-500", onClick: () => alert("Running system test...") },
+      { id: "export-data", label: "Export Data", icon: Download, color: "bg-purple-500", onClick: () => handleExportData('all') }
+    ];
 
-  // Quick actions
-  const quickActions = [
-    { id: "new-connection", label: "New Connection", icon: Database, color: "bg-blue-500", onClick: () => setShowConnectionWizard(true) },
-    { id: "generate-api", label: "Generate API", icon: Zap, color: "bg-orange-500", onClick: () => setShowApiWizard(true) },
-    { id: "run-test", label: "Run Test", icon: Play, color: "bg-green-500", onClick: () => alert("Running system test...") },
-    { id: "export-data", label: "Export Data", icon: Download, color: "bg-purple-500", onClick: () => handleExportData('all') }
-  ];
+    const userActions = [
+      { id: "view-docs", label: "View Documentation", icon: BookOpen, color: "bg-blue-500", onClick: () => setActiveTab("api-docs") },
+      { id: "browse-collections", label: "Browse Collections", icon: FolderTree, color: "bg-green-500", onClick: () => setActiveTab("api-collections") },
+      { id: "view-codebase", label: "View Code Base", icon: Code, color: "bg-purple-500", onClick: () => setActiveTab("code-base") }
+    ];
+
+    return isAdmin ? adminActions : userActions;
+  };
+
+  const quickActions = getQuickActions();
 
   // Status badge component
   const StatusBadge = ({ status, size = "sm" }) => {
@@ -991,20 +1009,17 @@ export default function EntryPage() {
     }
   };
 
-  // UPDATED: Handle logout using auth context
   const handleManualLogout = () => {
     setUserMenuOpen(false);
     setShowLogoutConfirm(true);
   };
 
-  // UPDATED: Confirm logout
   const confirmLogout = useCallback(() => {
     setShowLogoutConfirm(false);
     setSessionExpired('manual');
     
-    // Use the auth context logout
     setTimeout(() => {
-      logout(); // This should handle clearing tokens and redirecting
+      logout();
       navigate('/login', { replace: true });
     }, 1000);
   }, [logout, navigate]);
@@ -1014,12 +1029,11 @@ export default function EntryPage() {
     const activeNavItem = navItems.find(item => item.id === activeTab);
     
     if (activeNavItem) {
-      // Pass theme and other context props to each component
       return React.cloneElement(activeNavItem.component, {
         theme: theme,
         isDark: isDark,
         customTheme: customTheme,
-        toggleTheme: toggle // from useTheme()
+        toggleTheme: toggle
       });
     }
     return null;
@@ -1044,7 +1058,7 @@ export default function EntryPage() {
                     API Platform
                   </h2>
                   <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                    Dashboard
+                    {isAdmin ? 'Administrator' : 'User'} Dashboard
                   </p>
                 </div>
               </div>
@@ -1056,9 +1070,9 @@ export default function EntryPage() {
               </button>
             </div>
 
-            {/* Mobile Navigation - Use visibleNavItems to hide user-mgt */}
+            {/* Mobile Navigation */}
             <nav className="space-y-1 mb-8">
-              {visibleNavItems.map(item => {
+              {navItems.map(item => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
                 return (
@@ -1088,34 +1102,23 @@ export default function EntryPage() {
                 Quick Actions
               </h3>
               <div className="space-y-2">
-                <button
-                  onClick={() => {
-                    setShowConnectionWizard(true);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-xl border transition-colors ${
-                    isDark
-                      ? 'border-gray-800 hover:border-gray-700 hover:bg-gray-800'
-                      : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
-                  }`}
-                >
-                  <Database className="h-4 w-4" />
-                  <span>New Connection</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setShowApiWizard(true);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-xl border transition-colors ${
-                    isDark
-                      ? 'border-gray-800 hover:border-gray-700 hover:bg-gray-800'
-                      : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
-                  }`}
-                >
-                  <Zap className="h-4 w-4" />
-                  <span>Generate API</span>
-                </button>
+                {quickActions.map(action => (
+                  <button
+                    key={action.id}
+                    onClick={() => {
+                      action.onClick();
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-xl border transition-colors ${
+                      isDark
+                        ? 'border-gray-800 hover:border-gray-700 hover:bg-gray-800'
+                        : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+                    }`}
+                  >
+                    <action.icon className="h-4 w-4" />
+                    <span>{action.label}</span>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -1124,7 +1127,7 @@ export default function EntryPage() {
     );
   };
 
-  // Database Connection Wizard
+  // Database Connection Wizard (only for admin)
   const DatabaseConnectionWizard = () => {
     const [step, setStep] = useState(1);
     const [dbType, setDbType] = useState('oracle');
@@ -1134,7 +1137,7 @@ export default function EntryPage() {
       setStep(1);
     };
 
-    if (!showConnectionWizard) return null;
+    if (!showConnectionWizard || !isAdmin) return null;
 
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -1261,13 +1264,13 @@ export default function EntryPage() {
     );
   };
 
-  // API Generation Wizard
+  // API Generation Wizard (only for admin)
   const AutoAPIGeneratorWizard = () => {
     const handleClose = () => {
       setShowApiWizard(false);
     };
 
-    if (!showApiWizard) return null;
+    if (!showApiWizard || !isAdmin) return null;
 
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -1443,66 +1446,74 @@ export default function EntryPage() {
 
   // Session Expired Overlay
   const SessionExpiredOverlay = () => {
-  if (!sessionExpired) return null;
+    if (!sessionExpired) return null;
 
-  return (
-    <>
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className={`w-full max-w-md rounded-2xl shadow-2xl ${
-          isDark ? 'bg-gray-900/95 backdrop-blur-lg border-gray-800' : 'bg-white/95 backdrop-blur-lg border-gray-200'
-        } border ${isDark ? 'text-white' : 'text-gray-900'}`}>
-          <div className="relative p-6">
-            <div className="text-center space-y-4">
-              <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-2 ${
-                sessionExpired === 'manual'
-                  ? isDark ? 'bg-red-500/20' : 'bg-red-500/20'
-                  : isDark ? 'bg-blue-500/20' : 'bg-blue-500/20'
-              }`}>
-                <AlertTriangle
-                  size={32}
-                  className={
-                    sessionExpired === 'manual'
-                      ? isDark ? "text-red-400" : "text-red-500"
-                      : isDark ? "text-blue-400" : "text-blue-500"
-                  }
-                />
-              </div>
-              
-              <h2 className="text-xl font-bold">
-                {sessionExpired === 'manual' ? 'Logging Out' : 'Session Expired'}
-              </h2>
-              
-              <p className={isDark ? "text-gray-400" : "text-gray-600"}>
-                {sessionExpired === "manual"
-                  ? "You are being logged out..."
-                  : "Your session has expired due to inactivity. Redirecting to login..."}
-              </p>
-
-              {sessionExpired === 'manual' && (
-                <div className={`rounded-lg p-3 ${
-                  isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-50 border-red-200"
-                } border`}>
-                  <p className={`text-sm ${isDark ? "text-red-400" : "text-red-600"}`}>
-                    <span className="font-semibold">Security Note:</span> This will end your current session and clear all temporary data.
-                  </p>
-                </div>
-              )}
-
-              <div className="flex justify-center pt-4">
-                <div className={`w-8 h-8 border-2 rounded-full animate-spin ${
+    return (
+      <>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className={`w-full max-w-md rounded-2xl shadow-2xl ${
+            isDark ? 'bg-gray-900/95 backdrop-blur-lg border-gray-800' : 'bg-white/95 backdrop-blur-lg border-gray-200'
+          } border ${isDark ? 'text-white' : 'text-gray-900'}`}>
+            <div className="relative p-6">
+              <div className="text-center space-y-4">
+                <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-2 ${
                   sessionExpired === 'manual'
-                    ? isDark ? 'border-red-400 border-t-transparent' : 'border-red-500 border-t-transparent'
-                    : isDark ? 'border-blue-400 border-t-transparent' : 'border-blue-500 border-t-transparent'
-                }`}></div>
+                    ? isDark ? 'bg-red-500/20' : 'bg-red-500/20'
+                    : isDark ? 'bg-blue-500/20' : 'bg-blue-500/20'
+                }`}>
+                  <AlertTriangle
+                    size={32}
+                    className={
+                      sessionExpired === 'manual'
+                        ? isDark ? "text-red-400" : "text-red-500"
+                        : isDark ? "text-blue-400" : "text-blue-500"
+                    }
+                  />
+                </div>
+                
+                <h2 className="text-xl font-bold">
+                  {sessionExpired === 'manual' ? 'Logging Out' : 'Session Expired'}
+                </h2>
+                
+                <p className={isDark ? "text-gray-400" : "text-gray-600"}>
+                  {sessionExpired === "manual"
+                    ? "You are being logged out..."
+                    : "Your session has expired due to inactivity. Redirecting to login..."}
+                </p>
+
+                {sessionExpired === 'manual' && (
+                  <div className={`rounded-lg p-3 ${
+                    isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-50 border-red-200"
+                  } border`}>
+                    <p className={`text-sm ${isDark ? "text-red-400" : "text-red-600"}`}>
+                      <span className="font-semibold">Security Note:</span> This will end your current session and clear all temporary data.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex justify-center pt-4">
+                  <div className={`w-8 h-8 border-2 rounded-full animate-spin ${
+                    sessionExpired === 'manual'
+                      ? isDark ? 'border-red-400 border-t-transparent' : 'border-red-500 border-t-transparent'
+                      : isDark ? 'border-blue-400 border-t-transparent' : 'border-blue-500 border-t-transparent'
+                  }`}></div>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </>
-  );
-};
+      </>
+    );
+  };
+
+  // Role-based welcome message
+  const getWelcomeMessage = () => {
+    if (isAdmin) {
+      return "Administrator Dashboard";
+    }
+    return "Developer Workspace";
+  };
 
   return (
     <div className={`min-h-screen ${isDark ? 'bg-gray-950' : 'bg-gray-50'} transition-colors`}>
@@ -1536,15 +1547,15 @@ export default function EntryPage() {
                     API Generation Platform
                   </h1>
                   <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                    Database Object to API Endpoint
+                    {getWelcomeMessage()}
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Center Navigation - Desktop - Use visibleNavItems to hide user-mgt */}
+            {/* Center Navigation - Desktop */}
             <div className="hidden lg:flex items-center gap-1">
-              {visibleNavItems.map(item => {
+              {navItems.map(item => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
                 return (
@@ -1587,7 +1598,7 @@ export default function EntryPage() {
               
               <div className="h-6 w-px mx-2 bg-gray-300 dark:bg-gray-700"></div>
               
-              {/* UPDATED USER SECTION WITH DROPDOWN */}
+              {/* User Section with Dropdown */}
               <div className="relative user-menu-container">
                 <button
                   onClick={() => setUserMenuOpen(!userMenuOpen)}
@@ -1598,10 +1609,10 @@ export default function EntryPage() {
                   </div>
                   <div className="hidden sm:block text-left">
                     <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                      {user?.name || "Admin User"}
+                      {user?.name || (isAdmin ? "Admin User" : "Regular User")}
                     </p>
                     <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                      {user?.email || "admin@example.com"}
+                      {user?.email || (isAdmin ? "admin@example.com" : "user@example.com")}
                     </p>
                   </div>
                   <ChevronDown className={`h-4 w-4 transition-transform ${userMenuOpen ? 'rotate-180' : ''} ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
@@ -1617,19 +1628,24 @@ export default function EntryPage() {
                     <div className={`absolute right-0 top-full mt-2 w-64 rounded-xl shadow-lg z-60 ${
                       isDark ? 'bg-gray-900 border border-gray-800' : 'bg-white border border-gray-200'
                     }`}>
-                      {/* User Info Section */}
-                      {/* <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
-                        <div className="flex items-center gap-3 mb-3">
-                          <div>
-                            <h3 className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                              {user?.name || "Admin User"}
-                            </h3>
-                            <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                              {user?.email || "admin@example.com"}
-                            </p>
+                      {/* Role Badge */}
+                      <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className={`px-2 py-1 rounded-md text-xs font-medium ${
+                            isAdmin 
+                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                          }`}>
+                            {isAdmin ? 'Administrator' : 'User'}
                           </div>
                         </div>
-                      </div> */}
+                        <h3 className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {user?.name || (isAdmin ? "Admin User" : "Regular User")}
+                        </h3>
+                        <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                          {user?.email || (isAdmin ? "admin@example.com" : "user@example.com")}
+                        </p>
+                      </div>
 
                       {/* Actions Section */}
                       <div className="p-2">
@@ -1648,20 +1664,22 @@ export default function EntryPage() {
                           <span>View Profile</span>
                         </button>
                         
-                        <button
-                          onClick={() => {
-                            console.log('Account Settings clicked');
-                            setUserMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                            isDark 
-                              ? 'hover:bg-gray-800 text-gray-300' 
-                              : 'hover:bg-gray-100 text-gray-700'
-                          }`}
-                        >
-                          <Settings className="h-4 w-4" />
-                          <span>Account Settings</span>
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => {
+                              console.log('Account Settings clicked');
+                              setUserMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                              isDark 
+                                ? 'hover:bg-gray-800 text-gray-300' 
+                                : 'hover:bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            <Settings className="h-4 w-4" />
+                            <span>Account Settings</span>
+                          </button>
+                        )}
 
                         <div className={`h-px my-1 ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
 
@@ -1697,7 +1715,7 @@ export default function EntryPage() {
       {/* Mobile Navigation Menu */}
       <MobileNavigationMenu />
 
-      {/* Modals */}
+      {/* Modals - Only show for admin */}
       <DatabaseConnectionWizard />
       <AutoAPIGeneratorWizard />
 
@@ -1717,11 +1735,11 @@ export default function EntryPage() {
         isMobile={isMobile}
       />
 
-      {/* Mobile Bottom Navigation - Use visibleNavItems to hide user-mgt */}
+      {/* Mobile Bottom Navigation */}
       {isMobile && (
         <div className={`fixed bottom-0 left-0 right-0 ${isDark ? 'bg-gray-900/95 backdrop-blur-xl' : 'bg-white/95 backdrop-blur-xl'} border-t ${isDark ? 'border-gray-800' : 'border-gray-300'} z-30`}>
           <div className="flex items-center justify-around py-2">
-            {visibleNavItems.slice(0, 4).map(item => {
+            {navItems.slice(0, 4).map(item => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (

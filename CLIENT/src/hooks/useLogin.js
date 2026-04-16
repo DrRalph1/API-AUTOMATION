@@ -16,8 +16,6 @@ import {
   sendOTP
 } from "../controllers/OTPController.js";
 import { showError, showSuccess, showWarning } from "@/lib/sweetAlert";
-
-// ADD THIS IMPORT
 import { API_CONFIG } from "@/config/APIConfig";
 
 export const useLogin = () => {
@@ -37,7 +35,7 @@ export const useLogin = () => {
     showOtp: false,
     otp: ["", "", "", "", "", ""],
     loginData: null,
-    userType: "USER",
+    userType: "user",
     portalValidationError: "",
     lastAttemptedRole: "",
     resendCountdown: 0,
@@ -88,12 +86,12 @@ export const useLogin = () => {
     
     // Ensure role is a string before calling toLowerCase
     if (role && typeof role === 'string') {
-      return role.toLowerCase() === "system administrator" ? "system administrator" : "USER";
+      return role.toLowerCase() === "system administrator" ? "system administrator" : "user";
     }
     
     // If role is not a string, return a safe default
     console.log("⚠️ getUserRoleForAlert: role is not a string, defaulting to USER", role);
-    return "USER"; // Default to USER for safety
+    return "user"; // Default to USER for safety
   };
 
   // Alert functions - FIXED to use the safe getUserRoleForAlert
@@ -136,7 +134,7 @@ export const useLogin = () => {
     });
   };
 
-  // Portal validation - FIXED with type checking
+  // Portal validation - UPDATED to allow both roles and auto-correct
   const validatePortalAccess = (userRole, selectedPortal) => {
     console.log(`🔍 Portal Validation: User Role = "${userRole}", Selected Portal = "${selectedPortal}"`);
     
@@ -147,7 +145,8 @@ export const useLogin = () => {
       console.log(`⚠️ User role is not a string: ${typeof userRole}`, userRole);
       return {
         valid: true,
-        message: ""
+        message: "",
+        autoCorrected: false
       };
     }
     
@@ -158,36 +157,40 @@ export const useLogin = () => {
     console.log(`🔍 Normalized: Role = "${normalizedRole}", Portal = "${normalizedPortal}"`);
     
     // Check if role is valid
-    const validRoles = ["system administrator", "USER"];
+    const validRoles = ["system administrator", "user"];
     if (!validRoles.includes(normalizedRole)) {
       console.log(`❌ Invalid role detected: "${normalizedRole}"`);
       return {
         valid: false,
-        message: `Unknown user role: "${userRole}". Access denied. Please contact system administrator.`
+        message: `Unknown user role: "${userRole}". Access denied. Please contact system administrator.`,
+        autoCorrected: false
       };
     }
 
-    // Check if role matches portal
+    // NEW: Auto-correct the portal selection if there's a mismatch
     if (normalizedRole !== normalizedPortal) {
-      console.log(`❌ Role/portal mismatch: ${normalizedRole} != ${normalizedPortal}`);
+      console.log(`⚠️ Role/portal mismatch: ${normalizedRole} != ${normalizedPortal}`);
+      console.log(`🔄 Auto-correcting portal from "${selectedPortal}" to match user role "${userRole}"`);
       
-      const attemptedPortal = normalizedPortal === "system administrator" ? "Admin Portal" : "USER Portal";
-      const shouldBePortal = normalizedRole === "system administrator" ? "Admin Portal" : "USER Portal";
-
-      const userType = normalizedRole === "system administrator" 
-        ? "an ADMINISTRATOR" 
-        : "a USER";
+      // Auto-correct the userType state to match the actual role
+      setUserType(userRole);
+      
+      const correctedPortalName = userRole === "system administrator" ? "Admin Portal" : "USER Portal";
+      const userTypeDescription = userRole === "system administrator" ? "an ADMINISTRATOR" : "a USER";
       
       return {
-        valid: false,
-        message: `Your account is assigned the role of ${userType}, which grants access only to the ${shouldBePortal}. Access to the ${attemptedPortal} is not permitted.`
+        valid: true,
+        message: `You are logged in as ${userTypeDescription}. Redirecting to ${correctedPortalName}.`,
+        autoCorrected: true,
+        correctedRole: userRole
       };
     }
 
-    console.log("✅ Portal validation passed");
+    console.log("✅ Portal validation passed - role matches selected portal");
     return {
       valid: true,
-      message: ""
+      message: "",
+      autoCorrected: false
     };
   };
 
@@ -247,7 +250,7 @@ export const useLogin = () => {
     return errors;
   };
 
-  // Login handler
+  // Login handler - UPDATED to handle auto-correction
   const handleLogin = async (e) => {
     e.preventDefault();
 
@@ -355,7 +358,7 @@ export const useLogin = () => {
         }
       }
 
-      // Validate portal access
+      // Validate portal access with auto-correction
       const portalValidation = validatePortalAccess(userRole, state.userType);
       
       if (!portalValidation.valid) {
@@ -369,14 +372,21 @@ export const useLogin = () => {
         
         showError(
           "Login Denied",
-          "You do not have permission to access this portal.",
+          portalValidation.message,
           userRole
         );
 
         return;
       }
 
-      console.log("✅ Portal access validated successfully");
+      // Show info message if auto-correction happened
+      if (portalValidation.autoCorrected) {
+        console.log("ℹ️ Portal auto-corrected:", portalValidation.message);
+        const userRoleForAlert = getUserRoleForAlert();
+        // showCustomWarning("Portal Access Adjusted", portalValidation.message);
+      }
+
+      console.log("✅ Portal validation passed successfully");
       
       setToken(receivedToken);
       setRole(userRole);
@@ -559,11 +569,12 @@ export const useLogin = () => {
 
         setRole(finalUserData.role);
 
-        // console.log("finalUserData.role:::::::" + finalUserData.role);
-
-        if (finalUserData.role === "system administrator") {
+        // Use the actual role from the user data, not the selected portal
+        const actualRole = finalUserData.role?.toLowerCase();
+        
+        if (actualRole === "system administrator") {
           return navigate("/admin", { replace: true });
-        } else if (finalUserData.role === "user") {
+        } else if (actualRole === "user") {
           return navigate("/USER", { replace: true });
         } else {
           return navigate("/", { replace: true });
@@ -662,88 +673,88 @@ export const useLogin = () => {
 
   // Forgot password handler
   const handleForgotPassword = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!state.forgotUserId.trim()) {
-    const userRole = getUserRoleForAlert();
-    showWarning(
-      "User ID Required",
-      "Please enter your User ID to reset your password.",
-      userRole
-    );
-    return false;
-  }
-
-  try {
-    setForgotLoading(true);
-
-    // Get API credentials from your config
-    const apiKey = API_CONFIG.HEADERS["x-api-key"];
-    const apiSecret = API_CONFIG.HEADERS["x-api-secret"];
-
-    console.log("🔑 Using API credentials for forgot password:", {
-      apiKeyPresent: !!apiKey,
-      apiSecretPresent: !!apiSecret
-    });
-
-    // First, check if user exists and get their phone number
-    const userResponse = await findUser(state.forgotUserId, apiKey, apiSecret);
-    console.log("📦 User lookup response:", userResponse);
-
-    const userData = userResponse?.data;
-    if (!userData) {
-      throw new Error("User not found. Please check the User ID and try again.");
-    }
-
-    console.log("userData:::::::::" + JSON.stringify(userData));
-
-    if (!userData.phoneNumber) {
-      throw new Error("No phone number found for this user. Please contact system administrator.");
-    }
-
-    // Now call the forgot password endpoint
-    const forgotPasswordPayload = {
-      user_id: state.forgotUserId
-    };
-
-    console.log("🔄 Calling forgot password API with payload:", forgotPasswordPayload);
-
-    const resetResponse = await forgotPassword(
-      forgotPasswordPayload,
-      apiKey,
-      apiSecret
-    );
-
-    console.log("📦 Forgot password response:", resetResponse);
-
-    if (resetResponse?.responseCode === 200) {
+    if (!state.forgotUserId.trim()) {
       const userRole = getUserRoleForAlert();
-      showSuccess(
-        "Password Reset Instructions Sent",
-        `We've sent password reset instructions to your registered mobile number (${userData.phoneNumber}). Please check your messages.`,
+      showWarning(
+        "User ID Required",
+        "Please enter your User ID to reset your password.",
         userRole
       );
-
-      setShowForgotPassword(false);
-      setForgotUserId("");
-      return true;
-    } else {
-      throw new Error(resetResponse?.message || "Failed to reset password.");
+      return false;
     }
-  } catch (error) {
-    console.error("❌ Forgot password error:", error);
-    
-    const userRole = getUserRoleForAlert();
-    showError(
-      "Password Reset Failed", 
-      error.message || "An error occurred while resetting your password. Please try again later.",
-      userRole
-    );
-    return false;
-  } finally {
-    setForgotLoading(false);
-  }
-};
+
+    try {
+      setForgotLoading(true);
+
+      // Get API credentials from your config
+      const apiKey = API_CONFIG.HEADERS["x-api-key"];
+      const apiSecret = API_CONFIG.HEADERS["x-api-secret"];
+
+      console.log("🔑 Using API credentials for forgot password:", {
+        apiKeyPresent: !!apiKey,
+        apiSecretPresent: !!apiSecret
+      });
+
+      // First, check if user exists and get their phone number
+      const userResponse = await findUser(state.forgotUserId, apiKey, apiSecret);
+      console.log("📦 User lookup response:", userResponse);
+
+      const userData = userResponse?.data;
+      if (!userData) {
+        throw new Error("User not found. Please check the User ID and try again.");
+      }
+
+      console.log("userData:::::::::" + JSON.stringify(userData));
+
+      if (!userData.phoneNumber) {
+        throw new Error("No phone number found for this user. Please contact system administrator.");
+      }
+
+      // Now call the forgot password endpoint
+      const forgotPasswordPayload = {
+        user_id: state.forgotUserId
+      };
+
+      console.log("🔄 Calling forgot password API with payload:", forgotPasswordPayload);
+
+      const resetResponse = await forgotPassword(
+        forgotPasswordPayload,
+        apiKey,
+        apiSecret
+      );
+
+      console.log("📦 Forgot password response:", resetResponse);
+
+      if (resetResponse?.responseCode === 200) {
+        const userRole = getUserRoleForAlert();
+        showSuccess(
+          "Password Reset Instructions Sent",
+          `We've sent password reset instructions to your registered mobile number (${userData.phoneNumber}). Please check your messages.`,
+          userRole
+        );
+
+        setShowForgotPassword(false);
+        setForgotUserId("");
+        return true;
+      } else {
+        throw new Error(resetResponse?.message || "Failed to reset password.");
+      }
+    } catch (error) {
+      console.error("❌ Forgot password error:", error);
+      
+      const userRole = getUserRoleForAlert();
+      showError(
+        "Password Reset Failed", 
+        error.message || "An error occurred while resetting your password. Please try again later.",
+        userRole
+      );
+      return false;
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   // Navigation handlers
   const handleBackFromReset = () => {

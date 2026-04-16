@@ -286,27 +286,30 @@ public class UserManagementService {
             // Create new user
             String userId = request.getUsername();
 
-            // Generate user ID
+            // Generate user ID if needed
             String generatedUserId = "user-" + UUID.randomUUID().toString().substring(0, 8);
 
-            // Create new user
+            // CRITICAL FIX: Set all required fields including total_logins
             UserEntity newUser = UserEntity.builder()
                     .userId(request.getUsername())
                     .username(request.getUsername())
                     .emailAddress(request.getEmail())
                     .fullName(request.getFullName())
                     .role(role)
-                    .isActive(false) // pending status
+                    .isActive("active".equalsIgnoreCase(request.getStatus())) // Fix status mapping
                     .isDefaultPassword(true)
                     .staffId(request.getDepartment())
                     .phoneNumber(request.getPhoneNumber())
                     .failedLoginAttempts(0)
+                    .totalLogins(0)  // IMPORTANT: Set default value for total_logins
+                    .securityScore(0) // Set default security score
                     .createdDate(LocalDateTime.now())
+                    .lastModifiedDate(LocalDateTime.now())
                     .build();
 
             // Set default password
             if (newUser.getPassword() == null) {
-                String defaultPassword = "P@$s1234"; // Or generate a random one
+                String defaultPassword = "P@$s1234";
                 newUser.setPassword(passwordEncoder.encode(defaultPassword));
             }
 
@@ -903,6 +906,7 @@ public class UserManagementService {
     // ============================================================
     // 14. GET ROLES AND PERMISSIONS
     // ============================================================
+    // In UserManagementService.java - Add this method to get unique roles
     @Transactional(readOnly = true)
     public RolesPermissionsResponseDTO getRolesAndPermissions(String requestId, String performedBy) {
         try {
@@ -913,7 +917,17 @@ public class UserManagementService {
 
             List<UserRoleEntity> roleEntities = roleRepository.findAll();
 
-            List<RoleDTO> roles = roleEntities.stream()
+            // DEDUPLICATE ROLES - Ensure unique roles by roleId and roleName
+            Map<String, UserRoleEntity> uniqueRolesMap = new HashMap<>();
+            for (UserRoleEntity role : roleEntities) {
+                // Use roleId as key for uniqueness
+                String key = role.getRoleId().toString();
+                if (!uniqueRolesMap.containsKey(key)) {
+                    uniqueRolesMap.put(key, role);
+                }
+            }
+
+            List<RoleDTO> roles = uniqueRolesMap.values().stream()
                     .map(this::convertToRoleDto)
                     .collect(Collectors.toList());
 

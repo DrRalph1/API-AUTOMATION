@@ -39,6 +39,7 @@ function Protected({ children, roles = [] }) {
     return <Navigate to="/login" replace />;
   }
 
+  // If roles are specified, check if user has required role
   if (roles.length > 0 && !roles.includes(user.role)) {
     return <Navigate to="/" replace />;
   }
@@ -64,8 +65,9 @@ function PublicRoute({ children }) {
   }
 
   if (user) {
+    // Redirect based on role
     if (user.role === "system administrator") return <Navigate to="/admin" replace />;
-    if (user.role === "user") return <Navigate to="/user" replace />;
+    if (user.role === "user") return <Navigate to="/user-dashboard" replace />;
     return <Navigate to="/" replace />;
   }
 
@@ -115,12 +117,11 @@ function RouteRedirect() {
 
   if (user) {
     if (user.role === "system administrator") return <Navigate to="/admin" replace />;
-    if (user.role === "user") return <Navigate to="/user" replace />;
+    if (user.role === "user") return <Navigate to="/user-dashboard" replace />;
     return <Navigate to="/" replace />;
   }
 
-return <Navigate to="/login" replace />;
-
+  return <Navigate to="/login" replace />;
 }
 
 // ========================
@@ -132,20 +133,26 @@ function RoutesTree() {
       {/* Public routes */}
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
 
-      {/* Role-based routes */}
+      {/* Admin routes - full access */}
       <Route path="/admin" element={
         <Protected roles={["system administrator"]}>
-            <EntryPage /> {/* Replace with Admin-specific component */}
+          <EntryPage userRole="admin" />
         </Protected>
       } />
 
-      {/* General EntryPage */}
+      {/* User routes - restricted access */}
+      <Route path="/user-dashboard" element={
+        <Protected roles={["user"]}>
+          <EntryPage userRole="user" />
+        </Protected>
+      } />
+
+      {/* General EntryPage - redirects based on role */}
       <Route path="/" element={
         <Protected>
-            <Login />
+          <EntryPage userRole={null} />
         </Protected>
-      }>
-      </Route>
+      } />
 
       {/* Catch all */}
       <Route path="*" element={<RouteRedirect />} />
@@ -163,7 +170,6 @@ export default function App() {
         <LogProvider>
           <ThemeProvider>
             <AuthProvider>
-              {/* Wrap everything with SweetAlertWrapper */}
               <SweetAlertWrapper>
                 <TooltipProvider>
                   <Toaster />
