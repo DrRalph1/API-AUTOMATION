@@ -4209,7 +4209,7 @@ const handleApiDetailChange = (field, value) => {
       if (field === 'parameterLocation') {
         updatedParams = updatedParams.map(param => 
           param.id === id ? { 
-            ...param, 
+            ...param,
             inBody: value === 'body',
             required: value === 'path' ? true : param.required, // Set required to true for path parameters
             _isPathParam: value === 'path' // Add a flag to track if it's a path parameter
