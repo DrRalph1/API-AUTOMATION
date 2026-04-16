@@ -79,6 +79,12 @@ public class GeneratedAPIDTO {
     // Metadata
     private Map<String, Object> metadata;
 
+    // Add these fields
+    private String protocolType;
+    private Map<String, Object> soapConfig;
+    private Map<String, Object> graphqlConfig;
+    private Map<String, Object> fileUploadConfig;
+
     // Nested DTOs
 
     @Data

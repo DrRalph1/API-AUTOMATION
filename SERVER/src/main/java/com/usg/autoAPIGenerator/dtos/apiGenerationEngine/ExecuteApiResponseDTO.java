@@ -20,5 +20,7 @@ public class ExecuteApiResponseDTO {
     private Boolean success;
     private String message;
     private Integer responseCode;
+    private String contentType;  // "application/json" or "application/xml"
+    private String protocolType; // "rest", "soap", "graphql"
 //    private Map<String, Object> error;
 }

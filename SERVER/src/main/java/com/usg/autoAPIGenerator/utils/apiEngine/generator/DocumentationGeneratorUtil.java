@@ -1,5 +1,7 @@
 package com.usg.autoAPIGenerator.utils.apiEngine.generator;
 
+import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.GraphQLConfigDTO;
+import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.SoapConfigDTO;
 import com.usg.autoAPIGenerator.entities.postgres.apiGenerationEngine.*;
 import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.CollectionInfoDTO;
 import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.GenerateApiRequestDTO;
@@ -15,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -398,12 +401,21 @@ public class DocumentationGeneratorUtil {
                                              String generatedApiId) {
 
         GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
+        String protocolType = api.getProtocolType() != null ? api.getProtocolType() : "rest";
 
         APIEndpointEntity endpoint = new APIEndpointEntity();
         endpoint.setId(UUID.randomUUID().toString());
         endpoint.setGeneratedApiId(generatedApiId);
         endpoint.setName(api.getApiName());
-        endpoint.setMethod(api.getHttpMethod());
+
+        // ============ PROTOCOL-SPECIFIC METHOD ============
+        if ("soap".equalsIgnoreCase(protocolType) || "graphql".equalsIgnoreCase(protocolType)) {
+            endpoint.setMethod("POST");
+            log.info("Overriding method to POST for {} protocol in documentation", protocolType);
+        } else {
+            endpoint.setMethod(api.getHttpMethod());
+        }
+
         endpoint.setUrl(genUrlInfo.getFullUrl());
         endpoint.setDescription(api.getDescription());
         endpoint.setCollection(collection);
@@ -419,13 +431,31 @@ public class DocumentationGeneratorUtil {
         endpoint.setCreatedAt(LocalDateTime.now());
         endpoint.setUpdatedAt(LocalDateTime.now());
 
-        // Add metadata
+        // Add metadata with protocol info
         Map<String, Object> endpointMetadata = new HashMap<>();
         endpointMetadata.put("genPath", genUrlInfo.getEndpointPath());
         endpointMetadata.put("apiId", api.getId());
         endpointMetadata.put("fullGenUrl", genUrlInfo.getFullUrl());
         endpointMetadata.put("genUrlPattern", genUrlInfo.getUrlPattern());
         endpointMetadata.put("exampleGenUrl", genUrlInfo.getExampleUrl());
+        endpointMetadata.put("protocolType", protocolType);
+
+        if ("soap".equalsIgnoreCase(protocolType) && api.getSoapConfig() != null) {
+            endpointMetadata.put("soapVersion", api.getSoapConfig().getVersion());
+            endpointMetadata.put("soapNamespace", api.getSoapConfig().getNamespace());
+            endpointMetadata.put("soapAction", api.getSoapConfig().getSoapAction());
+            endpointMetadata.put("wsdlUrl", genUrlInfo.getFullUrl() + "?wsdl");
+        }
+
+        if ("graphql".equalsIgnoreCase(protocolType) && api.getGraphqlConfig() != null) {
+            endpointMetadata.put("graphqlOperationType", api.getGraphqlConfig().getOperationType());
+            endpointMetadata.put("graphqlOperationName", api.getGraphqlConfig().getOperationName());
+            endpointMetadata.put("graphqlEndpoint", genUrlInfo.getFullUrl());
+            if (api.getGraphqlConfig().getSchema() != null) {
+                endpointMetadata.put("graphqlSchema", api.getGraphqlConfig().getSchema());
+            }
+        }
+
         endpoint.setMetaData(endpointMetadata);
 
         // Set rate limit
@@ -438,8 +468,29 @@ public class DocumentationGeneratorUtil {
             endpoint.setRateLimit(rateLimit);
         }
 
-        // Set request body example
-        if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+        // Set request body example based on protocol
+        if ("soap".equalsIgnoreCase(protocolType)) {
+            // Generate SOAP request body example
+            String soapBody = generateDocumentationSoapBody(api);
+            Map<String, Object> bodyMap = new HashMap<>();
+            bodyMap.put("xml", soapBody);
+            endpoint.setRequestBodyExample(bodyMap);
+            log.debug("Set SOAP request body example for documentation");
+        } else if ("graphql".equalsIgnoreCase(protocolType)) {
+            // Generate GraphQL request body example
+            String graphqlBody = generateDocumentationGraphQLBody(api);
+            try {
+                Map<String, Object> bodyMap = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
+                        graphqlBody,
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                endpoint.setRequestBodyExample(bodyMap);
+            } catch (Exception e) {
+                Map<String, Object> fallbackMap = new HashMap<>();
+                fallbackMap.put("query", graphqlBody);
+                endpoint.setRequestBodyExample(fallbackMap);
+            }
+            log.debug("Set GraphQL request body example for documentation");
+        } else if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
             try {
                 Map<String, Object> bodyMap = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
                         api.getRequestConfig().getSample(),
@@ -454,6 +505,48 @@ public class DocumentationGeneratorUtil {
     }
 
     private void createHeaderEntities(GeneratedApiEntity api, APIEndpointEntity endpoint, String generatedApiId) {
+        String protocolType = api.getProtocolType() != null ? api.getProtocolType() : "rest";
+
+        // Add protocol-specific headers first
+        if ("soap".equalsIgnoreCase(protocolType)) {
+            // Add SOAP-specific headers
+            com.usg.autoAPIGenerator.entities.postgres.documentation.HeaderEntity contentTypeHeader =
+                    new com.usg.autoAPIGenerator.entities.postgres.documentation.HeaderEntity();
+            contentTypeHeader.setId(UUID.randomUUID().toString());
+            contentTypeHeader.setGeneratedApiId(generatedApiId);
+            contentTypeHeader.setKey("Content-Type");
+            contentTypeHeader.setValue("text/xml; charset=utf-8");
+            contentTypeHeader.setDescription("SOAP request content type");
+            contentTypeHeader.setRequired(true);
+            contentTypeHeader.setEndpoint(endpoint);
+            docHeaderRepository.save(contentTypeHeader);
+
+            if (api.getSoapConfig() != null && api.getSoapConfig().getSoapAction() != null) {
+                com.usg.autoAPIGenerator.entities.postgres.documentation.HeaderEntity soapActionHeader =
+                        new com.usg.autoAPIGenerator.entities.postgres.documentation.HeaderEntity();
+                soapActionHeader.setId(UUID.randomUUID().toString());
+                soapActionHeader.setGeneratedApiId(generatedApiId);
+                soapActionHeader.setKey("SOAPAction");
+                soapActionHeader.setValue(api.getSoapConfig().getSoapAction());
+                soapActionHeader.setDescription("SOAP action header");
+                soapActionHeader.setRequired(true);
+                soapActionHeader.setEndpoint(endpoint);
+                docHeaderRepository.save(soapActionHeader);
+            }
+        } else if ("graphql".equalsIgnoreCase(protocolType)) {
+            // Add GraphQL-specific headers
+            com.usg.autoAPIGenerator.entities.postgres.documentation.HeaderEntity contentTypeHeader =
+                    new com.usg.autoAPIGenerator.entities.postgres.documentation.HeaderEntity();
+            contentTypeHeader.setId(UUID.randomUUID().toString());
+            contentTypeHeader.setGeneratedApiId(generatedApiId);
+            contentTypeHeader.setKey("Content-Type");
+            contentTypeHeader.setValue("application/json");
+            contentTypeHeader.setDescription("GraphQL request content type");
+            contentTypeHeader.setRequired(true);
+            contentTypeHeader.setEndpoint(endpoint);
+            docHeaderRepository.save(contentTypeHeader);
+        }
+
         // Add headers from headers array
         if (api.getHeaders() != null) {
             for (ApiHeaderEntity apiHeader : api.getHeaders()) {
@@ -567,6 +660,8 @@ public class DocumentationGeneratorUtil {
     }
 
     private void createResponseExamples(GeneratedApiEntity api, APIEndpointEntity endpoint, String generatedApiId) {
+        String protocolType = api.getProtocolType() != null ? api.getProtocolType() : "rest";
+
         if (api.getResponseConfig() != null) {
             // Success response
             if (api.getResponseConfig().getSuccessSchema() != null) {
@@ -575,18 +670,26 @@ public class DocumentationGeneratorUtil {
                 successExample.setGeneratedApiId(generatedApiId);
                 successExample.setStatusCode(200);
                 successExample.setDescription("Successful response");
-                successExample.setContentType(api.getResponseConfig().getContentType() != null ?
-                        api.getResponseConfig().getContentType() : "application/json");
-                successExample.setEndpoint(endpoint);
 
-                try {
-                    Map<String, Object> exampleMap = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
-                            api.getResponseConfig().getSuccessSchema(),
-                            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                if ("soap".equalsIgnoreCase(protocolType)) {
+                    successExample.setContentType("application/xml");
+                    // For SOAP, keep the response as XML string
+                    Map<String, Object> exampleMap = new HashMap<>();
+                    exampleMap.put("xml", api.getResponseConfig().getSuccessSchema());
                     successExample.setExample(exampleMap);
-                } catch (Exception e) {
-                    log.warn("Failed to parse success response example: {}", e.getMessage());
+                } else {
+                    successExample.setContentType(api.getResponseConfig().getContentType() != null ?
+                            api.getResponseConfig().getContentType() : "application/json");
+                    try {
+                        Map<String, Object> exampleMap = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
+                                api.getResponseConfig().getSuccessSchema(),
+                                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                        successExample.setExample(exampleMap);
+                    } catch (Exception e) {
+                        log.warn("Failed to parse success response example: {}", e.getMessage());
+                    }
                 }
+                successExample.setEndpoint(endpoint);
                 responseExampleRepository.save(successExample);
             }
 
@@ -678,7 +781,7 @@ public class DocumentationGeneratorUtil {
         List<String> changes = new ArrayList<>();
         changes.add("Added endpoint: " + api.getApiName() + " (" + api.getHttpMethod() + ")");
         changes.add("Initial version of the API");
-        changes.add("Generated from Oracle source: " + api.getSourceObjectInfo());
+        changes.add("Generated from source: " + api.getSourceObjectInfo());
         changelog.setChanges(changes);
         changelog.setCreatedAt(LocalDateTime.now());
 
@@ -999,6 +1102,173 @@ public class DocumentationGeneratorUtil {
         changelogRepository.save(changelog);
     }
 
+    // ==================== PROTOCOL-SPECIFIC HELPER METHODS ====================
+
+    /**
+     * Generate SOAP request body for documentation
+     */
+    private String generateDocumentationSoapBody(GeneratedApiEntity api) {
+        SoapConfigDTO soapConfig = api.getSoapConfig();
+        String operationName = soapConfig != null && soapConfig.getSoapAction() != null ?
+                soapConfig.getSoapAction() : api.getApiCode();
+        String namespace = soapConfig != null && soapConfig.getNamespace() != null ?
+                soapConfig.getNamespace() : "http://tempuri.org/";
+        String soapVersion = soapConfig != null && soapConfig.getVersion() != null ?
+                soapConfig.getVersion() : "1.1";
+
+        StringBuilder soapBody = new StringBuilder();
+        soapBody.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+
+        if ("1.2".equals(soapVersion)) {
+            soapBody.append("<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\">\n");
+        } else {
+            soapBody.append("<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n");
+        }
+
+        soapBody.append("  <soap:Header/>\n");
+        soapBody.append("  <soap:Body>\n");
+        soapBody.append("    <").append(operationName).append(" xmlns=\"").append(namespace).append("\">\n");
+
+        // Add input parameters (IN parameters)
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("IN".equalsIgnoreCase(param.getParamMode()) || param.getParamMode() == null) {
+                    String example = param.getExample() != null ? param.getExample() : "string";
+                    soapBody.append("      <").append(param.getKey()).append(">").append(example).append("</").append(param.getKey()).append(">\n");
+                }
+            }
+        }
+
+        soapBody.append("    </").append(operationName).append(">\n");
+        soapBody.append("  </soap:Body>\n");
+        soapBody.append("</soap:Envelope>");
+
+        return soapBody.toString();
+    }
+
+    /**
+     * Generate GraphQL request body for documentation
+     */
+    private String generateDocumentationGraphQLBody(GeneratedApiEntity api) {
+        GraphQLConfigDTO graphqlConfig = api.getGraphqlConfig();
+        String operationType = graphqlConfig != null && graphqlConfig.getOperationType() != null ?
+                graphqlConfig.getOperationType() : "query";
+        String operationName = graphqlConfig != null && graphqlConfig.getOperationName() != null ?
+                graphqlConfig.getOperationName() : api.getApiCode();
+
+        Map<String, Object> graphqlBody = new LinkedHashMap<>();
+
+        // Build query string
+        StringBuilder queryBuilder = new StringBuilder();
+        queryBuilder.append(operationType).append(" ").append(operationName).append("(");
+
+        if (api.getParameters() != null) {
+            List<ApiParameterEntity> inParams = api.getParameters().stream()
+                    .filter(p -> "IN".equalsIgnoreCase(p.getParamMode()) || p.getParamMode() == null)
+                    .collect(Collectors.toList());
+
+            if (!inParams.isEmpty()) {
+                queryBuilder.append("$");
+                queryBuilder.append(inParams.stream()
+                        .map(p -> p.getKey() + ": " + getGraphQLInputType(p.getOracleType()))
+                        .collect(Collectors.joining(", ")));
+            }
+        }
+
+        queryBuilder.append(") ");
+
+        if ("query".equalsIgnoreCase(operationType)) {
+            queryBuilder.append("{\n");
+            queryBuilder.append("  ").append(operationName).append("(");
+
+            if (api.getParameters() != null) {
+                queryBuilder.append(api.getParameters().stream()
+                        .filter(p -> "IN".equalsIgnoreCase(p.getParamMode()) || p.getParamMode() == null)
+                        .map(p -> p.getKey() + ": $" + p.getKey())
+                        .collect(Collectors.joining(", ")));
+            }
+
+            queryBuilder.append(") {\n");
+
+            // Add response fields
+            if (api.getResponseMappings() != null) {
+                queryBuilder.append(api.getResponseMappings().stream()
+                        .limit(5)
+                        .map(m -> "    " + m.getApiField())
+                        .collect(Collectors.joining("\n")));
+                if (api.getResponseMappings().size() > 5) {
+                    queryBuilder.append("\n    # ... more fields");
+                }
+            }
+
+            queryBuilder.append("\n  }\n}");
+        } else {
+            // Mutation
+            queryBuilder.append("{\n");
+            queryBuilder.append("  ").append(operationName).append("(input: {\n");
+
+            if (api.getParameters() != null) {
+                queryBuilder.append(api.getParameters().stream()
+                        .filter(p -> "IN".equalsIgnoreCase(p.getParamMode()) || p.getParamMode() == null)
+                        .map(p -> "    " + p.getKey() + ": $" + p.getKey())
+                        .collect(Collectors.joining(",\n")));
+            }
+
+            queryBuilder.append("\n  }) {\n");
+            queryBuilder.append("    success\n");
+            queryBuilder.append("    message\n");
+            queryBuilder.append("    data {\n");
+
+            if (api.getResponseMappings() != null) {
+                queryBuilder.append(api.getResponseMappings().stream()
+                        .limit(3)
+                        .map(m -> "      " + m.getApiField())
+                        .collect(Collectors.joining("\n")));
+            }
+
+            queryBuilder.append("\n    }\n");
+            queryBuilder.append("  }\n}");
+        }
+
+        graphqlBody.put("query", queryBuilder.toString());
+
+        // Add variables
+        if (api.getParameters() != null) {
+            Map<String, Object> variables = new LinkedHashMap<>();
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("IN".equalsIgnoreCase(param.getParamMode()) || param.getParamMode() == null) {
+                    variables.put(param.getKey(), param.getExample() != null ? param.getExample() : "");
+                }
+            }
+            if (!variables.isEmpty()) {
+                graphqlBody.put("variables", variables);
+            }
+        }
+
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(graphqlBody);
+        } catch (Exception e) {
+            return "{\n  \"query\": \"" + operationType + " " + operationName + " {\\n    id\\n  }\\\"\\n}";
+        }
+    }
+
+    /**
+     * Get GraphQL input type from Oracle type
+     */
+    private String getGraphQLInputType(String oracleType) {
+        if (oracleType == null) return "String";
+        String type = oracleType.toUpperCase();
+        if (type.contains("NUMBER") || type.contains("INT") || type.contains("FLOAT") || type.contains("DECIMAL")) {
+            return "Int";
+        }
+        if (type.contains("BOOLEAN")) {
+            return "Boolean";
+        }
+        if (type.contains("DATE") || type.contains("TIMESTAMP")) {
+            return "DateTime";
+        }
+        return "String";
+    }
 
     /**
      * Update existing documentation for an API (when moving between collections/folders)
@@ -1015,6 +1285,7 @@ public class DocumentationGeneratorUtil {
                     api.getApiCode(), collectionInfo.getCollectionName(), collectionInfo.getFolderName());
 
             String generatedApiId = api.getId();
+            String protocolType = api.getProtocolType() != null ? api.getProtocolType() : "rest";
 
             // Find existing documentation
             List<APIEndpointEntity> existingEndpoints = endpointRepository.findByGeneratedApiId(generatedApiId);
@@ -1049,7 +1320,14 @@ public class DocumentationGeneratorUtil {
             // Update endpoint content if needed (but preserve the ID)
             GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
             endpoint.setName(api.getApiName());
-            endpoint.setMethod(api.getHttpMethod());
+
+            // Update method based on protocol
+            if ("soap".equalsIgnoreCase(protocolType) || "graphql".equalsIgnoreCase(protocolType)) {
+                endpoint.setMethod("POST");
+            } else {
+                endpoint.setMethod(api.getHttpMethod());
+            }
+
             endpoint.setUrl(genUrlInfo.getFullUrl());
             endpoint.setDescription(api.getDescription());
             endpoint.setApiVersion(api.getVersion());
@@ -1072,7 +1350,49 @@ public class DocumentationGeneratorUtil {
             endpointMetadata.put("exampleGenUrl", genUrlInfo.getExampleUrl());
             endpointMetadata.put("lastUpdated", LocalDateTime.now().toString());
             endpointMetadata.put("updatedBy", performedBy);
+            endpointMetadata.put("protocolType", protocolType);
+
+            if ("soap".equalsIgnoreCase(protocolType) && api.getSoapConfig() != null) {
+                endpointMetadata.put("soapVersion", api.getSoapConfig().getVersion());
+                endpointMetadata.put("soapNamespace", api.getSoapConfig().getNamespace());
+                endpointMetadata.put("soapAction", api.getSoapConfig().getSoapAction());
+            }
+
+            if ("graphql".equalsIgnoreCase(protocolType) && api.getGraphqlConfig() != null) {
+                endpointMetadata.put("graphqlOperationType", api.getGraphqlConfig().getOperationType());
+                endpointMetadata.put("graphqlOperationName", api.getGraphqlConfig().getOperationName());
+            }
+
             endpoint.setMetaData(endpointMetadata);
+
+            // Update request body example based on protocol
+            if ("soap".equalsIgnoreCase(protocolType)) {
+                String soapBody = generateDocumentationSoapBody(api);
+                Map<String, Object> bodyMap = new HashMap<>();
+                bodyMap.put("xml", soapBody);
+                endpoint.setRequestBodyExample(bodyMap);
+            } else if ("graphql".equalsIgnoreCase(protocolType)) {
+                String graphqlBody = generateDocumentationGraphQLBody(api);
+                try {
+                    Map<String, Object> bodyMap = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
+                            graphqlBody,
+                            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                    endpoint.setRequestBodyExample(bodyMap);
+                } catch (Exception e) {
+                    Map<String, Object> fallbackMap = new HashMap<>();
+                    fallbackMap.put("query", graphqlBody);
+                    endpoint.setRequestBodyExample(fallbackMap);
+                }
+            } else if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+                try {
+                    Map<String, Object> bodyMap = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
+                            api.getRequestConfig().getSample(),
+                            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                    endpoint.setRequestBodyExample(bodyMap);
+                } catch (Exception e) {
+                    log.warn("Failed to parse request body example: {}", e.getMessage());
+                }
+            }
 
             // Save the updated endpoint
             endpointRepository.save(endpoint);
@@ -1110,6 +1430,4 @@ public class DocumentationGeneratorUtil {
             throw new RuntimeException("Failed to update Documentation: " + e.getMessage(), e);
         }
     }
-
-
 }

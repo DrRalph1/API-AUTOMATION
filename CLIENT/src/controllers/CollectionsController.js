@@ -423,17 +423,18 @@ export const extractRequestDetails = (response) => {
   
   const data = response.data;
   
-  // Check if there are body parameters
+  // ============== CRITICAL FIX: Preserve the original requestBody from API ==============
+  // First, check if the API already provided a requestBody object
+  let requestBody = data.requestBody || null;
+  
+  // If no requestBody but there are body parameters, construct one
   const bodyParams = (data.parameters || []).filter(p => 
     p.parameterLocation?.toLowerCase() === 'body'
   );
   
-  // Construct requestBody from body parameters if not provided directly
-  let requestBody = data.requestBody;
   if (!requestBody && bodyParams.length > 0) {
-    // Determine body type - you might need to get this from somewhere else
-    // For now, default to 'form-data' based on your sample
-    const bodyType = data.bodyType || 'form-data';
+    // Determine body type from API response or default
+    const bodyType = data.bodyType || data.requestBody?.bodyType || 'form-data';
     
     requestBody = {
       bodyType: bodyType,
@@ -447,7 +448,15 @@ export const extractRequestDetails = (response) => {
     console.log(`📦 [Extract] Constructed requestBody from ${bodyParams.length} body parameters with type: ${bodyType}`);
   }
   
-  // ============== FIX: Process authConfig to include jwtToken ==============
+  // Log the bodyType for debugging
+  console.log('📝 [Extract] Request body type:', {
+    bodyType: requestBody?.bodyType,
+    hasRequestBody: !!requestBody,
+    dataBodyType: data.bodyType,
+    dataRequestBodyBodyType: data.requestBody?.bodyType
+  });
+  
+  // ============== Process authConfig to include jwtToken ==============
   let processedAuthConfig = data.authConfig || {};
   
   // CRITICAL FIX: Ensure jwtToken is properly extracted and included
@@ -455,15 +464,15 @@ export const extractRequestDetails = (response) => {
     console.log('✅ [Extract] Found jwtToken in authConfig:', data.authConfig.jwtToken.substring(0, 50) + '...');
     processedAuthConfig = {
       ...data.authConfig,
-      token: data.authConfig.jwtToken, // Also set token field for compatibility
-      jwtToken: data.authConfig.jwtToken // Keep original field
+      token: data.authConfig.jwtToken,
+      jwtToken: data.authConfig.jwtToken
     };
   } else if (data.authConfig && data.authConfig.token) {
     console.log('✅ [Extract] Found token in authConfig:', data.authConfig.token.substring(0, 50) + '...');
     processedAuthConfig = {
       ...data.authConfig,
       token: data.authConfig.token,
-      jwtToken: data.authConfig.token // Also set jwtToken for consistency
+      jwtToken: data.authConfig.token
     };
   } else if (data.authConfig && data.authConfig.oauthToken) {
     console.log('✅ [Extract] Found oauthToken in authConfig:', data.authConfig.oauthToken.substring(0, 50) + '...');
@@ -495,7 +504,6 @@ export const extractRequestDetails = (response) => {
     tokenLength: processedAuthConfig.token?.length || 0,
     jwtTokenLength: processedAuthConfig.jwtToken?.length || 0
   });
-  // ============== END FIX ==============
   
   const extracted = {
     id: data.id,
@@ -506,11 +514,14 @@ export const extractRequestDetails = (response) => {
     headers: data.headers || [],
     parameters: data.parameters || [],
     body: data.body,
-    requestBody: requestBody,
+    requestBody: requestBody,  // Use the preserved/constructed requestBody
     authType: authType,
-    authConfig: processedAuthConfig, // Use processed config with jwtToken
+    authConfig: processedAuthConfig,
     tests: data.tests,
-    preRequestScript: data.preRequestScript
+    preRequestScript: data.preRequestScript,
+    // ============== ADD THESE PROTOCOL FIELDS ==============
+    protocolType: data.protocolType || 'rest',
+    bodyType: requestBody?.bodyType || data.bodyType || 'none'
   };
   
   console.log('✅ [Extract] Extracted request details:', {
@@ -520,6 +531,8 @@ export const extractRequestDetails = (response) => {
     url: extracted.url,
     hasRequestBody: !!extracted.requestBody,
     requestBodyType: extracted.requestBody?.bodyType,
+    protocolType: extracted.protocolType,
+    bodyType: extracted.bodyType,
     parametersCount: extracted.parameters?.length,
     bodyParamsCount: bodyParams.length,
     authType: extracted.authType,

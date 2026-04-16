@@ -17,12 +17,19 @@ import java.util.regex.Pattern;
 public class CustomQueryParserUtil {
 
     private static final Pattern PARAMETER_PATTERN = Pattern.compile(":(\\w+)");
+    private static final Pattern NAMED_PARAMETER_PATTERN = Pattern.compile("@(\\w+)");
+    private static final Pattern POSITIONAL_PARAMETER_PATTERN = Pattern.compile("\\?(\\d*)");
     private static final Pattern FROM_PATTERN = Pattern.compile("\\bFROM\\s+([^\\s]+(?:\\s*,\\s*[^\\s]+)*)", Pattern.CASE_INSENSITIVE);
     private static final Pattern WHERE_PATTERN = Pattern.compile("\\bWHERE\\s+(.+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern GROUP_BY_PATTERN = Pattern.compile("\\bGROUP\\s+BY\\s+(.+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern HAVING_PATTERN = Pattern.compile("\\bHAVING\\s+(.+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern ORDER_BY_PATTERN = Pattern.compile("\\bORDER\\s+BY\\s+(.+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern SELECT_COLUMNS_PATTERN = Pattern.compile("^SELECT\\s+(.+?)\\s+FROM", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern WITH_CLAUSE_PATTERN = Pattern.compile("\\bWITH\\s+(.+?)\\s+AS\\s*\\(.+?\\)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern UNION_PATTERN = Pattern.compile("\\bUNION\\s+(ALL\\s+)?SELECT", Pattern.CASE_INSENSITIVE);
+    private static final Pattern LIMIT_PATTERN = Pattern.compile("\\bLIMIT\\s+(\\d+)(?:\\s+OFFSET\\s+(\\d+))?", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OFFSET_PATTERN = Pattern.compile("\\bOFFSET\\s+(\\d+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern FETCH_PATTERN = Pattern.compile("\\bFETCH\\s+FIRST\\s+(\\d+)\\s+ROWS\\s+ONLY", Pattern.CASE_INSENSITIVE);
 
     private final JdbcTemplate oracleJdbcTemplate;
     private final JdbcTemplate postgresqlJdbcTemplate;
@@ -44,8 +51,8 @@ public class CustomQueryParserUtil {
             // Clean and normalize the query
             String normalizedQuery = normalizeQuery(selectStatement);
 
-            // Extract parameters
-            List<QueryParameterDTO> parameters = extractParameters(normalizedQuery);
+            // Extract parameters from multiple formats (:param, @param, ?)
+            List<QueryParameterDTO> parameters = extractAllParameters(normalizedQuery);
             result.put("parameters", parameters);
 
             // Extract column information - pass databaseType to use correct template
@@ -58,6 +65,16 @@ public class CustomQueryParserUtil {
             result.put("groupByClause", extractGroupByClause(normalizedQuery));
             result.put("havingClause", extractHavingClause(normalizedQuery));
             result.put("orderByClause", extractOrderByClause(normalizedQuery));
+
+            // Extract pagination clauses
+            result.put("limitClause", extractLimitClause(normalizedQuery));
+            result.put("offsetClause", extractOffsetClause(normalizedQuery));
+
+            // Extract WITH clause (CTE)
+            result.put("withClause", extractWithClause(normalizedQuery));
+
+            // Check if query has UNION
+            result.put("hasUnion", UNION_PATTERN.matcher(normalizedQuery).find());
 
             // Extract source tables
             List<String> sourceTables = extractSourceTables(normalizedQuery);
@@ -72,8 +89,17 @@ public class CustomQueryParserUtil {
             // Generate a query alias
             result.put("queryAlias", generateQueryAlias(selectStatement));
 
-            log.info("Parsed custom query: {} parameters, {} columns, {} source tables",
-                    parameters.size(), columns.size(), sourceTables.size());
+            // Detect query type (SELECT, INSERT, UPDATE, DELETE)
+            result.put("queryType", detectQueryType(normalizedQuery));
+
+            // Detect if it's a complex query
+            result.put("isComplexQuery", isComplexQuery(normalizedQuery));
+
+            // Estimate query complexity
+            result.put("complexity", estimateQueryComplexity(normalizedQuery));
+
+            log.info("Parsed custom query: {} parameters, {} columns, {} source tables, complexity: {}",
+                    parameters.size(), columns.size(), sourceTables.size(), result.get("complexity"));
 
         } catch (Exception e) {
             log.error("Error parsing custom query: {}", e.getMessage(), e);
@@ -84,15 +110,29 @@ public class CustomQueryParserUtil {
     }
 
     /**
-     * Extract parameters from the query (e.g., :paramName)
+     * Extract parameters from the query (supports :paramName, @paramName, and ?)
      */
-    private List<QueryParameterDTO> extractParameters(String query) {
+    private List<QueryParameterDTO> extractAllParameters(String query) {
         List<QueryParameterDTO> parameters = new ArrayList<>();
-        Matcher matcher = PARAMETER_PATTERN.matcher(query);
         Set<String> uniqueParams = new LinkedHashSet<>();
 
-        while (matcher.find()) {
-            uniqueParams.add(matcher.group(1));
+        // Extract :paramName style parameters
+        Matcher colonMatcher = PARAMETER_PATTERN.matcher(query);
+        while (colonMatcher.find()) {
+            uniqueParams.add(colonMatcher.group(1));
+        }
+
+        // Extract @paramName style parameters
+        Matcher atMatcher = NAMED_PARAMETER_PATTERN.matcher(query);
+        while (atMatcher.find()) {
+            uniqueParams.add(atMatcher.group(1));
+        }
+
+        // Extract positional parameters (?)
+        Matcher positionalMatcher = POSITIONAL_PARAMETER_PATTERN.matcher(query);
+        int positionalCount = 0;
+        while (positionalMatcher.find()) {
+            positionalCount++;
         }
 
         int position = 1;
@@ -109,7 +149,28 @@ public class CustomQueryParserUtil {
             parameters.add(param);
         }
 
+        // Add positional parameters as generic names if present
+        for (int i = 0; i < positionalCount; i++) {
+            QueryParameterDTO param = QueryParameterDTO.builder()
+                    .parameterName("param" + (i + 1))
+                    .parameterType("IN")
+                    .dataType("VARCHAR2")
+                    .dataTypeClass("string")
+                    .isRequired(true)
+                    .position(position++)
+                    .description("Positional parameter " + (i + 1))
+                    .build();
+            parameters.add(param);
+        }
+
         return parameters;
+    }
+
+    /**
+     * Extract parameters from the query (e.g., :paramName) - legacy method
+     */
+    private List<QueryParameterDTO> extractParameters(String query) {
+        return extractAllParameters(query);
     }
 
     /**
@@ -127,8 +188,8 @@ public class CustomQueryParserUtil {
             return extractColumnsFromQuery(query);
         }
 
-        // Remove named parameters (e.g., :paramName) and replace with NULL values for metadata extraction
-        String queryForMetadata = removeNamedParametersForMetadata(query);
+        // Remove named parameters (e.g., :paramName, @paramName) and replace with NULL values for metadata extraction
+        String queryForMetadata = removeAllParametersForMetadata(query);
         log.debug("Query for metadata: {}", queryForMetadata);
 
         // Wrap the query to get metadata without executing
@@ -167,25 +228,43 @@ public class CustomQueryParserUtil {
     }
 
     /**
-     * Remove named parameters for metadata extraction
-     * Replaces :paramName with appropriate NULL values or default values
+     * Remove all named parameters for metadata extraction
+     * Replaces :paramName, @paramName with appropriate NULL values
      */
-    private String removeNamedParametersForMetadata(String query) {
+    private String removeAllParametersForMetadata(String query) {
         String result = query;
-        Matcher matcher = PARAMETER_PATTERN.matcher(result);
 
-        // Find all parameters and replace them with NULL (or appropriate default)
-        Set<String> params = new HashSet<>();
-        while (matcher.find()) {
-            params.add(matcher.group(1));
+        // Remove :paramName style parameters
+        Matcher colonMatcher = PARAMETER_PATTERN.matcher(result);
+        Set<String> colonParams = new HashSet<>();
+        while (colonMatcher.find()) {
+            colonParams.add(colonMatcher.group(1));
         }
-
-        // Replace each parameter with NULL
-        for (String param : params) {
+        for (String param : colonParams) {
             result = result.replaceAll(":" + param + "\\b", "NULL");
         }
 
+        // Remove @paramName style parameters
+        Matcher atMatcher = NAMED_PARAMETER_PATTERN.matcher(result);
+        Set<String> atParams = new HashSet<>();
+        while (atMatcher.find()) {
+            atParams.add(atMatcher.group(1));
+        }
+        for (String param : atParams) {
+            result = result.replaceAll("@" + param + "\\b", "NULL");
+        }
+
+        // Remove positional parameters (?)
+        result = result.replaceAll("\\?\\d*", "NULL");
+
         return result;
+    }
+
+    /**
+     * Remove named parameters for metadata extraction - legacy method
+     */
+    private String removeNamedParametersForMetadata(String query) {
+        return removeAllParametersForMetadata(query);
     }
 
     /**
@@ -247,18 +326,22 @@ public class CustomQueryParserUtil {
     }
 
     /**
-     * Extract table name from SELECT query
+     * Extract table name from SELECT query (handles aliases and multiple tables)
      */
     private String extractTableNameFromSelect(String query) {
         // Remove comments and normalize
         String normalized = query.replaceAll("--[^\n]*", "").replaceAll("/\\*.*?\\*/", "");
+        normalized = normalized.replaceAll("\\s+", " ").trim();
 
-        // Pattern to match FROM clause and extract table name
-        Pattern fromPattern = Pattern.compile("\\bFROM\\s+([\\w]+)", Pattern.CASE_INSENSITIVE);
+        // Pattern to match FROM clause and extract table name (handle schema.table format)
+        Pattern fromPattern = Pattern.compile("\\bFROM\\s+([\\w\\.]+)(?:\\s+(?:AS\\s+)?(\\w+))?", Pattern.CASE_INSENSITIVE);
         Matcher matcher = fromPattern.matcher(normalized);
 
         if (matcher.find()) {
-            return matcher.group(1);
+            String tableWithSchema = matcher.group(1);
+            // Handle schema.table format
+            String[] parts = tableWithSchema.split("\\.");
+            return parts[parts.length - 1];
         }
 
         return null;
@@ -271,22 +354,28 @@ public class CustomQueryParserUtil {
         String upperQuery = query.toUpperCase().trim();
 
         if (upperQuery.startsWith("INSERT")) {
-            Pattern pattern = Pattern.compile("INSERT\\s+INTO\\s+(\\w+)", Pattern.CASE_INSENSITIVE);
+            Pattern pattern = Pattern.compile("INSERT\\s+INTO\\s+([\\w\\.]+)", Pattern.CASE_INSENSITIVE);
             Matcher matcher = pattern.matcher(query);
             if (matcher.find()) {
-                return matcher.group(1);
+                String tableWithSchema = matcher.group(1);
+                String[] parts = tableWithSchema.split("\\.");
+                return parts[parts.length - 1];
             }
         } else if (upperQuery.startsWith("UPDATE")) {
-            Pattern pattern = Pattern.compile("UPDATE\\s+(\\w+)", Pattern.CASE_INSENSITIVE);
+            Pattern pattern = Pattern.compile("UPDATE\\s+([\\w\\.]+)", Pattern.CASE_INSENSITIVE);
             Matcher matcher = pattern.matcher(query);
             if (matcher.find()) {
-                return matcher.group(1);
+                String tableWithSchema = matcher.group(1);
+                String[] parts = tableWithSchema.split("\\.");
+                return parts[parts.length - 1];
             }
         } else if (upperQuery.startsWith("DELETE")) {
-            Pattern pattern = Pattern.compile("DELETE\\s+FROM\\s+(\\w+)", Pattern.CASE_INSENSITIVE);
+            Pattern pattern = Pattern.compile("DELETE\\s+FROM\\s+([\\w\\.]+)", Pattern.CASE_INSENSITIVE);
             Matcher matcher = pattern.matcher(query);
             if (matcher.find()) {
-                return matcher.group(1);
+                String tableWithSchema = matcher.group(1);
+                String[] parts = tableWithSchema.split("\\.");
+                return parts[parts.length - 1];
             }
         }
 
@@ -362,13 +451,10 @@ public class CustomQueryParserUtil {
                 return columnTypes;
             }
 
-            // Get all column types for the table
             Map<String, String> allColumnTypes = getAllColumnTypesForTable(tableName, databaseType);
 
-            // Extract all column names used in the UPDATE statement
             Set<String> usedColumns = extractAllColumnNamesFromUpdate(query);
 
-            // Only return types for columns used in the query
             for (String column : usedColumns) {
                 if (allColumnTypes.containsKey(column)) {
                     columnTypes.put(column, allColumnTypes.get(column));
@@ -397,13 +483,10 @@ public class CustomQueryParserUtil {
                 return columnTypes;
             }
 
-            // Get all column types for the table
             Map<String, String> allColumnTypes = getAllColumnTypesForTable(tableName, databaseType);
 
-            // Extract all column names used in the DELETE statement (WHERE clause)
             Set<String> usedColumns = extractAllColumnNamesFromDelete(query);
 
-            // Only return types for columns used in the query
             for (String column : usedColumns) {
                 if (allColumnTypes.containsKey(column)) {
                     columnTypes.put(column, allColumnTypes.get(column));
@@ -426,12 +509,13 @@ public class CustomQueryParserUtil {
         Map<String, String> columnTypes = new HashMap<>();
 
         try {
-            // Extract table name and column names from INSERT INTO table (col1, col2, ...)
-            Pattern insertPattern = Pattern.compile("INSERT\\s+INTO\\s+(\\w+)\\s*\\(([^)]+)\\)", Pattern.CASE_INSENSITIVE);
+            Pattern insertPattern = Pattern.compile("INSERT\\s+INTO\\s+([\\w\\.]+)\\s*\\(([^)]+)\\)", Pattern.CASE_INSENSITIVE);
             Matcher matcher = insertPattern.matcher(query);
 
             if (matcher.find()) {
-                String tableName = matcher.group(1);
+                String tableWithSchema = matcher.group(1);
+                String[] tableParts = tableWithSchema.split("\\.");
+                String tableName = tableParts[tableParts.length - 1];
                 String columnsStr = matcher.group(2);
                 String[] columns = columnsStr.split(",");
 
@@ -451,6 +535,113 @@ public class CustomQueryParserUtil {
         }
 
         return columnTypes;
+    }
+
+    /**
+     * Extract LIMIT clause
+     */
+    private String extractLimitClause(String query) {
+        Matcher matcher = LIMIT_PATTERN.matcher(query);
+        if (matcher.find()) {
+            return matcher.group(0);
+        }
+        return null;
+    }
+
+    /**
+     * Extract OFFSET clause
+     */
+    private String extractOffsetClause(String query) {
+        Matcher limitMatcher = LIMIT_PATTERN.matcher(query);
+        if (limitMatcher.find() && limitMatcher.group(2) != null) {
+            return "OFFSET " + limitMatcher.group(2);
+        }
+
+        Matcher offsetMatcher = OFFSET_PATTERN.matcher(query);
+        if (offsetMatcher.find()) {
+            return offsetMatcher.group(0);
+        }
+
+        Matcher fetchMatcher = FETCH_PATTERN.matcher(query);
+        if (fetchMatcher.find()) {
+            return fetchMatcher.group(0);
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract WITH clause (CTE)
+     */
+    private String extractWithClause(String query) {
+        Matcher matcher = WITH_CLAUSE_PATTERN.matcher(query);
+        if (matcher.find()) {
+            return matcher.group(0);
+        }
+        return null;
+    }
+
+    /**
+     * Detect query type (SELECT, INSERT, UPDATE, DELETE)
+     */
+    private String detectQueryType(String query) {
+        String upperQuery = query.trim().toUpperCase();
+        if (upperQuery.startsWith("SELECT")) return "SELECT";
+        if (upperQuery.startsWith("INSERT")) return "INSERT";
+        if (upperQuery.startsWith("UPDATE")) return "UPDATE";
+        if (upperQuery.startsWith("DELETE")) return "DELETE";
+        if (upperQuery.startsWith("WITH")) return "WITH_CTE";
+        return "UNKNOWN";
+    }
+
+    /**
+     * Check if query is complex (has subqueries, joins, unions, etc.)
+     */
+    private boolean isComplexQuery(String query) {
+        String upperQuery = query.toUpperCase();
+        return upperQuery.contains("JOIN") ||
+                upperQuery.contains("UNION") ||
+                upperQuery.contains("INTERSECT") ||
+                upperQuery.contains("EXCEPT") ||
+                (upperQuery.contains("SELECT") && upperQuery.indexOf("SELECT") != upperQuery.lastIndexOf("SELECT")) ||
+                upperQuery.contains("SUBQUERY");
+    }
+
+    /**
+     * Estimate query complexity (SIMPLE, MODERATE, COMPLEX)
+     */
+    private String estimateQueryComplexity(String query) {
+        int score = 0;
+        String upperQuery = query.toUpperCase();
+
+        // Count JOINs
+        Matcher joinMatcher = Pattern.compile("\\bJOIN\\b", Pattern.CASE_INSENSITIVE).matcher(upperQuery);
+        while (joinMatcher.find()) score += 2;
+
+        // Count UNIONs
+        Matcher unionMatcher = Pattern.compile("\\bUNION\\b", Pattern.CASE_INSENSITIVE).matcher(upperQuery);
+        while (unionMatcher.find()) score += 3;
+
+        // Count subqueries (nested SELECT)
+        Matcher subqueryMatcher = Pattern.compile("\\bSELECT\\b", Pattern.CASE_INSENSITIVE).matcher(upperQuery);
+        int selectCount = 0;
+        while (subqueryMatcher.find()) selectCount++;
+        if (selectCount > 1) score += (selectCount - 1) * 2;
+
+        // Check for GROUP BY, HAVING, ORDER BY
+        if (upperQuery.contains("GROUP BY")) score += 1;
+        if (upperQuery.contains("HAVING")) score += 1;
+        if (upperQuery.contains("ORDER BY")) score += 1;
+
+        // Check for WITH clause (CTE)
+        if (upperQuery.contains("WITH")) score += 2;
+
+        // Check for window functions
+        if (upperQuery.contains("OVER(")) score += 2;
+
+        if (score <= 2) return "SIMPLE";
+        if (score <= 6) return "MODERATE";
+        return "COMPLEX";
     }
 
     /**
@@ -477,12 +668,16 @@ public class CustomQueryParserUtil {
                     columnName = aliasMatcher.group(1).trim();
                     alias = aliasMatcher.group(2);
                 } else if (trimmed.contains(" ")) {
-                    // Handle "column alias" without AS
                     String[] parts = trimmed.split("\\s+");
                     if (parts.length >= 2) {
                         columnName = parts[0];
                         alias = parts[1];
                     }
+                }
+
+                // Handle function calls like COUNT(*), MAX(column), etc.
+                if (columnName.contains("(") && columnName.contains(")")) {
+                    columnName = extractFunctionColumnName(columnName);
                 }
 
                 QueryColumnDTO column = QueryColumnDTO.builder()
@@ -497,6 +692,18 @@ public class CustomQueryParserUtil {
         }
 
         return columns;
+    }
+
+    /**
+     * Extract column name from function call
+     */
+    private String extractFunctionColumnName(String functionCall) {
+        Pattern funcPattern = Pattern.compile("(\\w+)\\s*\\(.*\\)", Pattern.CASE_INSENSITIVE);
+        Matcher matcher = funcPattern.matcher(functionCall);
+        if (matcher.find()) {
+            return matcher.group(1).toLowerCase();
+        }
+        return "function_result";
     }
 
     /**
@@ -616,7 +823,7 @@ public class CustomQueryParserUtil {
      * Find the index of the next clause start
      */
     private int findNextClauseStart(String query, int startPos) {
-        String[] clauses = {"WHERE", "GROUP BY", "HAVING", "ORDER BY", ";"};
+        String[] clauses = {"WHERE", "GROUP BY", "HAVING", "ORDER BY", "LIMIT", "OFFSET", ";"};
         int nextStart = query.length();
 
         for (String clause : clauses) {
@@ -645,7 +852,13 @@ public class CustomQueryParserUtil {
                 String trimmed = part.trim();
                 if (!trimmed.isEmpty() && !trimmed.toUpperCase().startsWith("JOIN")) {
                     String[] tableParts = trimmed.split("\\s+");
-                    tables.add(tableParts[0]);
+                    String tableName = tableParts[0];
+                    // Handle schema.table format
+                    if (tableName.contains(".")) {
+                        String[] schemaParts = tableName.split("\\.");
+                        tableName = schemaParts[schemaParts.length - 1];
+                    }
+                    tables.add(tableName);
                 }
             }
         }
@@ -665,6 +878,11 @@ public class CustomQueryParserUtil {
                 String[] tables = fromPart.split(",");
                 if (tables.length > 0) {
                     String firstTable = tables[0].trim().split("\\s+")[0];
+                    // Handle schema.table format
+                    if (firstTable.contains(".")) {
+                        String[] parts = firstTable.split("\\.");
+                        firstTable = parts[parts.length - 1];
+                    }
                     return "query_" + firstTable.toLowerCase();
                 }
             }
@@ -704,6 +922,10 @@ public class CustomQueryParserUtil {
             case Types.BOOLEAN:
             case Types.BIT:
                 return "boolean";
+            case Types.ARRAY:
+                return "array";
+            case Types.JAVA_OBJECT:
+                return "object";
             default:
                 return "string";
         }
@@ -716,7 +938,7 @@ public class CustomQueryParserUtil {
         String upperStatement = selectStatement.toUpperCase();
 
         String[] dangerousKeywords = {"INSERT", "UPDATE", "DELETE", "DROP", "CREATE",
-                "ALTER", "TRUNCATE", "GRANT", "REVOKE"};
+                "ALTER", "TRUNCATE", "GRANT", "REVOKE", "EXEC", "EXECUTE"};
 
         for (String keyword : dangerousKeywords) {
             if (upperStatement.contains(keyword)) {
@@ -727,15 +949,14 @@ public class CustomQueryParserUtil {
             }
         }
 
-        if (!upperStatement.trim().startsWith("SELECT")) {
+        if (!upperStatement.trim().startsWith("SELECT") && !upperStatement.trim().startsWith("WITH")) {
             throw new IllegalArgumentException(
-                    "Only SELECT statements are allowed. Query must start with SELECT."
+                    "Only SELECT statements are allowed. Query must start with SELECT or WITH."
             );
         }
     }
 
     public Map<String, String> getColumnTypeMap(String query, String databaseType) {
-        // For SELECT queries, use the information_schema approach
         return getColumnTypeMapForSelect(query, databaseType);
     }
 

@@ -1,4 +1,4 @@
-// controllers/APIGenerationEngineController.js
+// controllers/AutoAPIGeneratorEngineController.js
 import { API_CONFIG } from "../config/APIConfig.js";
 import { apiCall } from "@/helpers/APIHelper.js";
 import { apiCallWithTokenRefresh, extractTokenFromHeader } from "./AuthController.js";

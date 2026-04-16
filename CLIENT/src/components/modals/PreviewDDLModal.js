@@ -9,7 +9,7 @@ import {
   View, Wrench as FunctionIcon, Package, Link as LinkIcon, GitBranch,
   GripHorizontal, GripVertical, Maximize, Beaker, ArrowLeft, Wand2 
 } from 'lucide-react';
-import ApiGenerationModal from './ApiGenerationModal.js';
+import AutoAPIGeneratorModal from './AutoAPIGeneratorModal.js';
 
 // Database type configurations
 const DATABASE_CONFIGS = {
@@ -263,21 +263,56 @@ END ${name};
 
 // Helper function to extract parameters from SQL query (same as QueryEditorModal)
 const extractQueryParameters = (sqlQuery) => {
-  const paramRegex = /:(\w+)/g;
-  const matches = [];
+  const params = [];
+  const uniqueParams = new Map(); // Use Map to store by name with position
+  
+  // Pattern for :paramName
+  const colonPattern = /:(\w+)/g;
   let match;
-  while ((match = paramRegex.exec(sqlQuery)) !== null) {
-    if (!matches.includes(match[1])) {
-      matches.push(match[1]);
+  
+  // Pattern for @paramName
+  const atPattern = /@(\w+)/g;
+  
+  // Pattern for ? (positional parameters)
+  const positionalPattern = /\?/g;
+  
+  // Extract :paramName style parameters
+  while ((match = colonPattern.exec(sqlQuery)) !== null) {
+    if (!uniqueParams.has(match[1])) {
+      uniqueParams.set(match[1], { name: match[1], type: 'named', position: uniqueParams.size });
     }
   }
   
-  return matches.map((param, index) => ({
-    key: param,
-    parameterName: param,
+  // Extract @paramName style parameters
+  while ((match = atPattern.exec(sqlQuery)) !== null) {
+    if (!uniqueParams.has(match[1])) {
+      uniqueParams.set(match[1], { name: match[1], type: 'named', position: uniqueParams.size });
+    }
+  }
+  
+  // Count positional parameters (?)
+  let positionalCount = 0;
+  while ((match = positionalPattern.exec(sqlQuery)) !== null) {
+    positionalCount++;
+  }
+  
+  // Add positional parameters as generic names
+  for (let i = 0; i < positionalCount; i++) {
+    const paramName = `param${i + 1}`;
+    if (!uniqueParams.has(paramName)) {
+      uniqueParams.set(paramName, { name: paramName, type: 'positional', position: uniqueParams.size });
+    }
+  }
+  
+  // Convert to array and sort by position
+  const sortedParams = Array.from(uniqueParams.values()).sort((a, b) => a.position - b.position);
+  
+  return sortedParams.map((param, index) => ({
+    key: param.name,
+    parameterName: param.name,
     dataType: 'VARCHAR2',
     required: true,
-    description: `Parameter: ${param}`,
+    description: `Parameter: ${param.name}${param.type === 'positional' ? ' (positional)' : ''}`,
     parameterLocation: 'query',
     position: index
   }));
@@ -287,6 +322,7 @@ const extractQueryParameters = (sqlQuery) => {
 const getStatementType = (sql) => {
   const trimmed = sql.trim().toUpperCase();
   if (/^SELECT\b/i.test(trimmed)) return 'SELECT';
+  if (/^WITH\b/i.test(trimmed)) return 'SELECT'; // CTE is treated as SELECT
   if (/^INSERT\b/i.test(trimmed)) return 'INSERT';
   if (/^UPDATE\b/i.test(trimmed)) return 'UPDATE';
   if (/^DELETE\b/i.test(trimmed)) return 'DELETE';
@@ -2081,8 +2117,9 @@ const copyToClipboard = useCallback((text) => {
   
   // UPDATED: Check if current query is a valid SQL statement (any type except UNKNOWN)
   const trimmedQuery = editorContent.trim();
-  // const queryRegex = /^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|CALL|EXEC(UTE)?|BEGIN|DECLARE)\b/i;
-  const queryRegex = /^(SELECT|INSERT|UPDATE|DELETE|CALL|EXEC(UTE)?)\b/i;
+  const queryRegex = /^(SELECT|INSERT|UPDATE|DELETE|CREATE|WITH|ALTER|DROP|TRUNCATE|CALL|EXEC(UTE)?|BEGIN|DECLARE)\b/i;
+  // const queryRegex = /^(SELECT|WITH|INSERT|UPDATE|DELETE|CALL|EXEC(UTE)?)\b/i;
+
   const isQuery = queryRegex.test(trimmedQuery);
   
   if (typeof window === 'undefined') return null;
@@ -2644,7 +2681,7 @@ const copyToClipboard = useCallback((text) => {
 
       {/* API Generation Modal for Database Object */}
       {showApiModal && (
-        <ApiGenerationModal
+        <AutoAPIGeneratorModal
           isOpen={showApiModal}
           onClose={() => {
             setShowApiModal(false);
@@ -2697,7 +2734,7 @@ const copyToClipboard = useCallback((text) => {
 
       {/* For Custom Query API Generation - NOW SUPPORTS ALL QUERY TYPES */}
       {showCustomQueryApiModal && (
-        <ApiGenerationModal
+        <AutoAPIGeneratorModal
           isOpen={showCustomQueryApiModal}
           onClose={() => {
             setShowCustomQueryApiModal(false);

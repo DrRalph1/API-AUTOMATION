@@ -67,6 +67,13 @@ public class ApiDetailsResponseDTO {
     // Source Object Info (exactly as captured)
     private Map<String, Object> sourceObject;
 
+    // ============ PROTOCOL-SPECIFIC FIELDS ============
+    private String protocolType; // "rest", "soap", "graphql"
+    private SoapConfigDTO soapConfig;
+    private GraphQLConfigDTO graphqlConfig;
+    private FileUploadConfigDTO fileUploadConfig;
+    // ============ END PROTOCOL-SPECIFIC FIELDS ============
+
     // Metadata
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

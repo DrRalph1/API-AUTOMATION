@@ -1,5 +1,7 @@
 package com.usg.autoAPIGenerator.utils.apiEngine.generator;
 
+import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.GraphQLConfigDTO;
+import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.SoapConfigDTO;
 import com.usg.autoAPIGenerator.entities.postgres.apiGenerationEngine.*;
 import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.CollectionInfoDTO;
 import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.GenerateApiRequestDTO;
@@ -401,16 +403,47 @@ public class CodeBaseGeneratorUtil {
                                               GenerateApiRequestDTO generateRequest) {
         try {
             GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
+            String protocolType = api.getProtocolType() != null ? api.getProtocolType() : "rest";
 
             // Update basic info
             request.setName(api.getApiName() + " - " + api.getHttpMethod());
-            request.setMethod(api.getHttpMethod());
+
+            // ============ PROTOCOL-SPECIFIC METHOD OVERRIDE ============
+            if ("soap".equalsIgnoreCase(protocolType) || "graphql".equalsIgnoreCase(protocolType)) {
+                request.setMethod("POST");
+                log.info("Overriding method to POST for {} protocol", protocolType);
+            } else {
+                request.setMethod(api.getHttpMethod());
+            }
+
             request.setUrl(genUrlInfo.getFullUrl());
             request.setDescription(api.getDescription());
             request.setUpdatedAt(LocalDateTime.now());
 
-            // Set request body from API request config
-            if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+            // Set request body from API request config or generate protocol-specific body
+            if ("soap".equalsIgnoreCase(protocolType)) {
+                // Generate SOAP request body
+                String soapBody = generateSoapRequestBody(api);
+                Map<String, Object> bodyMap = new HashMap<>();
+                bodyMap.put("sample", soapBody);
+                bodyMap.put("format", "xml");
+                request.setRequestBody(bodyMap);
+                log.info("Generated SOAP request body for codebase");
+            } else if ("graphql".equalsIgnoreCase(protocolType)) {
+                // Generate GraphQL request body
+                String graphqlBody = generateGraphQLRequestBody(api);
+                try {
+                    Map<String, Object> bodyMap = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
+                            graphqlBody,
+                            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                    request.setRequestBody(bodyMap);
+                } catch (Exception e) {
+                    Map<String, Object> fallbackMap = new HashMap<>();
+                    fallbackMap.put("query", graphqlBody);
+                    request.setRequestBody(fallbackMap);
+                }
+                log.info("Generated GraphQL request body for codebase");
+            } else if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
                 try {
                     Map<String, Object> bodyMap = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
                             api.getRequestConfig().getSample(),
@@ -424,8 +457,40 @@ public class CodeBaseGeneratorUtil {
                 }
             }
 
-            // Set headers as JSON
+            // Set headers as JSON with protocol-specific Content-Type
             List<Map<String, Object>> headers = buildHeadersList(api);
+
+            // Add protocol-specific headers
+            if ("soap".equalsIgnoreCase(protocolType)) {
+                // Add SOAP-specific headers
+                Map<String, Object> contentTypeHeader = new HashMap<>();
+                contentTypeHeader.put("key", "Content-Type");
+                contentTypeHeader.put("value", "text/xml; charset=utf-8");
+                contentTypeHeader.put("description", "SOAP request content type");
+                contentTypeHeader.put("required", true);
+                contentTypeHeader.put("disabled", false);
+                headers.add(0, contentTypeHeader);
+
+                if (api.getSoapConfig() != null && api.getSoapConfig().getSoapAction() != null) {
+                    Map<String, Object> soapActionHeader = new HashMap<>();
+                    soapActionHeader.put("key", "SOAPAction");
+                    soapActionHeader.put("value", api.getSoapConfig().getSoapAction());
+                    soapActionHeader.put("description", "SOAP action header");
+                    soapActionHeader.put("required", true);
+                    soapActionHeader.put("disabled", false);
+                    headers.add(1, soapActionHeader);
+                }
+            } else if ("graphql".equalsIgnoreCase(protocolType)) {
+                // Add GraphQL-specific headers
+                Map<String, Object> contentTypeHeader = new HashMap<>();
+                contentTypeHeader.put("key", "Content-Type");
+                contentTypeHeader.put("value", "application/json");
+                contentTypeHeader.put("description", "GraphQL request content type");
+                contentTypeHeader.put("required", true);
+                contentTypeHeader.put("disabled", false);
+                headers.add(0, contentTypeHeader);
+            }
+
             request.setHeaders(headers);
 
             // Set path parameters
@@ -462,8 +527,25 @@ public class CodeBaseGeneratorUtil {
                 request.setQueryParameters(queryParams);
             }
 
-            // Set response example
-            setResponseExample(api, request);
+            // Set response example with protocol-specific formatting
+            setResponseExample(api, request, protocolType);
+
+            // Set metadata with protocol info
+            Map<String, Object> metadata = request.getMetadata();
+            if (metadata == null) {
+                metadata = new HashMap<>();
+            }
+            metadata.put("protocolType", protocolType);
+            if ("soap".equalsIgnoreCase(protocolType) && api.getSoapConfig() != null) {
+                metadata.put("soapVersion", api.getSoapConfig().getVersion());
+                metadata.put("soapNamespace", api.getSoapConfig().getNamespace());
+                metadata.put("soapAction", api.getSoapConfig().getSoapAction());
+            }
+            if ("graphql".equalsIgnoreCase(protocolType) && api.getGraphqlConfig() != null) {
+                metadata.put("graphqlOperationType", api.getGraphqlConfig().getOperationType());
+                metadata.put("graphqlOperationName", api.getGraphqlConfig().getOperationName());
+            }
+            request.setMetadata(metadata);
 
             // Set tags
             if (api.getTags() != null && !api.getTags().isEmpty()) {
@@ -648,6 +730,7 @@ public class CodeBaseGeneratorUtil {
 
         GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
         String requestId = UUID.randomUUID().toString();
+        String protocolType = api.getProtocolType() != null ? api.getProtocolType() : "rest";
 
         RequestEntity request = RequestEntity.builder()
                 .id(requestId)
@@ -667,8 +750,44 @@ public class CodeBaseGeneratorUtil {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
+        // ============ PROTOCOL-SPECIFIC METHOD OVERRIDE ============
+        if ("soap".equalsIgnoreCase(protocolType) || "graphql".equalsIgnoreCase(protocolType)) {
+            request.setMethod("POST");
+            log.info("Overriding method to POST for {} protocol", protocolType);
+        }
+
         // Set headers as JSON
         List<Map<String, Object>> headers = buildHeadersList(api);
+
+        // Add protocol-specific headers
+        if ("soap".equalsIgnoreCase(protocolType)) {
+            Map<String, Object> contentTypeHeader = new HashMap<>();
+            contentTypeHeader.put("key", "Content-Type");
+            contentTypeHeader.put("value", "text/xml; charset=utf-8");
+            contentTypeHeader.put("description", "SOAP request content type");
+            contentTypeHeader.put("required", true);
+            contentTypeHeader.put("disabled", false);
+            headers.add(0, contentTypeHeader);
+
+            if (api.getSoapConfig() != null && api.getSoapConfig().getSoapAction() != null) {
+                Map<String, Object> soapActionHeader = new HashMap<>();
+                soapActionHeader.put("key", "SOAPAction");
+                soapActionHeader.put("value", api.getSoapConfig().getSoapAction());
+                soapActionHeader.put("description", "SOAP action header");
+                soapActionHeader.put("required", true);
+                soapActionHeader.put("disabled", false);
+                headers.add(1, soapActionHeader);
+            }
+        } else if ("graphql".equalsIgnoreCase(protocolType)) {
+            Map<String, Object> contentTypeHeader = new HashMap<>();
+            contentTypeHeader.put("key", "Content-Type");
+            contentTypeHeader.put("value", "application/json");
+            contentTypeHeader.put("description", "GraphQL request content type");
+            contentTypeHeader.put("required", true);
+            contentTypeHeader.put("disabled", false);
+            headers.add(0, contentTypeHeader);
+        }
+
         request.setHeaders(headers);
 
         // Set path parameters
@@ -705,11 +824,30 @@ public class CodeBaseGeneratorUtil {
             request.setQueryParameters(queryParams);
         }
 
-        // Set request body
-        setRequestBody(api, request);
+        // Set request body based on protocol
+        setRequestBody(api, request, protocolType);
 
-        // Set response example
-        setResponseExample(api, request);
+        // Set response example based on protocol
+        setResponseExample(api, request, protocolType);
+
+        // Set metadata with protocol info
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("protocolType", protocolType);
+        if ("soap".equalsIgnoreCase(protocolType) && api.getSoapConfig() != null) {
+            metadata.put("soapVersion", api.getSoapConfig().getVersion());
+            metadata.put("soapNamespace", api.getSoapConfig().getNamespace());
+            metadata.put("soapAction", api.getSoapConfig().getSoapAction());
+            metadata.put("wsdlUrl", genUrlInfo.getFullUrl() + "?wsdl");
+        }
+        if ("graphql".equalsIgnoreCase(protocolType) && api.getGraphqlConfig() != null) {
+            metadata.put("graphqlOperationType", api.getGraphqlConfig().getOperationType());
+            metadata.put("graphqlOperationName", api.getGraphqlConfig().getOperationName());
+            metadata.put("graphqlEndpoint", genUrlInfo.getFullUrl());
+            if (api.getGraphqlConfig().getSchema() != null) {
+                metadata.put("graphqlSchema", api.getGraphqlConfig().getSchema());
+            }
+        }
+        request.setMetadata(metadata);
 
         return codeBaseRequestRepository.save(request);
     }
@@ -807,8 +945,31 @@ public class CodeBaseGeneratorUtil {
         }
     }
 
-    private void setRequestBody(GeneratedApiEntity api, RequestEntity request) {
-        if (api.getParameters() != null) {
+    private void setRequestBody(GeneratedApiEntity api, RequestEntity request, String protocolType) {
+        if ("soap".equalsIgnoreCase(protocolType)) {
+            // Generate SOAP request body
+            String soapBody = generateSoapRequestBody(api);
+            Map<String, Object> requestBodyMap = new HashMap<>();
+            requestBodyMap.put("sample", soapBody);
+            requestBodyMap.put("format", "xml");
+            request.setRequestBody(requestBodyMap);
+            log.debug("Set SOAP request body for codebase");
+        } else if ("graphql".equalsIgnoreCase(protocolType)) {
+            // Generate GraphQL request body
+            String graphqlBody = generateGraphQLRequestBody(api);
+            try {
+                Map<String, Object> requestBodyMap = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
+                        graphqlBody,
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                request.setRequestBody(requestBodyMap);
+            } catch (Exception e) {
+                Map<String, Object> fallbackMap = new HashMap<>();
+                fallbackMap.put("query", graphqlBody);
+                request.setRequestBody(fallbackMap);
+            }
+            log.debug("Set GraphQL request body for codebase");
+        } else if (api.getParameters() != null) {
+            // REST API - existing logic
             List<ApiParameterEntity> bodyParams = api.getParameters().stream()
                     .filter(p -> "body".equals(p.getParameterType()))
                     .collect(Collectors.toList());
@@ -833,8 +994,26 @@ public class CodeBaseGeneratorUtil {
         }
     }
 
-    private void setResponseExample(GeneratedApiEntity api, RequestEntity request) {
-        if (api.getResponseConfig() != null && api.getResponseConfig().getSuccessSchema() != null) {
+    private void setResponseExample(GeneratedApiEntity api, RequestEntity request, String protocolType) {
+        if ("soap".equalsIgnoreCase(protocolType) && api.getResponseConfig() != null && api.getResponseConfig().getSuccessSchema() != null) {
+            // For SOAP, try to keep the response as XML string
+            try {
+                Map<String, Object> responseMap = new HashMap<>();
+                responseMap.put("xml", api.getResponseConfig().getSuccessSchema());
+                request.setResponseExample(responseMap);
+            } catch (Exception e) {
+                log.warn("Failed to set SOAP response example: {}", e.getMessage());
+            }
+        } else if ("graphql".equalsIgnoreCase(protocolType) && api.getResponseConfig() != null && api.getResponseConfig().getSuccessSchema() != null) {
+            try {
+                Map<String, Object> responseMap = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
+                        api.getResponseConfig().getSuccessSchema(),
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                request.setResponseExample(responseMap);
+            } catch (Exception e) {
+                log.warn("Failed to parse response example as JSON: {}", e.getMessage());
+            }
+        } else if (api.getResponseConfig() != null && api.getResponseConfig().getSuccessSchema() != null) {
             try {
                 Map<String, Object> responseMap = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
                         api.getResponseConfig().getSuccessSchema(),
@@ -844,6 +1023,11 @@ public class CodeBaseGeneratorUtil {
                 log.warn("Failed to parse response example as JSON: {}", e.getMessage());
             }
         }
+    }
+
+    // Keep original method for backward compatibility
+    private void setResponseExample(GeneratedApiEntity api, RequestEntity request) {
+        setResponseExample(api, request, "rest");
     }
 
     private void generateImplementations(GeneratedApiEntity api, RequestEntity request,
@@ -1024,5 +1208,173 @@ public class CodeBaseGeneratorUtil {
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
+    }
+
+    // ==================== PROTOCOL-SPECIFIC HELPER METHODS ====================
+
+    /**
+     * Generate SOAP request body for codebase
+     */
+    private String generateSoapRequestBody(GeneratedApiEntity api) {
+        SoapConfigDTO soapConfig = api.getSoapConfig();
+        String operationName = soapConfig != null && soapConfig.getSoapAction() != null ?
+                soapConfig.getSoapAction() : api.getApiCode();
+        String namespace = soapConfig != null && soapConfig.getNamespace() != null ?
+                soapConfig.getNamespace() : "http://tempuri.org/";
+        String soapVersion = soapConfig != null && soapConfig.getVersion() != null ?
+                soapConfig.getVersion() : "1.1";
+
+        StringBuilder soapBody = new StringBuilder();
+        soapBody.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+
+        if ("1.2".equals(soapVersion)) {
+            soapBody.append("<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\">\n");
+        } else {
+            soapBody.append("<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n");
+        }
+
+        soapBody.append("  <soap:Header/>\n");
+        soapBody.append("  <soap:Body>\n");
+        soapBody.append("    <").append(operationName).append(" xmlns=\"").append(namespace).append("\">\n");
+
+        // Add input parameters (IN parameters)
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("IN".equalsIgnoreCase(param.getParamMode()) || param.getParamMode() == null) {
+                    String example = param.getExample() != null ? param.getExample() : "string";
+                    soapBody.append("      <").append(param.getKey()).append(">").append(example).append("</").append(param.getKey()).append(">\n");
+                }
+            }
+        }
+
+        soapBody.append("    </").append(operationName).append(">\n");
+        soapBody.append("  </soap:Body>\n");
+        soapBody.append("</soap:Envelope>");
+
+        return soapBody.toString();
+    }
+
+    /**
+     * Generate GraphQL request body for codebase
+     */
+    private String generateGraphQLRequestBody(GeneratedApiEntity api) {
+        GraphQLConfigDTO graphqlConfig = api.getGraphqlConfig();
+        String operationType = graphqlConfig != null && graphqlConfig.getOperationType() != null ?
+                graphqlConfig.getOperationType() : "query";
+        String operationName = graphqlConfig != null && graphqlConfig.getOperationName() != null ?
+                graphqlConfig.getOperationName() : api.getApiCode();
+
+        Map<String, Object> graphqlBody = new LinkedHashMap<>();
+
+        // Build query string
+        StringBuilder queryBuilder = new StringBuilder();
+        queryBuilder.append(operationType).append(" ").append(operationName).append("(");
+
+        if (api.getParameters() != null) {
+            List<ApiParameterEntity> inParams = api.getParameters().stream()
+                    .filter(p -> "IN".equalsIgnoreCase(p.getParamMode()) || p.getParamMode() == null)
+                    .collect(Collectors.toList());
+
+            if (!inParams.isEmpty()) {
+                queryBuilder.append("$");
+                queryBuilder.append(inParams.stream()
+                        .map(p -> p.getKey() + ": " + getGraphQLInputType(p.getOracleType()))
+                        .collect(Collectors.joining(", ")));
+            }
+        }
+
+        queryBuilder.append(") ");
+
+        if ("query".equalsIgnoreCase(operationType)) {
+            queryBuilder.append("{\n");
+            queryBuilder.append("  ").append(operationName).append("(");
+
+            if (api.getParameters() != null) {
+                queryBuilder.append(api.getParameters().stream()
+                        .filter(p -> "IN".equalsIgnoreCase(p.getParamMode()) || p.getParamMode() == null)
+                        .map(p -> p.getKey() + ": $" + p.getKey())
+                        .collect(Collectors.joining(", ")));
+            }
+
+            queryBuilder.append(") {\n");
+
+            // Add response fields
+            if (api.getResponseMappings() != null) {
+                queryBuilder.append(api.getResponseMappings().stream()
+                        .limit(5)
+                        .map(m -> "    " + m.getApiField())
+                        .collect(Collectors.joining("\n")));
+                if (api.getResponseMappings().size() > 5) {
+                    queryBuilder.append("\n    # ... more fields");
+                }
+            }
+
+            queryBuilder.append("\n  }\n}");
+        } else {
+            // Mutation
+            queryBuilder.append("{\n");
+            queryBuilder.append("  ").append(operationName).append("(input: {\n");
+
+            if (api.getParameters() != null) {
+                queryBuilder.append(api.getParameters().stream()
+                        .filter(p -> "IN".equalsIgnoreCase(p.getParamMode()) || p.getParamMode() == null)
+                        .map(p -> "    " + p.getKey() + ": $" + p.getKey())
+                        .collect(Collectors.joining(",\n")));
+            }
+
+            queryBuilder.append("\n  }) {\n");
+            queryBuilder.append("    success\n");
+            queryBuilder.append("    message\n");
+            queryBuilder.append("    data {\n");
+
+            if (api.getResponseMappings() != null) {
+                queryBuilder.append(api.getResponseMappings().stream()
+                        .limit(3)
+                        .map(m -> "      " + m.getApiField())
+                        .collect(Collectors.joining("\n")));
+            }
+
+            queryBuilder.append("\n    }\n");
+            queryBuilder.append("  }\n}");
+        }
+
+        graphqlBody.put("query", queryBuilder.toString());
+
+        // Add variables
+        if (api.getParameters() != null) {
+            Map<String, Object> variables = new LinkedHashMap<>();
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("IN".equalsIgnoreCase(param.getParamMode()) || param.getParamMode() == null) {
+                    variables.put(param.getKey(), param.getExample() != null ? param.getExample() : "");
+                }
+            }
+            if (!variables.isEmpty()) {
+                graphqlBody.put("variables", variables);
+            }
+        }
+
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(graphqlBody);
+        } catch (Exception e) {
+            return "{\n  \"query\": \"" + operationType + " " + operationName + " {\\n    id\\n  }\\\"\\n}";
+        }
+    }
+
+    /**
+     * Get GraphQL input type from Oracle type
+     */
+    private String getGraphQLInputType(String oracleType) {
+        if (oracleType == null) return "String";
+        String type = oracleType.toUpperCase();
+        if (type.contains("NUMBER") || type.contains("INT") || type.contains("FLOAT") || type.contains("DECIMAL")) {
+            return "Int";
+        }
+        if (type.contains("BOOLEAN")) {
+            return "Boolean";
+        }
+        if (type.contains("DATE") || type.contains("TIMESTAMP")) {
+            return "DateTime";
+        }
+        return "String";
     }
 }

@@ -108,7 +108,7 @@ public class JWTController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of(
                             "responseCode", 403,
-                            "message", "Access Forbidden. Invalid API Key or Secret."
+                            "message", "Access Forbidden. Invalid API Key or Secret. 222"
                     ));
         }
 
@@ -210,7 +210,7 @@ public class JWTController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of(
                             "responseCode", 403,
-                            "message", "Access Forbidden. Invalid API Key or Secret."
+                            "message", "Access Forbidden. Invalid API Key or Secret. 333"
                     ));
         }
 
@@ -258,7 +258,7 @@ public class JWTController {
         @Schema(description = "Response code", example = "403")
         private int responseCode;
 
-        @Schema(description = "Error message", example = "Access Forbidden. Invalid API Key or Secret.")
+        @Schema(description = "Error message", example = "Access Forbidden. Invalid API Key or Secret. 444")
         private String message;
 
         // Getters and setters

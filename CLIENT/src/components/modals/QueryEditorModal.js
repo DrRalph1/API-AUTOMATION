@@ -10,8 +10,8 @@ import {
   FileCode, Brain, Wind, Coffee, Server, Cloud, ChevronDown
 } from 'lucide-react';
 
-// IMPORTANT: Add the import for ApiGenerationModal
-import ApiGenerationModal from './ApiGenerationModal.js';
+// IMPORTANT: Add the import for AutoAPIGeneratorModal
+import AutoAPIGeneratorModal from './AutoAPIGeneratorModal.js';
 
 // Database type configurations
 const DATABASE_CONFIGS = {
@@ -51,7 +51,6 @@ const DATABASE_CONFIGS = {
     }
   }
 };
-
 
 // Helper function to get database display name
 const getDatabaseDisplayName = (databaseType) => {
@@ -143,23 +142,58 @@ const getDatabaseIcon = (databaseType, size = 20) => {
   }
 };
 
-// Helper function to extract parameters from SQL query
+// ============ ENHANCED: Extract parameters from SQL query - Supports :param, @param, and ? ============
 const extractQueryParameters = (sqlQuery) => {
-  const paramRegex = /:(\w+)/g;
-  const matches = [];
+  const params = [];
+  const uniqueParams = new Map(); // Use Map to store by name with position
+  
+  // Pattern for :paramName
+  const colonPattern = /:(\w+)/g;
   let match;
-  while ((match = paramRegex.exec(sqlQuery)) !== null) {
-    if (!matches.includes(match[1])) {
-      matches.push(match[1]);
+  
+  // Pattern for @paramName
+  const atPattern = /@(\w+)/g;
+  
+  // Pattern for ? (positional parameters)
+  const positionalPattern = /\?/g;
+  
+  // Extract :paramName style parameters
+  while ((match = colonPattern.exec(sqlQuery)) !== null) {
+    if (!uniqueParams.has(match[1])) {
+      uniqueParams.set(match[1], { name: match[1], type: 'named', position: uniqueParams.size });
     }
   }
   
-  return matches.map((param, index) => ({
-    key: param,
-    parameterName: param,
+  // Extract @paramName style parameters
+  while ((match = atPattern.exec(sqlQuery)) !== null) {
+    if (!uniqueParams.has(match[1])) {
+      uniqueParams.set(match[1], { name: match[1], type: 'named', position: uniqueParams.size });
+    }
+  }
+  
+  // Count positional parameters (?)
+  let positionalCount = 0;
+  while ((match = positionalPattern.exec(sqlQuery)) !== null) {
+    positionalCount++;
+  }
+  
+  // Add positional parameters as generic names
+  for (let i = 0; i < positionalCount; i++) {
+    const paramName = `param${i + 1}`;
+    if (!uniqueParams.has(paramName)) {
+      uniqueParams.set(paramName, { name: paramName, type: 'positional', position: uniqueParams.size });
+    }
+  }
+  
+  // Convert to array and sort by position
+  const sortedParams = Array.from(uniqueParams.values()).sort((a, b) => a.position - b.position);
+  
+  return sortedParams.map((param, index) => ({
+    key: param.name,
+    parameterName: param.name,
     dataType: 'VARCHAR2',
     required: true,
-    description: `Parameter: ${param}`,
+    description: `Parameter: ${param.name}${param.type === 'positional' ? ' (positional)' : ''}`,
     parameterLocation: 'query',
     position: index
   }));
@@ -169,6 +203,7 @@ const extractQueryParameters = (sqlQuery) => {
 const getStatementType = (sql) => {
   const trimmed = sql.trim().toUpperCase();
   if (/^SELECT\b/i.test(trimmed)) return 'SELECT';
+  if (/^WITH\b/i.test(trimmed)) return 'SELECT'; // CTE is treated as SELECT
   if (/^INSERT\b/i.test(trimmed)) return 'INSERT';
   if (/^UPDATE\b/i.test(trimmed)) return 'UPDATE';
   if (/^DELETE\b/i.test(trimmed)) return 'DELETE';
@@ -190,8 +225,8 @@ const QueryEditorModal = ({
   theme,
   authToken,
   databaseType = 'postgresql',
-  selectedDatabaseType: propSelectedDatabaseType,  // ← ADD THIS
-  onDatabaseTypeChange,  // ← ADD THIS
+  selectedDatabaseType: propSelectedDatabaseType,
+  onDatabaseTypeChange,
   initialQuery = '',
   onQueryExecute,
   onGenerateApiFromQuery,
@@ -226,7 +261,7 @@ const QueryEditorModal = ({
   const [showDatabaseSelector, setShowDatabaseSelector] = useState(false);
 
   // Only show database selector when databaseType is 'all'
-    const [selectedDatabaseType, setSelectedDatabaseType] = useState(
+  const [selectedDatabaseType, setSelectedDatabaseType] = useState(
     propSelectedDatabaseType || (databaseType === 'all' ? 'postgresql' : databaseType)
   );
   
@@ -300,7 +335,6 @@ const QueryEditorModal = ({
     codeBg: theme === 'dark' ? 'rgb(13 17 23)' : '#f1f5f9'
   };
 
-
   // Add toast state
   const [toast, setToast] = useState(null);
   
@@ -310,55 +344,54 @@ const QueryEditorModal = ({
     setTimeout(() => setToast(null), 2000);
   }, []);
 
-
   // Add this utility function for copying text
-const copyToClipboard = useCallback((text) => {
-  if (!text) {
-    showToast('Nothing to copy', 'warning');
-    return;
-  }
-  
-  // Modern clipboard API
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text)
-      .then(() => {
-        showToast('Copied to clipboard!', 'success');
-      })
-      .catch((err) => {
-        console.error('Clipboard write failed:', err);
-        // Fallback to older method
-        fallbackCopy(text);
-      });
-  } else {
-    // Fallback for older browsers
-    fallbackCopy(text);
-  }
-  
-  function fallbackCopy(text) {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.top = '-9999px';
-    textarea.style.left = '-9999px';
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    
-    try {
-      const successful = document.execCommand('copy');
-      if (successful) {
-        showToast('Copied to clipboard!', 'success');
-      } else {
-        showToast('Failed to copy to clipboard', 'error');
-      }
-    } catch (err) {
-      console.error('Fallback copy failed:', err);
-      showToast('Failed to copy to clipboard', 'error');
+  const copyToClipboard = useCallback((text) => {
+    if (!text) {
+      showToast('Nothing to copy', 'warning');
+      return;
     }
     
-    document.body.removeChild(textarea);
-  }
-}, [showToast]);
+    // Modern clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => {
+          showToast('Copied to clipboard!', 'success');
+        })
+        .catch((err) => {
+          console.error('Clipboard write failed:', err);
+          // Fallback to older method
+          fallbackCopy(text);
+        });
+    } else {
+      // Fallback for older browsers
+      fallbackCopy(text);
+    }
+    
+    function fallbackCopy(text) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-9999px';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      
+      try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+          showToast('Copied to clipboard!', 'success');
+        } else {
+          showToast('Failed to copy to clipboard', 'error');
+        }
+      } catch (err) {
+        console.error('Fallback copy failed:', err);
+        showToast('Failed to copy to clipboard', 'error');
+      }
+      
+      document.body.removeChild(textarea);
+    }
+  }, [showToast]);
   
   // Load query history from localStorage based on active database type
   useEffect(() => {
@@ -827,7 +860,6 @@ const copyToClipboard = useCallback((text) => {
     }
   };
   
-  
   const updateLineNumbers = () => {
     if (!lineNumbersRef.current) return;
     
@@ -908,49 +940,51 @@ const copyToClipboard = useCallback((text) => {
     return editorContent;
   };
   
-  // NEW: Generate API from current query
+  // Generate API from current query - Uses enhanced parameter extraction
   const handleGenerateApiFromQuery = () => {
-  const sqlToGenerate = getSQLToExecute().trim();
-  
-  if (!sqlToGenerate) {
-    setCompilationResult({
-      success: false,
-      message: 'Cannot generate API',
-      error: 'No SQL statement to generate API from. Please enter a query or select text.',
-      output: ''
-    });
-    setTimeout(() => setCompilationResult(null), 3000);
-    return;
-  }
-  
-  const trimmed = sqlToGenerate.trim();
-  const queryType = getStatementType(trimmed);
-  
-  // Log which database type will be used
-  console.log('📦 Generating API for database type:', activeDatabaseType);
-  console.log('📝 Query type:', queryType);
-  console.log('📝 SQL:', trimmed.substring(0, 200));
-  
-  // Allow ALL valid SQL types - just reject UNKNOWN
-  if (queryType === 'UNKNOWN') {
-    setCompilationResult({
-      success: false,
-      message: 'Cannot generate API',
-      error: 'Invalid or unsupported SQL statement. Please enter a valid SQL query (SELECT, INSERT, UPDATE, DELETE, DDL, CALL, EXECUTE, or PL/SQL block).',
-      output: ''
-    });
-    setTimeout(() => setCompilationResult(null), 3000);
-    return;
-  }
-  
-  // Extract parameters from the query
-  const params = extractQueryParameters(trimmed);
-  
-  setCurrentSqlForApi(trimmed);
-  setCustomQueryForApi(trimmed);
-  setExtractedParamsForApi(params);
-  setShowApiModal(true);
-};
+    const sqlToGenerate = getSQLToExecute().trim();
+    
+    if (!sqlToGenerate) {
+      setCompilationResult({
+        success: false,
+        message: 'Cannot generate API',
+        error: 'No SQL statement to generate API from. Please enter a query or select text.',
+        output: ''
+      });
+      setTimeout(() => setCompilationResult(null), 3000);
+      return;
+    }
+
+
+    const trimmed = sqlToGenerate.trim();
+    const queryType = getStatementType(trimmed);
+
+    // Log which database type will be used
+    console.log('📦 Generating API for database type:', activeDatabaseType);
+    console.log('📝 Query type:', queryType);
+    console.log('📝 SQL:', trimmed.substring(0, 200));
+
+    // Allow WITH queries (they return 'SELECT' from getStatementType)
+    if (queryType === 'UNKNOWN') {
+      setCompilationResult({
+        success: false,
+        message: 'Cannot generate API',
+        error: 'Invalid or unsupported SQL statement. Please enter a valid SQL query (SELECT, WITH, INSERT, UPDATE, DELETE, DDL, CALL, EXECUTE, or PL/SQL block).',
+        output: ''
+      });
+      setTimeout(() => setCompilationResult(null), 3000);
+      return;
+    }
+    
+    // ============ ENHANCED: Extract parameters using the new function ============
+    const params = extractQueryParameters(trimmed);
+    console.log('📊 Extracted parameters:', params);
+    
+    setCurrentSqlForApi(trimmed);
+    setCustomQueryForApi(trimmed);
+    setExtractedParamsForApi(params);
+    setShowApiModal(true);
+  };
   
   // FIXED: handleExecute - Now supports ALL SQL operations including EXECUTE/CALL
   const handleExecute = async () => {
@@ -1310,16 +1344,15 @@ const copyToClipboard = useCallback((text) => {
 -- Write your SQL queries here
 -- Supports: SELECT, INSERT, UPDATE, DELETE, DDL, CALL/EXECUTE, PL/SQL
 -- Use Ctrl/Cmd + Enter to execute
+-- Parameter formats: :paramName, @paramName, ?
 
 SELECT * FROM your_table_name LIMIT 10;`;
   };
   
   // Check if current query is a SELECT statement
   const trimmed = editorContent.trim();
-
-  // const queryRegex = /^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|CALL|EXEC(UTE)?|BEGIN|DECLARE)\b/i;
-  const queryRegex = /^(SELECT|INSERT|UPDATE|DELETE|CALL|EXEC(UTE)?)\b/i;
-
+  const queryRegex = /^(SELECT|INSERT|UPDATE|DELETE|CREATE|WITH|ALTER|DROP|TRUNCATE|CALL|EXEC(UTE)?|BEGIN|DECLARE)\b/i;
+  // const queryRegex = /^(SELECT|WITH|INSERT|UPDATE|DELETE|CALL|EXEC(UTE)?)\b/i;
   const isQuery = queryRegex.test(trimmed);
   
   if (typeof window === 'undefined') return null;
@@ -1802,59 +1835,58 @@ SELECT * FROM your_table_name LIMIT 10;`;
           
           {/* Editor Area */}
           <div className="flex-1 flex flex-col overflow-hidden relative">
-          <div style={editorContainerStyle} className="overflow-hidden">
-            <div className="flex h-full relative">
-              {showLineNumbers && (
-                <div
-                  ref={lineNumbersRef}
-                  className="overflow-hidden select-none"
-                  style={{
-                    width: '60px',
-                    backgroundColor: themeColors.codeBg,
-                    borderRight: `1px solid ${themeColors.border}`,
-                    fontFamily: 'monospace',
-                    fontSize: editorFontSize,
-                    lineHeight: 1.5,
-                    overflowY: 'auto',
-                    // CRITICAL: Match textarea padding exactly
-                    paddingTop: '16px',
-                    paddingBottom: '16px',
-                    paddingLeft: '8px',
-                    paddingRight: '0'
-                  }}
-                />
-              )}
-              
-              <div className="flex-1 relative overflow-hidden">
-                <textarea
-                  ref={textareaRef}
-                  value={editorContent}
-                  onChange={handleContentChange}
-                  onScroll={handleScroll}
-                  onKeyDown={handleKeyDown}
-                  onBlur={saveSelection}
-                  onFocus={() => {
-                    if (textareaRef.current && (selectionStartRef.current !== 0 || selectionEndRef.current !== 0)) {
-                      textareaRef.current.setSelectionRange(selectionStartRef.current, selectionEndRef.current);
-                    }
-                  }}
-                  className="absolute inset-0 w-full h-full p-4 outline-none resize-none"
-                  style={{
-                    backgroundColor: themeColors.codeBg,
-                    color: themeColors.text,
-                    fontFamily: 'monospace',
-                    fontSize: editorFontSize,
-                    lineHeight: 1.5,
-                    border: 'none',
-                    margin: 0,
-                    boxSizing: 'border-box'
-                  }}
-                  spellCheck={false}
-                  placeholder={getPlaceholderText()}
-                />
+            <div style={editorContainerStyle} className="overflow-hidden">
+              <div className="flex h-full relative">
+                {showLineNumbers && (
+                  <div
+                    ref={lineNumbersRef}
+                    className="overflow-hidden select-none"
+                    style={{
+                      width: '60px',
+                      backgroundColor: themeColors.codeBg,
+                      borderRight: `1px solid ${themeColors.border}`,
+                      fontFamily: 'monospace',
+                      fontSize: editorFontSize,
+                      lineHeight: 1.5,
+                      overflowY: 'auto',
+                      paddingTop: '16px',
+                      paddingBottom: '16px',
+                      paddingLeft: '8px',
+                      paddingRight: '0'
+                    }}
+                  />
+                )}
+                
+                <div className="flex-1 relative overflow-hidden">
+                  <textarea
+                    ref={textareaRef}
+                    value={editorContent}
+                    onChange={handleContentChange}
+                    onScroll={handleScroll}
+                    onKeyDown={handleKeyDown}
+                    onBlur={saveSelection}
+                    onFocus={() => {
+                      if (textareaRef.current && (selectionStartRef.current !== 0 || selectionEndRef.current !== 0)) {
+                        textareaRef.current.setSelectionRange(selectionStartRef.current, selectionEndRef.current);
+                      }
+                    }}
+                    className="absolute inset-0 w-full h-full p-4 outline-none resize-none"
+                    style={{
+                      backgroundColor: themeColors.codeBg,
+                      color: themeColors.text,
+                      fontFamily: 'monospace',
+                      fontSize: editorFontSize,
+                      lineHeight: 1.5,
+                      border: 'none',
+                      margin: 0,
+                      boxSizing: 'border-box'
+                    }}
+                    spellCheck={false}
+                    placeholder={getPlaceholderText()}
+                  />
+                </div>
               </div>
             </div>
-          </div>
             
             {/* Resizable Response Panel */}
             {compilationResult && (
@@ -1909,7 +1941,6 @@ SELECT * FROM your_table_name LIMIT 10;`;
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        {/* Add Copy Button - show when there's output OR error */}
                         {(compilationResult.output || compilationResult.error) && (
                           <button
                             onClick={() => {
@@ -1950,7 +1981,7 @@ SELECT * FROM your_table_name LIMIT 10;`;
             </div>
             
             <div className="flex items-center gap-2">
-              {/* Generate API button - only show for SELECT queries */}
+              {/* Generate API button - now works for all query types */}
               {isQuery && (
                 <button
                   onClick={handleGenerateApiFromQuery}
@@ -1959,7 +1990,7 @@ SELECT * FROM your_table_name LIMIT 10;`;
                     background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
                     color: '#ffffff'
                   }}
-                  title="Generate API from this SELECT query"
+                  title="Generate API from this SQL query (supports :param, @param, and ? parameters)"
                 >
                   <Sparkles size={14} />
                   Generate API
@@ -2014,40 +2045,40 @@ SELECT * FROM your_table_name LIMIT 10;`;
       )}
       
       {/* API Generation Modal */}
-       {showApiModal && (
-          <ApiGenerationModal
-            isOpen={showApiModal}
-            onClose={() => {
-              setShowApiModal(false);
-              // Refresh the dashboard when modal closes after successful generation
-              if (onRefreshApis) {
-                console.log('🔄 Refreshing dashboard after API generation');
-                onRefreshApis();
-              }
-            }}
-            colors={themeColors}
-            theme={theme}
-            authToken={authToken}
-            databaseType={activeDatabaseType}  // ← CHANGE: Use activeDatabaseType instead of the prop
-            isCustomQuery={true}
-            customQueryText={customQueryForApi}
-            extractedParams={extractedParamsForApi}
-            onGenerateAPI={(apiData, response) => {
-              console.log('API generated:', apiData);
-              setShowApiModal(false);
-              
-              // Refresh the dashboard after successful API generation
-              if (onRefreshApis) {
-                console.log('🔄 Refreshing dashboard after API generation');
-                onRefreshApis();
-              }
-              
-              if (onQueryExecute && currentSqlForApi) {
-                onQueryExecute(currentSqlForApi, response);
-              }
-            }}
-          />
-        )}
+      {showApiModal && (
+        <AutoAPIGeneratorModal
+          isOpen={showApiModal}
+          onClose={() => {
+            setShowApiModal(false);
+            // Refresh the dashboard when modal closes after successful generation
+            if (onRefreshApis) {
+              console.log('🔄 Refreshing dashboard after API generation');
+              onRefreshApis();
+            }
+          }}
+          colors={themeColors}
+          theme={theme}
+          authToken={authToken}
+          databaseType={activeDatabaseType}
+          isCustomQuery={true}
+          customQueryText={customQueryForApi}
+          extractedParams={extractedParamsForApi}
+          onGenerateAPI={(apiData, response) => {
+            console.log('API generated:', apiData);
+            setShowApiModal(false);
+            
+            // Refresh the dashboard after successful API generation
+            if (onRefreshApis) {
+              console.log('🔄 Refreshing dashboard after API generation');
+              onRefreshApis();
+            }
+            
+            if (onQueryExecute && currentSqlForApi) {
+              onQueryExecute(currentSqlForApi, response);
+            }
+          }}
+        />
+      )}
     </>,
     document.body
   );

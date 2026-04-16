@@ -5510,7 +5510,7 @@ export const getObjectTypeColor = (type, isDark = true) => {
 /**
  * Check if object is supported for API generation
  */
-export const isSupportedForAPIGeneration = (objectType) => {
+export const isSupportedForAutoAPIGenerator = (objectType) => {
     const supportedTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE'];
     return supportedTypes.includes(objectType?.toUpperCase());
 };

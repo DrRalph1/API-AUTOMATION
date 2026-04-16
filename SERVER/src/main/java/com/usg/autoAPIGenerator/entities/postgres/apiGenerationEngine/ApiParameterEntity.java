@@ -73,6 +73,16 @@ public class ApiParameterEntity {
     @Column(name = "param_mode") // IN, OUT, IN OUT
     private String paramMode;
 
+    // Add to ApiParameterEntity.java
+    public boolean isAutoGenerate() {
+        return "AUTOGENERATE".equalsIgnoreCase(oracleType);
+    }
+
+    public boolean isFileType() {
+        String type = oracleType != null ? oracleType.toUpperCase() : "";
+        return "FILE".equals(type) || "BLOB".equals(type) || "BYTEA".equals(type) || "MULTIPART_FILE".equals(type);
+    }
+
     @Column(name = "position")
     private Integer position;
 

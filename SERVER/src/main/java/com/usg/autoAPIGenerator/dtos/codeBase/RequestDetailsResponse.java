@@ -29,4 +29,12 @@ public class RequestDetailsResponse {
     private String baseUrl;
     private Map<String, Object> responseExample;
     private List<ParameterItem> pathParameters;
+
+    // ============= ADD THESE FIELDS =============
+    private String protocolType;           // "rest", "soap", "graphql"
+    private String apiId;                  // API ID from generated API
+    private String generatedApiId;         // Alias for apiId
+    private Map<String, Object> soapConfig;     // SOAP configuration
+    private Map<String, Object> graphqlConfig; // GraphQL configuration
+    // ============= END =============
 }

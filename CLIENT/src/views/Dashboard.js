@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 // Lazy load modal to reduce initial bundle size
-const ApiGenerationModal = lazy(() => import('@/components/modals/ApiGenerationModal.js'));
+const AutoAPIGeneratorModal = lazy(() => import('@/components/modals/AutoAPIGeneratorModal.js'));
 
 // Import the updated dashboard controller methods
 import { 
@@ -281,7 +281,7 @@ const ApiEndpointItem = React.memo(({ api, colors, isDark, onClick }) => {
 });
 
 // API Generation Card (added mobile touch optimization)
-const ApiGenerationCard = React.memo(({ colors, onGenerate }) => (
+const AutoAPIGeneratorCard = React.memo(({ colors, onGenerate }) => (
   <div className="mb-2 w-full lg:w-full">
     <div 
       className="relative overflow-hidden border rounded-xl cursor-pointer group transition-all duration-200 hover:translate-y-[-2px] active:scale-[0.99] md:active:scale-100"
@@ -543,7 +543,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
   const [apiSearchQuery, setApiSearchQuery] = useState('');
   const [showApiModal, setShowApiModal] = useState(false);
   const [showQueryEditor, setShowQueryEditor] = useState(false);
-  const [selectedForApiGeneration, setSelectedForApiGeneration] = useState(null);
+  const [selectedForAutoAPIGenerator, setSelectedForAutoAPIGenerator] = useState(null);
 
   // Add this state near your other state declarations (around line 200)
   const [queryEditorDatabaseType, setQueryEditorDatabaseType] = useState('postgresql');
@@ -1036,7 +1036,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     console.log("endpoint:::::::" + JSON.stringify(endpoint));
     
     // Open modal immediately with a loading state
-    setSelectedForApiGeneration({ 
+    setSelectedForAutoAPIGenerator({ 
       loading: true,
       endpointId: endpoint.apiId,
       data: endpoint
@@ -1049,10 +1049,10 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
       console.log('📦 Received API details for editing:', details);
       
       // Update with the actual data once loaded
-      setSelectedForApiGeneration(details);
+      setSelectedForAutoAPIGenerator(details);
     } catch (error) {
       console.error('Error loading API details:', error);
-      setSelectedForApiGeneration({ 
+      setSelectedForAutoAPIGenerator({ 
         error: true,
         message: error.message,
         data: endpoint 
@@ -1065,14 +1065,14 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     handleNavigate('api-collections');
   }, [handleNavigate]);
 
-  const handleApiGeneration = useCallback(() => {
-    setSelectedForApiGeneration(null);
+  const handleAutoAPIGenerator = useCallback(() => {
+    setSelectedForAutoAPIGenerator(null);
     setShowApiModal(true);
   }, []);
 
   const handleCloseModal = useCallback(() => {
     setShowApiModal(false);
-    setSelectedForApiGeneration(null);
+    setSelectedForAutoAPIGenerator(null);
   }, []);
 
   const handleNavigate = useCallback((tab) => {
@@ -1177,7 +1177,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
           isVisible={isRightSidebarVisible}
           onClose={() => setIsRightSidebarVisible(false)}
           onNavigate={handleNavigate}
-          onGenerate={handleApiGeneration}
+          onGenerate={handleAutoAPIGenerator}
           statsData={completeStats}
         />
 
@@ -1265,7 +1265,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Left Column - Top Collections */}
                 <div className="flex flex-col gap-6">
-                  <ApiGenerationCard colors={colors} onGenerate={handleApiGeneration} />
+                  <AutoAPIGeneratorCard colors={colors} onGenerate={handleAutoAPIGenerator} />
 
                   <div className="border rounded-xl" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
                     <div className="p-4 border-b" style={{ borderColor: colors.border }}>
@@ -1415,7 +1415,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
 
       {/* Floating Action Button - Only visible on mobile */}
       <button
-        onClick={handleApiGeneration}
+        onClick={handleAutoAPIGenerator}
         className="md:hidden fixed bottom-6 right-6 p-4 rounded-full shadow-lg active:scale-95 transition-all z-30"
         style={{ 
           backgroundColor: colors.primary,
@@ -1429,16 +1429,16 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
       {/* API Generation Modal */}
       {showApiModal && (
         <Suspense fallback={null}>
-          <ApiGenerationModal
+          <AutoAPIGeneratorModal
             isOpen={showApiModal}
             onClose={handleCloseModal}
-            selectedObject={selectedForApiGeneration}
+            selectedObject={selectedForAutoAPIGenerator}
             colors={colors}
             theme={theme}
             fromDashboard={true}
             onGenerateAPI={handleApiUpdate}
             authToken={authToken}
-            isEditing={!!selectedForApiGeneration?.data?.id}
+            isEditing={!!selectedForAutoAPIGenerator?.data?.id}
           />
         </Suspense>
       )}

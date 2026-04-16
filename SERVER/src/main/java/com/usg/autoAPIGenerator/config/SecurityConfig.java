@@ -71,6 +71,7 @@ public class SecurityConfig {
 
                         // ✅ ✅ ✅ YOUR TParty APIS — PUBLIC
                         .requestMatchers("/plx/api/**").permitAll()
+                        .requestMatchers("/apiGeneration/**").permitAll()
 
                         // ✅ Everything else locked down
                          .anyRequest().authenticated()

@@ -1262,7 +1262,7 @@ export default function EntryPage() {
   };
 
   // API Generation Wizard
-  const ApiGenerationWizard = () => {
+  const AutoAPIGeneratorWizard = () => {
     const handleClose = () => {
       setShowApiWizard(false);
     };
@@ -1699,7 +1699,7 @@ export default function EntryPage() {
 
       {/* Modals */}
       <DatabaseConnectionWizard />
-      <ApiGenerationWizard />
+      <AutoAPIGeneratorWizard />
 
       {/* Imported Modals */}
       <ConnectionDetailsModal

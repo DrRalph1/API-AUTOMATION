@@ -1,5 +1,7 @@
 package com.usg.autoAPIGenerator.services;
 
+import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.GraphQLConfigDTO;
+import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.SoapConfigDTO;
 import com.usg.autoAPIGenerator.dtos.documentation.*;
 import com.usg.autoAPIGenerator.entities.postgres.apiGenerationEngine.ApiAuthConfigEntity;
 import com.usg.autoAPIGenerator.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
@@ -644,59 +646,159 @@ public class DocumentationService {
 
             EndpointDetailResponseDTO details = convertToEndpointDetailResponseDTO(endpoint);
 
-            // ============= INJECT API KEY HEADERS IF AUTH TYPE IS API KEY =============
-            // Check if auth config exists and is of type API Key
-            boolean isApiKeyAuth = false;
+            // ============= FIND ASSOCIATED GENERATED API (LIKE COLLECTIONS SERVICE) =============
+            Optional<GeneratedApiEntity> generatedApiOpt = Optional.empty();
             String apiId = null;
 
-            // First check: Try to get API ID from generatedApiId
-            if (endpoint.getGeneratedApiId() != null && !endpoint.getGeneratedApiId().isEmpty()) {
-                apiId = endpoint.getGeneratedApiId();
-                log.info("Request ID: {}, Found generatedApiId directly: {}", requestId, apiId);
-            }
-            // Second check: If generatedApiId is null, try to extract from metadata
-            else if (endpoint.getMetaData() != null) {
-                try {
+            try {
+                // First try to find by generatedApiId field on the endpoint
+                if (endpoint.getGeneratedApiId() != null && !endpoint.getGeneratedApiId().isEmpty()) {
+                    generatedApiOpt = generatedAPIRepository.findById(endpoint.getGeneratedApiId());
+                    if (generatedApiOpt.isPresent()) {
+                        apiId = endpoint.getGeneratedApiId();
+                        log.info("Request ID: {}, Found generatedApi by ID: {}", requestId, apiId);
+                    }
+                }
+
+                // If not found, try to find by requestId in sourceRequestId (if available in endpoint)
+                if (generatedApiOpt.isEmpty() && generatedApiOpt.get().getSourceRequestId() != null && !generatedApiOpt.get().getSourceRequestId().isEmpty()) {
+                    generatedApiOpt = generatedAPIRepository.findByRequestId(generatedApiOpt.get().getSourceRequestId());
+                    if (generatedApiOpt.isPresent()) {
+                        apiId = generatedApiOpt.get().getId();
+                        log.info("Request ID: {}, Found generatedApi by sourceRequestId: {}", requestId, apiId);
+                    }
+                }
+
+                // If still not found, try to find by API code or name
+                if (generatedApiOpt.isEmpty() && generatedApiOpt.get().getApiCode() != null && !generatedApiOpt.get().getApiCode().isEmpty()) {
+                    generatedApiOpt = generatedAPIRepository.findByApiCode(generatedApiOpt.get().getApiCode());
+                    if (generatedApiOpt.isPresent()) {
+                        apiId = generatedApiOpt.get().getId();
+                        log.info("Request ID: {}, Found generatedApi by apiCode: {}", requestId, apiId);
+                    }
+                }
+
+                // If still not found, try to extract from metadata
+                if (generatedApiOpt.isEmpty() && endpoint.getMetaData() != null) {
                     Map<String, Object> metadata = endpoint.getMetaData();
-                    log.info("Request ID: {}, Checking metadata for API ID. Metadata keys: {}",
-                            requestId, metadata.keySet());
 
-                    // Check for apiId in metadata (based on your sample)
+                    // Check for apiId in metadata
                     if (metadata.containsKey("apiId")) {
-                        apiId = (String) metadata.get("apiId");
-                        log.info("Request ID: {}, Found apiId in metadata: {}", requestId, apiId);
-                    }
-                    // Also check for other possible field names
-                    else if (metadata.containsKey("generatedApiId")) {
-                        apiId = (String) metadata.get("generatedApiId");
-                        log.info("Request ID: {}, Found generatedApiId in metadata: {}", requestId, apiId);
-                    }
-                    else if (metadata.containsKey("api_id")) {
-                        apiId = (String) metadata.get("api_id");
-                        log.info("Request ID: {}, Found api_id in metadata: {}", requestId, apiId);
+                        String metadataApiId = (String) metadata.get("apiId");
+                        if (metadataApiId != null && !metadataApiId.isEmpty()) {
+                            generatedApiOpt = generatedAPIRepository.findById(metadataApiId);
+                            if (generatedApiOpt.isPresent()) {
+                                apiId = metadataApiId;
+                                log.info("Request ID: {}, Found generatedApi by apiId in metadata: {}", requestId, apiId);
+                            }
+                        }
                     }
 
-                    // Log the genPath if available for debugging
-                    if (metadata.containsKey("genPath")) {
-                        log.info("Request ID: {}, genPath from metadata: {}", requestId, metadata.get("genPath"));
+                    // Check for generatedApiId in metadata
+                    if (generatedApiOpt.isEmpty() && metadata.containsKey("generatedApiId")) {
+                        String metadataApiId = (String) metadata.get("generatedApiId");
+                        if (metadataApiId != null && !metadataApiId.isEmpty()) {
+                            generatedApiOpt = generatedAPIRepository.findById(metadataApiId);
+                            if (generatedApiOpt.isPresent()) {
+                                apiId = metadataApiId;
+                                log.info("Request ID: {}, Found generatedApi by generatedApiId in metadata: {}", requestId, apiId);
+                            }
+                        }
                     }
-                    if (metadata.containsKey("fullGenUrl")) {
-                        log.info("Request ID: {}, fullGenUrl from metadata: {}", requestId, metadata.get("fullGenUrl"));
-                    }
+                }
 
-                } catch (Exception e) {
-                    log.warn("Request ID: {}, Error extracting API ID from metadata: {}",
-                            requestId, e.getMessage());
+            } catch (Exception e) {
+                log.warn("Request ID: {}, Error finding generated API: {}", requestId, e.getMessage());
+            }
+
+            // ============= EXTRACT PROTOCOL TYPE AND CONFIGS FROM GENERATED API =============
+            String protocolType = "rest";
+            if (generatedApiOpt.isPresent()) {
+                GeneratedApiEntity generatedApi = generatedApiOpt.get();
+
+                // Set protocol type in metadata or directly on response
+                if (generatedApi.getProtocolType() != null) {
+                    protocolType = generatedApi.getProtocolType();
+                    log.info("Request ID: {}, Protocol type from generated API: {}", requestId, protocolType);
+
+                    // Add protocol type to response metadata
+                    if (details.getMetadata() == null) {
+                        details.setMetadata(new HashMap<>());
+                    }
+                    details.getMetadata().put("protocolType", protocolType);
+                }
+
+                // Set SOAP config if available
+                if (generatedApi.getSoapConfig() != null && "soap".equals(protocolType)) {
+                    SoapConfigDTO soapConfig = generatedApi.getSoapConfig();
+                    Map<String, Object> soapConfigMap = new HashMap<>();
+                    soapConfigMap.put("version", soapConfig.getVersion());
+                    soapConfigMap.put("bindingStyle", soapConfig.getBindingStyle());
+                    soapConfigMap.put("encodingStyle", soapConfig.getEncodingStyle());
+                    soapConfigMap.put("soapAction", soapConfig.getSoapAction());
+                    soapConfigMap.put("wsdlUrl", soapConfig.getWsdlUrl());
+                    soapConfigMap.put("namespace", soapConfig.getNamespace());
+                    soapConfigMap.put("serviceName", soapConfig.getServiceName());
+                    soapConfigMap.put("portName", soapConfig.getPortName());
+                    soapConfigMap.put("useAsyncPattern", soapConfig.getUseAsyncPattern());
+                    soapConfigMap.put("includeMtom", soapConfig.getIncludeMtom());
+                    soapConfigMap.put("soapHeaderElements", soapConfig.getSoapHeaderElements());
+
+                    if (details.getMetadata() == null) {
+                        details.setMetadata(new HashMap<>());
+                    }
+                    details.getMetadata().put("soapConfig", soapConfigMap);
+                    log.info("Request ID: {}, Set SOAP config from generated API", requestId);
+                }
+
+                // Set GraphQL config if available
+                if (generatedApi.getGraphqlConfig() != null && "graphql".equals(protocolType)) {
+                    GraphQLConfigDTO graphqlConfig = generatedApi.getGraphqlConfig();
+                    Map<String, Object> graphqlConfigMap = new HashMap<>();
+                    graphqlConfigMap.put("operationType", graphqlConfig.getOperationType());
+                    graphqlConfigMap.put("operationName", graphqlConfig.getOperationName());
+                    graphqlConfigMap.put("schema", graphqlConfig.getSchema());
+                    graphqlConfigMap.put("enableIntrospection", graphqlConfig.getEnableIntrospection());
+                    graphqlConfigMap.put("enablePersistedQueries", graphqlConfig.getEnablePersistedQueries());
+                    graphqlConfigMap.put("maxQueryDepth", graphqlConfig.getMaxQueryDepth());
+                    graphqlConfigMap.put("enableBatching", graphqlConfig.getEnableBatching());
+                    graphqlConfigMap.put("subscriptionsEnabled", graphqlConfig.getSubscriptionsEnabled());
+                    graphqlConfigMap.put("customDirectives", graphqlConfig.getCustomDirectives());
+
+                    if (details.getMetadata() == null) {
+                        details.setMetadata(new HashMap<>());
+                    }
+                    details.getMetadata().put("graphqlConfig", graphqlConfigMap);
+                    log.info("Request ID: {}, Set GraphQL config from generated API", requestId);
+                }
+
+                // Set database type if available
+                if (generatedApi.getDatabaseType() != null) {
+                    if (details.getMetadata() == null) {
+                        details.setMetadata(new HashMap<>());
+                    }
+                    details.getMetadata().put("databaseType", generatedApi.getDatabaseType());
                 }
             }
 
-            // Now check auth config using the found API ID
+            // Set API ID on the response
+            if (apiId != null) {
+                details.setApiId(apiId);
+                if (details.getMetadata() == null) {
+                    details.setMetadata(new HashMap<>());
+                }
+                details.getMetadata().put("generatedApiId", apiId);
+            }
+            // ============= END =============
+
+            // ============= CHECK IF AUTH TYPE IS API KEY =============
+            boolean isApiKeyAuth = false;
+
+            // Check for auth config in the database using the apiId
             if (apiId != null && !apiId.isEmpty()) {
                 try {
                     log.info("Request ID: {}, Checking GeneratedApi auth config for API ID: {}", requestId, apiId);
-
                     Optional<ApiAuthConfigEntity> authConfigOpt = generatedAPIRepository.findAuthConfigByApiId(apiId);
-                    // System.out.println("authConfigOpt from GeneratedApi:::::::::" + authConfigOpt);
 
                     if (authConfigOpt.isPresent()) {
                         log.info("Request ID: {}, Found auth config with type: {}", requestId, authConfigOpt.get().getAuthType());
@@ -721,25 +823,19 @@ public class DocumentationService {
                 log.info("Request ID: {}, Attempting to check collections auth config using API ID: {}", requestId, apiId);
 
                 try {
-                    // Try to get the sourceRequestId from the GeneratedApi
-                    log.info("Request ID: {}, Fetching GeneratedApi with ID: {}", requestId, apiId);
+                    Optional<GeneratedApiEntity> generatedApiCheckOpt = generatedAPIRepository.findById(apiId);
 
-                    Optional<GeneratedApiEntity> generatedApiOpt = generatedAPIRepository.findById(apiId);
-
-                    if (generatedApiOpt.isPresent()) {
-                        GeneratedApiEntity generatedApi = generatedApiOpt.get();
+                    if (generatedApiCheckOpt.isPresent()) {
+                        GeneratedApiEntity generatedApi = generatedApiCheckOpt.get();
                         log.info("Request ID: {}, Found GeneratedApi, sourceRequestId: {}",
                                 requestId, generatedApi.getSourceRequestId());
 
-                        // Check if the generated API has sourceRequestId
                         if (generatedApi.getSourceRequestId() != null && !generatedApi.getSourceRequestId().isEmpty()) {
                             String sourceRequestId = generatedApi.getSourceRequestId();
                             log.info("Request ID: {}, Using sourceRequestId: {} to find auth config",
                                     requestId, sourceRequestId);
 
-                            // Now try to find auth config by this request ID (EXACTLY like getRequestDetails)
                             Optional<AuthConfigEntity> authConfigEntityOpt = authConfigRepository.findByRequestId(sourceRequestId);
-                            // System.out.println("authConfigEntityOpt from sourceRequestId:::::::::" + authConfigEntityOpt);
 
                             if (authConfigEntityOpt.isPresent()) {
                                 log.info("Request ID: {}, Found auth config with type: {}",
@@ -766,16 +862,61 @@ public class DocumentationService {
                 }
             }
 
-            // If auth type is API Key, inject X-Api-Key and X-Api-Secret headers
+            // ============= INJECT PROTOCOL-SPECIFIC HEADERS =============
+            List<HeaderDTO> headers = details.getHeaders();
+            if (headers == null) {
+                headers = new ArrayList<>();
+            }
+
+            if ("soap".equalsIgnoreCase(protocolType)) {
+                // Add SOAPAction header for SOAP APIs
+                boolean hasSoapAction = headers.stream()
+                        .anyMatch(h -> "SOAPAction".equalsIgnoreCase(h.getKey()));
+
+                if (!hasSoapAction) {
+                    HeaderDTO soapActionHeader = new HeaderDTO();
+                    soapActionHeader.setKey("SOAPAction");
+                    soapActionHeader.setValue("\"\"");
+                    soapActionHeader.setDescription("SOAP Action header");
+                    soapActionHeader.setRequired(false);
+                    headers.add(soapActionHeader);
+                    log.info("Request ID: {}, Added SOAPAction header for SOAP API", requestId);
+                }
+
+                // Ensure Content-Type is text/xml for SOAP
+                boolean hasContentType = headers.stream()
+                        .anyMatch(h -> "Content-Type".equalsIgnoreCase(h.getKey()));
+
+                if (!hasContentType) {
+                    HeaderDTO contentTypeHeader = new HeaderDTO();
+                    contentTypeHeader.setKey("Content-Type");
+                    contentTypeHeader.setValue("text/xml");
+                    contentTypeHeader.setDescription("SOAP content type");
+                    contentTypeHeader.setRequired(true);
+                    headers.add(contentTypeHeader);
+                    log.info("Request ID: {}, Added Content-Type: text/xml header for SOAP API", requestId);
+                }
+            } else if ("graphql".equalsIgnoreCase(protocolType)) {
+                // Ensure Content-Type is application/json for GraphQL
+                boolean hasContentType = headers.stream()
+                        .anyMatch(h -> "Content-Type".equalsIgnoreCase(h.getKey()));
+
+                if (!hasContentType) {
+                    HeaderDTO contentTypeHeader = new HeaderDTO();
+                    contentTypeHeader.setKey("Content-Type");
+                    contentTypeHeader.setValue("application/json");
+                    contentTypeHeader.setDescription("GraphQL content type");
+                    contentTypeHeader.setRequired(true);
+                    headers.add(contentTypeHeader);
+                    log.info("Request ID: {}, Added Content-Type: application/json header for GraphQL API", requestId);
+                }
+            }
+            // ============= END =============
+
+            // ============= INJECT API KEY HEADERS IF AUTH TYPE IS API KEY =============
             if (isApiKeyAuth) {
                 log.info("Request ID: {}, Auth type is API Key for endpoint: {}, injecting X-Api-Key and X-Api-Secret headers",
                         requestId, endpointId);
-
-                // Get existing headers from the details object
-                List<HeaderDTO> headers = details.getHeaders();
-                if (headers == null) {
-                    headers = new ArrayList<>();
-                }
 
                 // Check if X-Api-Key header already exists
                 boolean hasApiKeyHeader = headers.stream()
@@ -784,10 +925,11 @@ public class DocumentationService {
                 if (!hasApiKeyHeader) {
                     HeaderDTO apiKeyHeader = new HeaderDTO();
                     apiKeyHeader.setKey("X-Api-Key");
-                    apiKeyHeader.setValue("{{api_key}}"); // Placeholder that will be replaced at runtime
+                    apiKeyHeader.setValue("{{api_key}}");
                     apiKeyHeader.setDescription("API Key for authentication");
                     apiKeyHeader.setRequired(true);
                     headers.add(apiKeyHeader);
+                    log.info("Request ID: {}, Added X-Api-Key header", requestId);
                 }
 
                 // Check if X-Api-Secret header already exists
@@ -797,20 +939,19 @@ public class DocumentationService {
                 if (!hasApiSecretHeader) {
                     HeaderDTO apiSecretHeader = new HeaderDTO();
                     apiSecretHeader.setKey("X-Api-Secret");
-                    apiSecretHeader.setValue("{{api_secret}}"); // Placeholder that will be replaced at runtime
+                    apiSecretHeader.setValue("{{api_secret}}");
                     apiSecretHeader.setDescription("API Secret for authentication");
                     apiSecretHeader.setRequired(true);
                     headers.add(apiSecretHeader);
+                    log.info("Request ID: {}, Added X-Api-Secret header", requestId);
                 }
-
-                // Set the headers back to the details object
-                details.setHeaders(headers);
-            } else {
-                log.info("Request ID: {}, Auth type is NOT API Key for endpoint: {}, no headers injected",
-                        requestId, endpointId);
             }
 
-            log.info("Request ID: {}, Retrieved details for endpoint: {}", requestId, endpointId);
+            // Set the headers back to the details object
+            details.setHeaders(headers);
+
+            log.info("Request ID: {}, Retrieved details for endpoint: {} with protocol: {}",
+                    requestId, endpointId, protocolType);
             return details;
 
         } catch (Exception e) {

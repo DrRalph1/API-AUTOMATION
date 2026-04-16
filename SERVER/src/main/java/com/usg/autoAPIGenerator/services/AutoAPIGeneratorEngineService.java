@@ -189,6 +189,24 @@ public class AutoAPIGeneratorEngineService {
                     request, sourceObjectDTO, collectionInfo, endpointPath, performedBy, null,
                     generatedAPIRepository, objectMapper, parameterGenerator, conversionHelper, databaseType);
 
+            // ============ CORRECTION: SAVE PROTOCOL-SPECIFIC FIELDS ============
+            savedApi.setProtocolType(request.getProtocolType() != null ? request.getProtocolType() : "rest");
+
+            if (request.getSoapConfig() != null) {
+                savedApi.setSoapConfig(request.getSoapConfig());
+            }
+
+            if (request.getGraphqlConfig() != null) {
+                savedApi.setGraphqlConfig(request.getGraphqlConfig());
+            }
+
+            if (request.getFileUploadConfig() != null) {
+                savedApi.setFileUploadConfig(request.getFileUploadConfig());
+            }
+
+            savedApi = generatedAPIRepository.save(savedApi);
+            // ============ END CORRECTION ============
+
             GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(savedApi);
             String codeBaseRequestId = codeBaseGeneratorUtil.generate(savedApi, performedBy, request, collectionInfo);
 
@@ -272,6 +290,30 @@ public class AutoAPIGeneratorEngineService {
 
             api.setSourceRequestId(originalSourceRequestId);
             api.setDatabaseType(databaseType);
+
+            // ============ CORRECTION: UPDATE PROTOCOL-SPECIFIC FIELDS ============
+            if (request.getProtocolType() != null) {
+                api.setProtocolType(request.getProtocolType());
+            }
+
+            if (request.getSoapConfig() != null) {
+                api.setSoapConfig(request.getSoapConfig());
+            } else {
+                api.setSoapConfig(null);
+            }
+
+            if (request.getGraphqlConfig() != null) {
+                api.setGraphqlConfig(request.getGraphqlConfig());
+            } else {
+                api.setGraphqlConfig(null);
+            }
+
+            if (request.getFileUploadConfig() != null) {
+                api.setFileUploadConfig(request.getFileUploadConfig());
+            } else {
+                api.setFileUploadConfig(null);
+            }
+            // ============ END CORRECTION ============
 
             // CRITICAL: Store custom query information in the API entity
             if (Boolean.TRUE.equals(request.getUseCustomQuery()) ||
@@ -1138,8 +1180,9 @@ public class AutoAPIGeneratorEngineService {
     /**
      * Execute API based on the database type stored in the API entity
      * Supports multiple database types: Oracle, PostgreSQL, etc.
+     * NOW WITH PROPER SOAP XML AND GRAPHQL RESPONSE FORMATTING
      */
-    // @Transactional
+// @Transactional
     public ExecuteApiResponseDTO executeApi(String requestId, String performedBy,
                                             String apiId, ExecuteApiRequestDTO executeRequest,
                                             String clientIp, String userAgent,
@@ -1149,6 +1192,7 @@ public class AutoAPIGeneratorEngineService {
         String capturedRequestId = null;
         ApiRequestResponseDTO capturedRequest = null;
         String databaseType = "oracle";
+        String protocolType = "rest"; // Declare here to be accessible in catch block
 
         try {
             loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
@@ -1164,18 +1208,24 @@ public class AutoAPIGeneratorEngineService {
                 databaseType = "oracle";
             }
 
-            log.info("Executing API: {} on database: {}", apiId, databaseType);
+            // 3. Get protocol type for response formatting
+            protocolType = api.getProtocolType();
+            if (protocolType == null || protocolType.isEmpty()) {
+                protocolType = "rest";
+            }
 
-            // 3. Get the appropriate execution helper
+            log.info("Executing API: {} on database: {} with protocol: {}", apiId, databaseType, protocolType);
+
+            // 4. Get the appropriate execution helper
             BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
 
-            // 4. Validate request structure
+            // 5. Validate request structure
             if (executeRequest == null) {
                 executeRequest = new ExecuteApiRequestDTO();
                 executeRequest.setRequestId(UUID.randomUUID().toString());
             }
 
-            // 5. Extract HTTP method
+            // 6. Extract HTTP method
             String httpMethod = null;
             if (httpServletRequest != null) {
                 httpMethod = httpServletRequest.getMethod();
@@ -1183,7 +1233,7 @@ public class AutoAPIGeneratorEngineService {
                 executeRequest.setHttpMethod(httpMethod);
             }
 
-            // 6. Prepare and validate the request
+            // 7. Prepare and validate the request
             ExecuteApiRequestDTO validatedRequest = executionHelper.prepareValidatedRequest(api, executeRequest);
 
             if (validatedRequest.getHttpMethod() == null && httpMethod != null) {
@@ -1191,13 +1241,12 @@ public class AutoAPIGeneratorEngineService {
                 log.info("Re-set HTTP method in validatedRequest: {}", httpMethod);
             }
 
-            // 7. Get actual client IP and request path
+            // 8. Get actual client IP and request path
             String actualClientIp = getClientIpAddress(httpServletRequest);
             String fullRequestPath = httpServletRequest != null ? httpServletRequest.getRequestURI() : "";
             String endpointPath = api.getEndpointPath();
 
             // ============ CAPTURE REQUEST BEFORE ANY VALIDATION ============
-            // This ensures we capture ALL attempts including IP whitelist failures
             try {
                 ApiRequestDTO requestDTO = convertExecuteRequestToApiRequestDTO(validatedRequest, api);
                 requestDTO.setClientIpAddress(actualClientIp);
@@ -1218,13 +1267,11 @@ public class AutoAPIGeneratorEngineService {
             try {
                 validateIpWhitelist(actualClientIp, fullRequestPath, endpointPath);
             } catch (RuntimeException e) {
-                // IP whitelist validation failed
                 String errorMsg = e.getMessage();
                 int statusCode = 403;
 
                 log.warn("IP whitelist validation failed: {}", errorMsg);
 
-                // Update captured request with the error
                 if (capturedRequestId != null) {
                     try {
                         updateCapturedRequestWithError(requestId, capturedRequestId, statusCode,
@@ -1234,16 +1281,21 @@ public class AutoAPIGeneratorEngineService {
                     }
                 }
 
-                // Log the execution
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, statusCode, System.currentTimeMillis() - startTime,
                         performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
-                return responseHelper.createErrorResponse(statusCode, errorMsg, startTime);
+                return ExecuteApiResponseDTO.builder()
+                        .responseCode(statusCode)
+                        .success(false)
+                        .message(errorMsg)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
             }
             // ============ END IP WHITELIST VALIDATION ============
 
-            // 8. Check API status
+            // 9. Check API status
             String apiStatus = api.getStatus() != null ? api.getStatus().toUpperCase() : "UNKNOWN";
 
             if (!"ACTIVE".equals(apiStatus)) {
@@ -1297,10 +1349,16 @@ public class AutoAPIGeneratorEngineService {
                         null, statusCode, System.currentTimeMillis() - startTime,
                         performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
-                return responseHelper.createErrorResponse(statusCode, errorMsg, startTime);
+                return ExecuteApiResponseDTO.builder()
+                        .responseCode(statusCode)
+                        .success(false)
+                        .message(errorMsg)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
             }
 
-            // 9. Check isActive flag
+            // 10. Check isActive flag
             if (!api.getIsActive()) {
                 String errorMsg = "API is inactive and cannot be executed. Please contact system administrator to activate it.";
                 log.warn("API execution blocked - isActive flag is false for API ID: {}", apiId);
@@ -1318,10 +1376,16 @@ public class AutoAPIGeneratorEngineService {
                         null, 403, System.currentTimeMillis() - startTime,
                         performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
-                return responseHelper.createErrorResponse(403, errorMsg, startTime);
+                return ExecuteApiResponseDTO.builder()
+                        .responseCode(403)
+                        .success(false)
+                        .message(errorMsg)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
             }
 
-            // 10. Validate HTTP method
+            // 11. Validate HTTP method
             if (!validateHttpMethod(api, validatedRequest.getHttpMethod())) {
                 String errorMsg = String.format("HTTP method not allowed. Expected: %s, Actual: %s",
                         api.getHttpMethod(), validatedRequest.getHttpMethod());
@@ -1339,10 +1403,16 @@ public class AutoAPIGeneratorEngineService {
                         null, 405, System.currentTimeMillis() - startTime,
                         performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
-                return responseHelper.createErrorResponse(405, errorMsg, startTime);
+                return ExecuteApiResponseDTO.builder()
+                        .responseCode(405)
+                        .success(false)
+                        .message(errorMsg)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
             }
 
-            // 11. Validate authentication
+            // 12. Validate authentication
             try {
                 AuthenticationServiceUtil.AuthenticationResult authResult =
                         authenticationService.validateAuthentication(api, validatedRequest);
@@ -1363,24 +1433,30 @@ public class AutoAPIGeneratorEngineService {
                             null, 401, System.currentTimeMillis() - startTime,
                             performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
-                    return responseHelper.createErrorResponse(401, errorMsg, startTime);
+                    return ExecuteApiResponseDTO.builder()
+                            .responseCode(401)
+                            .success(false)
+                            .message(errorMsg)
+                            .protocolType(protocolType)
+                            .contentType("application/json")
+                            .build();
                 }
             } catch (Exception e) {
                 log.error("Authentication validation error: {}", e.getMessage(), e);
                 throw e;
             }
 
-            // 12. Get all API parameters
+            // 13. Get all API parameters
             List<ApiParameterEntity> apiParameters = api.getParameters();
             log.info("API parameter definitions for database: {}", databaseType);
             apiParameters.forEach(p ->
                     log.info("  - {}: type={}, location={}, required={}",
                             p.getKey(), p.getParameterType(), p.getParameterLocation(), p.getRequired()));
 
-            // 13. Create consolidated params
+            // 14. Create consolidated params
             Map<String, Object> consolidatedParams = createConsolidatedParamsWithHeaders(validatedRequest, api);
 
-            // 14. Parse XML body if present
+            // 15. Parse XML body if present (for SOAP)
             if (validatedRequest.getBody() instanceof String) {
                 String rawBody = (String) validatedRequest.getBody();
                 if (rawBody.trim().startsWith("<")) {
@@ -1405,7 +1481,7 @@ public class AutoAPIGeneratorEngineService {
                 }
             }
 
-            // 15. Auto-add Content-Type header if missing
+            // 16. Auto-add Content-Type header if missing
             boolean contentTypeRequired = apiParameters.stream()
                     .anyMatch(p -> "Content-Type".equalsIgnoreCase(p.getKey()) && p.getRequired());
 
@@ -1421,7 +1497,7 @@ public class AutoAPIGeneratorEngineService {
                 validatedRequest.getHeaders().put("Content-Type", contentTypeValue);
             }
 
-            // 16. Validate required parameters
+            // 17. Validate required parameters
             Map<String, String> validationErrors = validateRequiredParametersEnhanced(api, consolidatedParams, validatedRequest);
 
             if (!validationErrors.isEmpty()) {
@@ -1441,10 +1517,16 @@ public class AutoAPIGeneratorEngineService {
                         null, 400, System.currentTimeMillis() - startTime,
                         performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
-                return responseHelper.createErrorResponse(400, errorMsg, startTime);
+                return ExecuteApiResponseDTO.builder()
+                        .responseCode(400)
+                        .success(false)
+                        .message(errorMsg)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
             }
 
-            // 17. Authorization check
+            // 18. Authorization check
             if (!validatorService.validateAuthorization(api, performedBy)) {
                 String errorMsg = "User not authorized to access this API";
 
@@ -1461,10 +1543,16 @@ public class AutoAPIGeneratorEngineService {
                         null, 403, System.currentTimeMillis() - startTime,
                         performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
-                return responseHelper.createErrorResponse(403, errorMsg, startTime);
+                return ExecuteApiResponseDTO.builder()
+                        .responseCode(403)
+                        .success(false)
+                        .message(errorMsg)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
             }
 
-            // 18. Rate limiting check
+            // 19. Rate limiting check
             if (!validatorService.checkRateLimit(api, actualClientIp)) {
                 String errorMsg = "Rate limit exceeded";
 
@@ -1481,17 +1569,22 @@ public class AutoAPIGeneratorEngineService {
                         null, 429, System.currentTimeMillis() - startTime,
                         performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
 
-                return responseHelper.createErrorResponse(429,
-                        "Rate limit exceeded. Please try again later.", startTime);
+                return ExecuteApiResponseDTO.builder()
+                        .responseCode(429)
+                        .success(false)
+                        .message(errorMsg)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
             }
 
-            // 19. Extract source object from API
+            // 20. Extract source object from API
             ApiSourceObjectDTO sourceObject = conversionHelper.extractSourceObject(api, objectMapper);
 
-            // 20. Convert parameters to DTOs for execution
+            // 21. Convert parameters to DTOs for execution
             List<ApiParameterDTO> configuredParamDTOs = conversionHelper.convertParametersToDTOs(api.getParameters());
 
-            // 21. Execute against the appropriate database
+            // 22. Execute against the appropriate database
             Object result;
             long executionTime;
 
@@ -1504,7 +1597,6 @@ public class AutoAPIGeneratorEngineService {
                 executionTime = System.currentTimeMillis() - startTime;
 
                 // ============ GENERIC RESPONSE HANDLING ============
-                // Check if the result contains response metadata (like responseCode, status, etc.)
                 boolean isResponseWithStatus = false;
                 Integer determinedHttpStatus = null;
                 String responseMessage = null;
@@ -1513,7 +1605,6 @@ public class AutoAPIGeneratorEngineService {
                 if (result instanceof Map) {
                     Map<String, Object> resultMap = (Map<String, Object>) result;
 
-                    // Check for common response code fields
                     String responseCode = null;
                     if (resultMap.containsKey("responseCode")) {
                         responseCode = resultMap.get("responseCode").toString();
@@ -1526,33 +1617,26 @@ public class AutoAPIGeneratorEngineService {
                         isResponseWithStatus = true;
                     }
 
-                    // Extract message if present
                     if (resultMap.containsKey("message")) {
                         responseMessage = resultMap.get("message").toString();
                     } else if (resultMap.containsKey("msg")) {
                         responseMessage = resultMap.get("msg").toString();
                     }
 
-                    // Extract data if present
                     if (resultMap.containsKey("data")) {
                         responseData = resultMap.get("data");
                     }
 
-                    // Determine HTTP status based on response code patterns
                     if (isResponseWithStatus && responseCode != null) {
-                        // Handle success codes (000, 200, "SUCCESS", etc.)
                         if ("000".equals(responseCode) || "200".equals(responseCode) ||
                                 "SUCCESS".equalsIgnoreCase(responseCode) || "OK".equalsIgnoreCase(responseCode)) {
                             determinedHttpStatus = 200;
-                        }
-                        // Handle error codes
-                        else {
-                            // Try to map common error patterns
+                        } else {
                             if (responseCode.startsWith("4")) {
                                 try {
                                     determinedHttpStatus = Integer.parseInt(responseCode);
                                 } catch (NumberFormatException e) {
-                                    determinedHttpStatus = 400; // Default to 400 for 4xx
+                                    determinedHttpStatus = 400;
                                 }
                             } else if (responseCode.startsWith("5")) {
                                 try {
@@ -1561,31 +1645,25 @@ public class AutoAPIGeneratorEngineService {
                                     determinedHttpStatus = 500;
                                 }
                             } else {
-                                // For custom codes (like 401, 423, etc.), try to parse
                                 try {
                                     int code = Integer.parseInt(responseCode);
                                     if (code >= 400 && code < 600) {
                                         determinedHttpStatus = code;
                                     } else {
-                                        determinedHttpStatus = 500; // Default error
+                                        determinedHttpStatus = 500;
                                     }
                                 } catch (NumberFormatException e) {
-                                    determinedHttpStatus = 500; // Default error for non-numeric codes
+                                    determinedHttpStatus = 500;
                                 }
                             }
                         }
                     }
                 }
 
-                // Prepare the final response
-                ExecuteApiResponseDTO finalResponse;
-
                 if (isResponseWithStatus && determinedHttpStatus != null && determinedHttpStatus >= 400) {
-                    // This is an error response from the procedure
                     log.info("Procedure returned error status: HTTP={}, responseCode={}",
                             determinedHttpStatus, ((Map<String, Object>) result).get("responseCode"));
 
-                    // Update captured request with error
                     if (capturedRequestId != null) {
                         try {
                             String errorMessage = responseMessage != null ? responseMessage : "Procedure execution error";
@@ -1598,108 +1676,113 @@ public class AutoAPIGeneratorEngineService {
                         }
                     }
 
-                    // Log the execution
                     executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                             null, determinedHttpStatus, executionTime, performedBy,
                             actualClientIp, userAgent, responseMessage, objectMapper);
 
-                    // Build error response
-                    finalResponse = new ExecuteApiResponseDTO();
-                    finalResponse.setResponseCode(determinedHttpStatus);
-                    finalResponse.setSuccess(false);
-                    finalResponse.setMessage(responseMessage != null ? responseMessage : "Operation failed");
-
-                    // Set data - preserve the original structure
+                    Object errorDataObj;
                     if (responseData != null) {
-                        finalResponse.setData(responseData instanceof List ?
-                                (List<?>) responseData : Collections.singletonList(responseData));
+                        errorDataObj = responseData;
                     } else if (result instanceof Map) {
-                        // If no data field, but result has other fields, use the whole result
                         Map<String, Object> resultMap = (Map<String, Object>) result;
-                        // Remove metadata fields to avoid duplication
                         resultMap.remove("responseCode");
                         resultMap.remove("code");
                         resultMap.remove("status");
                         resultMap.remove("message");
                         resultMap.remove("msg");
-                        if (!resultMap.isEmpty()) {
-                            finalResponse.setData(Collections.singletonList(resultMap));
-                        } else {
-                            finalResponse.setData(Collections.emptyList());
-                        }
+                        errorDataObj = resultMap.isEmpty() ? Collections.emptyList() : Collections.singletonList(resultMap);
                     } else {
-                        finalResponse.setData(Collections.emptyList());
+                        errorDataObj = Collections.emptyList();
                     }
 
-                    loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
-                            ", API returned error: HTTP=" + determinedHttpStatus +
-                            ", responseCode=" + ((Map<String, Object>) result).get("responseCode"));
-
-                    return finalResponse;
+                    return ExecuteApiResponseDTO.builder()
+                            .responseCode(determinedHttpStatus)
+                            .success(false)
+                            .message(responseMessage != null ? responseMessage : "Operation failed")
+                            .data(errorDataObj)
+                            .protocolType(protocolType)
+                            .contentType("application/json")
+                            .build();
                 }
 
-                // ============ SUCCESS RESPONSE HANDLING ============
+                // ============ PROTOCOL-SPECIFIC RESPONSE FORMATTING ============
+                Object formattedResponse;
+                String responseContentType = "application/json";
 
-                // 22. Format the response
-                Object formattedResponse = responseHelper.formatResponse(api, result);
+                log.info("Formatting response for protocol: {}", protocolType);
 
-                // 23. Update captured request with success response
+                if ("soap".equalsIgnoreCase(protocolType)) {
+                    // SOAP API - Format as XML
+                    formattedResponse = formatAsSoapResponse(result, api);
+                    responseContentType = "application/xml";
+                    log.info("🔄 SOAP API detected - formatting response as XML");
+                } else if ("graphql".equalsIgnoreCase(protocolType)) {
+                    // GraphQL API - Format as GraphQL response
+                    formattedResponse = formatAsGraphQLResponse(result, api);
+                    responseContentType = "application/json";
+                    log.info("🎯 GraphQL API detected - formatting response as GraphQL");
+                } else {
+                    // REST API - Use existing formatter
+                    formattedResponse = responseHelper.formatResponse(api, result);
+                    responseContentType = "application/json";
+                    log.info("📡 REST API detected - formatting response as JSON");
+                }
+
+                // Update captured request with success response
                 if (capturedRequestId != null) {
                     try {
-                        ExecuteApiResponseDTO successResponse = new ExecuteApiResponseDTO();
-                        successResponse.setResponseCode(200);
-                        successResponse.setSuccess(true);
-                        successResponse.setMessage("Success");
-                        successResponse.setData(formattedResponse);
-
                         apiRequestService.updateRequestWithResponse(
-                                requestId, capturedRequestId, successResponse, 200, "Success", executionTime);
+                                requestId, capturedRequestId,
+                                ExecuteApiResponseDTO.builder()
+                                        .responseCode(200)
+                                        .success(true)
+                                        .message("Success")
+                                        .data(formattedResponse)
+                                        .contentType(responseContentType)
+                                        .protocolType(protocolType)
+                                        .build(),
+                                200, "Success", executionTime);
                     } catch (Exception e) {
                         log.error("Failed to update captured request: {}", e.getMessage());
                     }
                 }
 
-                // 24. Update API statistics
+                // Update API statistics
                 executionHelper.updateApiStats(api, generatedAPIRepository);
 
-                // 25. Log the successful execution
+                // Log the successful execution
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         formattedResponse, 200, executionTime, performedBy,
                         actualClientIp, userAgent, null, objectMapper);
 
-                // 26. Build success response
-                finalResponse = responseHelper.buildSuccessResponse(
-                        formattedResponse, executionTime, api);
-
+                // Build success response with proper content type
                 loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
                         ", API executed successfully: " + apiId +
                         " on database: " + databaseType +
+                        " with protocol: " + protocolType +
                         " - Time: " + executionTime + "ms");
 
-                return finalResponse;
+                return ExecuteApiResponseDTO.builder()
+                        .responseCode(200)
+                        .success(true)
+                        .message("Success")
+                        .data(formattedResponse)
+                        .contentType(responseContentType)
+                        .protocolType(protocolType)
+                        .build();
 
             } catch (Exception e) {
                 executionTime = System.currentTimeMillis() - startTime;
                 log.error("Database execution failed for {}: ", databaseType, e);
 
-                // Extract the actual database error
                 String detailedError = extractDatabaseError(e, databaseType);
-
                 log.info("Returning raw database error: {}", detailedError);
-
-                // Create error response
-                ExecuteApiResponseDTO errorResponse = new ExecuteApiResponseDTO();
-                errorResponse.setResponseCode(500);
-                errorResponse.setSuccess(false);
-                errorResponse.setMessage(detailedError);
 
                 Map<String, Object> errorData = new HashMap<>();
                 errorData.put("error", detailedError);
                 errorData.put("timestamp", LocalDateTime.now().toString());
                 errorData.put("executionTimeMs", executionTime);
-                errorResponse.setData(Collections.singletonList(errorData));
 
-                // Update captured request with the error
                 if (capturedRequestId != null) {
                     try {
                         String dbErrorMessage = truncateErrorMessage(detailedError, 250);
@@ -1710,7 +1793,6 @@ public class AutoAPIGeneratorEngineService {
                     }
                 }
 
-                // Log the error
                 try {
                     String logErrorMessage = truncateErrorMessage(detailedError, 1000);
                     executionHelper.logExecution(executionLogRepository, api, validatedRequest,
@@ -1720,7 +1802,14 @@ public class AutoAPIGeneratorEngineService {
                     log.error("Failed to log execution error: {}", logError.getMessage());
                 }
 
-                return errorResponse;
+                return ExecuteApiResponseDTO.builder()
+                        .responseCode(500)
+                        .success(false)
+                        .message(detailedError)
+                        .data(Collections.singletonList(errorData))
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
             }
 
         } catch (Exception e) {
@@ -1732,16 +1821,10 @@ public class AutoAPIGeneratorEngineService {
 
             String detailedError = extractDatabaseError(e, databaseType);
 
-            ExecuteApiResponseDTO safeResponse = new ExecuteApiResponseDTO();
-            safeResponse.setResponseCode(500);
-            safeResponse.setSuccess(false);
-            safeResponse.setMessage(detailedError);
-
             Map<String, Object> errorData = new HashMap<>();
             errorData.put("error", detailedError);
             errorData.put("timestamp", LocalDateTime.now().toString());
             errorData.put("executionTimeMs", executionTime);
-            safeResponse.setData(Collections.singletonList(errorData));
 
             if (capturedRequestId != null) {
                 try {
@@ -1770,8 +1853,206 @@ public class AutoAPIGeneratorEngineService {
                 log.error("Failed to log execution error: {}", logError.getMessage());
             }
 
-            return safeResponse;
+            return ExecuteApiResponseDTO.builder()
+                    .responseCode(500)
+                    .success(false)
+                    .message(detailedError)
+                    .data(Collections.singletonList(errorData))
+                    .protocolType(protocolType)
+                    .contentType("application/json")
+                    .build();
         }
+    }
+
+
+    /**
+     * Format response as SOAP XML
+     */
+    private Object formatAsSoapResponse(Object result, GeneratedApiEntity api) {
+        try {
+            SoapConfigDTO soapConfig = api.getSoapConfig();
+            String soapVersion = soapConfig != null && soapConfig.getVersion() != null ? soapConfig.getVersion() : "1.1";
+            String soapNamespace = soapConfig != null && soapConfig.getNamespace() != null ? soapConfig.getNamespace() : "http://tempuri.org/";
+
+            // Get the operation name from the API
+            String operationName = api.getApiCode() != null ? api.getApiCode() : "Response";
+
+            StringBuilder soapResponse = new StringBuilder();
+
+            // SOAP Envelope header
+            soapResponse.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+
+            if ("1.2".equals(soapVersion)) {
+                soapResponse.append("<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\">\n");
+            } else {
+                soapResponse.append("<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n");
+            }
+
+            soapResponse.append("  <soap:Header/>\n");
+            soapResponse.append("  <soap:Body>\n");
+            soapResponse.append("    <").append(operationName).append("Response xmlns=\"").append(soapNamespace).append("\">\n");
+
+            // Convert result to XML
+            String xmlContent = convertToXml(result, api);
+            soapResponse.append(xmlContent);
+
+            soapResponse.append("    </").append(operationName).append("Response>\n");
+            soapResponse.append("  </soap:Body>\n");
+            soapResponse.append("</soap:Envelope>");
+
+            log.info("Generated SOAP XML response of length: {} characters", soapResponse.length());
+            return soapResponse.toString();
+
+        } catch (Exception e) {
+            log.error("Error formatting SOAP response: {}", e.getMessage(), e);
+
+            // Return error SOAP response
+            StringBuilder errorResponse = new StringBuilder();
+            errorResponse.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+            errorResponse.append("<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n");
+            errorResponse.append("  <soap:Body>\n");
+            errorResponse.append("    <soap:Fault>\n");
+            errorResponse.append("      <faultcode>soap:Server</faultcode>\n");
+            errorResponse.append("      <faultstring>").append(escapeXml(e.getMessage())).append("</faultstring>\n");
+            errorResponse.append("    </soap:Fault>\n");
+            errorResponse.append("  </soap:Body>\n");
+            errorResponse.append("</soap:Envelope>");
+            return errorResponse.toString();
+        }
+    }
+
+    /**
+     * Format response as GraphQL
+     */
+    private Object formatAsGraphQLResponse(Object result, GeneratedApiEntity api) {
+        Map<String, Object> graphqlResponse = new LinkedHashMap<>();
+
+        try {
+            GraphQLConfigDTO graphqlConfig = api.getGraphqlConfig();
+
+            // Check if there's an error
+            if (result instanceof Map && ((Map<?, ?>) result).containsKey("error")) {
+                Map<String, Object> errorMap = new LinkedHashMap<>();
+                errorMap.put("message", ((Map<?, ?>) result).get("error"));
+                errorMap.put("locations", new ArrayList<>());
+                errorMap.put("path", new ArrayList<>());
+                graphqlResponse.put("errors", Collections.singletonList(errorMap));
+            } else {
+                // Success response
+                Map<String, Object> data = new LinkedHashMap<>();
+                String operationName = graphqlConfig != null && graphqlConfig.getOperationName() != null ?
+                        graphqlConfig.getOperationName() : "data";
+
+                // Extract data from result
+                if (result instanceof Map) {
+                    Map<String, Object> resultMap = (Map<String, Object>) result;
+
+                    // Check if result already has a 'data' field
+                    if (resultMap.containsKey("data")) {
+                        data.put(operationName, resultMap.get("data"));
+                    } else if (resultMap.containsKey("result")) {
+                        data.put(operationName, resultMap.get("result"));
+                    } else {
+                        data.put(operationName, resultMap);
+                    }
+                } else if (result instanceof List) {
+                    data.put(operationName, result);
+                } else {
+                    data.put(operationName, result);
+                }
+
+                graphqlResponse.put("data", data);
+            }
+
+            return graphqlResponse;
+
+        } catch (Exception e) {
+            log.error("Error formatting GraphQL response: {}", e.getMessage(), e);
+
+            Map<String, Object> errorResponse = new LinkedHashMap<>();
+            Map<String, Object> errorMap = new LinkedHashMap<>();
+            errorMap.put("message", e.getMessage());
+            errorMap.put("locations", new ArrayList<>());
+            errorMap.put("path", new ArrayList<>());
+            errorResponse.put("errors", Collections.singletonList(errorMap));
+            return errorResponse;
+        }
+    }
+
+    /**
+     * Convert result object to XML format
+     */
+    private String convertToXml(Object result, GeneratedApiEntity api) {
+        StringBuilder xml = new StringBuilder();
+
+        try {
+            if (result == null) {
+                xml.append("      <result>null</result>\n");
+                return xml.toString();
+            }
+
+            if (result instanceof Map) {
+                Map<String, Object> resultMap = (Map<String, Object>) result;
+                for (Map.Entry<String, Object> entry : resultMap.entrySet()) {
+                    String key = entry.getKey();
+                    Object value = entry.getValue();
+
+                    // Skip internal fields
+                    if ("responseCode".equals(key) || "code".equals(key) || "status".equals(key) ||
+                            "message".equals(key) || "msg".equals(key)) {
+                        continue;
+                    }
+
+                    xml.append("      <").append(key).append(">");
+                    if (value instanceof Map || value instanceof List) {
+                        xml.append("\n");
+                        xml.append(convertToXml(value, api));
+                        xml.append("      ");
+                    } else {
+                        xml.append(escapeXml(String.valueOf(value)));
+                    }
+                    xml.append("</").append(key).append(">\n");
+                }
+            } else if (result instanceof List) {
+                List<?> resultList = (List<?>) result;
+                for (Object item : resultList) {
+                    if (item instanceof Map) {
+                        xml.append("      <item>\n");
+                        for (Map.Entry<String, Object> entry : ((Map<String, Object>) item).entrySet()) {
+                            String key = entry.getKey();
+                            Object value = entry.getValue();
+                            xml.append("        <").append(key).append(">");
+                            xml.append(escapeXml(String.valueOf(value)));
+                            xml.append("</").append(key).append(">\n");
+                        }
+                        xml.append("      </item>\n");
+                    } else {
+                        xml.append("      <item>").append(escapeXml(String.valueOf(item))).append("</item>\n");
+                    }
+                }
+            } else {
+                xml.append("      <result>").append(escapeXml(String.valueOf(result))).append("</result>\n");
+            }
+
+        } catch (Exception e) {
+            log.error("Error converting to XML: {}", e.getMessage(), e);
+            xml.append("      <error>").append(escapeXml(e.getMessage())).append("</error>\n");
+        }
+
+        return xml.toString();
+    }
+
+    /**
+     * Escape XML special characters
+     */
+    private String escapeXml(String input) {
+        if (input == null) return "";
+        return input
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&apos;");
     }
 
 
@@ -2076,31 +2357,42 @@ public class AutoAPIGeneratorEngineService {
 
     public GeneratedAPIDTO getGeneratedApiDetails(String requestId, String apiId) {
         try {
-            // First get the API entity to know its database type
             GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
                     .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
 
-            // Get the database type from the API
             String databaseType = api.getDatabaseType();
             if (databaseType == null || databaseType.isEmpty()) {
                 databaseType = "oracle";
             }
 
-            // Get the appropriate execution helper based on database type
             BaseApiExecutionHelper executionHelper = executionHelperFactory.getExecutionHelper(databaseType);
-
-            // Get the API entity using the helper (though we already have it, this ensures consistency)
             GeneratedApiEntity apiEntity = executionHelper.getApiEntity(generatedAPIRepository, apiId);
 
-            // Map to DTO
             GeneratedAPIDTO response = conversionHelper.mapToGeneratedAPIDTO(apiEntity, objectMapper);
 
-            // Set statistics
+            // ============ CRITICAL: Add protocol fields ============
+            response.setProtocolType(apiEntity.getProtocolType());
+
+            // Convert SOAP config to Map if present
+            if (apiEntity.getSoapConfig() != null) {
+                response.setSoapConfig(convertSoapConfigToMap(apiEntity.getSoapConfig()));
+            }
+
+            // Convert GraphQL config to Map if present
+            if (apiEntity.getGraphqlConfig() != null) {
+                response.setGraphqlConfig(convertGraphQLConfigToMap(apiEntity.getGraphqlConfig()));
+            }
+
+            // Convert FileUpload config to Map if present
+            if (apiEntity.getFileUploadConfig() != null) {
+                response.setFileUploadConfig(convertFileUploadConfigToMap(apiEntity.getFileUploadConfig()));
+            }
+            // ============ END CRITICAL ============
+
             response.setTotalCalls(apiEntity.getTotalCalls());
             response.setLastCalledAt(apiEntity.getLastCalledAt());
 
             Double avgTime = executionLogRepository.getAverageExecutionTime(apiId);
-            // Optionally add average time to response if needed
 
             return response;
 
@@ -2111,6 +2403,48 @@ public class AutoAPIGeneratorEngineService {
         }
     }
 
+    // Helper methods to convert config objects to Map
+    private Map<String, Object> convertSoapConfigToMap(SoapConfigDTO config) {
+        if (config == null) return null;
+        Map<String, Object> map = new HashMap<>();
+        map.put("version", config.getVersion());
+        map.put("bindingStyle", config.getBindingStyle());
+        map.put("encodingStyle", config.getEncodingStyle());
+        map.put("soapAction", config.getSoapAction());
+        map.put("wsdlUrl", config.getWsdlUrl());
+        map.put("namespace", config.getNamespace());
+        map.put("serviceName", config.getServiceName());
+        map.put("portName", config.getPortName());
+        map.put("useAsyncPattern", config.getUseAsyncPattern());
+        map.put("includeMtom", config.getIncludeMtom());
+        map.put("soapHeaderElements", config.getSoapHeaderElements());
+        return map;
+    }
+
+    private Map<String, Object> convertGraphQLConfigToMap(GraphQLConfigDTO config) {
+        if (config == null) return null;
+        Map<String, Object> map = new HashMap<>();
+        map.put("operationType", config.getOperationType());
+        map.put("operationName", config.getOperationName());
+        map.put("schema", config.getSchema());
+        map.put("enableIntrospection", config.getEnableIntrospection());
+        map.put("enablePersistedQueries", config.getEnablePersistedQueries());
+        map.put("maxQueryDepth", config.getMaxQueryDepth());
+        map.put("enableBatching", config.getEnableBatching());
+        map.put("subscriptionsEnabled", config.getSubscriptionsEnabled());
+        map.put("customDirectives", config.getCustomDirectives());
+        return map;
+    }
+
+    private Map<String, Object> convertFileUploadConfigToMap(FileUploadConfigDTO config) {
+        if (config == null) return null;
+        Map<String, Object> map = new HashMap<>();
+        map.put("maxFileSize", config.getMaxFileSize());
+        map.put("allowedFileTypes", config.getAllowedFileTypes());
+        map.put("multipleFiles", config.getMultipleFiles());
+        map.put("fileParameterName", config.getFileParameterName());
+        return map;
+    }
 
 
     public ApiDetailsResponseDTO getCompleteApiDetails(String requestId, String apiId) {
@@ -2133,6 +2467,26 @@ public class AutoAPIGeneratorEngineService {
             api.setTests(tests);
 
             ApiDetailsResponseDTO response = conversionHelper.mapToApiDetailsResponse(api, objectMapper);
+
+            // ============ CRITICAL: Add protocol fields ============
+            if (api.getProtocolType() != null) {
+                response.setProtocolType(api.getProtocolType());
+            } else {
+                response.setProtocolType("rest"); // Default
+            }
+
+            if (api.getSoapConfig() != null) {
+                response.setSoapConfig(api.getSoapConfig());
+            }
+
+            if (api.getGraphqlConfig() != null) {
+                response.setGraphqlConfig(api.getGraphqlConfig());
+            }
+
+            if (api.getFileUploadConfig() != null) {
+                response.setFileUploadConfig(api.getFileUploadConfig());
+            }
+            // ============ END CRITICAL ============
 
             response.setGeneratedFiles(generateApiCode(api));
             response.setTotalCalls(api.getTotalCalls() != null ? api.getTotalCalls() : 0L);

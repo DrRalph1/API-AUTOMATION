@@ -188,9 +188,6 @@ public class CollectionsService {
         RequestEntity request = requestRepository.findById(requestIdParam)
                 .orElseThrow(() -> new EntityNotFoundException("Request not found: " + requestIdParam));
 
-        // System.out.println("collectionId:::::" + collectionId);
-        // System.out.println("requestIdParam::::::" + requestIdParam);
-
         // ============= FIXED: Handle non-unique result gracefully =============
         Optional<GeneratedApiEntity> generatedApiOpt = Optional.empty();
         try {
@@ -246,10 +243,46 @@ public class CollectionsService {
             }
         }
 
-        // System.out.println("generatedApiOpt1111111111111::::" + generatedApiOpt);
-
         // Create GenerateApiRequestDTO - all fields are flattened in the DTO
         GenerateApiRequestDTO generateApiRequest = new GenerateApiRequestDTO();
+
+        // ============= CRITICAL FIX: SET PROTOCOL TYPE AND CONFIGS =============
+        if (generatedApiOpt.isPresent()) {
+            GeneratedApiEntity generatedApi = generatedApiOpt.get();
+
+            // Set protocol type
+            if (generatedApi.getProtocolType() != null) {
+                generateApiRequest.setProtocolType(generatedApi.getProtocolType());
+                log.info("Setting protocol type: {}", generatedApi.getProtocolType());
+            } else {
+                generateApiRequest.setProtocolType("rest");
+            }
+
+            // Set SOAP config if available
+            if (generatedApi.getSoapConfig() != null) {
+                generateApiRequest.setSoapConfig(generatedApi.getSoapConfig());
+                log.info("Setting SOAP config: {}", generatedApi.getSoapConfig());
+            }
+
+            // Set GraphQL config if available
+            if (generatedApi.getGraphqlConfig() != null) {
+                generateApiRequest.setGraphqlConfig(generatedApi.getGraphqlConfig());
+                log.info("Setting GraphQL config: {}", generatedApi.getGraphqlConfig());
+            }
+
+            // Set file upload config if available
+            if (generatedApi.getFileUploadConfig() != null) {
+                generateApiRequest.setFileUploadConfig(generatedApi.getFileUploadConfig());
+            }
+
+            // Set database type
+            if (generatedApi.getDatabaseType() != null) {
+                generateApiRequest.setDatabaseType(generatedApi.getDatabaseType());
+            }
+        } else {
+            generateApiRequest.setProtocolType("rest");
+        }
+        // ============= END CRITICAL FIX =============
 
         // ============= 1. SET FLATTENED API DETAILS FIELDS =============
         generateApiRequest.setApiName(request.getName());
@@ -338,8 +371,6 @@ public class CollectionsService {
         // ============= 4. REQUEST PARAMETERS =============
         List<ApiParameterDTO> parameters = new ArrayList<>();
 
-        // System.out.println("requestIdParam::::::::::" + requestIdParam);
-
         try {
             // Try from collections parameters first
             List<ParameterEntity> paramEntities = parameterRepository.findByRequestId(requestIdParam);
@@ -414,7 +445,6 @@ public class CollectionsService {
         }
 
         // ============= INJECT API KEY HEADERS IF AUTH TYPE IS API KEY =============
-        // Check if auth config exists and is of type API Key
         boolean isApiKeyAuth = false;
 
         // First check if we have auth config from GeneratedApi
@@ -434,7 +464,6 @@ public class CollectionsService {
         if (!isApiKeyAuth) {
             try {
                 Optional<AuthConfigEntity> authConfigEntityOpt = authConfigRepository.findByRequestId(requestIdParam);
-                // System.out.println("authConfigEntityOpt:::::::::" + authConfigEntityOpt);
                 if (authConfigEntityOpt.isPresent() && "apiKey".equals(authConfigEntityOpt.get().getType())) {
                     isApiKeyAuth = true;
                 }
@@ -447,27 +476,25 @@ public class CollectionsService {
         if (isApiKeyAuth) {
             log.info("Auth type is API Key for request: {}, injecting X-Api-Key and X-Api-Secret headers", requestIdParam);
 
-            // Check if X-Api-Key header already exists
             boolean hasApiKeyHeader = headers.stream()
                     .anyMatch(h -> "X-Api-Key".equalsIgnoreCase(h.getKey()));
 
             if (!hasApiKeyHeader) {
                 ApiHeaderDTO apiKeyHeader = new ApiHeaderDTO();
                 apiKeyHeader.setKey("X-Api-Key");
-                apiKeyHeader.setValue("{{api_key}}"); // Placeholder that will be replaced at runtime
+                apiKeyHeader.setValue("{{api_key}}");
                 apiKeyHeader.setDescription("API Key for authentication");
                 apiKeyHeader.setRequired(true);
                 headers.add(apiKeyHeader);
             }
 
-            // Check if X-Api-Secret header already exists
             boolean hasApiSecretHeader = headers.stream()
                     .anyMatch(h -> "X-Api-Secret".equalsIgnoreCase(h.getKey()));
 
             if (!hasApiSecretHeader) {
                 ApiHeaderDTO apiSecretHeader = new ApiHeaderDTO();
                 apiSecretHeader.setKey("X-Api-Secret");
-                apiSecretHeader.setValue("{{api_secret}}"); // Placeholder that will be replaced at runtime
+                apiSecretHeader.setValue("{{api_secret}}");
                 apiSecretHeader.setDescription("API Secret for authentication");
                 apiSecretHeader.setRequired(true);
                 headers.add(apiSecretHeader);
@@ -476,11 +503,8 @@ public class CollectionsService {
 
         generateApiRequest.setHeaders(headers.isEmpty() ? null : headers);
 
-        // System.out.println("generatedApiOpt22222222:::::" + generatedApiOpt);
-
         // ============= 7. REQUEST BODY =============
         if (generatedApiOpt.isPresent()) {
-            // System.out.println("adey here cool...");
             try {
                 String apiId = generatedApiOpt.get().getId();
                 Optional<ApiRequestConfigEntity> requestConfigOpt = generatedAPIRepository.findRequestConfigByApiId(apiId);
@@ -505,14 +529,8 @@ public class CollectionsService {
             }
         }
 
-        // System.out.println("generateApiRequest:::::" + generateApiRequest);
-        // System.out.println("generateApiRequest.getRequestBody() is: " + generateApiRequest.getRequestBody());
-        // System.out.println("request.getBody() is: " + request.getBody());
-        // System.out.println("request.getBody() empty? " + (request.getBody() == null || request.getBody().isEmpty()));
-
         // If no request config from GeneratedApi, use request body from collections module
         if (generateApiRequest.getRequestBody() == null && request.getBody() != null && !request.getBody().isEmpty()) {
-            // System.out.println("case eeiii...");
             ApiRequestConfigDTO requestBody = new ApiRequestConfigDTO();
             requestBody.setBodyType("json");
             requestBody.setSample(request.getBody());
@@ -556,21 +574,18 @@ public class CollectionsService {
                 if (responseConfigOpt.isPresent()) {
                     ApiResponseConfigEntity responseConfigEntity = responseConfigOpt.get();
 
-                    // Parse success schema if it exists
                     if (responseConfigEntity.getSuccessSchema() != null) {
                         try {
                             ObjectMapper mapper = new ObjectMapper();
                             responseExamples.put("success", mapper.readValue(responseConfigEntity.getSuccessSchema(), Map.class));
                         } catch (Exception e) {
                             log.error("Failed to parse success schema", e);
-                            // Create default success example from mappings
                             if (!responseMappings.isEmpty()) {
                                 responseExamples.put("success", createSuccessExampleFromMappings(responseMappings));
                             }
                         }
                     }
 
-                    // Parse error schema if it exists
                     if (responseConfigEntity.getErrorSchema() != null) {
                         try {
                             ObjectMapper mapper = new ObjectMapper();
@@ -658,7 +673,6 @@ public class CollectionsService {
                 List<ApiTestEntity> testEntities = generatedAPIRepository.findTestsByApiId(apiId);
                 if (testEntities != null && !testEntities.isEmpty()) {
                     ApiTestsDTO tests = new ApiTestsDTO();
-                    // Combine all test data
                     Map<String, Object> combinedTestData = new HashMap<>();
                     for (ApiTestEntity test : testEntities) {
                         if (test.getTestData() != null) {
@@ -666,7 +680,6 @@ public class CollectionsService {
                         }
                     }
 
-                    // Set common test fields
                     tests.setTestConnection((Boolean) combinedTestData.getOrDefault("testConnection", false));
                     tests.setTestObjectAccess((Boolean) combinedTestData.getOrDefault("testObjectAccess", false));
                     tests.setTestPrivileges((Boolean) combinedTestData.getOrDefault("testPrivileges", false));
@@ -723,7 +736,16 @@ public class CollectionsService {
             }
         }
 
-        // ============= 15. FLAGS =============
+        // ============= 15. CUSTOM QUERY FIELDS =============
+        if (generatedApiOpt.isPresent()) {
+            GeneratedApiEntity generatedApi = generatedApiOpt.get();
+            if (generatedApi.getCustomSelectStatement() != null) {
+                generateApiRequest.setCustomSelectStatement(generatedApi.getCustomSelectStatement());
+                generateApiRequest.setUseCustomQuery(true);
+            }
+        }
+
+        // ============= 16. FLAGS =============
         generateApiRequest.setRegenerateComponents(null);
         generateApiRequest.setIsEditing(true);
 

@@ -1,5 +1,7 @@
 package com.usg.autoAPIGenerator.utils.apiEngine.generator;
 
+import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.GraphQLConfigDTO;
+import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.SoapConfigDTO;
 import com.usg.autoAPIGenerator.entities.postgres.apiGenerationEngine.*;
 import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.CollectionInfoDTO;
 import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.GenerateApiRequestDTO;
@@ -14,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -75,7 +78,7 @@ public class CollectionsGeneratorUtil {
             // Return both collection ID and request ID
             Map<String, String> result = new HashMap<>();
             result.put("collectionId", collection.getId());
-            result.put("requestId", requestEntity.getId());  // This is the tb_col_requests ID
+            result.put("requestId", requestEntity.getId());
             return result;
 
         } catch (Exception e) {
@@ -83,7 +86,6 @@ public class CollectionsGeneratorUtil {
             throw new RuntimeException("Failed to generate Collections: " + e.getMessage(), e);
         }
     }
-
 
     @Transactional
     public String generate(GeneratedApiEntity api, String performedBy,
@@ -145,18 +147,14 @@ public class CollectionsGeneratorUtil {
 
             String generatedApiId = api.getId();
             GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
-
-            // CRITICAL FIX: Use the helper methods to properly clear collections
-            // This maintains bidirectional relationship integrity
+            String protocolType = api.getProtocolType() != null ? api.getProtocolType() : "rest";
 
             // Clear headers properly
             if (existingRequest.getHeaders() != null) {
-                // Create a copy to avoid ConcurrentModificationException
                 List<HeaderEntity> headersToRemove = new ArrayList<>(existingRequest.getHeaders());
                 for (HeaderEntity header : headersToRemove) {
                     existingRequest.removeHeader(header);
                 }
-                // Now delete using repository
                 if (!headersToRemove.isEmpty()) {
                     collectionsHeaderRepository.deleteAll(headersToRemove);
                     log.debug("Deleted {} headers for request: {}", headersToRemove.size(), existingRequest.getId());
@@ -178,38 +176,51 @@ public class CollectionsGeneratorUtil {
             // Handle auth config
             if (existingRequest.getAuthConfig() != null) {
                 AuthConfigEntity authConfig = existingRequest.getAuthConfig();
-                existingRequest.setAuthConfig(null); // This breaks the relationship
+                existingRequest.setAuthConfig(null);
                 collectionsAuthConfigRepository.delete(authConfig);
             }
 
-            // Flush deletions to ensure they're processed
+            // Flush deletions
             collectionsHeaderRepository.flush();
             collectionsParameterRepository.flush();
             collectionsAuthConfigRepository.flush();
 
             // Update request basic info
             existingRequest.setName(api.getApiName() + " - " + api.getHttpMethod());
-            existingRequest.setMethod(api.getHttpMethod());
+
+            if ("soap".equalsIgnoreCase(protocolType) || "graphql".equalsIgnoreCase(protocolType)) {
+                existingRequest.setMethod("POST");
+                log.info("Overriding method to POST for {} protocol", protocolType);
+            } else {
+                existingRequest.setMethod(api.getHttpMethod());
+            }
+
             existingRequest.setUrl(genUrlInfo.getFullUrl());
             existingRequest.setDescription(api.getDescription());
             existingRequest.setLastModified(LocalDateTime.now());
             existingRequest.setUpdatedAt(LocalDateTime.now());
 
-            // Set request body
-            if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+            // Set request body based on protocol
+            if ("soap".equalsIgnoreCase(protocolType)) {
+                existingRequest.setBody(generatePostmanSoapBody(api));
+            } else if ("graphql".equalsIgnoreCase(protocolType)) {
+                existingRequest.setBody(generatePostmanGraphQLBody(api));
+            } else if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
                 existingRequest.setBody(api.getRequestConfig().getSample());
             }
 
             // Set auth type
             if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
                 existingRequest.setAuthType(api.getAuthConfig().getAuthType().toLowerCase());
+            } else {
+                existingRequest.setAuthType(null);
             }
 
             // Save the request first
             existingRequest = collectionsRequestRepository.save(existingRequest);
 
-            // Create and add new headers using helper method
-            List<HeaderEntity> newHeaders = createHeadersForRequest(api, existingRequest, generatedApiId);
+            // Create and add new headers
+            List<HeaderEntity> newHeaders = createHeadersForRequest(api, existingRequest, generatedApiId, protocolType);
             for (HeaderEntity header : newHeaders) {
                 existingRequest.addHeader(header);
             }
@@ -217,7 +228,7 @@ public class CollectionsGeneratorUtil {
                 collectionsHeaderRepository.saveAll(newHeaders);
             }
 
-            // Create and add new parameters using helper method
+            // Create and add new parameters
             List<ParameterEntity> newParams = createParametersForRequest(api, existingRequest, generatedApiId);
             for (ParameterEntity param : newParams) {
                 existingRequest.addParameter(param);
@@ -247,14 +258,10 @@ public class CollectionsGeneratorUtil {
         if (request != null) {
             log.debug("Deleting collections for request: {}", request.getId());
 
-            // CRITICAL: First, clear the collections to break the relationship
-            // This prevents Hibernate from trying to cascade operations
             if (request.getHeaders() != null) {
                 List<HeaderEntity> headersToDelete = new ArrayList<>(request.getHeaders());
                 if (!headersToDelete.isEmpty()) {
-                    // First clear the collection
                     request.getHeaders().clear();
-                    // Then delete using repository
                     collectionsHeaderRepository.deleteAll(headersToDelete);
                     log.debug("Deleted {} headers for request: {}", headersToDelete.size(), request.getId());
                 }
@@ -263,9 +270,7 @@ public class CollectionsGeneratorUtil {
             if (request.getParams() != null) {
                 List<ParameterEntity> paramsToDelete = new ArrayList<>(request.getParams());
                 if (!paramsToDelete.isEmpty()) {
-                    // First clear the collection
                     request.getParams().clear();
-                    // Then delete using repository
                     collectionsParameterRepository.deleteAll(paramsToDelete);
                     log.debug("Deleted {} parameters for request: {}", paramsToDelete.size(), request.getId());
                 }
@@ -276,12 +281,44 @@ public class CollectionsGeneratorUtil {
     }
 
     /**
-     * Create headers for a request
+     * Create headers for a request with protocol support
      */
     private List<HeaderEntity> createHeadersForRequest(GeneratedApiEntity api,
                                                        com.usg.autoAPIGenerator.entities.postgres.collections.RequestEntity request,
-                                                       String generatedApiId) {
+                                                       String generatedApiId,
+                                                       String protocolType) {
         List<HeaderEntity> newHeaders = new ArrayList<>();
+
+        if ("soap".equalsIgnoreCase(protocolType)) {
+            HeaderEntity contentTypeHeader = new HeaderEntity();
+            contentTypeHeader.setId(UUID.randomUUID().toString());
+            contentTypeHeader.setGeneratedApiId(generatedApiId);
+            contentTypeHeader.setKey("Content-Type");
+            contentTypeHeader.setValue("text/xml; charset=utf-8");
+            contentTypeHeader.setDescription("SOAP request content type");
+            contentTypeHeader.setEnabled(true);
+            newHeaders.add(contentTypeHeader);
+
+            if (api.getSoapConfig() != null && api.getSoapConfig().getSoapAction() != null) {
+                HeaderEntity soapActionHeader = new HeaderEntity();
+                soapActionHeader.setId(UUID.randomUUID().toString());
+                soapActionHeader.setGeneratedApiId(generatedApiId);
+                soapActionHeader.setKey("SOAPAction");
+                soapActionHeader.setValue(api.getSoapConfig().getSoapAction());
+                soapActionHeader.setDescription("SOAP action header");
+                soapActionHeader.setEnabled(true);
+                newHeaders.add(soapActionHeader);
+            }
+        } else if ("graphql".equalsIgnoreCase(protocolType)) {
+            HeaderEntity contentTypeHeader = new HeaderEntity();
+            contentTypeHeader.setId(UUID.randomUUID().toString());
+            contentTypeHeader.setGeneratedApiId(generatedApiId);
+            contentTypeHeader.setKey("Content-Type");
+            contentTypeHeader.setValue("application/json");
+            contentTypeHeader.setDescription("GraphQL request content type");
+            contentTypeHeader.setEnabled(true);
+            newHeaders.add(contentTypeHeader);
+        }
 
         // Add headers from headers array
         if (api.getHeaders() != null) {
@@ -294,7 +331,6 @@ public class CollectionsGeneratorUtil {
                     header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
                     header.setDescription(apiHeader.getDescription());
                     header.setEnabled(apiHeader.getRequired() != null ? apiHeader.getRequired() : true);
-                    // DON'T set request here - let the helper method do it
                     newHeaders.add(header);
                 }
             }
@@ -311,13 +347,18 @@ public class CollectionsGeneratorUtil {
                     header.setValue(apiParam.getExample() != null ? apiParam.getExample() : "");
                     header.setDescription(apiParam.getDescription());
                     header.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
-                    // DON'T set request here - let the helper method do it
                     newHeaders.add(header);
                 }
             }
         }
 
         return newHeaders;
+    }
+
+    private List<HeaderEntity> createHeadersForRequest(GeneratedApiEntity api,
+                                                       com.usg.autoAPIGenerator.entities.postgres.collections.RequestEntity request,
+                                                       String generatedApiId) {
+        return createHeadersForRequest(api, request, generatedApiId, "rest");
     }
 
     /**
@@ -394,59 +435,44 @@ public class CollectionsGeneratorUtil {
 
     // ==================== PRIVATE HELPER METHODS FOR UPDATES ====================
 
-
     /**
      * Update auth config for an existing request - COMPLETELY REPLACES old config
      */
     private void updateAuthConfig(com.usg.autoAPIGenerator.entities.postgres.collections.RequestEntity request,
                                   GeneratedApiEntity api, String generatedApiId) {
         try {
-            // CRITICAL: Delete existing auth config if present
             if (request.getAuthConfig() != null) {
                 AuthConfigEntity oldAuthConfig = request.getAuthConfig();
-                log.info("Removing existing auth config: type={}, id={}",
-                        oldAuthConfig.getType(), oldAuthConfig.getId());
-
-                // First, break the relationship
                 request.setAuthConfig(null);
                 collectionsRequestRepository.save(request);
-
-                // Force flush to ensure relationship is broken
                 collectionsRequestRepository.flush();
-
-                // Now delete the old auth config
                 collectionsAuthConfigRepository.delete(oldAuthConfig);
                 collectionsAuthConfigRepository.flush();
-
                 log.info("Successfully deleted old auth config");
             }
 
-            // Create new auth config if needed
             if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
                 AuthConfigEntity authConfig = new AuthConfigEntity();
                 authConfig.setId(UUID.randomUUID().toString());
                 authConfig.setGeneratedApiId(generatedApiId);
                 authConfig.setRequest(request);
 
-                // Set fields based on auth type - CLEAR ALL FIELDS FIRST
                 String authType = api.getAuthConfig().getAuthType();
                 authConfig.setType(authType);
 
-                // Clear all fields initially
                 authConfig.setKey(null);
                 authConfig.setValue(null);
                 authConfig.setToken(null);
                 authConfig.setTokenType(null);
                 authConfig.setUsername(null);
                 authConfig.setPassword(null);
-                authConfig.setAddTo("header"); // Default to header
+                authConfig.setAddTo("header");
 
                 switch (authType) {
                     case "API_KEY":
                         authConfig.setKey(api.getAuthConfig().getApiKeyHeader() != null ?
                                 api.getAuthConfig().getApiKeyHeader() : "X-API-Key");
                         authConfig.setValue("{{apiKey}}");
-                        // Clear any JWT/Basic specific fields
                         authConfig.setToken(null);
                         authConfig.setTokenType(null);
                         authConfig.setUsername(null);
@@ -458,7 +484,6 @@ public class CollectionsGeneratorUtil {
                         authConfig.setType("bearer");
                         authConfig.setToken("{{jwtToken}}");
                         authConfig.setTokenType("Bearer");
-                        // Clear API Key and Basic specific fields
                         authConfig.setKey(null);
                         authConfig.setValue(null);
                         authConfig.setUsername(null);
@@ -468,7 +493,6 @@ public class CollectionsGeneratorUtil {
                     case "BASIC":
                         authConfig.setUsername("{{username}}");
                         authConfig.setPassword("{{password}}");
-                        // Clear other auth fields
                         authConfig.setKey(null);
                         authConfig.setValue(null);
                         authConfig.setToken(null);
@@ -481,7 +505,6 @@ public class CollectionsGeneratorUtil {
                         authConfig.setValue("{{clientId}}");
                         authConfig.setToken("{{accessToken}}");
                         authConfig.setTokenType("Bearer");
-                        // Clear Basic auth fields
                         authConfig.setUsername(null);
                         authConfig.setPassword(null);
                         break;
@@ -489,7 +512,6 @@ public class CollectionsGeneratorUtil {
                     case "ORACLE_ROLES":
                         authConfig.setKey("X-Oracle-Session");
                         authConfig.setValue("{{oracleSessionId}}");
-                        // Clear other auth fields
                         authConfig.setToken(null);
                         authConfig.setTokenType(null);
                         authConfig.setUsername(null);
@@ -501,17 +523,12 @@ public class CollectionsGeneratorUtil {
                         return;
                 }
 
-                // Save the new auth config
                 collectionsAuthConfigRepository.save(authConfig);
                 request.setAuthConfig(authConfig);
                 collectionsRequestRepository.save(request);
 
-                log.info("Successfully created new auth config: type={}, key={}, hasToken={}",
-                        authConfig.getType(),
-                        authConfig.getKey() != null,
-                        authConfig.getToken() != null);
+                log.info("Successfully created new auth config: type={}", authConfig.getType());
             } else {
-                // If no auth config or auth type is NONE, ensure no auth config is attached
                 log.info("No auth config needed for API: {}", api.getApiCode());
             }
 
@@ -576,7 +593,7 @@ public class CollectionsGeneratorUtil {
 
     private void createEnvironments(GeneratedApiEntity api, String performedBy,
                                     CollectionEntity collection, String generatedApiId) {
-        // Create Development Environment
+        // Development Environment
         EnvironmentEntity devEnv = new EnvironmentEntity();
         devEnv.setId(UUID.randomUUID().toString());
         devEnv.setGeneratedApiId(generatedApiId);
@@ -588,7 +605,6 @@ public class CollectionsGeneratorUtil {
 
         EnvironmentEntity savedDevEnv = collectionsEnvironmentRepository.save(devEnv);
 
-        // Create variables for dev environment
         List<EnvironmentVariableEntity> devVariables = Arrays.asList(
                 createEnvironmentVariable(savedDevEnv, "baseUrl", "http://10.203.14.33:8182/apiGeneration", "string", true, generatedApiId),
                 createEnvironmentVariable(savedDevEnv, "apiKey", "dev-api-key-123", "string", true, generatedApiId),
@@ -596,7 +612,7 @@ public class CollectionsGeneratorUtil {
         );
         environmentVariableRepository.saveAll(devVariables);
 
-        // Create Production Environment
+        // Production Environment
         EnvironmentEntity prodEnv = new EnvironmentEntity();
         prodEnv.setId(UUID.randomUUID().toString());
         prodEnv.setGeneratedApiId(generatedApiId);
@@ -608,7 +624,6 @@ public class CollectionsGeneratorUtil {
 
         EnvironmentEntity savedProdEnv = collectionsEnvironmentRepository.save(prodEnv);
 
-        // Create variables for prod environment
         List<EnvironmentVariableEntity> prodVariables = Arrays.asList(
                 createEnvironmentVariable(savedProdEnv, "baseUrl", "{{baseUrl}}", "string", true, generatedApiId),
                 createEnvironmentVariable(savedProdEnv, "apiKey", "{{prodApiKey}}", "string", true, generatedApiId),
@@ -677,6 +692,7 @@ public class CollectionsGeneratorUtil {
             FolderEntity folder, String generatedApiId) {
 
         GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
+        String protocolType = api.getProtocolType() != null ? api.getProtocolType() : "rest";
 
         com.usg.autoAPIGenerator.entities.postgres.collections.RequestEntity request =
                 new com.usg.autoAPIGenerator.entities.postgres.collections.RequestEntity();
@@ -684,7 +700,13 @@ public class CollectionsGeneratorUtil {
         request.setId(UUID.randomUUID().toString());
         request.setGeneratedApiId(generatedApiId);
         request.setName(api.getApiName() + " - " + api.getHttpMethod());
-        request.setMethod(api.getHttpMethod());
+
+        if ("soap".equalsIgnoreCase(protocolType) || "graphql".equalsIgnoreCase(protocolType)) {
+            request.setMethod("POST");
+        } else {
+            request.setMethod(api.getHttpMethod());
+        }
+
         request.setUrl(genUrlInfo.getFullUrl());
         request.setDescription(api.getDescription());
         request.setLastModified(LocalDateTime.now());
@@ -696,8 +718,12 @@ public class CollectionsGeneratorUtil {
         request.setCreatedAt(LocalDateTime.now());
         request.setUpdatedAt(LocalDateTime.now());
 
-        // Set request body
-        if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+        // Set request body based on protocol
+        if ("soap".equalsIgnoreCase(protocolType)) {
+            request.setBody(generatePostmanSoapBody(api));
+        } else if ("graphql".equalsIgnoreCase(protocolType)) {
+            request.setBody(generatePostmanGraphQLBody(api));
+        } else if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
             request.setBody(api.getRequestConfig().getSample());
         }
 
@@ -755,6 +781,45 @@ public class CollectionsGeneratorUtil {
     private void createHeaderEntities(GeneratedApiEntity api,
                                       com.usg.autoAPIGenerator.entities.postgres.collections.RequestEntity request,
                                       String generatedApiId) {
+        String protocolType = api.getProtocolType() != null ? api.getProtocolType() : "rest";
+
+        if ("soap".equalsIgnoreCase(protocolType)) {
+            HeaderEntity contentTypeHeader = new HeaderEntity();
+            contentTypeHeader.setId(UUID.randomUUID().toString());
+            contentTypeHeader.setGeneratedApiId(generatedApiId);
+            contentTypeHeader.setKey("Content-Type");
+            contentTypeHeader.setValue("text/xml; charset=utf-8");
+            contentTypeHeader.setDescription("SOAP request content type");
+            contentTypeHeader.setEnabled(true);
+            contentTypeHeader.setRequest(request);
+            collectionsHeaderRepository.save(contentTypeHeader);
+            request.getHeaders().add(contentTypeHeader);
+
+            if (api.getSoapConfig() != null && api.getSoapConfig().getSoapAction() != null) {
+                HeaderEntity soapActionHeader = new HeaderEntity();
+                soapActionHeader.setId(UUID.randomUUID().toString());
+                soapActionHeader.setGeneratedApiId(generatedApiId);
+                soapActionHeader.setKey("SOAPAction");
+                soapActionHeader.setValue(api.getSoapConfig().getSoapAction());
+                soapActionHeader.setDescription("SOAP action header");
+                soapActionHeader.setEnabled(true);
+                soapActionHeader.setRequest(request);
+                collectionsHeaderRepository.save(soapActionHeader);
+                request.getHeaders().add(soapActionHeader);
+            }
+        } else if ("graphql".equalsIgnoreCase(protocolType)) {
+            HeaderEntity contentTypeHeader = new HeaderEntity();
+            contentTypeHeader.setId(UUID.randomUUID().toString());
+            contentTypeHeader.setGeneratedApiId(generatedApiId);
+            contentTypeHeader.setKey("Content-Type");
+            contentTypeHeader.setValue("application/json");
+            contentTypeHeader.setDescription("GraphQL request content type");
+            contentTypeHeader.setEnabled(true);
+            contentTypeHeader.setRequest(request);
+            collectionsHeaderRepository.save(contentTypeHeader);
+            request.getHeaders().add(contentTypeHeader);
+        }
+
         // Add headers from headers array
         if (api.getHeaders() != null) {
             for (ApiHeaderEntity apiHeader : api.getHeaders()) {
@@ -767,7 +832,6 @@ public class CollectionsGeneratorUtil {
                     header.setDescription(apiHeader.getDescription());
                     header.setEnabled(apiHeader.getRequired() != null ? apiHeader.getRequired() : true);
                     header.setRequest(request);
-
                     collectionsHeaderRepository.save(header);
                     request.getHeaders().add(header);
                 }
@@ -786,7 +850,6 @@ public class CollectionsGeneratorUtil {
                     header.setDescription(apiParam.getDescription());
                     header.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
                     header.setRequest(request);
-
                     collectionsHeaderRepository.save(header);
                     request.getHeaders().add(header);
                 }
@@ -841,8 +904,6 @@ public class CollectionsGeneratorUtil {
         return colors[new Random().nextInt(colors.length)];
     }
 
-
-
     @Transactional
     public void updateExistingRequestWithNewParent(
             com.usg.autoAPIGenerator.entities.postgres.collections.RequestEntity existingRequest,
@@ -857,17 +918,13 @@ public class CollectionsGeneratorUtil {
             log.info("Updating existing collections request with new parent structure: {} -> {}",
                     existingRequest.getId(), newCollection.getId());
 
-            // Clear existing relationships
             deleteRequestCollections(existingRequest);
 
-            // Update request with new parent
             existingRequest.setCollection(newCollection);
             existingRequest.setFolder(newFolder);
 
-            // Update content
             updateRequestContent(existingRequest, api, performedBy, request);
 
-            // Save the request
             collectionsRequestRepository.save(existingRequest);
 
             log.info("Successfully updated request with new parent structure");
@@ -878,14 +935,6 @@ public class CollectionsGeneratorUtil {
         }
     }
 
-
-
-    /**
-     * Update the content of an existing request (without changing parent structure)
-     */
-    /**
-     * Update the content of an existing request (without changing parent structure)
-     */
     @Transactional
     public void updateRequestContent(
             com.usg.autoAPIGenerator.entities.postgres.collections.RequestEntity existingRequest,
@@ -898,35 +947,40 @@ public class CollectionsGeneratorUtil {
 
             String generatedApiId = api.getId();
             GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
+            String protocolType = api.getProtocolType() != null ? api.getProtocolType() : "rest";
 
-            // Clear existing relationships properly
             clearRequestRelationships(existingRequest);
 
-            // Update basic info
             existingRequest.setName(api.getApiName() + " - " + api.getHttpMethod());
-            existingRequest.setMethod(api.getHttpMethod());
+
+            if ("soap".equalsIgnoreCase(protocolType) || "graphql".equalsIgnoreCase(protocolType)) {
+                existingRequest.setMethod("POST");
+            } else {
+                existingRequest.setMethod(api.getHttpMethod());
+            }
+
             existingRequest.setUrl(genUrlInfo.getFullUrl());
             existingRequest.setDescription(api.getDescription());
             existingRequest.setLastModified(LocalDateTime.now());
             existingRequest.setUpdatedAt(LocalDateTime.now());
 
-            // Set request body
-            if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+            if ("soap".equalsIgnoreCase(protocolType)) {
+                existingRequest.setBody(generatePostmanSoapBody(api));
+            } else if ("graphql".equalsIgnoreCase(protocolType)) {
+                existingRequest.setBody(generatePostmanGraphQLBody(api));
+            } else if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
                 existingRequest.setBody(api.getRequestConfig().getSample());
             }
 
-            // Set auth type
             if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
                 existingRequest.setAuthType(api.getAuthConfig().getAuthType().toLowerCase());
             } else {
                 existingRequest.setAuthType(null);
             }
 
-            // Save the request first
             existingRequest = collectionsRequestRepository.save(existingRequest);
 
-            // Create and add new headers
-            List<HeaderEntity> newHeaders = createHeadersForRequest(api, existingRequest, generatedApiId);
+            List<HeaderEntity> newHeaders = createHeadersForRequest(api, existingRequest, generatedApiId, protocolType);
             for (HeaderEntity header : newHeaders) {
                 existingRequest.addHeader(header);
             }
@@ -934,7 +988,6 @@ public class CollectionsGeneratorUtil {
                 collectionsHeaderRepository.saveAll(newHeaders);
             }
 
-            // Create and add new parameters
             List<ParameterEntity> newParams = createParametersForRequest(api, existingRequest, generatedApiId);
             for (ParameterEntity param : newParams) {
                 existingRequest.addParameter(param);
@@ -943,11 +996,8 @@ public class CollectionsGeneratorUtil {
                 collectionsParameterRepository.saveAll(newParams);
             }
 
-            // Create new auth config (old one was already deleted in clearRequestRelationships)
-            // Now update auth config with complete replacement logic
             updateAuthConfig(existingRequest, api, generatedApiId);
 
-            // Final save
             collectionsRequestRepository.save(existingRequest);
 
             log.info("Successfully updated request content for: {}", existingRequest.getId());
@@ -958,13 +1008,7 @@ public class CollectionsGeneratorUtil {
         }
     }
 
-
-
-    /**
-     * Clear all relationships from a request
-     */
     private void clearRequestRelationships(com.usg.autoAPIGenerator.entities.postgres.collections.RequestEntity request) {
-        // Clear headers
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
             List<HeaderEntity> headersToRemove = new ArrayList<>(request.getHeaders());
             request.getHeaders().clear();
@@ -974,7 +1018,6 @@ public class CollectionsGeneratorUtil {
             }
         }
 
-        // Clear parameters
         if (request.getParams() != null && !request.getParams().isEmpty()) {
             List<ParameterEntity> paramsToRemove = new ArrayList<>(request.getParams());
             request.getParams().clear();
@@ -984,34 +1027,20 @@ public class CollectionsGeneratorUtil {
             }
         }
 
-        // CRITICAL: Clear auth config properly
         if (request.getAuthConfig() != null) {
             AuthConfigEntity authConfig = request.getAuthConfig();
-            log.info("Clearing existing auth config: type={}, id={}",
-                    authConfig.getType(), authConfig.getId());
-
-            // First, break the relationship
             request.setAuthConfig(null);
             collectionsRequestRepository.save(request);
-
-            // Force flush to ensure relationship is broken
             collectionsRequestRepository.flush();
-
-            // Now delete the old auth config
             collectionsAuthConfigRepository.delete(authConfig);
             log.debug("Deleted auth config for request: {}", request.getId());
         }
 
-        // Flush to ensure deletions are processed
         collectionsHeaderRepository.flush();
         collectionsParameterRepository.flush();
         collectionsAuthConfigRepository.flush();
     }
 
-
-    /**
-     * Create auth config for a request
-     */
     private void createAuthConfigForRequest(GeneratedApiEntity api,
                                             com.usg.autoAPIGenerator.entities.postgres.collections.RequestEntity request,
                                             String generatedApiId) {
@@ -1054,32 +1083,23 @@ public class CollectionsGeneratorUtil {
         request.setAuthConfig(authConfig);
     }
 
-    /**
-     * Update folder request counts (fixed version without int vs null issue)
-     */
     public void updateFolderRequestCounts(String oldFolderId, String newFolderId) {
         try {
-            // Decrement count for old folder if it exists and is different
             if (oldFolderId != null && !oldFolderId.equals(newFolderId)) {
                 collectionsFolderRepository.findById(oldFolderId).ifPresent(oldFolder -> {
                     Integer currentCount = oldFolder.getRequestCount();
                     int newCount = (currentCount != null ? currentCount : 0) - 1;
                     oldFolder.setRequestCount(Math.max(0, newCount));
                     collectionsFolderRepository.save(oldFolder);
-                    log.debug("Decremented request count for old folder: {} to {}",
-                            oldFolderId, oldFolder.getRequestCount());
                 });
             }
 
-            // Increment count for new folder if it exists and is different
             if (newFolderId != null && !newFolderId.equals(oldFolderId)) {
                 collectionsFolderRepository.findById(newFolderId).ifPresent(newFolder -> {
                     Integer currentCount = newFolder.getRequestCount();
                     int newCount = (currentCount != null ? currentCount : 0) + 1;
                     newFolder.setRequestCount(newCount);
                     collectionsFolderRepository.save(newFolder);
-                    log.debug("Incremented request count for new folder: {} to {}",
-                            newFolderId, newFolder.getRequestCount());
                 });
             }
         } catch (Exception e) {
@@ -1087,5 +1107,157 @@ public class CollectionsGeneratorUtil {
         }
     }
 
+    // ==================== PROTOCOL-SPECIFIC HELPER METHODS ====================
 
+    private String generatePostmanSoapBody(GeneratedApiEntity api) {
+        SoapConfigDTO soapConfig = api.getSoapConfig();
+        String operationName = soapConfig != null && soapConfig.getSoapAction() != null ?
+                soapConfig.getSoapAction() : api.getApiCode();
+        String namespace = soapConfig != null && soapConfig.getNamespace() != null ?
+                soapConfig.getNamespace() : "http://tempuri.org/";
+        String soapVersion = soapConfig != null && soapConfig.getVersion() != null ?
+                soapConfig.getVersion() : "1.1";
+
+        StringBuilder soapBody = new StringBuilder();
+        soapBody.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+
+        if ("1.2".equals(soapVersion)) {
+            soapBody.append("<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\">\n");
+        } else {
+            soapBody.append("<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n");
+        }
+
+        soapBody.append("  <soap:Header/>\n");
+        soapBody.append("  <soap:Body>\n");
+        soapBody.append("    <").append(operationName).append(" xmlns=\"").append(namespace).append("\">\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("IN".equalsIgnoreCase(param.getParamMode()) || param.getParamMode() == null) {
+                    String example = param.getExample() != null ? param.getExample() : "string";
+                    soapBody.append("      <").append(param.getKey()).append(">").append(example).append("</").append(param.getKey()).append(">\n");
+                }
+            }
+        }
+
+        soapBody.append("    </").append(operationName).append(">\n");
+        soapBody.append("  </soap:Body>\n");
+        soapBody.append("</soap:Envelope>");
+
+        return soapBody.toString();
+    }
+
+    private String generatePostmanGraphQLBody(GeneratedApiEntity api) {
+        GraphQLConfigDTO graphqlConfig = api.getGraphqlConfig();
+        String operationType = graphqlConfig != null && graphqlConfig.getOperationType() != null ?
+                graphqlConfig.getOperationType() : "query";
+        String operationName = graphqlConfig != null && graphqlConfig.getOperationName() != null ?
+                graphqlConfig.getOperationName() : api.getApiCode();
+
+        Map<String, Object> graphqlBody = new LinkedHashMap<>();
+
+        StringBuilder queryBuilder = new StringBuilder();
+        queryBuilder.append(operationType).append(" ").append(operationName).append("(");
+
+        if (api.getParameters() != null) {
+            List<ApiParameterEntity> inParams = api.getParameters().stream()
+                    .filter(p -> "IN".equalsIgnoreCase(p.getParamMode()) || p.getParamMode() == null)
+                    .collect(Collectors.toList());
+
+            if (!inParams.isEmpty()) {
+                queryBuilder.append("$");
+                queryBuilder.append(inParams.stream()
+                        .map(p -> p.getKey() + ": " + getGraphQLInputType(p.getOracleType()))
+                        .collect(Collectors.joining(", ")));
+            }
+        }
+
+        queryBuilder.append(") ");
+
+        if ("query".equalsIgnoreCase(operationType)) {
+            queryBuilder.append("{\n");
+            queryBuilder.append("  ").append(operationName).append("(");
+
+            if (api.getParameters() != null) {
+                queryBuilder.append(api.getParameters().stream()
+                        .filter(p -> "IN".equalsIgnoreCase(p.getParamMode()) || p.getParamMode() == null)
+                        .map(p -> p.getKey() + ": $" + p.getKey())
+                        .collect(Collectors.joining(", ")));
+            }
+
+            queryBuilder.append(") {\n");
+
+            if (api.getResponseMappings() != null) {
+                queryBuilder.append(api.getResponseMappings().stream()
+                        .limit(5)
+                        .map(m -> "    " + m.getApiField())
+                        .collect(Collectors.joining("\n")));
+                if (api.getResponseMappings().size() > 5) {
+                    queryBuilder.append("\n    # ... more fields");
+                }
+            }
+
+            queryBuilder.append("\n  }\n}");
+        } else {
+            queryBuilder.append("{\n");
+            queryBuilder.append("  ").append(operationName).append("(input: {\n");
+
+            if (api.getParameters() != null) {
+                queryBuilder.append(api.getParameters().stream()
+                        .filter(p -> "IN".equalsIgnoreCase(p.getParamMode()) || p.getParamMode() == null)
+                        .map(p -> "    " + p.getKey() + ": $" + p.getKey())
+                        .collect(Collectors.joining(",\n")));
+            }
+
+            queryBuilder.append("\n  }) {\n");
+            queryBuilder.append("    success\n");
+            queryBuilder.append("    message\n");
+            queryBuilder.append("    data {\n");
+
+            if (api.getResponseMappings() != null) {
+                queryBuilder.append(api.getResponseMappings().stream()
+                        .limit(3)
+                        .map(m -> "      " + m.getApiField())
+                        .collect(Collectors.joining("\n")));
+            }
+
+            queryBuilder.append("\n    }\n");
+            queryBuilder.append("  }\n}");
+        }
+
+        graphqlBody.put("query", queryBuilder.toString());
+
+        if (api.getParameters() != null) {
+            Map<String, Object> variables = new LinkedHashMap<>();
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("IN".equalsIgnoreCase(param.getParamMode()) || param.getParamMode() == null) {
+                    variables.put(param.getKey(), param.getExample() != null ? param.getExample() : "");
+                }
+            }
+            if (!variables.isEmpty()) {
+                graphqlBody.put("variables", variables);
+            }
+        }
+
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(graphqlBody);
+        } catch (Exception e) {
+            return "{\n  \"query\": \"" + operationType + " " + operationName + " {\\n    id\\n  }\\\"\\n}";
+        }
+    }
+
+    private String getGraphQLInputType(String oracleType) {
+        if (oracleType == null) return "String";
+        String type = oracleType.toUpperCase();
+        if (type.contains("NUMBER") || type.contains("INT") || type.contains("FLOAT") || type.contains("DECIMAL")) {
+            return "Int";
+        }
+        if (type.contains("BOOLEAN")) {
+            return "Boolean";
+        }
+        if (type.contains("DATE") || type.contains("TIMESTAMP")) {
+            return "DateTime";
+        }
+        return "String";
+    }
 }

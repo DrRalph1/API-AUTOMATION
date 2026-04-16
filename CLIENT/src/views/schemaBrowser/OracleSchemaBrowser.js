@@ -16,7 +16,7 @@ import {
   FileCode, ChevronsUp, ChevronsDown, AlertTriangle, Menu, Loader, Tag,
   GitBranch as DependencyIcon
 } from 'lucide-react';
-import ApiGenerationModal from '@/components/modals/ApiGenerationModal.js';
+import AutoAPIGeneratorModal from '@/components/modals/AutoAPIGeneratorModal.js';
 // Add this import at the top with your other imports
 import PreviewDDLModal from '@/components/modals/PreviewDDLModal.js';
 import QueryEditorModal from '@/components/modals/QueryEditorModal.js';
@@ -52,7 +52,7 @@ import {
   formatBytes,
   formatDateForDisplay,
   getObjectTypeIcon,
-  isSupportedForAPIGeneration,
+  isSupportedForAutoAPIGenerator,
   generateSampleQuery,
   getUsedByPaginated,
   getUsedBySummary,
@@ -1241,7 +1241,7 @@ const OracleSchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   const [showApiModal, setShowApiModal] = useState(false);
   const [showQueryEditor, setShowQueryEditor] = useState(false);
   const [showPreviewDDL, setShowPreviewDDL] = useState(false);
-  const [selectedForApiGeneration, setSelectedForApiGeneration] = useState(null);
+  const [selectedForAutoAPIGenerator, setSelectedForAutoAPIGenerator] = useState(null);
   const [isLeftSidebarVisible, setIsLeftSidebarVisible] = useState(false);
   const [filterQuery, setFilterQuery] = useState('');
   const [selectedOwner, setSelectedOwner] = useState('ALL');
@@ -1655,7 +1655,7 @@ const loadInitialData = useCallback(async () => {
       
       // Set active object - this will trigger the useEffect to load properties
       setActiveObject(procedureWithId);
-      setSelectedForApiGeneration(procedureWithId);
+      setSelectedForAutoAPIGenerator(procedureWithId);
       setObType('PROCEDURE');
       
       // Add to tabs
@@ -3051,7 +3051,7 @@ const handleObjectSelect = useCallback(async (object, type) => {
   setActiveObject(enrichedObject);
   
   // Set selected for API generation
-  setSelectedForApiGeneration(enrichedObject);
+  setSelectedForAutoAPIGenerator(enrichedObject);
   setActiveTab('properties');
   setObType(type);
 
@@ -4780,7 +4780,7 @@ const renderTabContent = () => {
     const menuItems = [
       { label: 'Open', icon: <ExternalLink size={12} />, action: () => handleObjectSelect(contextObject, contextObject.type) },
       { label: 'Generate API', icon: <Code size={12} />, action: () => {
-        setSelectedForApiGeneration(contextObject);
+        setSelectedForAutoAPIGenerator(contextObject);
         setShowApiModal(true);
         setShowContextMenu(false);
       }},
@@ -5089,10 +5089,10 @@ const renderTabContent = () => {
       {showContextMenu && renderContextMenu()}
 
       {showApiModal && (
-        <ApiGenerationModal
+        <AutoAPIGeneratorModal
           isOpen={showApiModal}
           onClose={() => setShowApiModal(false)}
-          selectedObject={selectedForApiGeneration}
+          selectedObject={selectedForAutoAPIGenerator}
           colors={colors}
           databaseType={'oracle'}
           obType={obType}
@@ -5107,7 +5107,7 @@ const renderTabContent = () => {
         <PreviewDDLModal
           isOpen={showPreviewDDL}
           onClose={() => setShowPreviewDDL(false)}
-          selectedObject={selectedForApiGeneration || activeObject}
+          selectedObject={selectedForAutoAPIGenerator || activeObject}
           colors={colors}
           theme={theme}
           authToken={authToken}

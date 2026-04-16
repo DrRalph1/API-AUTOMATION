@@ -17,6 +17,7 @@ import java.util.Map;
 public class EndpointDetailResponseDTO {
 
     private String endpointId;
+    private String apiId;
     private String name;
     private String method;
     private String url;

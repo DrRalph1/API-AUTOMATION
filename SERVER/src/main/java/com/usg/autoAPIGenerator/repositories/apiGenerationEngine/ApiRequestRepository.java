@@ -21,8 +21,22 @@ public interface ApiRequestRepository extends JpaRepository<ApiRequestEntity, St
 
     Optional<ApiRequestEntity> findByCorrelationId(String correlationId);
 
+    // Updated to use funds transfer success/failure logic
+    @Query("SELECT r FROM ApiRequestEntity r WHERE " +
+            "CASE WHEN (r.endpointPath ILIKE '%funds-transfer%' OR r.endpointPath ILIKE '%vrt-trans-posting%' OR r.endpointPath ILIKE '%transfer%') " +
+            "THEN (CASE WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') = '000' THEN 'SUCCESS' " +
+            "           WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') IS NOT NULL THEN 'FAILED' " +
+            "           ELSE r.requestStatus END) " +
+            "ELSE r.requestStatus END = :requestStatus")
     List<ApiRequestEntity> findByRequestStatus(String requestStatus);
 
+    // Updated to use funds transfer success/failure logic with pagination
+    @Query("SELECT r FROM ApiRequestEntity r WHERE " +
+            "CASE WHEN (r.endpointPath ILIKE '%funds-transfer%' OR r.endpointPath ILIKE '%vrt-trans-posting%' OR r.endpointPath ILIKE '%transfer%') " +
+            "THEN (CASE WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') = '000' THEN 'SUCCESS' " +
+            "           WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') IS NOT NULL THEN 'FAILED' " +
+            "           ELSE r.requestStatus END) " +
+            "ELSE r.requestStatus END = :requestStatus")
     Page<ApiRequestEntity> findByRequestStatus(String requestStatus, Pageable pageable);
 
     List<ApiRequestEntity> findByHttpMethod(String httpMethod);
@@ -118,7 +132,18 @@ public interface ApiRequestRepository extends JpaRepository<ApiRequestEntity, St
     // Statistics and Aggregations
     // =====================================================
 
-    @Query("SELECT r.requestStatus, COUNT(r) FROM ApiRequestEntity r GROUP BY r.requestStatus")
+    // Updated to use funds transfer success/failure logic
+    @Query("SELECT " +
+            "CASE WHEN (r.endpointPath ILIKE '%funds-transfer%' OR r.endpointPath ILIKE '%vrt-trans-posting%' OR r.endpointPath ILIKE '%transfer%') " +
+            "THEN (CASE WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') = '000' THEN 'SUCCESS' " +
+            "           WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') IS NOT NULL THEN 'FAILED' " +
+            "           ELSE r.requestStatus END) " +
+            "ELSE r.requestStatus END, COUNT(r) FROM ApiRequestEntity r GROUP BY " +
+            "CASE WHEN (r.endpointPath ILIKE '%funds-transfer%' OR r.endpointPath ILIKE '%vrt-trans-posting%' OR r.endpointPath ILIKE '%transfer%') " +
+            "THEN (CASE WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') = '000' THEN 'SUCCESS' " +
+            "           WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') IS NOT NULL THEN 'FAILED' " +
+            "           ELSE r.requestStatus END) " +
+            "ELSE r.requestStatus END")
     List<Object[]> getRequestStatsByStatus();
 
     @Query("SELECT r.responseStatusCode, COUNT(r) FROM ApiRequestEntity r GROUP BY r.responseStatusCode")
@@ -143,7 +168,14 @@ public interface ApiRequestRepository extends JpaRepository<ApiRequestEntity, St
     // Error and Failure Queries
     // =====================================================
 
-    List<ApiRequestEntity> findByRequestStatusIn(List<String> statuses);
+    // Updated to use funds transfer logic for statuses
+    @Query("SELECT r FROM ApiRequestEntity r WHERE " +
+            "CASE WHEN (r.endpointPath ILIKE '%funds-transfer%' OR r.endpointPath ILIKE '%vrt-trans-posting%' OR r.endpointPath ILIKE '%transfer%') " +
+            "THEN (CASE WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') = '000' THEN 'SUCCESS' " +
+            "           WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') IS NOT NULL THEN 'FAILED' " +
+            "           ELSE r.requestStatus END) " +
+            "ELSE r.requestStatus END IN :statuses")
+    List<ApiRequestEntity> findByRequestStatusIn(@Param("statuses") List<String> statuses);
 
     @Query("SELECT r FROM ApiRequestEntity r WHERE r.responseStatusCode >= 400")
     List<ApiRequestEntity> findFailedRequests();
@@ -251,7 +283,11 @@ public interface ApiRequestRepository extends JpaRepository<ApiRequestEntity, St
 
     @Query("SELECT r FROM ApiRequestEntity r WHERE " +
             "r.generatedApi.id = :apiId AND " +
-            "r.requestStatus = :status AND " +
+            "CASE WHEN (r.endpointPath ILIKE '%funds-transfer%' OR r.endpointPath ILIKE '%vrt-trans-posting%' OR r.endpointPath ILIKE '%transfer%') " +
+            "THEN (CASE WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') = '000' THEN 'SUCCESS' " +
+            "           WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') IS NOT NULL THEN 'FAILED' " +
+            "           ELSE r.requestStatus END) " +
+            "ELSE r.requestStatus END = :status AND " +
             "r.requestTimestamp BETWEEN :startDate AND :endDate")
     List<ApiRequestEntity> findApiRequestsByStatusAndDateRange(
             @Param("apiId") String apiId,
@@ -282,7 +318,14 @@ public interface ApiRequestRepository extends JpaRepository<ApiRequestEntity, St
 
     Page<ApiRequestEntity> findByGeneratedApiIdOrderByRequestTimestampDesc(String apiId, Pageable pageable);
 
-    Page<ApiRequestEntity> findByRequestStatusOrderByRequestTimestampDesc(String status, Pageable pageable);
+    // Updated to use funds transfer logic
+    @Query("SELECT r FROM ApiRequestEntity r WHERE " +
+            "CASE WHEN (r.endpointPath ILIKE '%funds-transfer%' OR r.endpointPath ILIKE '%vrt-trans-posting%' OR r.endpointPath ILIKE '%transfer%') " +
+            "THEN (CASE WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') = '000' THEN 'SUCCESS' " +
+            "           WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') IS NOT NULL THEN 'FAILED' " +
+            "           ELSE r.requestStatus END) " +
+            "ELSE r.requestStatus END = :status ORDER BY r.requestTimestamp DESC")
+    Page<ApiRequestEntity> findByRequestStatusOrderByRequestTimestampDesc(@Param("status") String status, Pageable pageable);
 
     // =====================================================
     // Existence Checks
@@ -290,7 +333,15 @@ public interface ApiRequestRepository extends JpaRepository<ApiRequestEntity, St
 
     boolean existsByCorrelationId(String correlationId);
 
-    boolean existsByGeneratedApiIdAndRequestStatus(String apiId, String status);
+    // Updated to use funds transfer logic
+    @Query("SELECT CASE WHEN COUNT(r) > 0 THEN true ELSE false END FROM ApiRequestEntity r WHERE " +
+            "r.generatedApi.id = :apiId AND " +
+            "CASE WHEN (r.endpointPath ILIKE '%funds-transfer%' OR r.endpointPath ILIKE '%vrt-trans-posting%' OR r.endpointPath ILIKE '%transfer%') " +
+            "THEN (CASE WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') = '000' THEN 'SUCCESS' " +
+            "           WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') IS NOT NULL THEN 'FAILED' " +
+            "           ELSE r.requestStatus END) " +
+            "ELSE r.requestStatus END = :status")
+    boolean existsByGeneratedApiIdAndRequestStatus(@Param("apiId") String apiId, @Param("status") String status);
 
     // =====================================================
     // Count Operations
@@ -316,7 +367,6 @@ public interface ApiRequestRepository extends JpaRepository<ApiRequestEntity, St
 
     long deleteByRequestStatus(String status);
 
-
     /**
      * Find all requests for a specific API within a date range
      */
@@ -325,17 +375,20 @@ public interface ApiRequestRepository extends JpaRepository<ApiRequestEntity, St
             LocalDateTime start,
             LocalDateTime end);
 
-
     // Add these methods for summary calculation
     List<ApiRequestEntity> findAllByGeneratedApiId(String apiId);
 
     List<ApiRequestEntity> findAllByRequestStatus(String requestStatus);
 
-
     /**
      * Find requests by status within a date range (paginated)
      */
-    @Query("SELECT r FROM ApiRequestEntity r WHERE r.requestStatus = :requestStatus AND r.requestTimestamp BETWEEN :startDate AND :endDate")
+    @Query("SELECT r FROM ApiRequestEntity r WHERE " +
+            "CASE WHEN (r.endpointPath ILIKE '%funds-transfer%' OR r.endpointPath ILIKE '%vrt-trans-posting%' OR r.endpointPath ILIKE '%transfer%') " +
+            "THEN (CASE WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') = '000' THEN 'SUCCESS' " +
+            "           WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') IS NOT NULL THEN 'FAILED' " +
+            "           ELSE r.requestStatus END) " +
+            "ELSE r.requestStatus END = :requestStatus AND r.requestTimestamp BETWEEN :startDate AND :endDate")
     Page<ApiRequestEntity> findByRequestStatusAndRequestTimestampBetween(
             @Param("requestStatus") String requestStatus,
             @Param("startDate") LocalDateTime startDate,
@@ -345,7 +398,12 @@ public interface ApiRequestRepository extends JpaRepository<ApiRequestEntity, St
     /**
      * Find requests by status within a date range (unpaginated)
      */
-    @Query("SELECT r FROM ApiRequestEntity r WHERE r.requestStatus = :requestStatus AND r.requestTimestamp BETWEEN :startDate AND :endDate")
+    @Query("SELECT r FROM ApiRequestEntity r WHERE " +
+            "CASE WHEN (r.endpointPath ILIKE '%funds-transfer%' OR r.endpointPath ILIKE '%vrt-trans-posting%' OR r.endpointPath ILIKE '%transfer%') " +
+            "THEN (CASE WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') = '000' THEN 'SUCCESS' " +
+            "           WHEN FUNCTION('jsonb_extract_path_text', r.responseBody, 'response_code') IS NOT NULL THEN 'FAILED' " +
+            "           ELSE r.requestStatus END) " +
+            "ELSE r.requestStatus END = :requestStatus AND r.requestTimestamp BETWEEN :startDate AND :endDate")
     List<ApiRequestEntity> findByRequestStatusAndRequestTimestampBetween(
             @Param("requestStatus") String requestStatus,
             @Param("startDate") LocalDateTime startDate,

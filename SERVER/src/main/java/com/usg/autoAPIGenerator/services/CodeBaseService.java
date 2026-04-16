@@ -1,8 +1,12 @@
 package com.usg.autoAPIGenerator.services;
 
+import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.GraphQLConfigDTO;
+import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.SoapConfigDTO;
 import com.usg.autoAPIGenerator.dtos.codeBase.*;
+import com.usg.autoAPIGenerator.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
 import com.usg.autoAPIGenerator.entities.postgres.codeBase.*;
 import com.usg.autoAPIGenerator.entities.postgres.collections.AuthConfigEntity;
+import com.usg.autoAPIGenerator.repositories.apiGenerationEngine.GeneratedAPIRepository;
 import com.usg.autoAPIGenerator.repositories.codeBase.*;
 import com.usg.autoAPIGenerator.repositories.collections.AuthConfigRepository;
 import com.usg.autoAPIGenerator.utils.LoggerUtil;
@@ -38,6 +42,9 @@ public class CodeBaseService {
 
     @Autowired
     private AuthConfigRepository authConfigRepository;
+
+    @Autowired
+    private GeneratedAPIRepository generatedAPIRepository;
 
     @Autowired
     private ModelMapperUtil modelMapper;
@@ -243,57 +250,171 @@ public class CodeBaseService {
             response.setLastModified(formatDate(request.getUpdatedAt()));
             response.setTags(request.getTags());
 
-            // ============= EXTRACT API ID FROM GENERATED_API_ID OR METADATA =============
+            // ============= FIND ASSOCIATED GENERATED API (LIKE COLLECTIONS SERVICE) =============
+            Optional<GeneratedApiEntity> generatedApiOpt = Optional.empty();
             String apiId = null;
 
-            // First check: Try to get API ID from generatedApiId direct field
-            if (request.getGeneratedApiId() != null && !request.getGeneratedApiId().isEmpty()) {
-                apiId = request.getGeneratedApiId();
+            try {
+                // First try to find by generatedApiId field on the request
+                if (request.getGeneratedApiId() != null && !request.getGeneratedApiId().isEmpty()) {
+                    generatedApiOpt = generatedAPIRepository.findById(request.getGeneratedApiId());
+                    if (generatedApiOpt.isPresent()) {
+                        apiId = request.getGeneratedApiId();
+                        loggerUtil.log("codebase", "Request ID: " + requestId +
+                                ", Found generatedApi by ID: " + apiId);
+                    }
+                }
+
+                // If not found, try to find by requestId in sourceRequestId
+                if (generatedApiOpt.isEmpty()) {
+                    generatedApiOpt = generatedAPIRepository.findByRequestId(requestIdParam);
+                    if (generatedApiOpt.isPresent()) {
+                        apiId = generatedApiOpt.get().getId();
+                        loggerUtil.log("codebase", "Request ID: " + requestId +
+                                ", Found generatedApi by sourceRequestId: " + requestIdParam);
+                    }
+                }
+
+                // If still not found, try to find by collection and folder
+                if (generatedApiOpt.isEmpty() && request.getCollection() != null) {
+                    List<GeneratedApiEntity> apisByCollection = generatedAPIRepository
+                            .findByCollectionId(request.getCollection().getId());
+
+                    if (!apisByCollection.isEmpty()) {
+                        // Try to find the most relevant one by folder
+                        if (request.getFolder() != null) {
+                            generatedApiOpt = apisByCollection.stream()
+                                    .filter(api -> {
+                                        if (api.getCollectionInfo() != null) {
+                                            String folderId = (String) api.getCollectionInfo().get("folderId");
+                                            return request.getFolder().getId().equals(folderId);
+                                        }
+                                        return false;
+                                    })
+                                    .findFirst();
+                        }
+
+                        // If still not found by folder, take the first one
+                        if (generatedApiOpt.isEmpty() && !apisByCollection.isEmpty()) {
+                            generatedApiOpt = Optional.of(apisByCollection.get(0));
+                        }
+
+                        if (generatedApiOpt.isPresent()) {
+                            apiId = generatedApiOpt.get().getId();
+                            loggerUtil.log("codebase", "Request ID: " + requestId +
+                                    ", Found generatedApi by collection/folder: " + apiId);
+                        }
+                    }
+                }
+            } catch (Exception e) {
                 loggerUtil.log("codebase", "Request ID: " + requestId +
-                        ", Found generatedApiId directly: " + apiId);
+                        ", Error finding generated API: " + e.getMessage());
             }
-            // Second check: If generatedApiId is null, try to extract from metadata
-            else if (request.getMetadata() != null) {
-                try {
-                    Map<String, Object> metadata = request.getMetadata();
+
+            // ============= SET API ID AND GENERATED API ID =============
+            if (apiId != null) {
+                response.setApiId(apiId);
+                response.setGeneratedApiId(apiId);
+                loggerUtil.log("codebase", "Request ID: " + requestId +
+                        ", Set apiId: " + apiId);
+            }
+
+            // ============= EXTRACT PROTOCOL TYPE AND CONFIGS FROM GENERATED API =============
+            String protocolType = "rest";
+            if (generatedApiOpt.isPresent()) {
+                GeneratedApiEntity generatedApi = generatedApiOpt.get();
+
+                // Set protocol type
+                if (generatedApi.getProtocolType() != null) {
+                    protocolType = generatedApi.getProtocolType();
+                    response.setProtocolType(protocolType);
                     loggerUtil.log("codebase", "Request ID: " + requestId +
-                            ", Checking metadata for API ID. Metadata keys: " + metadata.keySet());
+                            ", Protocol type from generated API: " + protocolType);
+                } else {
+                    response.setProtocolType("rest");
+                }
 
-                    // Check for apiId in metadata
-                    if (metadata.containsKey("apiId")) {
-                        apiId = (String) metadata.get("apiId");
-                        loggerUtil.log("codebase", "Request ID: " + requestId +
-                                ", Found apiId in metadata: " + apiId);
-                    }
-                    // Check for other possible field names
-                    else if (metadata.containsKey("generatedApiId")) {
-                        apiId = (String) metadata.get("generatedApiId");
-                        loggerUtil.log("codebase", "Request ID: " + requestId +
-                                ", Found generatedApiId in metadata: " + apiId);
-                    }
-                    else if (metadata.containsKey("api_id")) {
-                        apiId = (String) metadata.get("api_id");
-                        loggerUtil.log("codebase", "Request ID: " + requestId +
-                                ", Found api_id in metadata: " + apiId);
-                    }
-
-                    // Log any gen-related fields for debugging
-                    if (metadata.containsKey("genPath")) {
-                        loggerUtil.log("codebase", "Request ID: " + requestId +
-                                ", genPath from metadata: " + metadata.get("genPath"));
-                    }
-                    if (metadata.containsKey("fullGenUrl")) {
-                        loggerUtil.log("codebase", "Request ID: " + requestId +
-                                ", fullGenUrl from metadata: " + metadata.get("fullGenUrl"));
-                    }
-                    if (metadata.containsKey("genUrlPattern")) {
-                        loggerUtil.log("codebase", "Request ID: " + requestId +
-                                ", genUrlPattern from metadata: " + metadata.get("genUrlPattern"));
-                    }
-
-                } catch (Exception e) {
+                // Set SOAP config if available
+                if (generatedApi.getSoapConfig() != null) {
+                    // Convert SoapConfigDTO to Map for the response
+                    Map<String, Object> soapConfigMap = new HashMap<>();
+                    SoapConfigDTO soapConfig = generatedApi.getSoapConfig();
+                    soapConfigMap.put("version", soapConfig.getVersion());
+                    soapConfigMap.put("bindingStyle", soapConfig.getBindingStyle());
+                    soapConfigMap.put("encodingStyle", soapConfig.getEncodingStyle());
+                    soapConfigMap.put("soapAction", soapConfig.getSoapAction());
+                    soapConfigMap.put("wsdlUrl", soapConfig.getWsdlUrl());
+                    soapConfigMap.put("namespace", soapConfig.getNamespace());
+                    soapConfigMap.put("serviceName", soapConfig.getServiceName());
+                    soapConfigMap.put("portName", soapConfig.getPortName());
+                    soapConfigMap.put("useAsyncPattern", soapConfig.getUseAsyncPattern());
+                    soapConfigMap.put("includeMtom", soapConfig.getIncludeMtom());
+                    soapConfigMap.put("soapHeaderElements", soapConfig.getSoapHeaderElements());
+                    response.setSoapConfig(soapConfigMap);
                     loggerUtil.log("codebase", "Request ID: " + requestId +
-                            ", Error extracting API ID from metadata: " + e.getMessage());
+                            ", Set SOAP config from generated API");
+                }
+
+                // Set GraphQL config if available
+                if (generatedApi.getGraphqlConfig() != null) {
+                    // Convert GraphQLConfigDTO to Map for the response
+                    Map<String, Object> graphqlConfigMap = new HashMap<>();
+                    GraphQLConfigDTO graphqlConfig = generatedApi.getGraphqlConfig();
+                    graphqlConfigMap.put("operationType", graphqlConfig.getOperationType());
+                    graphqlConfigMap.put("operationName", graphqlConfig.getOperationName());
+                    graphqlConfigMap.put("schema", graphqlConfig.getSchema());
+                    graphqlConfigMap.put("enableIntrospection", graphqlConfig.getEnableIntrospection());
+                    graphqlConfigMap.put("enablePersistedQueries", graphqlConfig.getEnablePersistedQueries());
+                    graphqlConfigMap.put("maxQueryDepth", graphqlConfig.getMaxQueryDepth());
+                    graphqlConfigMap.put("enableBatching", graphqlConfig.getEnableBatching());
+                    graphqlConfigMap.put("subscriptionsEnabled", graphqlConfig.getSubscriptionsEnabled());
+                    graphqlConfigMap.put("customDirectives", graphqlConfig.getCustomDirectives());
+                    response.setGraphqlConfig(graphqlConfigMap);
+                    loggerUtil.log("codebase", "Request ID: " + requestId +
+                            ", Set GraphQL config from generated API");
+                }
+            } else {
+                response.setProtocolType("rest");
+            }
+            // ============= END =============
+
+            // ============= EXTRACT API ID FROM GENERATED_API_ID OR METADATA (FALLBACK) =============
+            if (apiId == null) {
+                // First check: Try to get API ID from generatedApiId direct field
+                if (request.getGeneratedApiId() != null && !request.getGeneratedApiId().isEmpty()) {
+                    apiId = request.getGeneratedApiId();
+                    loggerUtil.log("codebase", "Request ID: " + requestId +
+                            ", Found generatedApiId directly: " + apiId);
+                }
+                // Second check: If generatedApiId is null, try to extract from metadata
+                else if (request.getMetadata() != null) {
+                    try {
+                        Map<String, Object> metadata = request.getMetadata();
+
+                        if (metadata.containsKey("apiId")) {
+                            apiId = (String) metadata.get("apiId");
+                            loggerUtil.log("codebase", "Request ID: " + requestId +
+                                    ", Found apiId in metadata: " + apiId);
+                        }
+                        else if (metadata.containsKey("generatedApiId")) {
+                            apiId = (String) metadata.get("generatedApiId");
+                            loggerUtil.log("codebase", "Request ID: " + requestId +
+                                    ", Found generatedApiId in metadata: " + apiId);
+                        }
+                        else if (metadata.containsKey("api_id")) {
+                            apiId = (String) metadata.get("api_id");
+                            loggerUtil.log("codebase", "Request ID: " + requestId +
+                                    ", Found api_id in metadata: " + apiId);
+                        }
+                    } catch (Exception e) {
+                        loggerUtil.log("codebase", "Request ID: " + requestId +
+                                ", Error extracting API ID from metadata: " + e.getMessage());
+                    }
+                }
+
+                if (apiId != null) {
+                    response.setApiId(apiId);
+                    response.setGeneratedApiId(apiId);
                 }
             }
 
@@ -303,8 +424,6 @@ public class CodeBaseService {
             // Check for auth config in the database using the apiId
             if (apiId != null && !apiId.isEmpty()) {
                 try {
-                    // Try to find auth config for this API
-                    // You'll need to inject the appropriate repository
                     Optional<AuthConfigEntity> authConfigOpt = authConfigRepository.findByGeneratedApiId(apiId);
 
                     if (authConfigOpt.isPresent()) {
@@ -325,16 +444,15 @@ public class CodeBaseService {
             if (!isApiKeyAuth && request.getMetadata() != null) {
                 Map<String, Object> metadata = request.getMetadata();
 
-                // Check for auth type in metadata
                 if (metadata.containsKey("authType") && "apiKey".equals(metadata.get("authType"))) {
                     isApiKeyAuth = true;
                     loggerUtil.log("codebase", "Request ID: " + requestId +
                             ", Found apiKey auth type in metadata");
                 }
 
-                // Check for auth config object
                 if (metadata.containsKey("authConfig")) {
                     try {
+                        @SuppressWarnings("unchecked")
                         Map<String, Object> authConfig = (Map<String, Object>) metadata.get("authConfig");
                         if (authConfig != null && "apiKey".equals(authConfig.get("type"))) {
                             isApiKeyAuth = true;
@@ -378,7 +496,7 @@ public class CodeBaseService {
                 if (!hasApiKeyHeader) {
                     HeaderItem apiKeyHeader = new HeaderItem();
                     apiKeyHeader.setKey("X-Api-Key");
-                    apiKeyHeader.setValue("{{api_key}}"); // Placeholder that will be replaced at runtime
+                    apiKeyHeader.setValue("{{api_key}}");
                     apiKeyHeader.setDescription("API Key for authentication");
                     apiKeyHeader.setRequired(true);
                     apiKeyHeader.setDisabled(false);
@@ -394,7 +512,7 @@ public class CodeBaseService {
                 if (!hasApiSecretHeader) {
                     HeaderItem apiSecretHeader = new HeaderItem();
                     apiSecretHeader.setKey("X-Api-Secret");
-                    apiSecretHeader.setValue("{{api_secret}}"); // Placeholder that will be replaced at runtime
+                    apiSecretHeader.setValue("{{api_secret}}");
                     apiSecretHeader.setDescription("API Secret for authentication");
                     apiSecretHeader.setRequired(true);
                     apiSecretHeader.setDisabled(false);
@@ -440,7 +558,6 @@ public class CodeBaseService {
                             return param;
                         })
                         .collect(Collectors.toList());
-
                 // If you have a queryParameters field in your response DTO, set it here
                 // response.setQueryParameters(queryParams);
             }
@@ -473,6 +590,9 @@ public class CodeBaseService {
             if (request.getMetadata() != null && request.getMetadata().containsKey("requestGroupId")) {
                 response.setRequestGroupId((String) request.getMetadata().get("requestGroupId"));
             }
+
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Successfully retrieved request details with protocol: " + protocolType);
 
             return response;
 

@@ -1,5 +1,8 @@
 package com.usg.autoAPIGenerator.entities.postgres.apiGenerationEngine;
 
+import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.FileUploadConfigDTO;
+import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.GraphQLConfigDTO;
+import com.usg.autoAPIGenerator.dtos.apiGenerationEngine.SoapConfigDTO;
 import com.vladmihalcea.hibernate.type.json.JsonType;
 import lombok.*;
 import org.hibernate.annotations.GenericGenerator;
@@ -199,6 +202,29 @@ public class GeneratedApiEntity {
     // =====================================================
     // equals & hashCode
     // =====================================================
+
+    // Add these fields to GeneratedApiEntity.java
+
+    @Column(name = "protocol_type", length = 20)
+    private String protocolType; // "rest", "soap", "graphql"
+
+    @Type(JsonType.class)
+    @Column(name = "soap_config", columnDefinition = "jsonb")
+    private SoapConfigDTO soapConfig;
+
+    @Type(JsonType.class)
+    @Column(name = "graphql_config", columnDefinition = "jsonb")
+    private GraphQLConfigDTO graphqlConfig;
+
+    @Type(JsonType.class)
+    @Column(name = "file_upload_config", columnDefinition = "jsonb")
+    private FileUploadConfigDTO fileUploadConfig;
+
+    @Column(name = "is_custom_query")
+    private Boolean isCustomQuery;
+
+    @Column(name = "custom_select_statement", columnDefinition = "TEXT")
+    private String customSelectStatement;
 
     @Override
     public boolean equals(Object o) {

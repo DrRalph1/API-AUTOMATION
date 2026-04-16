@@ -73,4 +73,16 @@ public class GenerateApiRequestDTO {
     private String customSelectStatement;   // Custom SELECT query (alternative to sourceObject)
     private Boolean useCustomQuery;          // Flag to indicate using custom query
 
+    // ============ NEW FIELDS FOR PROTOCOL SUPPORT ============
+    private String protocolType; // "rest", "soap", "graphql"
+
+    // SOAP Configuration
+    private SoapConfigDTO soapConfig;
+
+    // GraphQL Configuration
+    private GraphQLConfigDTO graphqlConfig;
+
+    // File Upload Configuration
+    private FileUploadConfigDTO fileUploadConfig;
+
 }

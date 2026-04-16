@@ -456,7 +456,10 @@ export const extractCodebaseRequestDetails = (response) => {
     implementations: details.implementations || {},
     metadata: details.metadata || {},
     parameters: details.parameters || [],
-    responses: details.responses || {}
+    responses: details.responses || {},
+    protocolType: details.protocolType || 'rest',  // ADD THIS LINE
+    deprecated: details.deprecated || false,       // ADD THIS LINE
+    requiresAuthentication: details.requiresAuthentication || false  // ADD THIS LINE
   };
 };
 

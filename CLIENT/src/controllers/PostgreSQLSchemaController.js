@@ -3134,7 +3134,7 @@ export const formatBytes = (bytes, decimals = 2) => {
 /**
  * Check if object is supported for API generation
  */
-export const isSupportedForAPIGeneration = (objectType) => {
+export const isSupportedForAutoAPIGenerator = (objectType) => {
     const supportedTypes = ['TABLE', 'VIEW', 'MATERIALIZED VIEW', 'PROCEDURE', 'FUNCTION'];
     return supportedTypes.includes(objectType?.toUpperCase());
 };

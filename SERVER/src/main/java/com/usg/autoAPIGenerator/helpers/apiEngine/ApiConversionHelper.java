@@ -1148,4 +1148,94 @@ public class ApiConversionHelper {
     }
 
 
+
+    // Add these methods to your existing ApiConversionHelper.java
+
+    /**
+     * Map GeneratedApiEntity to GeneratedApiResponseDTO with protocol fields
+     */
+    public GeneratedApiResponseDTO mapToResponseWithProtocol(GeneratedApiEntity entity) {
+        GeneratedApiResponseDTO response = mapToResponse(entity);
+
+        if (response != null && entity != null) {
+            // Add protocol-specific fields to metadata
+            Map<String, Object> metadata = response.getMetadata();
+            if (metadata == null) {
+                metadata = new HashMap<>();
+            }
+
+            // Add protocol type
+            metadata.put("protocolType", entity.getProtocolType());
+
+            // Add SOAP config if present
+            if (entity.getSoapConfig() != null) {
+                metadata.put("soapConfig", entity.getSoapConfig());
+            }
+
+            // Add GraphQL config if present
+            if (entity.getGraphqlConfig() != null) {
+                metadata.put("graphqlConfig", entity.getGraphqlConfig());
+            }
+
+            // Add custom query info
+            if (entity.getIsCustomQuery() != null && entity.getIsCustomQuery()) {
+                metadata.put("isCustomQuery", true);
+                metadata.put("customSelectStatement", entity.getCustomSelectStatement());
+            }
+
+            // Add file upload config
+            if (entity.getFileUploadConfig() != null) {
+                metadata.put("fileUploadConfig", entity.getFileUploadConfig());
+            }
+
+            // Add database type
+            metadata.put("databaseType", entity.getDatabaseType());
+
+            response.setMetadata(metadata);
+        }
+
+        return response;
+    }
+
+    /**
+     * Map GeneratedApiEntity to GeneratedAPIDTO with protocol fields
+     */
+    public GeneratedAPIDTO mapToGeneratedAPIDTOWithProtocol(GeneratedApiEntity entity, ObjectMapper objectMapper) {
+        GeneratedAPIDTO dto = mapToGeneratedAPIDTO(entity, objectMapper);
+
+        if (dto != null && entity != null) {
+            Map<String, Object> metadata = dto.getMetadata();
+            if (metadata == null) {
+                metadata = new HashMap<>();
+            }
+
+            metadata.put("protocolType", entity.getProtocolType());
+
+            if (entity.getSoapConfig() != null) {
+                metadata.put("soapConfig", entity.getSoapConfig());
+            }
+
+            if (entity.getGraphqlConfig() != null) {
+                metadata.put("graphqlConfig", entity.getGraphqlConfig());
+            }
+
+            if (entity.getIsCustomQuery() != null && entity.getIsCustomQuery()) {
+                metadata.put("isCustomQuery", true);
+                metadata.put("customSelectStatement", entity.getCustomSelectStatement());
+            }
+
+            if (entity.getFileUploadConfig() != null) {
+                metadata.put("fileUploadConfig", entity.getFileUploadConfig());
+            }
+
+            metadata.put("databaseType", entity.getDatabaseType());
+
+            dto.setMetadata(metadata);
+        }
+
+        return dto;
+    }
+
+
+
 }
