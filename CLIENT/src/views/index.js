@@ -858,7 +858,7 @@ export default function EntryPage({ userRole }) {
   };
 
   // ========================
-  // NAVIGATION ITEMS - ROLE BASED
+  // NAVIGATION ITEMS - ROLE BASED WITH FILTERING
   // ========================
   
   // Complete navigation items (all available)
@@ -873,9 +873,14 @@ export default function EntryPage({ userRole }) {
     { id: "api-security", label: "API Security", icon: Shield, component: <APISecurity authToken={`Bearer ${token}`} />, roles: ["system administrator"] },
   ];
 
-  // Filter navigation items based on user role
-  const navItems = allNavItems.filter(item => 
+  // First filter navigation items based on user role
+  const roleFilteredNavItems = allNavItems.filter(item => 
     item.roles.includes(user?.role || (isAdmin ? "system administrator" : "user"))
+  );
+
+  // Then apply additional filtering to hide specific items by ID
+  const visibleNavItems = roleFilteredNavItems.filter(item => 
+    item.id !== "user-mgt" && item.id !== "api-security-disabled"
   );
 
   // Quick actions based on role
@@ -1024,9 +1029,9 @@ export default function EntryPage({ userRole }) {
     }, 1000);
   }, [logout, navigate]);
 
-  // Get current active component
+  // Get current active component - use allNavItems to ensure we can find components even if filtered out
   const getActiveComponent = () => {
-    const activeNavItem = navItems.find(item => item.id === activeTab);
+    const activeNavItem = allNavItems.find(item => item.id === activeTab);
     
     if (activeNavItem) {
       return React.cloneElement(activeNavItem.component, {
@@ -1039,7 +1044,7 @@ export default function EntryPage({ userRole }) {
     return null;
   };
 
-  // Mobile Navigation Menu
+  // Mobile Navigation Menu - Using visibleNavItems
   const MobileNavigationMenu = () => {
     if (!mobileMenuOpen) return null;
 
@@ -1070,9 +1075,9 @@ export default function EntryPage({ userRole }) {
               </button>
             </div>
 
-            {/* Mobile Navigation */}
+            {/* Mobile Navigation - Using visibleNavItems */}
             <nav className="space-y-1 mb-8">
-              {navItems.map(item => {
+              {visibleNavItems.map(item => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
                 return (
@@ -1553,9 +1558,9 @@ export default function EntryPage({ userRole }) {
               </div>
             </div>
 
-            {/* Center Navigation - Desktop */}
+            {/* Center Navigation - Desktop - Using visibleNavItems */}
             <div className="hidden lg:flex items-center gap-1">
-              {navItems.map(item => {
+              {visibleNavItems.map(item => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
                 return (
@@ -1735,11 +1740,11 @@ export default function EntryPage({ userRole }) {
         isMobile={isMobile}
       />
 
-      {/* Mobile Bottom Navigation */}
+      {/* Mobile Bottom Navigation - Using visibleNavItems */}
       {isMobile && (
         <div className={`fixed bottom-0 left-0 right-0 ${isDark ? 'bg-gray-900/95 backdrop-blur-xl' : 'bg-white/95 backdrop-blur-xl'} border-t ${isDark ? 'border-gray-800' : 'border-gray-300'} z-30`}>
           <div className="flex items-center justify-around py-2">
-            {navItems.slice(0, 4).map(item => {
+            {visibleNavItems.slice(0, 4).map(item => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (

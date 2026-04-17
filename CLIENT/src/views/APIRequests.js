@@ -1118,7 +1118,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [toast, setToast] = useState(null);
   const [pagination, setPagination] = useState({
     page: 0,
-    size: 11,
+    size: 12,
     totalElements: 0,
     totalPages: 0
   });
@@ -2358,6 +2358,7 @@ const renderRequestsTable = () => {
     <div className="flex h-screen overflow-hidden" style={{ 
       backgroundColor: colors.bg,
       color: colors.text,
+      zoom: "0.95",
       fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
       fontSize: '13px'
     }}>
