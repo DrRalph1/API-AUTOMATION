@@ -251,6 +251,11 @@ public class OracleViewExecutorUtil {
 
         log.info("Final DB params for view execution: {}", dbParams.keySet());
 
+        // ============ FLATTEN GRAPHQL PARAMETERS EARLY ============
+        // This ensures validation and execution both see flattened parameters
+        dbParams = flattenGraphQLParams(dbParams, apiToDbColumnMap);
+        log.info("After flattening GraphQL params: {}", dbParams.keySet());
+
         // Verify group_id is in the params
         if (dbParams.containsKey("GROUP_ID") || headerParams.containsKey("group_id")) {
             log.info("✅ group_id successfully passed to view executor");
@@ -674,5 +679,57 @@ public class OracleViewExecutorUtil {
             return errorMessage.substring(0, 200) + "...";
         }
         return errorMessage;
+    }
+
+
+    /**
+     * Flatten GraphQL parameters by extracting variables from the VARIABLES field
+     * This converts {QUERY="...", VARIABLES={"acct_link":"123"}} to
+     * {QUERY="...", VARIABLES={"acct_link":"123"}, ACCT_LINK="123"}
+     */
+    private Map<String, Object> flattenGraphQLParams(Map<String, Object> params, Map<String, String> apiToDbColumnMap) {
+        if (params == null) {
+            return new HashMap<>();
+        }
+
+        Map<String, Object> flattened = new HashMap<>(params);
+
+        // Check if VARIABLES exists and is a Map
+        if (flattened.containsKey("VARIABLES") && flattened.get("VARIABLES") instanceof Map) {
+            Map<String, Object> variables = (Map<String, Object>) flattened.get("VARIABLES");
+            log.info("Flattening GraphQL variables: {}", variables.keySet());
+
+            // Add all variables to the root level, mapping to database column names
+            for (Map.Entry<String, Object> entry : variables.entrySet()) {
+                String varKey = entry.getKey();
+                Object varValue = entry.getValue();
+
+                // Map to database column name if available
+                String dbColumnName = apiToDbColumnMap.getOrDefault(varKey.toLowerCase(), varKey.toUpperCase());
+                flattened.put(dbColumnName, varValue);
+                log.info("Added flattened parameter: {} -> {} = {}", varKey, dbColumnName, varValue);
+            }
+        }
+
+        // Also handle if VARIABLES is a JSON string (shouldn't happen, but just in case)
+        if (flattened.containsKey("VARIABLES") && flattened.get("VARIABLES") instanceof String) {
+            try {
+                String variablesJson = (String) flattened.get("VARIABLES");
+                ObjectMapper mapper = new ObjectMapper();
+                Map<String, Object> variables = mapper.readValue(variablesJson, new TypeReference<Map<String, Object>>() {});
+
+                for (Map.Entry<String, Object> entry : variables.entrySet()) {
+                    String varKey = entry.getKey();
+                    Object varValue = entry.getValue();
+                    String dbColumnName = apiToDbColumnMap.getOrDefault(varKey.toLowerCase(), varKey.toUpperCase());
+                    flattened.put(dbColumnName, varValue);
+                    log.info("Added flattened parameter from JSON string: {} -> {} = {}", varKey, dbColumnName, varValue);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse VARIABLES as JSON: {}", e.getMessage());
+            }
+        }
+
+        return flattened;
     }
 }

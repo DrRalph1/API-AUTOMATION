@@ -1313,6 +1313,35 @@ public class AutoAPIGeneratorEngineService {
 
 
     /**
+     * Extract parameters from GraphQL request body
+     * GraphQL requests have structure: { "query": "...", "variables": {...} }
+     */
+    private Map<String, Object> extractGraphQLVariables(Map<String, Object> bodyMap) {
+        Map<String, Object> extractedParams = new HashMap<>();
+
+        if (bodyMap == null) {
+            return extractedParams;
+        }
+
+        // Check for GraphQL structure
+        if (bodyMap.containsKey("variables") && bodyMap.get("variables") instanceof Map) {
+            Map<String, Object> variables = (Map<String, Object>) bodyMap.get("variables");
+            extractedParams.putAll(variables);
+            log.info("Extracted GraphQL variables: {}", variables.keySet());
+        }
+
+        // Also check for query variables in the query string (if present)
+        if (bodyMap.containsKey("query") && bodyMap.get("query") instanceof String) {
+            String query = (String) bodyMap.get("query");
+            // You could parse the GraphQL query to extract default values if needed
+            log.debug("GraphQL query present: {}", query.substring(0, Math.min(100, query.length())));
+        }
+
+        return extractedParams;
+    }
+
+
+    /**
      * Execute API based on the database type stored in the API entity
      * Supports multiple database types: Oracle, PostgreSQL, etc.
      * NOW WITH PROPER RESPONSE HANDLING - FLATTENS NESTED DATA
@@ -3526,8 +3555,18 @@ public class AutoAPIGeneratorEngineService {
         // ============ 4. ADD BODY PARAMETERS ============
         if (executeRequest.getBody() != null) {
             if (executeRequest.getBody() instanceof Map) {
-                allParams.putAll((Map<String, Object>) executeRequest.getBody());
-                log.info("Added body params to consolidated map: {}", ((Map<?, ?>) executeRequest.getBody()).keySet());
+                Map<String, Object> bodyMap = (Map<String, Object>) executeRequest.getBody();
+                allParams.putAll(bodyMap);
+                log.info("Added body params to consolidated map: {}", bodyMap.keySet());
+
+                // CRITICAL: Extract GraphQL variables if this is a GraphQL request
+                if ("graphql".equalsIgnoreCase(api.getProtocolType())) {
+                    Map<String, Object> graphqlVars = extractGraphQLVariables(bodyMap);
+                    if (!graphqlVars.isEmpty()) {
+                        allParams.putAll(graphqlVars);
+                        log.info("Added GraphQL variables to consolidated params: {}", graphqlVars.keySet());
+                    }
+                }
             } else {
                 // For non-map bodies, wrap in a special key
                 allParams.put("_body", executeRequest.getBody());

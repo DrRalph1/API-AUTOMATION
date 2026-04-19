@@ -90,148 +90,58 @@ public class RequestExtractorHelper {
     /**
      * Extract path parameters from URL based on API ID and the API's endpoint pattern
      * ULTRA FLEXIBLE - Handles any URL structure with dynamic prefixes
+     * FIXED: Now properly handles patterns with only placeholders like "/{acct_link}"
      */
     private Map<String, Object> extractPathParametersFromUrl(String requestURI, String apiId) {
         Map<String, Object> pathParams = new HashMap<>();
 
         try {
-            // Get the API entity to know its endpoint pattern
             GeneratedApiEntity api = autoAPIGeneratorEngineService.getApiEntity(apiId);
+
+            // Get the full endpoint pattern (including base path)
             String endpointPattern = api.getEndpointPath();
+            String basePath = api.getBasePath();
 
-            log.info("Endpoint pattern: {}", endpointPattern);
-            log.info("Request URI: {}", requestURI);
+            // Combine base path and endpoint pattern if needed
+            String fullPattern = endpointPattern;
+            if (basePath != null && !basePath.isEmpty() && !endpointPattern.startsWith(basePath)) {
+                fullPattern = basePath + endpointPattern;
+            }
 
-            // Find the API ID in the URL - this is our only fixed point
+            // Extract path after API ID
             String apiIdSegment = "/" + apiId;
             int apiIdIndex = requestURI.indexOf(apiIdSegment);
+            String remainingPath = requestURI.substring(apiIdIndex + apiIdSegment.length());
+            remainingPath = remainingPath.replaceAll("^/+|/+$", "");
 
-            if (apiIdIndex == -1) {
-                log.warn("Could not find API ID {} in request URI", apiId);
+            // Clean patterns
+            String cleanPattern = fullPattern.replaceAll("^/+|/+$", "");
+            String[] patternSegments = cleanPattern.split("/");
+            String[] requestSegments = remainingPath.split("/");
+
+            // Validate length
+            if (patternSegments.length != requestSegments.length) {
+                log.warn("Pattern length {} doesn't match request length {}",
+                        patternSegments.length, requestSegments.length);
                 return pathParams;
             }
 
-            // Extract everything after the API ID
-            String remainingPath = requestURI.substring(apiIdIndex + apiIdSegment.length());
-            log.info("Path after API ID: {}", remainingPath);
-
-            // Remove leading and trailing slashes
-            remainingPath = remainingPath.replaceAll("^/+|/+$", "");
-
-            // Clean up the endpoint pattern - remove leading/trailing slashes
-            String cleanPattern = endpointPattern.replaceAll("^/+|/+$", "");
-
-            // Split into segments
-            String[] requestSegments = remainingPath.split("/");
-            String[] patternSegments = cleanPattern.split("/");
-
-            log.info("Request segments: {}", Arrays.toString(requestSegments));
-            log.info("Pattern segments: {}", Arrays.toString(patternSegments));
-
-            // SMART MATCHING: Find where the pattern actually starts by matching static segments
-            // This handles any prefix: /api/v1, /core/v1/api, /custom/prefix, or no prefix at all
-
-            int requestIdx = 0;
-            int patternIdx = 0;
-
-            // First, find where the pattern starts by matching the first static segment
-            // Find the first static segment in the pattern (non-parameter)
-            String firstStaticSegment = null;
-            int firstStaticPatternIndex = -1;
-
+            // Extract parameters
             for (int i = 0; i < patternSegments.length; i++) {
-                if (!patternSegments[i].startsWith("{") && !patternSegments[i].endsWith("}")) {
-                    firstStaticSegment = patternSegments[i];
-                    firstStaticPatternIndex = i;
-                    break;
-                }
-            }
+                String patternSegment = patternSegments[i];
+                String requestSegment = requestSegments[i];
 
-            if (firstStaticSegment != null) {
-                // Find this static segment in the request
-                for (int i = 0; i < requestSegments.length; i++) {
-                    if (requestSegments[i].equals(firstStaticSegment)) {
-                        requestIdx = i;
-                        patternIdx = firstStaticPatternIndex;
-                        log.info("Pattern starts at request segment {} with static segment '{}'",
-                                requestIdx, firstStaticSegment);
-                        break;
-                    }
-                }
-            }
-
-            // If we couldn't find a static segment match, start from the beginning
-            if (patternIdx == 0 && requestIdx == 0 && firstStaticSegment != null) {
-                log.warn("Could not find static segment '{}' in request, starting from beginning",
-                        firstStaticSegment);
-            }
-
-            // Now extract parameters by walking through the pattern
-            while (patternIdx < patternSegments.length) {
-                String patternSegment = patternSegments[patternIdx];
-
-                // If this is a path parameter
                 if (patternSegment.startsWith("{") && patternSegment.endsWith("}")) {
+                    // This is a path parameter
                     String paramName = patternSegment.substring(1, patternSegment.length() - 1);
-
-                    // Check if we have a corresponding request segment
-                    if (requestIdx < requestSegments.length) {
-                        String value = requestSegments[requestIdx];
-                        pathParams.put(paramName, value);
-                        log.info("Extracted path parameter: {} = {}", paramName, value);
-                        requestIdx++;
-                    } else {
-                        // No value provided for this parameter
-                        pathParams.put(paramName, "");
-                        log.warn("Missing path parameter: {} - no value provided in URL", paramName);
-                    }
-                    patternIdx++;
+                    pathParams.put(paramName, requestSegment);
+                    log.info("Extracted path parameter: {} = {}", paramName, requestSegment);
+                } else if (!patternSegment.equals(requestSegment)) {
+                    // Static segment mismatch
+                    log.warn("Static segment mismatch: expected '{}', got '{}'",
+                            patternSegment, requestSegment);
+                    return new HashMap<>(); // Return empty on mismatch
                 }
-                // If this is a static segment
-                else {
-                    // Check if we have a corresponding request segment
-                    if (requestIdx < requestSegments.length) {
-                        String requestSegment = requestSegments[requestIdx];
-
-                        // If it matches, great! If not, we might have an extra prefix
-                        if (patternSegment.equals(requestSegment)) {
-                            log.info("Static segment matched: {} = {}", patternSegment, requestSegment);
-                            requestIdx++;
-                            patternIdx++;
-                        } else {
-                            // This static segment doesn't match - we might have an extra prefix
-                            // Skip ahead in request to find this static segment
-                            log.info("Static segment '{}' doesn't match '{}', searching ahead...",
-                                    patternSegment, requestSegment);
-
-                            boolean found = false;
-                            for (int i = requestIdx + 1; i < requestSegments.length; i++) {
-                                if (requestSegments[i].equals(patternSegment)) {
-                                    log.info("Found static segment '{}' at position {}", patternSegment, i);
-                                    // Skip all segments up to this point (they're prefixes)
-                                    requestIdx = i + 1;
-                                    patternIdx++;
-                                    found = true;
-                                    break;
-                                }
-                            }
-
-                            if (!found) {
-                                log.warn("Could not find static segment '{}' in remaining URL", patternSegment);
-                                patternIdx++;
-                            }
-                        }
-                    } else {
-                        log.warn("Ran out of request segments while processing pattern");
-                        break;
-                    }
-                }
-            }
-
-            // Log any remaining request segments (they're extra and will be ignored)
-            if (requestIdx < requestSegments.length) {
-                log.info("Extra request segments ignored: {}",
-                        Arrays.toString(Arrays.copyOfRange(requestSegments, requestIdx, requestSegments.length)));
             }
 
             log.info("Final extracted path params: {}", pathParams);

@@ -2528,8 +2528,21 @@ useEffect(() => {
 const generateGraphQLSchemaFromObject = useCallback(() => {
   const inParams = getInParameters();
   const outMappings = getOutMappings();
-  const objectName = schemaConfig.objectName || 'Unknown';
-  const objectType = schemaConfig.objectType || 'TABLE';
+  const objectName = schemaConfig.objectName || selectedDbObject?.name || 'Unknown';
+  const objectType = schemaConfig.objectType || selectedDbObject?.type || 'TABLE';
+  
+  // Use the current graphqlConfig values
+  const currentOperationType = graphqlConfig.operationType;
+  const currentOperationName = graphqlConfig.operationName;
+  
+  console.log('📝 Generating GraphQL schema with:', {
+    objectName,
+    objectType,
+    operationType: currentOperationType,
+    operationName: currentOperationName,
+    inParamsCount: inParams.length,
+    outMappingsCount: outMappings.length
+  });
   
   // Generate the main type based on the database object
   let mainType = '';
@@ -3882,7 +3895,6 @@ const handleProtocolChange = (protocol) => {
   }));
   
   // Step 2: Load configuration for the new protocol
-  // Use a function to get the latest saved config
   const loadConfigForProtocol = () => {
     setProtocolConfigs(prev => {
       const savedConfig = prev[protocol];
@@ -3921,7 +3933,180 @@ const handleProtocolChange = (protocol) => {
   // Step 3: Switch protocol and load config
   setProtocolType(protocol);
   loadConfigForProtocol();
+  
+  // Step 4: Immediately switch to Definition tab
+  setActiveTab('definition');
+  
+  // Step 5: If switching to SOAP protocol, auto-populate the service name (even in edit mode)
+  if (protocol === 'soap') {
+    let generatedServiceName = '';
+    
+    // Case 1: Database object exists
+    if (selectedDbObject?.name) {
+      generatedServiceName = selectedDbObject.name.charAt(0).toUpperCase() + 
+                             selectedDbObject.name.slice(1).toLowerCase();
+      generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+      generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
+      if (!generatedServiceName.toLowerCase().endsWith('service')) {
+        generatedServiceName = generatedServiceName + 'Service';
+      }
+    } 
+    // Case 2: Custom query mode
+    else if (sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) {
+      if (customQuery && customQuery.trim()) {
+        const fromMatch = customQuery.match(/FROM\s+([^\s,;]+)/i);
+        if (fromMatch && fromMatch[1]) {
+          let tableName = fromMatch[1];
+          if (tableName.includes('.')) {
+            tableName = tableName.split('.').pop();
+          }
+          generatedServiceName = tableName.charAt(0).toUpperCase() + tableName.slice(1).toLowerCase();
+          generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+          generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
+        } else {
+          generatedServiceName = 'CustomQuery';
+        }
+      } else {
+        generatedServiceName = 'CustomQuery';
+      }
+      if (!generatedServiceName.toLowerCase().endsWith('service')) {
+        generatedServiceName = generatedServiceName + 'Service';
+      }
+    }
+    // Case 3: Schema config object name exists
+    else if (schemaConfig.objectName) {
+      generatedServiceName = schemaConfig.objectName.charAt(0).toUpperCase() + 
+                             schemaConfig.objectName.slice(1).toLowerCase();
+      generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+      generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
+      if (!generatedServiceName.toLowerCase().endsWith('service')) {
+        generatedServiceName = generatedServiceName + 'Service';
+      }
+    }
+    // Case 4: API name exists
+    else if (apiDetails.apiName) {
+      generatedServiceName = apiDetails.apiName.replace(/\s+/g, '');
+      if (!generatedServiceName.toLowerCase().endsWith('service')) {
+        generatedServiceName = generatedServiceName + 'Service';
+      }
+    }
+    // Case 5: Ultimate fallback
+    else {
+      generatedServiceName = 'APIService';
+    }
+    
+    // Update the service name (allow update even in edit mode)
+    if (generatedServiceName) {
+      console.log('🔧 Auto-populating SOAP service name on protocol switch:', generatedServiceName);
+      setSoapConfig(prev => ({ 
+        ...prev, 
+        serviceName: generatedServiceName,
+        // Also set default soapAction based on object type if empty
+        soapAction: prev.soapAction || getDefaultSoapAction()
+      }));
+    }
+  }
+
+  // Step 6: If switching to GraphQL protocol, auto-populate operation name and schema (even in edit mode)
+  if (protocol === 'graphql') {
+    let generatedOperationName = '';
+    let generatedSchema = '';
+    
+    // Get the source object name from multiple possible sources
+    const sourceObjectName = selectedDbObject?.name || 
+                             schemaConfig.objectName || 
+                             apiDetails.apiName?.replace(/\s+/g, '') ||
+                             'Data';
+    
+    // Case 1: Database object exists or we have schema config
+    if (sourceObjectName && sourceObjectName !== 'Data') {
+      const objectName = sourceObjectName;
+      const objectType = selectedDbObject?.type || schemaConfig.objectType || 'TABLE';
+      
+      if (graphqlConfig.operationType === 'query') {
+        generatedOperationName = `get${objectName.charAt(0).toUpperCase() + objectName.slice(1)}${objectType === 'TABLE' ? 's' : ''}`;
+      } else if (graphqlConfig.operationType === 'mutation') {
+        const mutationType = apiDetails.httpMethod === 'POST' ? 'create' :
+                            apiDetails.httpMethod === 'PUT' ? 'update' :
+                            apiDetails.httpMethod === 'DELETE' ? 'delete' : 'create';
+        generatedOperationName = `${mutationType}${objectName.charAt(0).toUpperCase() + objectName.slice(1)}`;
+      } else {
+        generatedOperationName = `${objectName.charAt(0).toUpperCase() + objectName.slice(1)}Changed`;
+      }
+      
+      generatedOperationName = generatedOperationName.replace(/[^a-zA-Z0-9]/g, '');
+      generatedOperationName = generatedOperationName.charAt(0).toLowerCase() + generatedOperationName.slice(1);
+      
+      // Generate schema from the object
+      generatedSchema = generateGraphQLSchemaFromObject();
+    } 
+    // Case 2: Custom query mode
+    else if (sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) {
+      if (customQuery && customQuery.trim()) {
+        const fromMatch = customQuery.match(/FROM\s+([^\s,;]+)/i);
+        if (fromMatch && fromMatch[1]) {
+          let tableName = fromMatch[1];
+          if (tableName.includes('.')) {
+            tableName = tableName.split('.').pop();
+          }
+          generatedOperationName = graphqlConfig.operationType === 'query' 
+            ? `get${tableName.charAt(0).toUpperCase() + tableName.slice(1)}Data`
+            : `execute${tableName.charAt(0).toUpperCase() + tableName.slice(1)}`;
+        } else {
+          generatedOperationName = graphqlConfig.operationType === 'query' ? 'getData' : 'executeQuery';
+        }
+      } else {
+        generatedOperationName = graphqlConfig.operationType === 'query' ? 'getData' : 'executeQuery';
+      }
+      
+      generatedSchema = generateGraphQLSchemaFromCustomQuery();
+    }
+    // Case 3: Fallback
+    else {
+      generatedOperationName = graphqlConfig.operationType === 'query' ? 'getData' : 'executeMutation';
+    }
+    
+    // Update operation name (allow update even in edit mode)
+    if (generatedOperationName) {
+      console.log('🔧 Auto-populating GraphQL operation name on protocol switch:', generatedOperationName);
+      setGraphqlConfig(prev => ({ ...prev, operationName: generatedOperationName }));
+    }
+    
+    // Update schema if empty or if we're in edit mode and schema is from the API
+    if (generatedSchema) {
+      console.log('🔧 Auto-populating GraphQL schema on protocol switch');
+      setGraphqlConfig(prev => ({ ...prev, schema: generatedSchema }));
+    }
+  }
+  
+  console.log('🔄 Protocol changed to:', protocol, '- Switched to Definition tab');
 };
+
+
+// Helper function to get default SOAP action based on object type
+const getDefaultSoapActionForProtocol = useCallback(() => {
+  // For database object types
+  switch(schemaConfig.objectType) {
+    case 'TABLE':
+      switch(schemaConfig.operation) {
+        case 'SELECT': return 'SELECT';
+        case 'INSERT': return 'INSERT';
+        case 'UPDATE': return 'UPDATE';
+        case 'DELETE': return 'DELETE';
+        default: return 'SELECT';
+      }
+    case 'VIEW':
+      return 'SELECT';
+    case 'PROCEDURE':
+      return 'EXECUTE';
+    case 'FUNCTION':
+      return 'EXECUTE';
+    case 'PACKAGE':
+      return 'EXECUTE_PROCEDURE';
+    default:
+      return 'PROCESS';
+  }
+}, [schemaConfig.objectType, schemaConfig.operation]);
 
   // Handle SOAP config change
   const handleSoapConfigChange = (field, value) => {
@@ -4239,6 +4424,146 @@ const handleApiDetailChange = (field, value) => {
       return updatedParams;
     });
   };
+
+
+
+  // Auto-populate SOAP service name on initial load and for custom queries
+useEffect(() => {
+  if (protocolType === 'soap' && !isEditing) {
+    let generatedServiceName = '';
+    
+    // Case 1: Database object exists
+    if (selectedDbObject?.name) {
+      generatedServiceName = selectedDbObject.name.charAt(0).toUpperCase() + 
+                             selectedDbObject.name.slice(1).toLowerCase();
+      generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+      generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
+      if (!generatedServiceName.toLowerCase().endsWith('service')) {
+        generatedServiceName = generatedServiceName + 'Service';
+      }
+    } 
+    // Case 2: Custom query mode
+    else if (sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) {
+      // Generate from custom query or use a default
+      if (customQuery && customQuery.trim()) {
+        // Try to extract table name from query
+        const fromMatch = customQuery.match(/FROM\s+([^\s,;]+)/i);
+        if (fromMatch && fromMatch[1]) {
+          let tableName = fromMatch[1];
+          // Remove schema prefix if present (e.g., "HR.EMPLOYEES" -> "EMPLOYEES")
+          if (tableName.includes('.')) {
+            tableName = tableName.split('.').pop();
+          }
+          generatedServiceName = tableName.charAt(0).toUpperCase() + tableName.slice(1).toLowerCase();
+          generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+          generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
+        } else {
+          generatedServiceName = 'CustomQuery';
+        }
+      } else {
+        generatedServiceName = 'CustomQuery';
+      }
+      
+      if (!generatedServiceName.toLowerCase().endsWith('service')) {
+        generatedServiceName = generatedServiceName + 'Service';
+      }
+    }
+    // Case 3: API name exists
+    else if (apiDetails.apiName) {
+      generatedServiceName = apiDetails.apiName.replace(/\s+/g, '');
+      if (!generatedServiceName.toLowerCase().endsWith('service')) {
+        generatedServiceName = generatedServiceName + 'Service';
+      }
+    }
+    // Case 4: Ultimate fallback
+    else {
+      generatedServiceName = 'APIService';
+    }
+    
+    // Only update if service name is empty
+    if (!soapConfig.serviceName && generatedServiceName) {
+      console.log('🔧 Auto-populating SOAP service name on load:', generatedServiceName);
+      setSoapConfig(prev => ({ ...prev, serviceName: generatedServiceName }));
+    }
+  }
+}, [protocolType, selectedDbObject, sourceType, isCustomQuery, isEditingCustomQuery, customQuery, apiDetails.apiName, soapConfig.serviceName, isEditing]);
+
+
+  // Auto-populate SOAP service name from database object
+// Update SOAP service name when source changes (database object OR custom query)
+useEffect(() => {
+  if (protocolType === 'soap' && !isEditing) {
+    let generatedServiceName = '';
+    
+    // Case 1: Database object changed
+    if (selectedDbObject?.name) {
+      generatedServiceName = selectedDbObject.name.charAt(0).toUpperCase() + 
+                             selectedDbObject.name.slice(1).toLowerCase();
+      generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+      generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
+      if (!generatedServiceName.toLowerCase().endsWith('service')) {
+        generatedServiceName = generatedServiceName + 'Service';
+      }
+    }
+    // Case 2: Custom query mode with extracted query
+    else if ((sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) && customQuery) {
+      const fromMatch = customQuery.match(/FROM\s+([^\s,;]+)/i);
+      if (fromMatch && fromMatch[1]) {
+        let tableName = fromMatch[1];
+        if (tableName.includes('.')) {
+          tableName = tableName.split('.').pop();
+        }
+        generatedServiceName = tableName.charAt(0).toUpperCase() + tableName.slice(1).toLowerCase();
+        generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+        generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
+      } else {
+        generatedServiceName = 'CustomQuery';
+      }
+      if (!generatedServiceName.toLowerCase().endsWith('service')) {
+        generatedServiceName = generatedServiceName + 'Service';
+      }
+    }
+    
+    // Only update if the current service name is empty or matches a previously auto-generated name
+    if (generatedServiceName) {
+      const currentName = soapConfig.serviceName;
+      const isCurrentNameAutoGenerated = !currentName || 
+                                         currentName === 'APIService' ||
+                                         currentName === 'CustomQueryService' ||
+                                         (selectedDbObject?.name && currentName === (selectedDbObject.name + 'Service'));
+      
+      if (isCurrentNameAutoGenerated && currentName !== generatedServiceName) {
+        console.log('🔄 Updating SOAP service name from new source:', generatedServiceName);
+        setSoapConfig(prev => ({ ...prev, serviceName: generatedServiceName }));
+      }
+    }
+  }
+}, [protocolType, selectedDbObject, sourceType, isCustomQuery, isEditingCustomQuery, customQuery, isEditing, soapConfig.serviceName]);
+
+// Update SOAP service name when selected database object changes (in SOAP mode)
+useEffect(() => {
+  if (protocolType === 'soap' && selectedDbObject?.name && !isEditing) {
+    let generatedServiceName = selectedDbObject.name.charAt(0).toUpperCase() + 
+                               selectedDbObject.name.slice(1).toLowerCase();
+    generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    
+    if (!generatedServiceName.toLowerCase().endsWith('service')) {
+      generatedServiceName = generatedServiceName + 'Service';
+    }
+    
+    // Only update if the current service name is empty or matches a previously auto-generated name
+    // This prevents overwriting user edits
+    const currentName = soapConfig.serviceName;
+    const isCurrentNameAutoGenerated = !currentName || 
+                                       currentName === (selectedDbObject.name + 'Service') ||
+                                       currentName === (selectedDbObject.name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()) + 'Service');
+    
+    if (isCurrentNameAutoGenerated && currentName !== generatedServiceName) {
+      console.log('🔄 Updating SOAP service name from new object:', generatedServiceName);
+      setSoapConfig(prev => ({ ...prev, serviceName: generatedServiceName }));
+    }
+  }
+}, [protocolType, selectedDbObject, isEditing, soapConfig.serviceName]);
 
   // Add this effect to update URL when parameters are loaded initially or when parameters array changes
   useEffect(() => {
@@ -4667,20 +4992,20 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     }
     
     if (soapConfigData) {
-        setSoapConfig({
-            version: soapConfigData.version || '1.1',
-            bindingStyle: soapConfigData.bindingStyle || 'document',
-            encodingStyle: soapConfigData.encodingStyle || 'literal',
-            soapAction: soapConfigData.soapAction || '',
-            wsdlUrl: soapConfigData.wsdlUrl || '',
-            namespace: soapConfigData.namespace || 'http://tempuri.org/',
-            serviceName: soapConfigData.serviceName || '',
-            portName: soapConfigData.portName || '',
-            useAsyncPattern: soapConfigData.useAsyncPattern || false,
-            includeMtom: soapConfigData.includeMtom || false,
-            soapHeaderElements: soapConfigData.soapHeaderElements || []
-        });
-        console.log('📦 SOAP config loaded');
+      setSoapConfig({
+        version: soapConfigData.version || '1.1',
+        bindingStyle: soapConfigData.bindingStyle || 'document',
+        encodingStyle: soapConfigData.encodingStyle || 'literal',
+        soapAction: soapConfigData.soapAction || '',
+        wsdlUrl: soapConfigData.wsdlUrl || '',
+        namespace: soapConfigData.namespace || 'http://tempuri.org/',
+        serviceName: soapConfigData.serviceName || '',  // Preserve existing service name from the API
+        portName: soapConfigData.portName || '',
+        useAsyncPattern: soapConfigData.useAsyncPattern || false,
+        includeMtom: soapConfigData.includeMtom || false,
+        soapHeaderElements: soapConfigData.soapHeaderElements || []
+      });
+      console.log('📦 SOAP config loaded with service name:', soapConfigData.serviceName);
     }
     
     // ============ SET GRAPHQL CONFIG (CRITICAL FIX) ============
@@ -5085,6 +5410,54 @@ const populateFormFromApiData = useCallback(async (apiData) => {
       operation: operation,
       primaryKeyColumn: ''
     }));
+
+    // ============ AUTO-POPULATE SOAP SERVICE NAME ============
+// Generate service name from database object OR custom query when in SOAP mode
+if (protocolType === 'soap') {
+  let generatedServiceName = '';
+  
+  // Case 1: Database object exists
+  if (object.name && object.type !== 'CUSTOM_QUERY') {
+    generatedServiceName = object.name.charAt(0).toUpperCase() + 
+                           object.name.slice(1).toLowerCase();
+    generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
+    if (!generatedServiceName.toLowerCase().endsWith('service')) {
+      generatedServiceName = generatedServiceName + 'Service';
+    }
+  }
+  // Case 2: Custom query mode
+  else if (sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) {
+    if (customQuery && customQuery.trim()) {
+      const fromMatch = customQuery.match(/FROM\s+([^\s,;]+)/i);
+      if (fromMatch && fromMatch[1]) {
+        let tableName = fromMatch[1];
+        if (tableName.includes('.')) {
+          tableName = tableName.split('.').pop();
+        }
+        generatedServiceName = tableName.charAt(0).toUpperCase() + tableName.slice(1).toLowerCase();
+        generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+        generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
+      } else {
+        generatedServiceName = 'CustomQuery';
+      }
+    } else {
+      generatedServiceName = 'CustomQuery';
+    }
+    if (!generatedServiceName.toLowerCase().endsWith('service')) {
+      generatedServiceName = generatedServiceName + 'Service';
+    }
+  }
+  
+  // Only set if service name is empty or if we're not preserving existing details
+  if (generatedServiceName) {
+    setSoapConfig(prev => ({ 
+      ...prev, 
+      serviceName: (!preserveExistingApiDetails || !prev.serviceName) ? generatedServiceName : prev.serviceName 
+    }));
+    console.log('🔧 Auto-populated SOAP service name:', generatedServiceName);
+  }
+}
 
     // Generate parameters and response mappings - ALWAYS regenerate from the object
     // This ensures parameters and mappings are updated when changing the database object
@@ -5658,6 +6031,16 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     }
   };
 
+
+  // Auto-switch to Definition tab when protocol type changes
+  useEffect(() => {
+    // When protocol type changes, switch to the Definition tab
+    if (protocolType) {
+      setActiveTab('definition');
+      console.log('🔄 Protocol changed to:', protocolType, '- Switching to Definition tab');
+    }
+  }, [protocolType]);
+
   // Sync operation when HTTP method changes
   useEffect(() => {
     // Skip for procedures/functions/packages
@@ -5909,6 +6292,57 @@ const populateFormFromApiData = useCallback(async (apiData) => {
   }, [isOpen, isEditing, apiDetails.apiCode]); // Remove authToken from dependencies to prevent re-run
 
 
+  // Auto-populate SOAP service name when switching to SOAP protocol (including edit mode)
+useEffect(() => {
+  if (protocolType === 'soap') {
+    let generatedServiceName = '';
+    
+    // Don't overwrite if there's already a service name and we're editing an existing API
+    // But if it's empty, populate it
+    if (soapConfig.serviceName) {
+      return; // Already has a service name, don't overwrite
+    }
+    
+    // Case 1: Database object exists
+    if (selectedDbObject?.name) {
+      generatedServiceName = selectedDbObject.name.charAt(0).toUpperCase() + 
+                             selectedDbObject.name.slice(1).toLowerCase();
+      generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+      generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
+      if (!generatedServiceName.toLowerCase().endsWith('service')) {
+        generatedServiceName = generatedServiceName + 'Service';
+      }
+    } 
+    // Case 2: Schema config object name exists
+    else if (schemaConfig.objectName) {
+      generatedServiceName = schemaConfig.objectName.charAt(0).toUpperCase() + 
+                             schemaConfig.objectName.slice(1).toLowerCase();
+      generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+      generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
+      if (!generatedServiceName.toLowerCase().endsWith('service')) {
+        generatedServiceName = generatedServiceName + 'Service';
+      }
+    }
+    // Case 3: API name exists
+    else if (apiDetails.apiName) {
+      generatedServiceName = apiDetails.apiName.replace(/\s+/g, '');
+      if (!generatedServiceName.toLowerCase().endsWith('service')) {
+        generatedServiceName = generatedServiceName + 'Service';
+      }
+    }
+    // Case 4: Ultimate fallback
+    else {
+      generatedServiceName = 'APIService';
+    }
+    
+    if (generatedServiceName && !soapConfig.serviceName) {
+      console.log('🔧 Setting SOAP service name on protocol activation:', generatedServiceName);
+      setSoapConfig(prev => ({ ...prev, serviceName: generatedServiceName }));
+    }
+  }
+}, [protocolType, selectedDbObject, schemaConfig.objectName, apiDetails.apiName, soapConfig.serviceName]);
+
+
 // Auto-set body type and HTTP method based on protocol - but preserve saved configs
 useEffect(() => {
   
@@ -5963,6 +6397,277 @@ useEffect(() => {
     }
   }
 }, [protocolType]); // Only run when protocol changes
+
+
+
+
+// Auto-update GraphQL operation name when operation type changes
+useEffect(() => {
+  if (protocolType === 'graphql' && !isEditing && !graphqlConfig.operationName) {
+    let generatedOperationName = '';
+    
+    if (selectedDbObject?.name) {
+      const objectName = selectedDbObject.name;
+      const objectType = selectedDbObject.type || schemaConfig.objectType;
+      
+      if (graphqlConfig.operationType === 'query') {
+        generatedOperationName = `get${objectName.charAt(0).toUpperCase() + objectName.slice(1)}${objectType === 'TABLE' ? 's' : ''}`;
+      } else if (graphqlConfig.operationType === 'mutation') {
+        const mutationType = apiDetails.httpMethod === 'POST' ? 'create' :
+                            apiDetails.httpMethod === 'PUT' ? 'update' :
+                            apiDetails.httpMethod === 'DELETE' ? 'delete' : 'create';
+        generatedOperationName = `${mutationType}${objectName.charAt(0).toUpperCase() + objectName.slice(1)}`;
+      } else {
+        generatedOperationName = `${objectName.charAt(0).toUpperCase() + objectName.slice(1)}Changed`;
+      }
+      
+      generatedOperationName = generatedOperationName.replace(/[^a-zA-Z0-9]/g, '');
+      generatedOperationName = generatedOperationName.charAt(0).toLowerCase() + generatedOperationName.slice(1);
+      
+      if (generatedOperationName && !graphqlConfig.operationName) {
+        setGraphqlConfig(prev => ({ ...prev, operationName: generatedOperationName }));
+      }
+    }
+  }
+}, [protocolType, graphqlConfig.operationType, selectedDbObject, schemaConfig.objectType, apiDetails.httpMethod, isEditing, graphqlConfig.operationName]);
+
+
+
+// Auto-populate GraphQL operation name and schema on initial load and for custom queries (including edit mode)
+useEffect(() => {
+  if (protocolType === 'graphql') {  // Remove the && !isEditing condition
+    let generatedOperationName = '';
+    let generatedSchema = '';
+    
+    // Case 1: Database object exists
+    if (selectedDbObject?.name) {
+      const objectName = selectedDbObject.name;
+      const objectType = selectedDbObject.type || schemaConfig.objectType;
+      
+      // Generate operation name based on operation type
+      if (graphqlConfig.operationType === 'query') {
+        generatedOperationName = `get${objectName.charAt(0).toUpperCase() + objectName.slice(1)}${objectType === 'TABLE' ? 's' : ''}`;
+      } else if (graphqlConfig.operationType === 'mutation') {
+        const mutationType = apiDetails.httpMethod === 'POST' ? 'create' :
+                            apiDetails.httpMethod === 'PUT' ? 'update' :
+                            apiDetails.httpMethod === 'DELETE' ? 'delete' : 'create';
+        generatedOperationName = `${mutationType}${objectName.charAt(0).toUpperCase() + objectName.slice(1)}`;
+      } else if (graphqlConfig.operationType === 'subscription') {
+        generatedOperationName = `${objectName.charAt(0).toUpperCase() + objectName.slice(1)}Changed`;
+      }
+      
+      generatedOperationName = generatedOperationName.replace(/[^a-zA-Z0-9]/g, '');
+      generatedOperationName = generatedOperationName.charAt(0).toLowerCase() + generatedOperationName.slice(1);
+      
+      generatedSchema = generateGraphQLSchemaFromObject();
+    } 
+    // Case 2: Custom query mode
+    else if (sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) {
+      if (customQuery && customQuery.trim()) {
+        const fromMatch = customQuery.match(/FROM\s+([^\s,;]+)/i);
+        if (fromMatch && fromMatch[1]) {
+          let tableName = fromMatch[1];
+          if (tableName.includes('.')) {
+            tableName = tableName.split('.').pop();
+          }
+          generatedOperationName = graphqlConfig.operationType === 'query' 
+            ? `get${tableName.charAt(0).toUpperCase() + tableName.slice(1)}Data`
+            : `execute${tableName.charAt(0).toUpperCase() + tableName.slice(1)}`;
+        } else {
+          generatedOperationName = graphqlConfig.operationType === 'query' ? 'getData' : 'executeQuery';
+        }
+      } else {
+        generatedOperationName = graphqlConfig.operationType === 'query' ? 'getData' : 'executeQuery';
+      }
+      
+      generatedSchema = generateGraphQLSchemaFromCustomQuery();
+    }
+    // Case 3: API name exists
+    else if (apiDetails.apiName && !graphqlConfig.operationName) {
+      generatedOperationName = apiDetails.apiName.replace(/\s+/g, '').charAt(0).toLowerCase() + 
+                               apiDetails.apiName.replace(/\s+/g, '').slice(1);
+    }
+    // Case 4: Ultimate fallback
+    else if (!graphqlConfig.operationName) {
+      generatedOperationName = graphqlConfig.operationType === 'query' ? 'getData' : 'executeMutation';
+    }
+    
+    // Only update if operation name is empty
+    if (generatedOperationName && !graphqlConfig.operationName) {
+      console.log('🔧 Auto-populating GraphQL operation name on load:', generatedOperationName);
+      setGraphqlConfig(prev => ({ ...prev, operationName: generatedOperationName }));
+    }
+    
+    // Auto-generate schema if empty
+    if (generatedSchema && (!graphqlConfig.schema || graphqlConfig.schema === '')) {
+      console.log('🔧 Auto-populating GraphQL schema on load');
+      setGraphqlConfig(prev => ({ ...prev, schema: generatedSchema }));
+    }
+  }
+}, [protocolType, selectedDbObject, sourceType, isCustomQuery, isEditingCustomQuery, customQuery, apiDetails.apiName, graphqlConfig.operationName, graphqlConfig.schema, graphqlConfig.operationType]); // Removed isEditing from dependencies
+
+
+// Force GraphQL auto-population when switching to GraphQL tab in edit mode
+useEffect(() => {
+  if (protocolType === 'graphql') {
+    // Check if we need to populate operation name
+    if (!graphqlConfig.operationName) {
+      let generatedOperationName = '';
+      
+      const sourceObjectName = selectedDbObject?.name || schemaConfig.objectName || apiDetails.apiName?.replace(/\s+/g, '');
+      
+      if (sourceObjectName && sourceObjectName !== '') {
+        const objectName = sourceObjectName;
+        const objectType = selectedDbObject?.type || schemaConfig.objectType || 'TABLE';
+        
+        if (graphqlConfig.operationType === 'query') {
+          generatedOperationName = `get${objectName.charAt(0).toUpperCase() + objectName.slice(1)}${objectType === 'TABLE' ? 's' : ''}`;
+        } else if (graphqlConfig.operationType === 'mutation') {
+          const mutationType = apiDetails.httpMethod === 'POST' ? 'create' :
+                              apiDetails.httpMethod === 'PUT' ? 'update' :
+                              apiDetails.httpMethod === 'DELETE' ? 'delete' : 'create';
+          generatedOperationName = `${mutationType}${objectName.charAt(0).toUpperCase() + objectName.slice(1)}`;
+        } else {
+          generatedOperationName = `${objectName.charAt(0).toUpperCase() + objectName.slice(1)}Changed`;
+        }
+        
+        generatedOperationName = generatedOperationName.replace(/[^a-zA-Z0-9]/g, '');
+        generatedOperationName = generatedOperationName.charAt(0).toLowerCase() + generatedOperationName.slice(1);
+        
+        if (generatedOperationName) {
+          console.log('🔧 Force populating GraphQL operation name in edit mode:', generatedOperationName);
+          setGraphqlConfig(prev => ({ ...prev, operationName: generatedOperationName }));
+        }
+      }
+    }
+    
+    // Check if we need to populate schema
+    if (!graphqlConfig.schema || graphqlConfig.schema === '') {
+      let generatedSchema = '';
+      
+      if (selectedDbObject?.name || schemaConfig.objectName) {
+        generatedSchema = generateGraphQLSchemaFromObject();
+      } else if (sourceType === 'custom_query' && customQuery) {
+        generatedSchema = generateGraphQLSchemaFromCustomQuery();
+      }
+      
+      if (generatedSchema) {
+        console.log('🔧 Force populating GraphQL schema in edit mode');
+        setGraphqlConfig(prev => ({ ...prev, schema: generatedSchema }));
+      }
+    }
+  }
+}, [protocolType, graphqlConfig.operationName, graphqlConfig.schema, selectedDbObject, schemaConfig.objectName, apiDetails.apiName, graphqlConfig.operationType, apiDetails.httpMethod, sourceType, customQuery]);
+
+
+
+// Generate GraphQL schema from custom query
+const generateGraphQLSchemaFromCustomQuery = useCallback(() => {
+  const inParams = getInParameters();
+  const outMappings = getOutMappings();
+  const operationName = graphqlConfig.operationName || 'customQuery';
+  const operationType = graphqlConfig.operationType || 'query';
+  
+  // Extract table name from custom query
+  let tableName = 'CustomData';
+  if (customQuery && customQuery.trim()) {
+    const fromMatch = customQuery.match(/FROM\s+([^\s,;]+)/i);
+    if (fromMatch && fromMatch[1]) {
+      tableName = fromMatch[1];
+      if (tableName.includes('.')) {
+        tableName = tableName.split('.').pop();
+      }
+      tableName = tableName.charAt(0).toUpperCase() + tableName.slice(1);
+    }
+  }
+  
+  // Build the main type from response mappings
+  let mainType = '';
+  if (outMappings.length > 0) {
+    mainType = `type ${tableName} {
+${outMappings.map(m => `  ${m.apiField}: ${getGraphQLType(m.oracleType, m.nullable)}`).join('\n')}
+}`;
+  } else {
+    mainType = `type ${tableName} {
+  id: ID!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}`;
+  }
+  
+  // Build input type from parameters
+  let inputType = '';
+  if (inParams.length > 0) {
+    inputType = `input ${tableName}Input {
+${inParams.map(p => `  ${p.key}: ${getGraphQLType(p.oracleType, !p.required)}`).join('\n')}
+}`;
+  }
+  
+  // Build the operation
+  let operationField = '';
+  if (operationType === 'query') {
+    operationField = `  ${operationName}(
+    ${inParams.filter(p => p.parameterLocation !== 'body').slice(0, 3).map(p => `${p.key}: ${getGraphQLType(p.oracleType, true)}`).join('\n    ')}
+  ): ${tableName}Result`;
+  } else {
+    operationField = `  ${operationName}(
+    input: ${tableName}Input!
+  ): ${tableName}Payload`;
+  }
+  
+  return `# ============================================================================
+# GraphQL Schema for Custom Query
+# Generated from custom SQL query
+# Generated: ${new Date().toISOString()}
+# ============================================================================
+
+# Scalar definitions
+scalar DateTime
+scalar JSON
+scalar Date
+
+# Main types
+${mainType}
+
+${inputType ? inputType + '\n' : ''}
+
+# Result types
+type ${tableName}Result {
+  success: Boolean!
+  message: String
+  data: ${tableName}
+  errors: [ErrorDetail]
+}
+
+type ${tableName}Payload {
+  success: Boolean!
+  message: String
+  data: ${tableName}
+  errors: [ErrorDetail]
+}
+
+type ErrorDetail {
+  field: String
+  message: String
+  code: String
+}
+
+# Query and Mutation definitions
+type ${operationType === 'query' ? 'Query' : 'Mutation'} {
+${operationField}
+}
+
+# Example query:
+# ${operationType === 'query' ? 'query' : 'mutation'} {
+#   ${operationName}(${inParams.slice(0, 2).map(p => `${p.key}: "example"`).join(', ')}) {
+#     success
+#     message
+#     data {
+#       ${outMappings.slice(0, 3).map(m => m.apiField).join('\n#       ')}
+#     }
+#   }
+# }`;
+}, [graphqlConfig.operationName, graphqlConfig.operationType, customQuery, getInParameters, getOutMappings]);
 
 
 // Add this effect to protect against invalid body type configurations
@@ -9766,6 +10471,12 @@ COMMIT;
                           <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
                             Service Name *
                             <Asterisk className="h-3 w-3" style={{ color: themeColors.error }} />
+                            <span className="text-xs ml-2 px-1.5 py-0.5 rounded" style={{ 
+                              backgroundColor: themeColors.info + '20',
+                              color: themeColors.info
+                            }}>
+                              Auto-generated from object
+                            </span>
                           </label>
                           <input
                             type="text"
@@ -9779,6 +10490,9 @@ COMMIT;
                             }}
                             placeholder="UserService"
                           />
+                          <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                            Service name is auto-generated from your database object. You can edit it as needed.
+                          </p>
                           {validationErrors.serviceName && (
                             <p className="text-xs mt-1" style={{ color: themeColors.error }}>
                               {validationErrors.serviceName}
@@ -9907,6 +10621,12 @@ COMMIT;
                           <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
                             Operation Name *
                             <Asterisk className="h-3 w-3" style={{ color: themeColors.error }} />
+                            <span className="text-xs ml-2 px-1.5 py-0.5 rounded" style={{ 
+                              backgroundColor: themeColors.info + '20',
+                              color: themeColors.info
+                            }}>
+                              Auto-generated from object
+                            </span>
                           </label>
                           <input
                             type="text"
@@ -9920,6 +10640,9 @@ COMMIT;
                             }}
                             placeholder="getUsers"
                           />
+                          <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                            Operation name is auto-generated from your database object. You can edit it as needed.
+                          </p>
                           {validationErrors.operationName && (
                             <p className="text-xs mt-1" style={{ color: themeColors.error }}>
                               {validationErrors.operationName}
@@ -10025,6 +10748,7 @@ COMMIT;
                           </button>
                         </div>
                         <textarea
+                          key={`graphql-schema-${graphqlConfig.schema?.substring(0, 100)}`}
                           value={graphqlConfig.schema}
                           onChange={(e) => handleGraphqlConfigChange('schema', e.target.value)}
                           className="w-full h-64 px-3 py-2 border rounded-lg text-xs font-mono hover-lift"

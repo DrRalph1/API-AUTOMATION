@@ -3633,31 +3633,78 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   }
   
   // Process Path params
-  let urlWithoutEnvVars = initialTemplateUrl;
-  urlWithoutEnvVars = urlWithoutEnvVars.replace(/\{\{[^}]+\}\}/g, '');
-  console.log('📝 URL without environment variables:', urlWithoutEnvVars);
+let urlWithoutEnvVars = initialTemplateUrl;
+urlWithoutEnvVars = urlWithoutEnvVars.replace(/\{\{[^}]+\}\}/g, '');
+console.log('📝 URL without environment variables:', urlWithoutEnvVars);
 
-  const pathParamsFromUrl = [];
-  if (urlWithoutEnvVars) {
-    const placeholderRegex = /{([^{}]+)}/g;
-    let match;
-    while ((match = placeholderRegex.exec(urlWithoutEnvVars)) !== null) {
-      const paramName = match[1];
-      console.log(`🔍 Found path param candidate: ${paramName}`);
+const pathParamsFromUrl = [];
+if (urlWithoutEnvVars) {
+  // Match both {param} and :param patterns
+  const curlyPlaceholderRegex = /{([^{}]+)}/g;
+  const colonPlaceholderRegex = /:([^/]+)/g;
+  let match;
+  
+  // Extract curly brace placeholders
+  while ((match = curlyPlaceholderRegex.exec(urlWithoutEnvVars)) !== null) {
+    const paramName = match[1];
+    console.log(`🔍 Found path param candidate (curly): ${paramName}`);
+    
+    const existingParam = (request.pathParams || []).find(p => p.key === paramName);
+    const dataType = existingParam?.dataType || 'string';
+    
+    // CRITICAL FIX: Keep value EMPTY if no existing value
+    // Path params should show placeholders in URL, not default values
+    let paramValue = '';
+    
+    // Only use existing value if it's a REAL value (not a placeholder)
+    if (existingParam?.value && 
+        existingParam.value !== `{${paramName}}` && 
+        existingParam.value !== `:${paramName}` &&
+        !existingParam.value.includes('{') &&
+        existingParam.value.trim() !== '') {
+      paramValue = existingParam.value;
+      console.log(`  📝 Using existing value: ${paramValue}`);
+    } else {
+      console.log(`  📝 Keeping value empty - will show {${paramName}} in URL`);
+    }
+    
+    pathParamsFromUrl.push({
+      id: existingParam?.id || `path-${Date.now()}-${paramName}-${Math.random()}`,
+      key: paramName,
+      value: paramValue,
+      displayValue: paramValue,
+      description: existingParam?.description || `Path parameter: ${paramName}`,
+      enabled: true,
+      required: true,
+      dataType: dataType
+    });
+  }
+  
+  // Extract colon-style placeholders
+  colonPlaceholderRegex.lastIndex = 0;
+  while ((match = colonPlaceholderRegex.exec(urlWithoutEnvVars)) !== null) {
+    const paramName = match[1];
+    console.log(`🔍 Found path param candidate (colon): ${paramName}`);
+    
+    // Check if we already have this param from curly brace extraction
+    if (!pathParamsFromUrl.some(p => p.key === paramName)) {
       const existingParam = (request.pathParams || []).find(p => p.key === paramName);
       const dataType = existingParam?.dataType || 'string';
-      const defaultValue = getDefaultValueByType(dataType, paramName);
-      let paramValue = existingParam?.value;
       
-      if (paramValue === undefined || paramValue === null || (typeof paramValue === 'string' && paramValue === '')) {
-        paramValue = defaultValue;
+      let paramValue = '';
+      if (existingParam?.value && 
+          existingParam.value !== `{${paramName}}` && 
+          existingParam.value !== `:${paramName}` &&
+          !existingParam.value.includes('{') &&
+          existingParam.value.trim() !== '') {
+        paramValue = existingParam.value;
       }
       
       pathParamsFromUrl.push({
         id: existingParam?.id || `path-${Date.now()}-${paramName}-${Math.random()}`,
         key: paramName,
         value: paramValue,
-        displayValue: getDisplayValue(paramValue, dataType),
+        displayValue: paramValue,
         description: existingParam?.description || `Path parameter: ${paramName}`,
         enabled: true,
         required: true,
@@ -3665,59 +3712,73 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
       });
     }
   }
+}
 
-  let initialPathParams = [...pathParamsFromUrl];
+let initialPathParams = [...pathParamsFromUrl];
 
-  if (request.pathParams && request.pathParams.length > 0) {
-    request.pathParams.forEach(param => {
-      if (!initialPathParams.some(p => p.key === param.key)) {
-        const dataType = param.dataType || 'string';
-        let paramValue = param.value;
-        if (paramValue === undefined || paramValue === null || (typeof paramValue === 'string' && paramValue === '')) {
-          paramValue = getDefaultValueByType(dataType, param.key);
-        }
-        
-        initialPathParams.push({
-          ...param,
-          value: paramValue,
-          displayValue: getDisplayValue(paramValue, dataType),
-          dataType: dataType,
-          id: param.id || `path-${Date.now()}-${param.key}-${Math.random()}`
-        });
+// Add any additional path params from request that weren't in URL
+if (request.pathParams && request.pathParams.length > 0) {
+  request.pathParams.forEach(param => {
+    if (!initialPathParams.some(p => p.key === param.key)) {
+      const dataType = param.dataType || 'string';
+      
+      // Keep value EMPTY unless it's a real value
+      let paramValue = '';
+      if (param.value && 
+          param.value !== `{${param.key}}` && 
+          param.value !== `:${param.key}` &&
+          !param.value.includes('{') &&
+          param.value.trim() !== '') {
+        paramValue = param.value;
       }
-    });
-  }
+      
+      initialPathParams.push({
+        ...param,
+        value: paramValue,
+        displayValue: paramValue,
+        dataType: dataType,
+        id: param.id || `path-${Date.now()}-${param.key}-${Math.random()}`
+      });
+    }
+  });
+}
 
-  setRequestPathParams(initialPathParams);
+setRequestPathParams(initialPathParams);
 
-  // Build final URL
-  let finalUrlWithPathParams = workingTemplateUrl;
+// BUILD DISPLAY URL - Keep placeholders for empty values
+let displayUrl = workingTemplateUrl;
 
-  if (initialPathParams.length > 0) {
-    let urlWithPlaceholders = finalUrlWithPathParams;
-    initialPathParams.forEach(param => {
-      if (param.key) {
-        const placeholder = `{${param.key}}`;
-        const colonPlaceholder = `:${param.key}`;
-        const paramValue = param.value !== undefined && param.value !== null && param.value !== '' ? String(param.value) : '';
+if (initialPathParams.length > 0) {
+  initialPathParams.forEach(param => {
+    if (param.key) {
+      const placeholder = `{${param.key}}`;
+      const colonPlaceholder = `:${param.key}`;
+      
+      // Only replace with value if value exists and is not empty
+      // Otherwise KEEP THE PLACEHOLDER in the URL
+      if (param.value && param.value.trim() !== '') {
+        const paramValue = String(param.value);
         
-        if (urlWithPlaceholders.includes(placeholder)) {
-          urlWithPlaceholders = urlWithPlaceholders.replace(
+        if (displayUrl.includes(placeholder)) {
+          displayUrl = displayUrl.replace(
             new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), 
             paramValue
           );
         }
-        if (urlWithPlaceholders.includes(colonPlaceholder)) {
-          urlWithPlaceholders = urlWithPlaceholders.replace(
+        if (displayUrl.includes(colonPlaceholder)) {
+          displayUrl = displayUrl.replace(
             new RegExp(colonPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), 
             paramValue
           );
         }
       }
-    });
-    finalUrlWithPathParams = urlWithPlaceholders;
-  }
-  setRequestUrl(finalUrlWithPathParams);
+      // If no value, leave the placeholder as-is in the URL
+    }
+  });
+}
+
+setRequestUrl(displayUrl);
+console.log('📝 Display URL (with placeholders for empty values):', displayUrl);
   
   // Fetch details from API
   if (authToken && request.id && collectionId) {
@@ -4267,7 +4328,7 @@ ${soapBodyContent}    </${soapAction}>
         // Cache ALL data including protocol - Use the actual body from API response
         const cacheData = {
           templateUrl: initialTemplateUrl,
-          resolvedUrl: finalUrlWithPathParams,
+          resolvedUrl: displayUrl,
           method: requestMethod,
           queryParams: requestParams,
           pathParams: initialPathParams,
@@ -4340,7 +4401,7 @@ ${soapBodyContent}    </${soapAction}>
       
       const cacheData = {
         templateUrl: initialTemplateUrl,
-        resolvedUrl: finalUrlWithPathParams,
+        resolvedUrl: displayUrl,
         method: requestMethod,
         queryParams: [...requestParams],
         pathParams: [...initialPathParams],

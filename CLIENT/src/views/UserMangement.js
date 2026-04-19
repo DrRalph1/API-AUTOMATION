@@ -1879,52 +1879,173 @@ const EditUserModal = ({ data: user }) => {
   };
 
   const SideNavigation = () => {
-    const [expandedSections, setExpandedSections] = useState(['users']);
-    const sideNavItems = [{ id: 'users', label: 'User Management', icon: <Users size={16} />, subItems: [{ id: 'all-users', label: 'All Users', icon: <UsersIcon size={12} /> }] }];
+  const [expandedSections, setExpandedSections] = useState(['users', 'security', 'roles']);
+  
+  const sideNavItems = [
+    {
+      id: 'users',
+      label: 'User Management',
+      icon: <Users size={16} />,
+      subItems: [
+        { id: 'all-users', label: 'All Users', icon: <UsersIcon size={12} />, filter: { status: 'all', role: 'all' } },
+        { id: 'active-users', label: 'Active Users', icon: <UserCheck size={12} />, filter: { status: 'active', role: 'all' } },
+        { id: 'inactive-users', label: 'Inactive Users', icon: <Clock size={12} />, filter: { status: 'inactive', role: 'all' } },
+        { id: 'pending-users', label: 'Pending Users', icon: <Clock size={12} />, filter: { status: 'pending', role: 'all' } },
+        { id: 'suspended-users', label: 'Suspended Users', icon: <UserX size={12} />, filter: { status: 'suspended', role: 'all' } }
+      ]
+    },
+    // {
+    //   id: 'roles',
+    //   label: 'Roles & Permissions',
+    //   icon: <Shield size={16} />,
+    //   subItems: [
+    //     { id: 'role-management', label: 'Role Management', icon: <ShieldIcon size={12} /> },
+    //     { id: 'permission-sets', label: 'Permission Sets', icon: <KeyRound size={12} /> },
+    //     { id: 'access-control', label: 'Access Control', icon: <Lock size={12} /> }
+    //   ]
+    // }
+  ];
 
-    const toggleSection = (sectionId) => {
-      setExpandedSections(prev => prev.includes(sectionId) ? prev.filter(id => id !== sectionId) : [...prev, sectionId]);
-    };
-
-    return (
-      <div className="w-80 border-r flex flex-col h-full" style={{ backgroundColor: colors.sidebar, borderColor: colors.border }}>
-        <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-          <div className="relative mb-3">
-            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-            <input type="text" placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift" style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }} />
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => openModal('editUser', { id: 'new', username: '', email: '', phoneNumber: '', fullName: '', roleId: '', status: 'pending', department: '', location: '', mfaEnabled: false, emailVerified: false, phoneVerified: false, tags: [] })} className="flex-1 px-3 py-2 rounded text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2 justify-center" style={{ backgroundColor: colors.primaryDark, color: 'white' }}>
-              <UserPlus size={12} /><span>Add User</span>
-            </button>
-            <button onClick={handleImportUsers} className="px-3 py-2 rounded text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2" style={{ backgroundColor: colors.hover, color: colors.text }}>
-              <Upload size={12} />
-            </button>
-          </div>
-        </div>
-        <div className="flex-1 overflow-auto p-2 space-y-4">
-          {sideNavItems.map((item) => (
-            <div key={item.id} className="mb-1">
-              <button onClick={() => toggleSection(item.id)} className={`w-full flex items-center gap-2 px-3 py-2.5 rounded text-sm transition-all duration-200 hover-lift mb-1`} style={{ backgroundColor: expandedSections.includes(item.id) ? colors.selected : colors.hover, color: expandedSections.includes(item.id) ? colors.primary : colors.text }}>
-                <span style={{ color: expandedSections.includes(item.id) ? colors.primary : colors.textSecondary }}>{item.icon}</span>
-                <span className="flex-1 text-left truncate">{item.label}</span>
-                {item.subItems && <ChevronDown size={12} className={`transition-transform duration-200 ${expandedSections.includes(item.id) ? 'rotate-0' : '-rotate-90'}`} style={{ color: colors.textSecondary }} />}
-              </button>
-              {item.subItems && expandedSections.includes(item.id) && (
-                <div className="ml-6 mb-2 border-l-2" style={{ borderColor: colors.border }}>
-                  {item.subItems.map((subItem) => (
-                    <button key={subItem.id} onClick={() => { setSelectedRole('all'); setSelectedStatus('all'); setCurrentPage(1); }} className="w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors hover:bg-opacity-50 ml-2 mt-0.5 hover-lift" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
-                      <span style={{ color: colors.textTertiary }}>{subItem.icon}</span><span className="truncate">{subItem.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
+  const toggleSection = (sectionId) => {
+    setExpandedSections(prev =>
+      prev.includes(sectionId)
+        ? prev.filter(id => id !== sectionId)
+        : [...prev, sectionId]
     );
   };
+
+  return (
+    <div className="w-80 border-r flex flex-col h-full" style={{ 
+      backgroundColor: colors.sidebar,
+      borderColor: colors.border
+    }}>
+      <div className="p-4 border-b" style={{ borderColor: colors.border }}>
+        <div className="relative mb-3">
+          <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
+          <input 
+            type="text" 
+            placeholder="Search users..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
+            style={{ 
+              backgroundColor: colors.inputBg, 
+              border: `1px solid ${colors.border}`, 
+              color: colors.text 
+            }} 
+          />
+        </div>
+        
+        <div className="flex gap-2">
+          <button 
+            onClick={() => openModal('editUser', { 
+              id: 'new',
+              username: '',
+              email: '',
+              phoneNumber: '',
+              fullName: '',
+              roleId: '',
+              role: '',
+              status: 'pending',
+              department: '',
+              location: '',
+              mfaEnabled: false,
+              emailVerified: false,
+              phoneVerified: false,
+              tags: []
+            })}
+            className="flex-1 px-3 py-2 rounded text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2 justify-center"
+            style={{ 
+              backgroundColor: colors.primaryDark,
+              color: 'white'
+            }}
+          >
+            <UserPlus size={12} />
+            <span>Add User</span>
+          </button>
+          <button 
+            onClick={handleImportUsers}
+            className="px-3 py-2 rounded text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
+            style={{ 
+              backgroundColor: colors.hover,
+              color: colors.text
+            }}
+          >
+            <Upload size={12} />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto p-2 space-y-4">
+        {sideNavItems.map((item) => (
+          <div key={item.id} className="mb-1">
+            <button
+              onClick={() => toggleSection(item.id)}
+              className={`w-full flex items-center gap-2 px-3 py-2.5 rounded text-sm transition-all duration-200 hover-lift mb-1`}
+              style={{ 
+                backgroundColor: expandedSections.includes(item.id) ? colors.selected : colors.hover,
+                color: expandedSections.includes(item.id) ? colors.primary : colors.text
+              }}
+            >
+              <span style={{ 
+                color: expandedSections.includes(item.id) ? colors.primary : colors.textSecondary 
+              }}>
+                {item.icon}
+              </span>
+              <span className="flex-1 text-left truncate">{item.label}</span>
+              {item.subItems && (
+                <ChevronDown 
+                  size={12} 
+                  className={`transition-transform duration-200 ${
+                    expandedSections.includes(item.id) ? 'rotate-0' : '-rotate-90'
+                  }`}
+                  style={{ color: colors.textSecondary }}
+                />
+              )}
+            </button>
+
+            {item.subItems && expandedSections.includes(item.id) && (
+              <div className="ml-6 mb-2 border-l-2" style={{ borderColor: colors.border }}>
+                {item.subItems.map((subItem) => (
+                  <button
+                    key={subItem.id}
+                    onClick={() => {
+                      console.log(`Navigating to ${subItem.label}`);
+                      // Apply filters based on the clicked subItem
+                      if (subItem.filter) {
+                        // Update status filter
+                        if (subItem.filter.status !== undefined) {
+                          setSelectedStatus(subItem.filter.status);
+                        }
+                        // Update role filter
+                        if (subItem.filter.role !== undefined) {
+                          setSelectedRole(subItem.filter.role);
+                        }
+                        // Reset to page 1 and reload users
+                        setCurrentPage(1);
+                        // The useEffect will trigger loadUsers with the new filters
+                      }
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors hover:bg-opacity-50 ml-2 mt-0.5 hover-lift"
+                    style={{ 
+                      backgroundColor: colors.hover,
+                      color: colors.textSecondary
+                    }}
+                  >
+                    <span style={{ color: colors.textTertiary }}>
+                      {subItem.icon}
+                    </span>
+                    <span className="truncate">{subItem.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
   const handleSearchInputChange = (e) => {
     const value = e.target.value;
