@@ -404,34 +404,194 @@ public class ApiResponseHelper {
     }
 
     public Object formatResponse(GeneratedApiEntity api, Object data) {
-//        if (api.getResponseConfig() != null && Boolean.TRUE.equals(api.getResponseConfig().getIncludeMetadata())) {
-//            Map<String, Object> formatted = new HashMap<>();
-//            formatted.put("data", data);
-//
-//            Map<String, Object> metadata = new HashMap<>();
-//            metadata.put("timestamp", LocalDateTime.now().toString());
-//            metadata.put("apiVersion", api.getVersion());
-//            metadata.put("requestId", UUID.randomUUID().toString());
-//
-//            if (api.getResponseConfig().getMetadataFields() != null && !api.getResponseConfig().getMetadataFields().isEmpty()) {
-//                Map<String, Object> filteredMetadata = new HashMap<>();
-//                for (String field : api.getResponseConfig().getMetadataFields()) {
-//                    if (field != null && metadata.containsKey(field)) {
-//                        filteredMetadata.put(field, metadata.get(field));
-//                    }
-//                }
-//                if (!filteredMetadata.isEmpty()) {
-//                    formatted.put("metadata", filteredMetadata);
-//                }
-//            } else {
-//                formatted.put("metadata", metadata);
-//            }
-//
-//            return formatted;
-//        }
+        // If data is null, return empty list
+        if (data == null) {
+            return Collections.emptyList();
+        }
+
+        log.info("Formatting response - raw data type: {}", data.getClass().getSimpleName());
+
+        // CRITICAL FIX: Flatten nested data.data structure
+        Object flattenedData = dynamicallyFlattenData(data);
+
+        // Log the flattened result for debugging
+        if (flattenedData instanceof List) {
+            log.info("Flattened data is a List with {} items", ((List<?>) flattenedData).size());
+        } else if (flattenedData instanceof Map) {
+            log.info("Flattened data is a Map with keys: {}", ((Map<?, ?>) flattenedData).keySet());
+        }
+
+        // Only add metadata if configured (commented out for now)
+        // if (api.getResponseConfig() != null && Boolean.TRUE.equals(api.getResponseConfig().getIncludeMetadata())) {
+        //     Map<String, Object> formatted = new HashMap<>();
+        //     formatted.put("data", flattenedData);
+        //
+        //     Map<String, Object> metadata = new HashMap<>();
+        //     metadata.put("timestamp", LocalDateTime.now().toString());
+        //     metadata.put("apiVersion", api.getVersion());
+        //     metadata.put("requestId", UUID.randomUUID().toString());
+        //
+        //     if (api.getResponseConfig().getMetadataFields() != null && !api.getResponseConfig().getMetadataFields().isEmpty()) {
+        //         Map<String, Object> filteredMetadata = new HashMap<>();
+        //         for (String field : api.getResponseConfig().getMetadataFields()) {
+        //             if (field != null && metadata.containsKey(field)) {
+        //                 filteredMetadata.put(field, metadata.get(field));
+        //             }
+        //         }
+        //         if (!filteredMetadata.isEmpty()) {
+        //             formatted.put("metadata", filteredMetadata);
+        //         }
+        //     } else {
+        //         formatted.put("metadata", metadata);
+        //     }
+        //
+        //     return formatted;
+        // }
+
+        return flattenedData;
+    }
+
+    /**
+     * Dynamically flattens any nested data structure by removing all wrapper objects
+     * until reaching the actual business data. Continues recursively until no more
+     * single-key wrappers or common data containers are found.
+     */
+    private Object dynamicallyFlattenData(Object data) {
+        if (data == null) {
+            return Collections.emptyList();
+        }
+
+        // Handle Map objects
+        if (data instanceof Map) {
+            Map<?, ?> dataMap = (Map<?, ?>) data;
+
+            // If map is empty, return it
+            if (dataMap.isEmpty()) {
+                return dataMap;
+            }
+
+            // STRATEGY 1: If map has only one entry, the value is likely the actual data
+            if (dataMap.size() == 1) {
+                Map.Entry<?, ?> singleEntry = dataMap.entrySet().iterator().next();
+                Object value = singleEntry.getValue();
+
+                // Recursively flatten the value (it might be another wrapper)
+                if (value instanceof Map || value instanceof List) {
+                    log.debug("Flattening single-key wrapper: '{}' -> {}",
+                            singleEntry.getKey(), value.getClass().getSimpleName());
+                    return dynamicallyFlattenData(value);
+                }
+            }
+
+            // STRATEGY 2: Look for common data container field names
+            String[] commonWrappers = {"data", "result", "JSON_RESULT", "response",
+                    "body", "content", "items", "records", "payload",
+                    "output", "results", "Data", "Result"};
+
+            for (String wrapperName : commonWrappers) {
+                if (dataMap.containsKey(wrapperName)) {
+                    Object wrappedValue = dataMap.get(wrapperName);
+                    if (wrappedValue instanceof Map || wrappedValue instanceof List) {
+                        log.debug("Found common wrapper field '{}' -> flattening", wrapperName);
+                        return dynamicallyFlattenData(wrappedValue);
+                    }
+                }
+            }
+
+            // STRATEGY 3: Check if any value in the map contains business data
+            // Look for lists that aren't empty and contain maps with multiple fields
+            for (Map.Entry<?, ?> entry : dataMap.entrySet()) {
+                Object value = entry.getValue();
+
+                if (value instanceof List) {
+                    List<?> list = (List<?>) value;
+                    if (!list.isEmpty()) {
+                        Object firstItem = list.get(0);
+                        // If list contains maps that have multiple keys (likely business data)
+                        if (firstItem instanceof Map && ((Map<?, ?>) firstItem).size() > 1) {
+                            log.debug("Found business data list under key: '{}'", entry.getKey());
+                            // Don't flatten further - this is likely the actual data
+                            return dataMap;
+                        }
+                    }
+                }
+
+                // Also check for nested maps that contain lists
+                if (value instanceof Map) {
+                    Map<?, ?> nestedMap = (Map<?, ?>) value;
+                    for (Object nestedValue : nestedMap.values()) {
+                        if (nestedValue instanceof List) {
+                            List<?> nestedList = (List<?>) nestedValue;
+                            if (!nestedList.isEmpty() && nestedList.get(0) instanceof Map) {
+                                log.debug("Found business data in nested map under key: '{}'", entry.getKey());
+                                return dynamicallyFlattenData(value);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If we couldn't flatten further, return the map as-is
+            return dataMap;
+        }
+
+        // Handle List objects
+        if (data instanceof List) {
+            List<?> dataList = (List<?>) data;
+            if (dataList.isEmpty()) {
+                return dataList;
+            }
+
+            // Check each item in the list for wrappers
+            Object firstItem = dataList.get(0);
+
+            // If list contains maps that are likely wrappers, try to flatten them
+            if (firstItem instanceof Map) {
+                Map<?, ?> firstMap = (Map<?, ?>) firstItem;
+
+                // If the map has a single key that contains a list, flatten it
+                if (firstMap.size() == 1) {
+                    Object onlyValue = firstMap.values().iterator().next();
+                    if (onlyValue instanceof List) {
+                        log.debug("Flattening list of single-key map wrappers");
+                        return dynamicallyFlattenData(onlyValue);
+                    }
+                }
+
+                // Check for common wrapper fields in list items
+                for (String wrapperName : new String[]{"data", "result", "JSON_RESULT", "response"}) {
+                    if (firstMap.containsKey(wrapperName)) {
+                        Object wrappedValue = firstMap.get(wrapperName);
+                        if (wrappedValue instanceof List) {
+                            log.debug("Found wrapper field '{}' in list item, flattening", wrapperName);
+                            return dynamicallyFlattenData(wrappedValue);
+                        }
+                    }
+                }
+            }
+
+            // If the list contains business objects (maps with multiple fields), return it
+            if (firstItem instanceof Map && ((Map<?, ?>) firstItem).size() > 1) {
+                return dataList;
+            }
+
+            // Recursively flatten each item in the list if needed
+            List<Object> flattenedList = new ArrayList<>();
+            boolean needFlattening = false;
+            for (Object item : dataList) {
+                Object flattenedItem = dynamicallyFlattenData(item);
+                if (flattenedItem != item) {
+                    needFlattening = true;
+                }
+                flattenedList.add(flattenedItem);
+            }
+
+            return needFlattening ? flattenedList : dataList;
+        }
 
         return data;
     }
+
 
     public Object generateSampleResponse(GeneratedApiEntity api) {
         Map<String, Object> result = new HashMap<>();

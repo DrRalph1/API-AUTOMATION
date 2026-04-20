@@ -131,54 +131,136 @@ const ProtocolBadge = ({ protocol, size = 'sm', colors }) => {
 
 // Protocol-Specific Request Body Renderer
 const ProtocolRequestBody = ({ endpointDetails, colors, onCopy }) => {
-  const { protocolType, requestBodyExample, requestBodyType } = endpointDetails;
+  const { protocolType, requestBodyExample, requestBodyType, bodyParameters, method } = endpointDetails;
   
-  if (!requestBodyExample) {
+  // Methods that typically don't have a request body
+  const methodsWithoutBody = ['GET', 'DELETE', 'HEAD', 'OPTIONS'];
+  
+  // For REST, check if this method should have a body
+  if (protocolType !== 'soap' && protocolType !== 'graphql') {
+    if (methodsWithoutBody.includes(method?.toUpperCase())) {
+      return (
+        <div className="text-center py-4" style={{ color: colors.textSecondary }}>
+          <Info size={20} className="mx-auto mb-2 opacity-50" />
+          <p className="text-sm">
+            {method} requests typically do not have a request body.
+            {bodyParameters && bodyParameters.length > 0 && 
+              ` However, this endpoint has ${bodyParameters.length} body parameter(s).`
+            }
+          </p>
+        </div>
+      );
+    }
+  }
+  
+  // Helper function to generate a sample request body from body parameters
+  const generateRequestBodyFromParameters = (params) => {
+    if (!params || params.length === 0) return null;
+    
+    const body = {};
+    params.forEach(param => {
+      if (param.example) {
+        try {
+          body[param.name] = JSON.parse(param.example);
+        } catch {
+          body[param.name] = param.example;
+        }
+      } else if (param.defaultValue) {
+        try {
+          body[param.name] = JSON.parse(param.defaultValue);
+        } catch {
+          body[param.name] = param.defaultValue;
+        }
+      } else {
+        // Generate default values based on type
+        switch (param.type?.toLowerCase()) {
+          case 'string':
+            body[param.name] = "string";
+            break;
+          case 'number':
+          case 'integer':
+            body[param.name] = 0;
+            break;
+          case 'boolean':
+            body[param.name] = true;
+            break;
+          case 'array':
+            body[param.name] = [];
+            break;
+          case 'object':
+            body[param.name] = {};
+            break;
+          default:
+            body[param.name] = `{${param.name}}`;
+        }
+      }
+    });
+    return body;
+  };
+  
+  // Get the request body content
+  let requestBodyContent = null;
+  let language = 'json';
+  let contentType = 'application/json';
+  
+  // Check if we have a request body example
+  if (requestBodyExample) {
+    requestBodyContent = requestBodyExample;
+  } 
+  // If no example but we have body parameters, generate a sample
+  else if (bodyParameters && bodyParameters.length > 0) {
+    requestBodyContent = generateRequestBodyFromParameters(bodyParameters);
+  }
+  
+  if (!requestBodyContent) {
     return (
       <div className="text-center py-4" style={{ color: colors.textSecondary }}>
         <Info size={20} className="mx-auto mb-2 opacity-50" />
         <p className="text-sm">No request body example available</p>
+        {bodyParameters && bodyParameters.length === 0 && method && !methodsWithoutBody.includes(method?.toUpperCase()) && (
+          <p className="text-xs mt-2 opacity-70">
+            This {method} endpoint doesn't have any body parameters configured.
+          </p>
+        )}
       </div>
     );
   }
   
   let formattedBody = '';
-  let language = 'json';
-  let contentType = 'application/json';
   
-  // Extract the actual body content based on protocol
+  // Process based on protocol type
   if (protocolType === 'soap') {
     // SOAP: Extract XML from the requestBodyExample object
-    if (typeof requestBodyExample === 'object' && requestBodyExample.xml) {
-      formattedBody = requestBodyExample.xml;
-    } else if (typeof requestBodyExample === 'string') {
+    if (typeof requestBodyContent === 'object' && requestBodyContent.xml) {
+      formattedBody = requestBodyContent.xml;
+    } else if (typeof requestBodyContent === 'string') {
       try {
-        const parsed = JSON.parse(requestBodyExample);
-        formattedBody = parsed.xml || requestBodyExample;
+        const parsed = JSON.parse(requestBodyContent);
+        formattedBody = parsed.xml || requestBodyContent;
       } catch {
-        formattedBody = requestBodyExample;
+        formattedBody = requestBodyContent;
       }
     } else {
-      formattedBody = JSON.stringify(requestBodyExample, null, 2);
+      formattedBody = JSON.stringify(requestBodyContent, null, 2);
     }
     language = 'xml';
     contentType = 'application/soap+xml';
   } 
   else if (protocolType === 'graphql') {
     // GraphQL: Extract query and variables
-    if (typeof requestBodyExample === 'object') {
-      if (requestBodyExample.query) {
-        let graphQLString = `${requestBodyExample.operationType || 'query'} ${requestBodyExample.operationName || ''} ${requestBodyExample.query}`;
-        if (requestBodyExample.variables && Object.keys(requestBodyExample.variables).length > 0) {
-          graphQLString += `\n\nVariables:\n${JSON.stringify(requestBodyExample.variables, null, 2)}`;
+    if (typeof requestBodyContent === 'object') {
+      if (requestBodyContent.query) {
+        let graphQLString = `${requestBodyContent.operationType || 'query'} ${requestBodyContent.operationName || ''} ${requestBodyContent.query}`;
+        if (requestBodyContent.variables && Object.keys(requestBodyContent.variables).length > 0) {
+          graphQLString += `\n\nVariables:\n${JSON.stringify(requestBodyContent.variables, null, 2)}`;
         }
         formattedBody = graphQLString;
       } else {
-        formattedBody = JSON.stringify(requestBodyExample, null, 2);
+        formattedBody = JSON.stringify(requestBodyContent, null, 2);
       }
-    } else if (typeof requestBodyExample === 'string') {
+    } else if (typeof requestBodyContent === 'string') {
       try {
-        const parsed = JSON.parse(requestBodyExample);
+        const parsed = JSON.parse(requestBodyContent);
         if (parsed.query) {
           let graphQLString = `${parsed.operationType || 'query'} ${parsed.operationName || ''} ${parsed.query}`;
           if (parsed.variables && Object.keys(parsed.variables).length > 0) {
@@ -186,10 +268,10 @@ const ProtocolRequestBody = ({ endpointDetails, colors, onCopy }) => {
           }
           formattedBody = graphQLString;
         } else {
-          formattedBody = requestBodyExample;
+          formattedBody = requestBodyContent;
         }
       } catch {
-        formattedBody = requestBodyExample;
+        formattedBody = requestBodyContent;
       }
     }
     language = 'graphql';
@@ -197,14 +279,16 @@ const ProtocolRequestBody = ({ endpointDetails, colors, onCopy }) => {
   }
   else {
     // REST: Standard JSON or other format
-    if (typeof requestBodyExample === 'object') {
-      formattedBody = JSON.stringify(requestBodyExample, null, 2);
-    } else if (typeof requestBodyExample === 'string') {
+    if (typeof requestBodyContent === 'object') {
+      formattedBody = JSON.stringify(requestBodyContent, null, 2);
+    } else if (typeof requestBodyContent === 'string') {
+      // Try to parse as JSON first
       try {
-        const parsed = JSON.parse(requestBodyExample);
+        const parsed = JSON.parse(requestBodyContent);
         formattedBody = JSON.stringify(parsed, null, 2);
       } catch {
-        formattedBody = requestBodyExample;
+        // If not JSON, use as is
+        formattedBody = requestBodyContent;
         language = requestBodyType === 'xml' ? 'xml' : 'text';
       }
     }
@@ -1055,249 +1139,222 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
 
   // Fetch endpoint details - with protocol-specific response extraction
   const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
-    if (!authToken || !collectionId || !endpointId) return;
+  if (!authToken || !collectionId || !endpointId) return;
 
-    try {
-      setIsLoading(prev => ({ ...prev, endpointDetails: true }));
-      const response = await getEndpointDetails(authToken, collectionId, endpointId);
-      const handledResponse = handleDocumentationResponse(response);
+  try {
+    setIsLoading(prev => ({ ...prev, endpointDetails: true }));
+    const response = await getEndpointDetails(authToken, collectionId, endpointId);
+    const handledResponse = handleDocumentationResponse(response);
+    
+    let endpointData = null;
+    if (handledResponse && handledResponse.data) {
+      endpointData = handledResponse.data;
+    } else if (handledResponse && handledResponse.endpoint) {
+      endpointData = handledResponse.endpoint;
+    } else if (handledResponse && typeof handledResponse === 'object') {
+      endpointData = handledResponse;
+    }
+    
+    if (endpointData) {
+      const protocolType = endpointData.protocolType || endpointData.metadata?.protocolType || 'rest';
       
-      let endpointData = null;
-      if (handledResponse && handledResponse.data) {
-        endpointData = handledResponse.data;
-      } else if (handledResponse && handledResponse.endpoint) {
-        endpointData = handledResponse.endpoint;
-      } else if (handledResponse && typeof handledResponse === 'object') {
-        endpointData = handledResponse;
+      // Process parameters
+      const pathParams = [];
+      const queryParams = [];
+      const bodyParams = [];
+      const allHeaders = [];
+      
+      if (endpointData.parameters && Array.isArray(endpointData.parameters)) {
+        endpointData.parameters.forEach((param) => {
+          const location = (param.parameterLocation || param.in || '').toLowerCase();
+          const isBodyParam = param.bodyParameter === true || param.inBody === true || location === 'body';
+          
+          if (isBodyParam) {
+            bodyParams.push(param);
+          } else if (location === 'path') {
+            pathParams.push(param);
+          } else if (location === 'query') {
+            queryParams.push(param);
+          } else if (location === 'header') {
+            allHeaders.push({
+              key: param.key || param.name,
+              value: param.example || param.defaultValue || '',
+              description: param.description,
+              required: param.required,
+              type: param.type
+            });
+          }
+        });
       }
       
-      if (endpointData) {
-        const protocolType = endpointData.protocolType || endpointData.metadata?.protocolType || 'rest';
-        
-        // Process parameters
-        const pathParams = [];
-        const queryParams = [];
-        const bodyParams = [];
-        const allHeaders = [];
-        
-        if (endpointData.parameters && Array.isArray(endpointData.parameters)) {
-          endpointData.parameters.forEach((param) => {
-            const location = (param.parameterLocation || param.in || '').toLowerCase();
-            const isBodyParam = param.bodyParameter === true || param.inBody === true || location === 'body';
-            
-            if (isBodyParam) {
-              bodyParams.push(param);
-            } else if (location === 'path') {
-              pathParams.push(param);
-            } else if (location === 'query') {
-              queryParams.push(param);
-            } else if (location === 'header') {
-              allHeaders.push({
-                key: param.key || param.name,
-                value: param.example || param.defaultValue || '',
-                description: param.description,
-                required: param.required,
-                type: param.type
-              });
-            }
-          });
-        }
-        
-        if (endpointData.headers && Array.isArray(endpointData.headers)) {
-          endpointData.headers.forEach(header => {
-            if (!allHeaders.some(h => h.key === header.key)) {
-              allHeaders.push(header);
-            }
-          });
-        }
-        
-        // Process request body example based on protocol type
-        let requestBodyExample = endpointData.requestBodyExample;
-        if (requestBodyExample && typeof requestBodyExample === 'string') {
-          try {
-            requestBodyExample = JSON.parse(requestBodyExample);
-          } catch (e) {
-            // Keep as string if parsing fails
+      if (endpointData.headers && Array.isArray(endpointData.headers)) {
+        endpointData.headers.forEach(header => {
+          if (!allHeaders.some(h => h.key === header.key)) {
+            allHeaders.push(header);
           }
+        });
+      }
+      
+      // ENHANCED: Try multiple sources for request body example
+      let requestBodyExample = null;
+      let requestBodyType = endpointData.requestBodyType || endpointData.bodyType || 'json';
+      
+      // Try to get request body from various possible fields
+      const possibleBodyFields = [
+        'requestBodyExample',
+        'requestBody',
+        'bodyExample',
+        'body',
+        'exampleRequestBody',
+        'requestBodySchema',
+        'bodySchema',
+        'schema'
+      ];
+      
+      for (const field of possibleBodyFields) {
+        if (endpointData[field]) {
+          requestBodyExample = endpointData[field];
+          console.log(`Found request body from field: ${field}`, requestBodyExample);
+          break;
         }
-        
-        // For SOAP, ensure request body has proper XML structure
-        if (protocolType === 'soap' && requestBodyExample && typeof requestBodyExample === 'object' && !requestBodyExample.xml) {
-          requestBodyExample = { xml: JSON.stringify(requestBodyExample, null, 2) };
+      }
+      
+      // If still no example but we have body parameters, create a sample
+      if (!requestBodyExample && bodyParams.length > 0) {
+        console.log('No request body example found, creating from body parameters:', bodyParams);
+        const sampleBody = {};
+        bodyParams.forEach(param => {
+          if (param.example) {
+            try {
+              sampleBody[param.name] = JSON.parse(param.example);
+            } catch {
+              sampleBody[param.name] = param.example;
+            }
+          } else if (param.defaultValue) {
+            sampleBody[param.name] = param.defaultValue;
+          } else {
+            // Generate based on type
+            switch (param.type?.toLowerCase()) {
+              case 'string':
+                sampleBody[param.name] = "string";
+                break;
+              case 'number':
+              case 'integer':
+                sampleBody[param.name] = 0;
+                break;
+              case 'boolean':
+                sampleBody[param.name] = true;
+                break;
+              case 'array':
+                sampleBody[param.name] = [];
+                break;
+              case 'object':
+                sampleBody[param.name] = {};
+                break;
+              default:
+                sampleBody[param.name] = param.name;
+            }
+          }
+        });
+        requestBodyExample = sampleBody;
+        console.log('Generated sample body from parameters:', requestBodyExample);
+      }
+      
+      // If requestBodyExample is a string, try to parse it
+      if (requestBodyExample && typeof requestBodyExample === 'string') {
+        try {
+          if (requestBodyExample.trim().startsWith('{') || requestBodyExample.trim().startsWith('[')) {
+            requestBodyExample = JSON.parse(requestBodyExample);
+          }
+        } catch (e) {
+          console.warn('Failed to parse request body JSON:', e);
         }
-        
-        // Process response examples based on protocol type
-        let responseExamples = [];
-        
-        if (endpointData.responseExamples && Array.isArray(endpointData.responseExamples)) {
-          responseExamples = endpointData.responseExamples.map(example => {
-            let processedExample = example.example;
-            
-            // Parse string examples if they are JSON strings
-            if (typeof processedExample === 'string' && (processedExample.startsWith('{') || processedExample.startsWith('['))) {
-              try {
-                processedExample = JSON.parse(processedExample);
-              } catch (e) {
-                // Keep as string if parsing fails
-              }
-            }
-            
-            // For SOAP, convert JSON response to XML format
-            if (protocolType === 'soap') {
-              if (processedExample && typeof processedExample === 'object') {
-                // Convert the JSON response to proper SOAP XML
-                let xmlContent = '';
-                if (processedExample.success !== undefined) {
-                  xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <Response>
-      <success>${processedExample.success}</success>
-      ${processedExample.data ? `<data>${JSON.stringify(processedExample.data)}</data>` : ''}
-      ${processedExample.message ? `<message>${processedExample.message}</message>` : ''}
-    </Response>
-  </soap:Body>
-</soap:Envelope>`;
-                } else if (processedExample.error) {
-                  xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <Fault>
-      <faultcode>${processedExample.error.code || 'ERROR'}</faultcode>
-      <faultstring>${processedExample.error.message || 'Error occurred'}</faultstring>
-      <detail>${JSON.stringify(processedExample.error.details || {})}</detail>
-    </Fault>
-  </soap:Body>
-</soap:Envelope>`;
-                }
-                processedExample = { xml: xmlContent };
-              } else if (typeof processedExample === 'string' && !processedExample.includes('<?xml')) {
-                // If it's a string that's not XML, wrap it in SOAP envelope
-                processedExample = { xml: `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <Response>${processedExample}</Response>
-  </soap:Body>
-</soap:Envelope>` };
-              }
-            }
-            // For GraphQL, ensure proper structure
-            else if (protocolType === 'graphql' && processedExample && typeof processedExample === 'object' && !processedExample.data && !processedExample.errors) {
-              processedExample = { data: processedExample };
-            }
-            
-            return {
-              statusCode: example.statusCode,
-              description: example.description,
-              example: processedExample,
-              contentType: example.contentType || 
-                (protocolType === 'soap' ? 'application/soap+xml' : 
-                 protocolType === 'graphql' ? 'application/graphql+json' : 
-                 'application/json'),
-              statusBadge: example.statusCode >= 200 && example.statusCode < 300 ? 'success' : 'error'
-            };
-          });
-        } else if (endpointData.responseExample) {
-          let processedExample = endpointData.responseExample;
+      }
+      
+      // For SOAP, ensure request body has proper XML structure
+      if (protocolType === 'soap' && requestBodyExample && typeof requestBodyExample === 'object' && !requestBodyExample.xml) {
+        requestBodyExample = { xml: JSON.stringify(requestBodyExample, null, 2) };
+      }
+      
+      // Process response examples
+      let responseExamples = [];
+      
+      if (endpointData.responseExamples && Array.isArray(endpointData.responseExamples)) {
+        responseExamples = endpointData.responseExamples.map(example => {
+          let processedExample = example.example;
           
-          // Parse string examples if they are JSON strings
           if (typeof processedExample === 'string' && (processedExample.startsWith('{') || processedExample.startsWith('['))) {
             try {
               processedExample = JSON.parse(processedExample);
-            } catch (e) {
-              // Keep as string if parsing fails
-            }
+            } catch (e) {}
           }
           
-          // For SOAP, convert JSON response to XML format
-          if (protocolType === 'soap') {
-            if (processedExample && typeof processedExample === 'object') {
-              let xmlContent = '';
-              if (processedExample.success !== undefined) {
-                xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <Response>
-      <success>${processedExample.success}</success>
-      ${processedExample.data ? `<data>${JSON.stringify(processedExample.data)}</data>` : ''}
-      ${processedExample.message ? `<message>${processedExample.message}</message>` : ''}
-    </Response>
-  </soap:Body>
-</soap:Envelope>`;
-              } else if (processedExample.error) {
-                xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <Fault>
-      <faultcode>${processedExample.error.code || 'ERROR'}</faultcode>
-      <faultstring>${processedExample.error.message || 'Error occurred'}</faultstring>
-      <detail>${JSON.stringify(processedExample.error.details || {})}</detail>
-    </Fault>
-  </soap:Body>
-</soap:Envelope>`;
-              }
-              processedExample = { xml: xmlContent };
-            } else if (typeof processedExample === 'string' && !processedExample.includes('<?xml')) {
-              processedExample = { xml: `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <Response>${processedExample}</Response>
-  </soap:Body>
-</soap:Envelope>` };
-            }
-          } else if (protocolType === 'graphql' && processedExample && typeof processedExample === 'object' && !processedExample.data) {
-            processedExample = { data: processedExample };
-          }
-          
-          responseExamples = [{
-            statusCode: 200,
-            description: 'Success response',
+          return {
+            statusCode: example.statusCode,
+            description: example.description,
             example: processedExample,
-            contentType: protocolType === 'soap' ? 'application/soap+xml' : 
-                         protocolType === 'graphql' ? 'application/graphql+json' : 
-                         'application/json',
-            statusBadge: 'success'
-          }];
+            contentType: example.contentType || 'application/json',
+            statusBadge: example.statusCode >= 200 && example.statusCode < 300 ? 'success' : 'error'
+          };
+        });
+      } else if (endpointData.responseExample) {
+        let processedExample = endpointData.responseExample;
+        
+        if (typeof processedExample === 'string' && (processedExample.startsWith('{') || processedExample.startsWith('['))) {
+          try {
+            processedExample = JSON.parse(processedExample);
+          } catch (e) {}
         }
         
-        const formattedDetails = {
-          id: endpointData.endpointId || endpointData.id,
-          name: endpointData.name || '',
-          method: endpointData.method || 'GET',
-          url: endpointData.url || endpointData.path || '',
-          description: endpointData.description || '',
-          category: endpointData.category || 'general',
-          tags: endpointData.tags || [],
-          lastModified: endpointData.lastModified,
-          timeAgo: getTimeAgo(endpointData.lastModified),
-          version: endpointData.version || '1.0.0',
-          requiresAuthentication: endpointData.requiresAuthentication || false,
-          deprecated: endpointData.deprecated || false,
-          headers: allHeaders,
-          pathParameters: pathParams,
-          queryParameters: queryParams,
-          bodyParameters: bodyParams,
-          requestBodyExample: requestBodyExample,
-          requestBodyType: endpointData.requestBodyType,
-          protocolType: protocolType,
-          metadata: endpointData.metadata || {},
-          responseExamples: responseExamples,
-          changelog: endpointData.changelog || []
-        };
-        
-        setEndpointDetails(formattedDetails);
-        
-        if (formattedDetails.changelog && formattedDetails.changelog.length > 0) {
-          setChangelog(formattedDetails.changelog);
-        }
+        responseExamples = [{
+          statusCode: 200,
+          description: 'Success response',
+          example: processedExample,
+          contentType: 'application/json',
+          statusBadge: 'success'
+        }];
       }
-    } catch (error) {
-      console.error('Error loading endpoint details:', error);
-      showToast(`Failed to load endpoint details: ${error.message}`, 'error');
-    } finally {
-      setIsLoading(prev => ({ ...prev, endpointDetails: false }));
+      
+      const formattedDetails = {
+        id: endpointData.endpointId || endpointData.id,
+        name: endpointData.name || '',
+        method: endpointData.method || 'GET',
+        url: endpointData.url || endpointData.path || '',
+        description: endpointData.description || '',
+        category: endpointData.category || 'general',
+        tags: endpointData.tags || [],
+        lastModified: endpointData.lastModified,
+        timeAgo: getTimeAgo(endpointData.lastModified),
+        version: endpointData.version || '1.0.0',
+        requiresAuthentication: endpointData.requiresAuthentication || false,
+        deprecated: endpointData.deprecated || false,
+        headers: allHeaders,
+        pathParameters: pathParams,
+        queryParameters: queryParams,
+        bodyParameters: bodyParams,
+        requestBodyExample: requestBodyExample,
+        requestBodyType: requestBodyType,
+        protocolType: protocolType,
+        metadata: endpointData.metadata || {},
+        responseExamples: responseExamples,
+        changelog: endpointData.changelog || []
+      };
+      
+      console.log('Final formatted details - request body:', formattedDetails.requestBodyExample);
+      
+      setEndpointDetails(formattedDetails);
+      
+      if (formattedDetails.changelog && formattedDetails.changelog.length > 0) {
+        setChangelog(formattedDetails.changelog);
+      }
     }
-  }, [authToken]);
+  } catch (error) {
+    console.error('Error loading endpoint details:', error);
+    showToast(`Failed to load endpoint details: ${error.message}`, 'error');
+  } finally {
+    setIsLoading(prev => ({ ...prev, endpointDetails: false }));
+  }
+}, [authToken]);
 
   // Fetch code examples
   const fetchCodeExamples = useCallback(async (endpointId, language) => {
@@ -1726,7 +1783,6 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                     </span>
                   )}
                   <span className="text-xs px-2 py-1 rounded-full flex items-center gap-1" style={{ 
-                      // backgroundColor: `${colors.warning}20`,
                       color: colors.textSecondary
                     }}>
                       <Info size={12} /> {endpointDetails.description}
@@ -1830,23 +1886,32 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
               </>
             )}
 
-            {/* Request Body Section - Show for all protocols if available */}
-            {endpointDetails.requestBodyExample && (
-              <div className="rounded-xl border hover-lift" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
-                <div className="px-6 py-4 border-b" style={{ borderColor: colors.border }}>
-                  <h3 className="text-lg font-medium" style={{ color: colors.text }}>
-                    Request Body
-                  </h3>
+            {/* Request Body Section - FIXED: Show if there's an example OR body parameters for POST/PUT/PATCH */}
+            {(() => {
+              const hasRequestBodyExample = endpointDetails.requestBodyExample;
+              const hasBodyParameters = endpointDetails.bodyParameters && endpointDetails.bodyParameters.length > 0;
+              const isBodyMethod = ['POST', 'PUT', 'PATCH'].includes(endpointDetails.method?.toUpperCase());
+              const shouldShowRequestBody = hasRequestBodyExample || (hasBodyParameters && isBodyMethod);
+              
+              if (!shouldShowRequestBody) return null;
+              
+              return (
+                <div className="rounded-xl border hover-lift" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
+                  <div className="px-6 py-4 border-b" style={{ borderColor: colors.border }}>
+                    <h3 className="text-lg font-medium" style={{ color: colors.text }}>
+                      Request Body
+                    </h3>
+                  </div>
+                  <div className="p-5">
+                    <ProtocolRequestBody 
+                      endpointDetails={endpointDetails} 
+                      colors={colors} 
+                      onCopy={copyToClipboard}
+                    />
+                  </div>
                 </div>
-                <div className="p-5">
-                  <ProtocolRequestBody 
-                    endpointDetails={endpointDetails} 
-                    colors={colors} 
-                    onCopy={copyToClipboard}
-                  />
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Response Examples - Protocol Specific */}
             <div className="rounded-xl border hover-lift" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
