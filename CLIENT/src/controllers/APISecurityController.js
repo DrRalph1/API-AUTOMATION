@@ -1263,12 +1263,23 @@ export const isValidCIDR = (ipRange) => {
   // Check for wildcard patterns (e.g., "192.168.1.*", "192.168.*.*", "10.*.*.*")
   if (ipRange.includes('*')) {
     const parts = ipRange.split('.');
+    
+    // Must have exactly 4 parts for IPv4 wildcard
     if (parts.length !== 4) return false;
     
     for (let i = 0; i < parts.length; i++) {
-      if (parts[i] === '*') continue;
-      const num = parseInt(parts[i], 10);
-      if (isNaN(num) || num < 0 || num > 255) return false;
+      const part = parts[i];
+      if (part === '*') continue;
+      
+      // Check if it's a valid number
+      const num = parseInt(part, 10);
+      if (isNaN(num)) return false;
+      
+      // Check if it's within valid IPv4 range
+      if (num < 0 || num > 255) return false;
+      
+      // Check if it's a string representation of a number (no leading zeros unless it's "0")
+      if (part.length > 1 && part.startsWith('0')) return false;
     }
     return true;
   }
@@ -1283,13 +1294,17 @@ export const isValidCIDR = (ipRange) => {
   }
   
   // Validate IPv4 octets if it's IPv4
-  if (ipv4CidrRegex.test(ipRange)) {
+  if (ipv4CidrRegex.test(ipRange) && !ipRange.includes(':')) {
     const ipPart = ipRange.split('/')[0];
     const octets = ipPart.split('.');
     if (octets.length === 4) {
       for (const octet of octets) {
         const num = parseInt(octet, 10);
         if (isNaN(num) || num < 0 || num > 255) {
+          return false;
+        }
+        // Check for leading zeros
+        if (octet.length > 1 && octet.startsWith('0')) {
           return false;
         }
       }
@@ -1330,17 +1345,22 @@ export const getCIDRDescription = (cidr) => {
   if (cidr.includes('*')) {
     const parts = cidr.split('.');
     let starCount = parts.filter(p => p === '*').length;
+    let fixedParts = parts.filter(p => p !== '*');
     
     if (starCount === 1) {
-      return `All IPs in ${cidr.replace('*', 'x')} range (256 addresses)`;
+      // e.g., 192.168.1.*
+      return `All IPs in ${fixedParts.join('.')}.x range (256 addresses)`;
     } else if (starCount === 2) {
-      return `All IPs in ${cidr.replace(/\*/g, 'x')} range (65,536 addresses)`;
+      // e.g., 192.168.*.*
+      return `All IPs in ${fixedParts.join('.')}.x.x range (65,536 addresses)`;
     } else if (starCount === 3) {
-      return `All IPs in ${cidr.replace(/\*/g, 'x')} range (16,777,216 addresses)`;
+      // e.g., 10.*.*.*
+      return `All IPs in ${fixedParts[0]}.x.x.x range (16,777,216 addresses)`;
     }
     return `Wildcard pattern: ${cidr}`;
   }
   
+  // Rest of the function remains the same...
   if (!isValidCIDR(cidr)) return 'Invalid CIDR';
   
   if (cidr.includes('/')) {

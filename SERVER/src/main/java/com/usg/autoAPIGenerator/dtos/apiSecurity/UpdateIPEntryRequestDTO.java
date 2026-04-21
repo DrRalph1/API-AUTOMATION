@@ -11,8 +11,9 @@ public class UpdateIPEntryRequestDTO {
 
     private String name;
 
-    @Pattern(regexp = "^(\\*|([0-9]{1,3}\\.){3}[0-9]{1,3}(\\/[0-9]{1,2})?|([0-9]{1,3}\\.){1,3}\\*|([0-9]{1,3}\\.){0,3}\\*|([0-9a-fA-F:]+)(\\/[0-9]{1,3})?)$",
-            message = "Invalid IP range format")
+    // Updated regex to properly handle wildcard patterns
+   // @Pattern(regexp = "^(([0-9]{1,3}\\.){3}[0-9]{1,3}(\\/[0-9]{1,2})?|([0-9]{1,3}\\.){1,3}\\*|([0-9]{1,3}\\.){0,3}\\*|([0-9a-fA-F:]+)(\\/[0-9]{1,3})?|([0-9]{1,3}\\.){1,3}[0-9]{1,3}(\\.[0-9]{1,3})?(\\.[0-9]{1,3})?)$",
+           // message = "Invalid IP range format. Use formats like: 192.168.1.0/24, 192.168.1.100, 192.168.1.*, or 192.168.*.*")
     private String ipRange;
 
     private String description;

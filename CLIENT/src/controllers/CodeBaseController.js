@@ -992,7 +992,7 @@ export const getDefaultQuickStartGuide = (language) => {
       steps: [
         { step: 1, title: 'Install dependencies', command: 'mvn install' },
         { step: 2, title: 'Run application', command: 'mvn spring-boot:run' },
-        { step: 3, title: 'Test API', description: 'Open http://192.168.0.127:4789/swagger-ui.html' }
+        { step: 3, title: 'Test API', description: 'Open http://10.203.18.98:4789/swagger-ui.html' }
       ],
       configuration: {
         port: 8080,
