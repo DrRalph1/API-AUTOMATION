@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.Map;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -22,5 +24,5 @@ public class ExecuteApiResponseDTO {
     private Integer responseCode;
     private String contentType;  // "application/json" or "application/xml"
     private String protocolType; // "rest", "soap", "graphql"
-//    private Map<String, Object> error;
+    private Map<String, Object> error;
 }

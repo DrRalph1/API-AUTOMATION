@@ -91,6 +91,13 @@ public class GeneratedApiEntity {
     @Column(name = "owner")
     private String owner;
 
+    // Add this field to your GeneratedApiEntity class
+    @Column(name = "rate_limit")
+    private Integer rateLimit; // Requests per minute, or null for no limit
+
+    @Column(name = "rate_limit_duration_minutes")
+    private Integer rateLimitDurationMinutes; // Default 1 minute
+
     @Column(name = "database_type", length = 50)
     private String databaseType; // "oracle", "postgresql", "mysql", etc.
 

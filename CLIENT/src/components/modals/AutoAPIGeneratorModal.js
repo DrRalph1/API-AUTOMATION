@@ -5324,7 +5324,9 @@ useEffect(() => {
 // ============ FULLY DYNAMIC AUTO-EXTRACT PARAMETERS AND MAPPINGS ==========
 useEffect(() => {
   // Only run in custom query mode
-  if ((sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) && customQuery && customQuery.trim()) {
+    if ((sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) && 
+      customQuery && customQuery.trim() && 
+      !isEditing) { 
     console.log('🔍 Dynamic extraction from custom query');
     
     // ============ 1. DYNAMIC PARAMETER EXTRACTION ==========
@@ -6472,6 +6474,27 @@ const populateFormFromApiData = useCallback(async (apiData) => {
             // Check if this is a file parameter
             const isFileParam = p.oracleType === 'FILE' || p.oracleType === 'BLOB' || p.oracleType === 'BYTEA' || p.oracleType === 'MULTIPART_FILE';
             
+            // CRITICAL FIX: Preserve the original parameter location
+            // Don't override it with default logic
+            let location = p.parameterLocation;
+            
+            // If location is missing, try to determine from other fields
+            if (!location) {
+                if (p.inBody === true || p.inBody === 'true') {
+                    location = 'body';
+                } else if (p.paramMode === 'OUT' || p.paramMode === 'IN/OUT') {
+                    location = 'body';
+                } else {
+                    location = 'query'; // fallback
+                }
+            }
+            
+            // ALSO CRITICAL: Preserve the original inBody value
+            let inBodyValue = p.inBody;
+            if (inBodyValue === undefined) {
+                inBodyValue = location === 'body';
+            }
+            
             return {
                 ...p,
                 id: p.id || `param-${Date.now()}-${idx}`,
@@ -6479,20 +6502,22 @@ const populateFormFromApiData = useCallback(async (apiData) => {
                 dbColumn: p.dbColumn || p.key,
                 oracleType: p.oracleType || p.dataType || 'VARCHAR2',
                 apiType: p.apiType || (isFileParam ? 'file' : 'string'),
-                parameterLocation: p.parameterLocation || (isCustomQueryApi ? 'query' : 'body'),
+                parameterLocation: location, // Use preserved location
                 required: isPathParam ? true : (p.required !== undefined ? p.required : true),
                 description: p.description || `Parameter: ${p.key || p.parameterName}`,
                 example: p.example || (isFileParam ? 'Select a file...' : ''),
                 validationPattern: p.validationPattern || '',
                 defaultValue: p.defaultValue || '',
-                inBody: p.inBody !== undefined ? p.inBody : (p.parameterLocation === 'body'),
+                inBody: inBodyValue, // Use preserved inBody value
                 isPrimaryKey: p.isPrimaryKey || false,
                 paramMode: p.paramMode || (isCustomQueryApi ? 'IN' : 'IN'),
                 _isPathParam: isPathParam
             };
         });
         setParameters(paramsWithIds);
-        console.log('📦 Loaded parameters from API data:', paramsWithIds.length);
+        console.log('📦 Loaded parameters from API data:', paramsWithIds);
+        // Add debug log to verify loaded locations
+        console.log('🔍 Parameter locations after load:', paramsWithIds.map(p => ({ key: p.key, location: p.parameterLocation, inBody: p.inBody })));
     }
 
     // ============ SET RESPONSE MAPPINGS ============
@@ -6864,8 +6889,30 @@ if (protocolType === 'soap') {
           cleanKey = `param_${index + 1}`;
         }
         
-        // Determine parameter location based on mode and HTTP method
-        let parameterLocation = param.parameterLocation || 'query';
+        // Determine parameter location - PRIORITIZE existing location
+        let parameterLocation = param.parameterLocation;
+        
+        // If not set, try to determine from paramMode or other hints
+        if (!parameterLocation) {
+            const isInParam = normalizedMode === 'IN';
+            
+            // Check if this is marked as a body parameter
+            if (param.inBody === true || param.inBody === 'true' || param.paramType === 'body') {
+                parameterLocation = 'body';
+            }
+            // Check if it's a path parameter
+            else if (param.isPathParam === true || param._isPathParam === true) {
+                parameterLocation = 'path';
+            }
+            // Default based on HTTP method
+            else if (isInParam && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
+                parameterLocation = 'body';
+            } else if (isInParam && httpMethod === 'GET') {
+                parameterLocation = 'query';
+            } else {
+                parameterLocation = 'query';
+            }
+        }
         
         const isInParam = normalizedMode === 'IN';
         const isOutParam = normalizedMode === 'OUT' || normalizedMode === 'IN/OUT' || normalizedMode === 'IN_OUT';
@@ -10473,126 +10520,64 @@ COMMIT;
                             type="radio"
                             value="database_object"
                             checked={sourceType === 'database_object'}
-                            onChange={(e) => {
+                            onChange={async (e) => {
+                              console.log('🔄 Switching to Database Object mode');
+                              
                               setSourceType(e.target.value);
-                              
-                              // ============ CRITICAL FIX: Clear custom query data ============
-                              console.log('🔄 Switching to Database Object mode - Clearing custom query data');
-                              
-                              // 1. Reset custom query related states
                               setIsCustomQuery(false);
                               setIsEditingCustomQuery(false);
-                              setCustomQuery('');
-                              setOriginalCustomQuery('');
                               
-                              // 2. Clear custom query parameters and response mappings
-                              setParameters([]);
-                              setResponseMappings([]);
+                              // If we have a selected database object, load its parameters
+                              if (selectedDbObject) {
+                                console.log('📦 Loading parameters from database object:', selectedDbObject.name);
+                                setLoading(true);
+                                try {
+                                  // This will populate parameters with the correct locations
+                                  // based on the object type, HTTP method, etc.
+                                  await populateFormFromObject(selectedDbObject, true);
+                                } catch (error) {
+                                  console.error('❌ Error loading database object:', error);
+                                } finally {
+                                  setLoading(false);
+                                }
+                              } else if (!isEditing) {
+                                // No object selected, show the object selector
+                                setShowObjectSelector(true);
+                              }
                               
-                              // 3. Reset file upload config (if it was set for custom query)
-                              setFileUploadConfig({
-                                maxFileSize: 10485760,
-                                allowedFileTypes: ['*/*'],
-                                multipleFiles: false,
-                                fileParameterName: 'file'
-                              });
-                              
-                              // 4. Clear validation errors
+                              // Clear validation errors
                               setValidationErrors(prev => ({ 
                                 ...prev, 
                                 customQuery: null, 
                                 schemaName: null, 
                                 objectName: null 
                               }));
-                              
-                              // 5. Reset request body type if it was changed for custom query
-                              setRequestBody(prev => ({
-                                ...prev,
-                                bodyType: 'none',  // Reset to default
-                                sample: null
-                              }));
-                              
-                              // 6. Handle database object selection
-                              if (!selectedDbObject && !isEditing) {
-                                // No database object selected yet - show the object selector
-                                console.log('📦 No database object selected, showing object selector');
-                                setShowObjectSelector(true);
-                              } else if (selectedDbObject) {
-                                // We have a database object - restore its parameters and mappings
-                                console.log('📦 Restoring database object:', selectedDbObject.name);
-                                
-                                // Show loading state while restoring
-                                setLoading(true);
-                                
-                                // Use setTimeout to ensure state updates are processed
-                                setTimeout(async () => {
-                                  try {
-                                    // Re-populate form from the selected database object
-                                    // Pass preserveExistingApiDetails = true to keep API name/code if they were set
-                                    await populateFormFromObject(selectedDbObject, true);
-                                    console.log('✅ Successfully restored database object parameters and mappings');
-                                  } catch (error) {
-                                    console.error('❌ Error restoring database object:', error);
-                                  } finally {
-                                    setLoading(false);
-                                  }
-                                }, 0);
-                              }
                             }}
                             className="h-4 w-4"
                             style={{ accentColor: themeColors.info }}
                           />
                           <span className="text-sm" style={{ color: themeColors.text }}>Database Object</span>
                         </label>
-                                                                        <label className="flex items-center gap-2">
+                        
+                        <label className="flex items-center gap-2">
                           <input
                             type="radio"
                             value="custom_query"
                             checked={sourceType === 'custom_query'}
                             onChange={(e) => {
+                              console.log('🔄 Switching to Custom Query mode');
+                              
                               setSourceType(e.target.value);
-                              // Set custom query mode flags
                               setIsCustomQuery(true);
                               setIsEditingCustomQuery(true);
                               
-                              // ============ CRITICAL FIX: Clear database object data ============
-                              console.log('🔄 Switching to Custom Query mode - Clearing database object data');
-                              
-                              // 1. Clear database object reference
-                              setSelectedDbObject(null);
-                              
-                              // 2. Clear any existing parameters and response mappings (from database object)
+                              // Clear database object parameters - we'll extract from query
                               setParameters([]);
                               setResponseMappings([]);
                               
-                              // 3. Reset schema config (since it's no longer relevant)
-                              setSchemaConfig({
-                                schemaName: '',
-                                objectType: '',
-                                objectName: '',
-                                operation: 'SELECT',
-                                primaryKeyColumn: '',
-                                sequenceName: '',
-                                enablePagination: true,
-                                pageSize: 10,
-                                enableSorting: true,
-                                defaultSortColumn: '',
-                                defaultSortDirection: 'ASC'
-                              });
-                              
-                              // 4. Clear validation errors for schema
-                              setValidationErrors(prev => ({ 
-                                ...prev, 
-                                schemaName: null, 
-                                objectName: null,
-                                customQuery: null 
-                              }));
-                              
-                              // ============ FIX: Get custom query from state or from selectedObject ============
-                              // Try to get custom query from multiple sources
+                              // Get custom query text
                               let existingCustomQuery = customQuery;
                               
-                              // If customQuery state is empty, try to get it from selectedObject (for edit mode)
                               if (!existingCustomQuery && selectedObject) {
                                 const sourceObj = selectedObject.sourceObject || selectedObject;
                                 const apiData = selectedObject.data || selectedObject;
@@ -10608,48 +10593,45 @@ COMMIT;
                                   '';
                                   
                                 if (existingCustomQuery) {
-                                  console.log('📝 Retrieved custom query from selectedObject:', existingCustomQuery.substring(0, 100));
-                                  // Also update the customQuery state
                                   setCustomQuery(existingCustomQuery);
                                   setOriginalCustomQuery(existingCustomQuery);
                                 }
                               }
                               
-                              // 5. If there's an existing custom query, regenerate its parameters and mappings
+                              // Extract parameters from the query (default to body location for POST)
                               if (existingCustomQuery && existingCustomQuery.trim()) {
-                                console.log('📊 Regenerating parameters from existing custom query');
+                                console.log('📊 Extracting parameters from custom query');
                                 
-                                // Extract parameters from the custom query
+                                // Extract :paramName style parameters
                                 const paramMatches = existingCustomQuery.match(/:\w+/g) || [];
                                 const uniqueParams = [...new Set(paramMatches)];
                                 
                                 if (uniqueParams.length > 0) {
-                                  const regeneratedParams = uniqueParams.map((param, idx) => ({
+                                  const extractedParams = uniqueParams.map((param, idx) => ({
                                     id: `param-${Date.now()}-${idx}`,
                                     key: param.substring(1),
                                     dbColumn: param.substring(1),
                                     oracleType: 'VARCHAR2',
                                     apiType: 'string',
-                                    parameterLocation: 'query',
+                                    parameterLocation: 'body', // Default to body for custom queries with POST
                                     required: true,
                                     description: `Parameter: ${param.substring(1)}`,
                                     example: '',
                                     validationPattern: '',
                                     defaultValue: '',
-                                    inBody: false,
+                                    inBody: true,
                                     isPrimaryKey: false,
                                     paramMode: 'IN',
-                                    _isFromCustomQuery: true  // Mark as custom query parameter
+                                    _isFromCustomQuery: true
                                   }));
-                                  setParameters(regeneratedParams);
-                                  console.log(`✅ Regenerated ${regeneratedParams.length} parameters from custom query`);
+                                  setParameters(extractedParams);
+                                  console.log(`✅ Extracted ${extractedParams.length} parameters from query`);
                                 }
                                 
-                                // Extract response columns from the SELECT clause
+                                // Extract response columns from SELECT clause
                                 const selectMatch = existingCustomQuery.match(/SELECT\s+(.*?)\s+FROM/i);
                                 if (selectMatch && selectMatch[1]) {
                                   const selectClause = selectMatch[1];
-                                  // Split by commas (simple approach - for complex queries you might need a parser)
                                   const columnMatches = selectClause.match(/(?:[^,\s]+\s+AS\s+)?(\w+)/gi) || [];
                                   const uniqueColumns = [...new Set(columnMatches.map(col => {
                                     const asMatch = col.match(/AS\s+(\w+)/i);
@@ -10657,7 +10639,7 @@ COMMIT;
                                   }))];
                                   
                                   if (uniqueColumns.length > 0) {
-                                    const regeneratedMappings = uniqueColumns.slice(0, 20).map((fieldName, idx) => ({
+                                    const extractedMappings = uniqueColumns.slice(0, 20).map((fieldName, idx) => ({
                                       id: `mapping-${Date.now()}-${idx}`,
                                       apiField: fieldName,
                                       dbColumn: fieldName,
@@ -10671,81 +10653,19 @@ COMMIT;
                                       paramMode: 'OUT',
                                       _fromCustomQuery: true
                                     }));
-                                    setResponseMappings(regeneratedMappings);
-                                    console.log(`✅ Regenerated ${regeneratedMappings.length} response mappings from custom query`);
-                                  } else {
-                                    // Fallback: create basic response structure
-                                    setResponseMappings([
-                                      {
-                                        id: `mapping-${Date.now()}-0`,
-                                        apiField: 'id',
-                                        dbColumn: 'id',
-                                        oracleType: 'NUMBER',
-                                        apiType: 'integer',
-                                        format: '',
-                                        nullable: true,
-                                        isPrimaryKey: true,
-                                        includeInResponse: true,
-                                        inResponse: true,
-                                        paramMode: 'OUT'
-                                      },
-                                      {
-                                        id: `mapping-${Date.now()}-1`,
-                                        apiField: 'message',
-                                        dbColumn: 'message',
-                                        oracleType: 'VARCHAR2',
-                                        apiType: 'string',
-                                        format: '',
-                                        nullable: true,
-                                        isPrimaryKey: false,
-                                        includeInResponse: true,
-                                        inResponse: true,
-                                        paramMode: 'OUT'
-                                      }
-                                    ]);
+                                    setResponseMappings(extractedMappings);
+                                    console.log(`✅ Extracted ${extractedMappings.length} response mappings from query`);
                                   }
-                                } else {
-                                  // No SELECT clause found, set basic mappings
-                                  setResponseMappings([
-                                    {
-                                      id: `mapping-${Date.now()}-0`,
-                                      apiField: 'id',
-                                      dbColumn: 'id',
-                                      oracleType: 'NUMBER',
-                                      apiType: 'integer',
-                                      format: '',
-                                      nullable: true,
-                                      isPrimaryKey: true,
-                                      includeInResponse: true,
-                                      inResponse: true,
-                                      paramMode: 'OUT'
-                                    },
-                                    {
-                                      id: `mapping-${Date.now()}-1`,
-                                      apiField: 'message',
-                                      dbColumn: 'message',
-                                      oracleType: 'VARCHAR2',
-                                      apiType: 'string',
-                                      format: '',
-                                      nullable: true,
-                                      isPrimaryKey: false,
-                                      includeInResponse: true,
-                                      inResponse: true,
-                                      paramMode: 'OUT'
-                                    }
-                                  ]);
                                 }
-                              } else {
-                                console.log('🧹 No custom query present, cleared all parameters and mappings');
                               }
                               
-                              // 6. Force a re-trigger of the custom query extraction useEffect
-                              setTimeout(() => {
-                                if (existingCustomQuery && existingCustomQuery.trim()) {
-                                  console.log('🔄 Re-running custom query extraction after switch');
-                                  // The useEffect with [customQuery, sourceType, isCustomQuery, isEditingCustomQuery] will trigger
-                                }
-                              }, 50);
+                              // Clear validation errors
+                              setValidationErrors(prev => ({ 
+                                ...prev, 
+                                customQuery: null, 
+                                schemaName: null, 
+                                objectName: null 
+                              }));
                             }}
                             className="h-4 w-4"
                             style={{ accentColor: themeColors.info }}
@@ -11025,291 +10945,164 @@ COMMIT;
                         Source Type
                       </label>
                       <div className="flex gap-4">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          value="database_object"
-                          checked={sourceType === 'database_object'}
-                          onChange={(e) => {
-                            setSourceType(e.target.value);
-                            
-                            // ============ CRITICAL FIX: Clear custom query data ============
-                            console.log('🔄 Switching to Database Object mode - Clearing custom query data');
-                            
-                            // 1. Reset custom query related states
-                            setIsCustomQuery(false);
-                            setIsEditingCustomQuery(false);
-                            setCustomQuery('');
-                            setOriginalCustomQuery('');
-                            
-                            // 2. Clear custom query parameters and response mappings
-                            setParameters([]);
-                            setResponseMappings([]);
-                            
-                            // 3. Reset file upload config (if it was set for custom query)
-                            setFileUploadConfig({
-                              maxFileSize: 10485760,
-                              allowedFileTypes: ['*/*'],
-                              multipleFiles: false,
-                              fileParameterName: 'file'
-                            });
-                            
-                            // 4. Clear validation errors
-                            setValidationErrors(prev => ({ 
-                              ...prev, 
-                              customQuery: null, 
-                              schemaName: null, 
-                              objectName: null 
-                            }));
-                            
-                            // 5. Reset request body type if it was changed for custom query
-                            setRequestBody(prev => ({
-                              ...prev,
-                              bodyType: 'none',  // Reset to default
-                              sample: null
-                            }));
-                            
-                            // 6. Handle database object selection
-                            if (!selectedDbObject && !isEditing) {
-                              // No database object selected yet - show the object selector
-                              console.log('📦 No database object selected, showing object selector');
-                              setShowObjectSelector(true);
-                            } else if (selectedDbObject) {
-                              // We have a database object - restore its parameters and mappings
-                              console.log('📦 Restoring database object:', selectedDbObject.name);
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            value="database_object"
+                            checked={sourceType === 'database_object'}
+                            onChange={async (e) => {
+                              console.log('🔄 Switching to Database Object mode');
                               
-                              // Show loading state while restoring
-                              setLoading(true);
+                              setSourceType(e.target.value);
+                              setIsCustomQuery(false);
+                              setIsEditingCustomQuery(false);
                               
-                              // Use setTimeout to ensure state updates are processed
-                              setTimeout(async () => {
+                              // If we have a selected database object, load its parameters
+                              if (selectedDbObject) {
+                                console.log('📦 Loading parameters from database object:', selectedDbObject.name);
+                                setLoading(true);
                                 try {
-                                  // Re-populate form from the selected database object
-                                  // Pass preserveExistingApiDetails = true to keep API name/code if they were set
+                                  // This will populate parameters with the correct locations
+                                  // based on the object type, HTTP method, etc.
                                   await populateFormFromObject(selectedDbObject, true);
-                                  console.log('✅ Successfully restored database object parameters and mappings');
                                 } catch (error) {
-                                  console.error('❌ Error restoring database object:', error);
+                                  console.error('❌ Error loading database object:', error);
                                 } finally {
                                   setLoading(false);
                                 }
-                              }, 0);
-                            }
-                          }}
-                          className="h-4 w-4"
-                          style={{ accentColor: themeColors.info }}
-                        />
-                        <span className="text-sm" style={{ color: themeColors.text }}>Database Object</span>
-                      </label>
-                                              <label className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          value="custom_query"
-                          checked={sourceType === 'custom_query'}
-                          onChange={(e) => {
-                            setSourceType(e.target.value);
-                            // Set custom query mode flags
-                            setIsCustomQuery(true);
-                            setIsEditingCustomQuery(true);
-                            
-                            // ============ CRITICAL FIX: Clear database object data ============
-                            console.log('🔄 Switching to Custom Query mode - Clearing database object data');
-                            
-                            // 1. Clear database object reference
-                            setSelectedDbObject(null);
-                            
-                            // 2. Clear any existing parameters and response mappings (from database object)
-                            setParameters([]);
-                            setResponseMappings([]);
-                            
-                            // 3. Reset schema config (since it's no longer relevant)
-                            setSchemaConfig({
-                              schemaName: '',
-                              objectType: '',
-                              objectName: '',
-                              operation: 'SELECT',
-                              primaryKeyColumn: '',
-                              sequenceName: '',
-                              enablePagination: true,
-                              pageSize: 10,
-                              enableSorting: true,
-                              defaultSortColumn: '',
-                              defaultSortDirection: 'ASC'
-                            });
-                            
-                            // 4. Clear validation errors for schema
-                            setValidationErrors(prev => ({ 
-                              ...prev, 
-                              schemaName: null, 
-                              objectName: null,
-                              customQuery: null 
-                            }));
-                            
-                            // ============ FIX: Get custom query from state or from selectedObject ============
-                            // Try to get custom query from multiple sources
-                            let existingCustomQuery = customQuery;
-                            
-                            // If customQuery state is empty, try to get it from selectedObject (for edit mode)
-                            if (!existingCustomQuery && selectedObject) {
-                              const sourceObj = selectedObject.sourceObject || selectedObject;
-                              const apiData = selectedObject.data || selectedObject;
-                              
-                              existingCustomQuery = 
-                                selectedObject?.customSelectStatement ||
-                                selectedObject?.sourceObject?.customSelectStatement ||
-                                sourceObj?.customSelectStatement ||
-                                sourceObj?.query ||
-                                selectedObject?.customQueryText ||
-                                apiData?.customSelectStatement ||
-                                apiData?.sourceObject?.customSelectStatement ||
-                                '';
-                                
-                              if (existingCustomQuery) {
-                                console.log('📝 Retrieved custom query from selectedObject:', existingCustomQuery.substring(0, 100));
-                                // Also update the customQuery state
-                                setCustomQuery(existingCustomQuery);
-                                setOriginalCustomQuery(existingCustomQuery);
-                              }
-                            }
-                            
-                            // 5. If there's an existing custom query, regenerate its parameters and mappings
-                            if (existingCustomQuery && existingCustomQuery.trim()) {
-                              console.log('📊 Regenerating parameters from existing custom query');
-                              
-                              // Extract parameters from the custom query
-                              const paramMatches = existingCustomQuery.match(/:\w+/g) || [];
-                              const uniqueParams = [...new Set(paramMatches)];
-                              
-                              if (uniqueParams.length > 0) {
-                                const regeneratedParams = uniqueParams.map((param, idx) => ({
-                                  id: `param-${Date.now()}-${idx}`,
-                                  key: param.substring(1),
-                                  dbColumn: param.substring(1),
-                                  oracleType: 'VARCHAR2',
-                                  apiType: 'string',
-                                  parameterLocation: 'query',
-                                  required: true,
-                                  description: `Parameter: ${param.substring(1)}`,
-                                  example: '',
-                                  validationPattern: '',
-                                  defaultValue: '',
-                                  inBody: false,
-                                  isPrimaryKey: false,
-                                  paramMode: 'IN',
-                                  _isFromCustomQuery: true  // Mark as custom query parameter
-                                }));
-                                setParameters(regeneratedParams);
-                                console.log(`✅ Regenerated ${regeneratedParams.length} parameters from custom query`);
+                              } else if (!isEditing) {
+                                // No object selected, show the object selector
+                                setShowObjectSelector(true);
                               }
                               
-                              // Extract response columns from the SELECT clause
-                              const selectMatch = existingCustomQuery.match(/SELECT\s+(.*?)\s+FROM/i);
-                              if (selectMatch && selectMatch[1]) {
-                                const selectClause = selectMatch[1];
-                                // Split by commas (simple approach - for complex queries you might need a parser)
-                                const columnMatches = selectClause.match(/(?:[^,\s]+\s+AS\s+)?(\w+)/gi) || [];
-                                const uniqueColumns = [...new Set(columnMatches.map(col => {
-                                  const asMatch = col.match(/AS\s+(\w+)/i);
-                                  return asMatch ? asMatch[1].toLowerCase() : col.toLowerCase();
-                                }))];
+                              // Clear validation errors
+                              setValidationErrors(prev => ({ 
+                                ...prev, 
+                                customQuery: null, 
+                                schemaName: null, 
+                                objectName: null 
+                              }));
+                            }}
+                            className="h-4 w-4"
+                            style={{ accentColor: themeColors.info }}
+                          />
+                          <span className="text-sm" style={{ color: themeColors.text }}>Database Object</span>
+                        </label>
+                        
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            value="custom_query"
+                            checked={sourceType === 'custom_query'}
+                            onChange={(e) => {
+                              console.log('🔄 Switching to Custom Query mode');
+                              
+                              setSourceType(e.target.value);
+                              setIsCustomQuery(true);
+                              setIsEditingCustomQuery(true);
+                              
+                              // Clear database object parameters - we'll extract from query
+                              setParameters([]);
+                              setResponseMappings([]);
+                              
+                              // Get custom query text
+                              let existingCustomQuery = customQuery;
+                              
+                              if (!existingCustomQuery && selectedObject) {
+                                const sourceObj = selectedObject.sourceObject || selectedObject;
+                                const apiData = selectedObject.data || selectedObject;
                                 
-                                if (uniqueColumns.length > 0) {
-                                  const regeneratedMappings = uniqueColumns.slice(0, 20).map((fieldName, idx) => ({
-                                    id: `mapping-${Date.now()}-${idx}`,
-                                    apiField: fieldName,
-                                    dbColumn: fieldName,
-                                    oracleType: fieldName.includes('id') ? 'NUMBER' : 'VARCHAR2',
-                                    apiType: fieldName.includes('id') ? 'integer' : 'string',
-                                    format: '',
-                                    nullable: true,
-                                    isPrimaryKey: fieldName === 'id',
-                                    includeInResponse: true,
-                                    inResponse: true,
-                                    paramMode: 'OUT',
-                                    _fromCustomQuery: true
-                                  }));
-                                  setResponseMappings(regeneratedMappings);
-                                  console.log(`✅ Regenerated ${regeneratedMappings.length} response mappings from custom query`);
-                                } else {
-                                  // Fallback: create basic response structure
-                                  setResponseMappings([
-                                    {
-                                      id: `mapping-${Date.now()}-0`,
-                                      apiField: 'id',
-                                      dbColumn: 'id',
-                                      oracleType: 'NUMBER',
-                                      apiType: 'integer',
-                                      format: '',
-                                      nullable: true,
-                                      isPrimaryKey: true,
-                                      includeInResponse: true,
-                                      inResponse: true,
-                                      paramMode: 'OUT'
-                                    },
-                                    {
-                                      id: `mapping-${Date.now()}-1`,
-                                      apiField: 'message',
-                                      dbColumn: 'message',
-                                      oracleType: 'VARCHAR2',
-                                      apiType: 'string',
-                                      format: '',
-                                      nullable: true,
-                                      isPrimaryKey: false,
-                                      includeInResponse: true,
-                                      inResponse: true,
-                                      paramMode: 'OUT'
-                                    }
-                                  ]);
+                                existingCustomQuery = 
+                                  selectedObject?.customSelectStatement ||
+                                  selectedObject?.sourceObject?.customSelectStatement ||
+                                  sourceObj?.customSelectStatement ||
+                                  sourceObj?.query ||
+                                  selectedObject?.customQueryText ||
+                                  apiData?.customSelectStatement ||
+                                  apiData?.sourceObject?.customSelectStatement ||
+                                  '';
+                                  
+                                if (existingCustomQuery) {
+                                  setCustomQuery(existingCustomQuery);
+                                  setOriginalCustomQuery(existingCustomQuery);
                                 }
-                              } else {
-                                // No SELECT clause found, set basic mappings
-                                setResponseMappings([
-                                  {
-                                    id: `mapping-${Date.now()}-0`,
-                                    apiField: 'id',
-                                    dbColumn: 'id',
-                                    oracleType: 'NUMBER',
-                                    apiType: 'integer',
-                                    format: '',
-                                    nullable: true,
-                                    isPrimaryKey: true,
-                                    includeInResponse: true,
-                                    inResponse: true,
-                                    paramMode: 'OUT'
-                                  },
-                                  {
-                                    id: `mapping-${Date.now()}-1`,
-                                    apiField: 'message',
-                                    dbColumn: 'message',
+                              }
+                              
+                              // Extract parameters from the query (default to body location for POST)
+                              if (existingCustomQuery && existingCustomQuery.trim()) {
+                                console.log('📊 Extracting parameters from custom query');
+                                
+                                // Extract :paramName style parameters
+                                const paramMatches = existingCustomQuery.match(/:\w+/g) || [];
+                                const uniqueParams = [...new Set(paramMatches)];
+                                
+                                if (uniqueParams.length > 0) {
+                                  const extractedParams = uniqueParams.map((param, idx) => ({
+                                    id: `param-${Date.now()}-${idx}`,
+                                    key: param.substring(1),
+                                    dbColumn: param.substring(1),
                                     oracleType: 'VARCHAR2',
                                     apiType: 'string',
-                                    format: '',
-                                    nullable: true,
+                                    parameterLocation: 'body', // Default to body for custom queries with POST
+                                    required: true,
+                                    description: `Parameter: ${param.substring(1)}`,
+                                    example: '',
+                                    validationPattern: '',
+                                    defaultValue: '',
+                                    inBody: true,
                                     isPrimaryKey: false,
-                                    includeInResponse: true,
-                                    inResponse: true,
-                                    paramMode: 'OUT'
+                                    paramMode: 'IN',
+                                    _isFromCustomQuery: true
+                                  }));
+                                  setParameters(extractedParams);
+                                  console.log(`✅ Extracted ${extractedParams.length} parameters from query`);
+                                }
+                                
+                                // Extract response columns from SELECT clause
+                                const selectMatch = existingCustomQuery.match(/SELECT\s+(.*?)\s+FROM/i);
+                                if (selectMatch && selectMatch[1]) {
+                                  const selectClause = selectMatch[1];
+                                  const columnMatches = selectClause.match(/(?:[^,\s]+\s+AS\s+)?(\w+)/gi) || [];
+                                  const uniqueColumns = [...new Set(columnMatches.map(col => {
+                                    const asMatch = col.match(/AS\s+(\w+)/i);
+                                    return asMatch ? asMatch[1].toLowerCase() : col.toLowerCase();
+                                  }))];
+                                  
+                                  if (uniqueColumns.length > 0) {
+                                    const extractedMappings = uniqueColumns.slice(0, 20).map((fieldName, idx) => ({
+                                      id: `mapping-${Date.now()}-${idx}`,
+                                      apiField: fieldName,
+                                      dbColumn: fieldName,
+                                      oracleType: fieldName.includes('id') ? 'NUMBER' : 'VARCHAR2',
+                                      apiType: fieldName.includes('id') ? 'integer' : 'string',
+                                      format: '',
+                                      nullable: true,
+                                      isPrimaryKey: fieldName === 'id',
+                                      includeInResponse: true,
+                                      inResponse: true,
+                                      paramMode: 'OUT',
+                                      _fromCustomQuery: true
+                                    }));
+                                    setResponseMappings(extractedMappings);
+                                    console.log(`✅ Extracted ${extractedMappings.length} response mappings from query`);
                                   }
-                                ]);
+                                }
                               }
-                            } else {
-                              console.log('🧹 No custom query present, cleared all parameters and mappings');
-                            }
-                            
-                            // 6. Force a re-trigger of the custom query extraction useEffect
-                            setTimeout(() => {
-                              if (existingCustomQuery && existingCustomQuery.trim()) {
-                                console.log('🔄 Re-running custom query extraction after switch');
-                                // The useEffect with [customQuery, sourceType, isCustomQuery, isEditingCustomQuery] will trigger
-                              }
-                            }, 50);
-                          }}
-                          className="h-4 w-4"
-                          style={{ accentColor: themeColors.info }}
-                        />
-                        <span className="text-sm" style={{ color: themeColors.text }}>Custom SQL Query</span>
-                      </label>  
-                    </div>
+                              
+                              // Clear validation errors
+                              setValidationErrors(prev => ({ 
+                                ...prev, 
+                                customQuery: null, 
+                                schemaName: null, 
+                                objectName: null 
+                              }));
+                            }}
+                            className="h-4 w-4"
+                            style={{ accentColor: themeColors.info }}
+                          />
+                          <span className="text-sm" style={{ color: themeColors.text }}>Custom SQL Query</span>
+                        </label>
+                      </div>
                     </div>
 
                     {/* Database Object Selection Section */}

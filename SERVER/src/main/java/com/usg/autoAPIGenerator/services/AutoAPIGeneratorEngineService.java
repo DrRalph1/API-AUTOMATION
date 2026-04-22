@@ -1425,6 +1425,7 @@ public class AutoAPIGeneratorEngineService {
         ApiRequestResponseDTO capturedRequest = null;
         String databaseType = "oracle";
         String protocolType = "rest";
+        ExecuteApiResponseDTO finalResponse = null;
 
         try {
             loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
@@ -1499,15 +1500,34 @@ public class AutoAPIGeneratorEngineService {
             try {
                 validateIpWhitelist(actualClientIp, fullRequestPath, endpointPath);
             } catch (RuntimeException e) {
-                String errorMsg = e.getMessage();
+                String technicalError = e.getMessage();
+                String userFriendlyMessage = "Unable to process your request. Please contact support for assistance.";
                 int statusCode = 403;
 
-                log.warn("IP whitelist validation failed: {}", errorMsg);
+                log.warn("IP whitelist validation failed: {}", technicalError);
+
+                // Create error map with technical details
+                Map<String, Object> errorMap = new HashMap<>();
+                errorMap.put("code", "IP_WHITELIST_ERROR");
+                errorMap.put("technicalMessage", technicalError);
+                errorMap.put("clientIp", actualClientIp);
+                errorMap.put("timestamp", LocalDateTime.now().toString());
+
+                finalResponse = ExecuteApiResponseDTO.builder()
+                        .responseCode(statusCode)
+                        .success(false)
+                        .message(userFriendlyMessage)
+                        .error(errorMap)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
 
                 if (capturedRequestId != null) {
                     try {
-                        updateCapturedRequestWithError(requestId, capturedRequestId, statusCode,
-                                errorMsg, System.currentTimeMillis() - startTime);
+                        String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
+                        apiRequestService.updateRequestWithError(
+                                requestId, capturedRequestId, statusCode,
+                                userFriendlyMessage, System.currentTimeMillis() - startTime, fullResponseBody);
                     } catch (Exception ex) {
                         log.error("Failed to update captured request with error: {}", ex.getMessage());
                     }
@@ -1515,15 +1535,9 @@ public class AutoAPIGeneratorEngineService {
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, statusCode, System.currentTimeMillis() - startTime,
-                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
+                        performedBy, actualClientIp, userAgent, technicalError, objectMapper);
 
-                return ExecuteApiResponseDTO.builder()
-                        .responseCode(statusCode)
-                        .success(false)
-                        .message(errorMsg)
-                        .protocolType(protocolType)
-                        .contentType("application/json")
-                        .build();
+                return finalResponse;
             }
             // ============ END IP WHITELIST VALIDATION ============
 
@@ -1531,47 +1545,75 @@ public class AutoAPIGeneratorEngineService {
             String apiStatus = api.getStatus() != null ? api.getStatus().toUpperCase() : "UNKNOWN";
 
             if (!"ACTIVE".equals(apiStatus)) {
-                String errorMsg;
+                String userFriendlyMessage;
+                String errorCode;
                 int statusCode;
 
                 switch (apiStatus) {
                     case "ARCHIVED":
-                        errorMsg = "This API has been archived and cannot be executed. Please contact system administrator.";
+                        userFriendlyMessage = "This service is no longer available. Please contact support for alternatives.";
+                        errorCode = "API_ARCHIVED";
                         statusCode = 410;
                         break;
                     case "DEPRECATED":
-                        errorMsg = "This API is deprecated and no longer available for execution. Please contact system administrator for migration assistance.";
+                        userFriendlyMessage = "This version of the service has been retired. Please upgrade to the latest version.";
+                        errorCode = "API_DEPRECATED";
                         statusCode = 410;
                         break;
                     case "DRAFT":
-                        errorMsg = "This API is in draft mode and has not been published yet. Please contact system administrator to publish the API.";
+                        userFriendlyMessage = "This service is not yet available. Please check back later.";
+                        errorCode = "API_DRAFT";
                         statusCode = 403;
                         break;
                     case "INACTIVE":
-                        errorMsg = "This API is inactive and cannot be executed. Please contact system administrator to activate it.";
+                        userFriendlyMessage = "This service is currently unavailable. Please contact support for assistance.";
+                        errorCode = "API_INACTIVE";
                         statusCode = 403;
                         break;
                     case "PENDING":
-                        errorMsg = "This API is pending approval and cannot be executed yet. Please contact system administrator.";
+                        userFriendlyMessage = "This service is being set up and will be available soon.";
+                        errorCode = "API_PENDING";
                         statusCode = 403;
                         break;
                     case "SUSPENDED":
-                        errorMsg = "This API has been suspended and cannot be executed. Please contact system administrator.";
+                        userFriendlyMessage = "This service has been temporarily suspended. Please contact support for more information.";
+                        errorCode = "API_SUSPENDED";
                         statusCode = 403;
                         break;
                     default:
-                        errorMsg = String.format("API is in '%s' state and cannot be executed. Please contact system administrator.",
-                                api.getStatus());
+                        userFriendlyMessage = "This service is currently unavailable. Please contact support for assistance.";
+                        errorCode = "API_INVALID_STATUS";
                         statusCode = 403;
                         break;
                 }
 
                 log.warn("API execution blocked - Status: {}, API ID: {}, Database: {}", apiStatus, apiId, databaseType);
 
+                // Create error map with technical details
+                Map<String, Object> errorMap = new HashMap<>();
+                errorMap.put("code", errorCode);
+                errorMap.put("technicalMessage", String.format("API status is '%s'", apiStatus));
+                errorMap.put("apiId", apiId);
+                errorMap.put("apiName", api.getApiName());
+                errorMap.put("apiCode", api.getApiCode());
+                errorMap.put("currentStatus", apiStatus);
+                errorMap.put("timestamp", LocalDateTime.now().toString());
+
+                finalResponse = ExecuteApiResponseDTO.builder()
+                        .responseCode(statusCode)
+                        .success(false)
+                        .message(userFriendlyMessage)
+                        .error(errorMap)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
+
                 if (capturedRequestId != null) {
                     try {
-                        updateCapturedRequestWithError(requestId, capturedRequestId, statusCode,
-                                errorMsg, System.currentTimeMillis() - startTime);
+                        String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
+                        apiRequestService.updateRequestWithError(
+                                requestId, capturedRequestId, statusCode,
+                                userFriendlyMessage, System.currentTimeMillis() - startTime, fullResponseBody);
                     } catch (Exception ex) {
                         log.error("Failed to update captured request with error: {}", ex.getMessage());
                     }
@@ -1579,26 +1621,41 @@ public class AutoAPIGeneratorEngineService {
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, statusCode, System.currentTimeMillis() - startTime,
-                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
+                        performedBy, actualClientIp, userAgent, apiStatus, objectMapper);
 
-                return ExecuteApiResponseDTO.builder()
-                        .responseCode(statusCode)
-                        .success(false)
-                        .message(errorMsg)
-                        .protocolType(protocolType)
-                        .contentType("application/json")
-                        .build();
+                return finalResponse;
             }
 
             // 10. Check isActive flag
             if (!api.getIsActive()) {
-                String errorMsg = "API is inactive and cannot be executed. Please contact system administrator to activate it.";
+                String userFriendlyMessage = "This service is currently unavailable. Please contact support for assistance.";
                 log.warn("API execution blocked - isActive flag is false for API ID: {}", apiId);
+
+                // Create error map with technical details
+                Map<String, Object> errorMap = new HashMap<>();
+                errorMap.put("code", "API_INACTIVE");
+                errorMap.put("technicalMessage", "API is marked as inactive");
+                errorMap.put("apiId", apiId);
+                errorMap.put("apiName", api.getApiName());
+                errorMap.put("apiCode", api.getApiCode());
+                errorMap.put("isActive", false);
+                errorMap.put("timestamp", LocalDateTime.now().toString());
+
+                finalResponse = ExecuteApiResponseDTO.builder()
+                        .responseCode(403)
+                        .success(false)
+                        .message(userFriendlyMessage)
+                        .error(errorMap)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
 
                 if (capturedRequestId != null) {
                     try {
-                        updateCapturedRequestWithError(requestId, capturedRequestId, 403,
-                                errorMsg, System.currentTimeMillis() - startTime);
+                        String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
+                        apiRequestService.updateRequestWithError(
+                                requestId, capturedRequestId, 403,
+                                userFriendlyMessage, System.currentTimeMillis() - startTime, fullResponseBody);
                     } catch (Exception ex) {
                         log.error("Failed to update captured request with error: {}", ex.getMessage());
                     }
@@ -1606,26 +1663,40 @@ public class AutoAPIGeneratorEngineService {
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 403, System.currentTimeMillis() - startTime,
-                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
+                        performedBy, actualClientIp, userAgent, "API inactive", objectMapper);
 
-                return ExecuteApiResponseDTO.builder()
-                        .responseCode(403)
-                        .success(false)
-                        .message(errorMsg)
-                        .protocolType(protocolType)
-                        .contentType("application/json")
-                        .build();
+                return finalResponse;
             }
 
             // 11. Validate HTTP method
             if (!validateHttpMethod(api, validatedRequest.getHttpMethod())) {
-                String errorMsg = String.format("HTTP method not allowed. Expected: %s, Actual: %s",
-                        api.getHttpMethod(), validatedRequest.getHttpMethod());
+                String userFriendlyMessage = "Invalid request type. Please check your request and try again.";
+
+                // Create error map with technical details
+                Map<String, Object> errorMap = new HashMap<>();
+                errorMap.put("code", "HTTP_METHOD_NOT_ALLOWED");
+                errorMap.put("technicalMessage", String.format("Expected: %s, Actual: %s",
+                        api.getHttpMethod(), validatedRequest.getHttpMethod()));
+                errorMap.put("expectedMethod", api.getHttpMethod());
+                errorMap.put("actualMethod", validatedRequest.getHttpMethod());
+                errorMap.put("apiId", apiId);
+                errorMap.put("timestamp", LocalDateTime.now().toString());
+
+                finalResponse = ExecuteApiResponseDTO.builder()
+                        .responseCode(405)
+                        .success(false)
+                        .message(userFriendlyMessage)
+                        .error(errorMap)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
 
                 if (capturedRequestId != null) {
                     try {
-                        updateCapturedRequestWithError(requestId, capturedRequestId, 405, errorMsg,
-                                System.currentTimeMillis() - startTime);
+                        String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
+                        apiRequestService.updateRequestWithError(
+                                requestId, capturedRequestId, 405,
+                                userFriendlyMessage, System.currentTimeMillis() - startTime, fullResponseBody);
                     } catch (Exception ex) {
                         log.error("Failed to update captured request with error: {}", ex.getMessage());
                     }
@@ -1633,15 +1704,9 @@ public class AutoAPIGeneratorEngineService {
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 405, System.currentTimeMillis() - startTime,
-                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
+                        performedBy, actualClientIp, userAgent, "Invalid HTTP method", objectMapper);
 
-                return ExecuteApiResponseDTO.builder()
-                        .responseCode(405)
-                        .success(false)
-                        .message(errorMsg)
-                        .protocolType(protocolType)
-                        .contentType("application/json")
-                        .build();
+                return finalResponse;
             }
 
             // 12. Validate authentication
@@ -1650,12 +1715,31 @@ public class AutoAPIGeneratorEngineService {
                         authenticationService.validateAuthentication(api, validatedRequest);
 
                 if (!authResult.isAuthenticated()) {
-                    String errorMsg = "Authentication failed: " + authResult.getReason();
+                    String userFriendlyMessage = "Unable to verify your credentials. Please check your API key and try again.";
+
+                    // Create error map with technical details
+                    Map<String, Object> errorMap = new HashMap<>();
+                    errorMap.put("code", "AUTHENTICATION_FAILED");
+                    errorMap.put("technicalMessage", authResult.getReason());
+                    errorMap.put("authenticationType", api.getAuthConfig() != null ? api.getAuthConfig().getAuthType() : "UNKNOWN");
+                    errorMap.put("apiId", apiId);
+                    errorMap.put("timestamp", LocalDateTime.now().toString());
+
+                    finalResponse = ExecuteApiResponseDTO.builder()
+                            .responseCode(401)
+                            .success(false)
+                            .message(userFriendlyMessage)
+                            .error(errorMap)
+                            .protocolType(protocolType)
+                            .contentType("application/json")
+                            .build();
 
                     if (capturedRequestId != null) {
                         try {
-                            updateCapturedRequestWithError(requestId, capturedRequestId, 401,
-                                    errorMsg, System.currentTimeMillis() - startTime);
+                            String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
+                            apiRequestService.updateRequestWithError(
+                                    requestId, capturedRequestId, 401,
+                                    userFriendlyMessage, System.currentTimeMillis() - startTime, fullResponseBody);
                         } catch (Exception ex) {
                             log.error("Failed to update captured request with error: {}", ex.getMessage());
                         }
@@ -1663,19 +1747,42 @@ public class AutoAPIGeneratorEngineService {
 
                     executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                             null, 401, System.currentTimeMillis() - startTime,
-                            performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
+                            performedBy, actualClientIp, userAgent, authResult.getReason(), objectMapper);
 
-                    return ExecuteApiResponseDTO.builder()
-                            .responseCode(401)
-                            .success(false)
-                            .message(errorMsg)
-                            .protocolType(protocolType)
-                            .contentType("application/json")
-                            .build();
+                    return finalResponse;
                 }
             } catch (Exception e) {
                 log.error("Authentication validation error: {}", e.getMessage(), e);
-                throw e;
+
+                // Create error map for authentication system error
+                Map<String, Object> errorMap = new HashMap<>();
+                errorMap.put("code", "AUTHENTICATION_SYSTEM_ERROR");
+                errorMap.put("technicalMessage", e.getMessage());
+                errorMap.put("errorType", e.getClass().getSimpleName());
+                errorMap.put("apiId", apiId);
+                errorMap.put("timestamp", LocalDateTime.now().toString());
+
+                finalResponse = ExecuteApiResponseDTO.builder()
+                        .responseCode(500)
+                        .success(false)
+                        .message("Unable to process your request at this time. Please try again later.")
+                        .error(errorMap)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
+
+                if (capturedRequestId != null) {
+                    try {
+                        String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
+                        apiRequestService.updateRequestWithError(
+                                requestId, capturedRequestId, 500,
+                                finalResponse.getMessage(), System.currentTimeMillis() - startTime, fullResponseBody);
+                    } catch (Exception ex) {
+                        log.error("Failed to update captured request with error: {}", ex.getMessage());
+                    }
+                }
+
+                return finalResponse;
             }
 
             // 13. Get all API parameters
@@ -1734,12 +1841,31 @@ public class AutoAPIGeneratorEngineService {
 
             if (!validationErrors.isEmpty()) {
                 String missingParams = String.join(", ", validationErrors.keySet());
-                String errorMsg = "Required parameter(s) missing: " + missingParams;
+                String userFriendlyMessage = "Missing required information: " + missingParams + ". Please provide all required fields and try again.";
+
+                // Create error map with technical details
+                Map<String, Object> errorMap = new HashMap<>();
+                errorMap.put("code", "MISSING_REQUIRED_PARAMETERS");
+                errorMap.put("technicalMessage", String.format("Required parameters missing: %s", missingParams));
+                errorMap.put("missingParameters", validationErrors);
+                errorMap.put("apiId", apiId);
+                errorMap.put("timestamp", LocalDateTime.now().toString());
+
+                finalResponse = ExecuteApiResponseDTO.builder()
+                        .responseCode(400)
+                        .success(false)
+                        .message(userFriendlyMessage)
+                        .error(errorMap)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
 
                 if (capturedRequestId != null) {
                     try {
-                        updateCapturedRequestWithError(requestId, capturedRequestId, 400,
-                                errorMsg, System.currentTimeMillis() - startTime);
+                        String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
+                        apiRequestService.updateRequestWithError(
+                                requestId, capturedRequestId, 400,
+                                userFriendlyMessage, System.currentTimeMillis() - startTime, fullResponseBody);
                     } catch (Exception ex) {
                         log.error("Failed to update captured request with error: {}", ex.getMessage());
                     }
@@ -1747,25 +1873,41 @@ public class AutoAPIGeneratorEngineService {
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 400, System.currentTimeMillis() - startTime,
-                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
+                        performedBy, actualClientIp, userAgent, "Missing parameters: " + missingParams, objectMapper);
 
-                return ExecuteApiResponseDTO.builder()
-                        .responseCode(400)
-                        .success(false)
-                        .message(errorMsg)
-                        .protocolType(protocolType)
-                        .contentType("application/json")
-                        .build();
+                return finalResponse;
             }
 
             // 18. Authorization check
             if (!validatorService.validateAuthorization(api, performedBy)) {
-                String errorMsg = "User not authorized to access this API";
+                String userFriendlyMessage = "You don't have permission to access this service. Please contact your administrator.";
+
+                // Create error map with technical details
+                Map<String, Object> errorMap = new HashMap<>();
+                errorMap.put("code", "AUTHORIZATION_FAILED");
+                errorMap.put("technicalMessage", String.format("User '%s' not authorized to access API '%s'", performedBy, apiId));
+                errorMap.put("userId", performedBy);
+                errorMap.put("apiId", apiId);
+                errorMap.put("apiName", api.getApiName());
+                errorMap.put("apiCode", api.getApiCode());
+                errorMap.put("owner", api.getOwner());
+                errorMap.put("timestamp", LocalDateTime.now().toString());
+
+                finalResponse = ExecuteApiResponseDTO.builder()
+                        .responseCode(403)
+                        .success(false)
+                        .message(userFriendlyMessage)
+                        .error(errorMap)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
 
                 if (capturedRequestId != null) {
                     try {
-                        updateCapturedRequestWithError(requestId, capturedRequestId, 403,
-                                errorMsg, System.currentTimeMillis() - startTime);
+                        String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
+                        apiRequestService.updateRequestWithError(
+                                requestId, capturedRequestId, 403,
+                                userFriendlyMessage, System.currentTimeMillis() - startTime, fullResponseBody);
                     } catch (Exception ex) {
                         log.error("Failed to update captured request with error: {}", ex.getMessage());
                     }
@@ -1773,41 +1915,52 @@ public class AutoAPIGeneratorEngineService {
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 403, System.currentTimeMillis() - startTime,
-                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
+                        performedBy, actualClientIp, userAgent, "Authorization failed", objectMapper);
 
-                return ExecuteApiResponseDTO.builder()
-                        .responseCode(403)
-                        .success(false)
-                        .message(errorMsg)
-                        .protocolType(protocolType)
-                        .contentType("application/json")
-                        .build();
+                return finalResponse;
             }
 
-            // 19. Rate limiting check
-            if (!validatorService.checkRateLimit(api, actualClientIp)) {
-                String errorMsg = "Rate limit exceeded";
+            // 19. Rate limiting check (if rate limit is configured)
+            Integer rateLimit = null; // api.getRateLimit(); // Uncomment when field is added
+            if (rateLimit != null && rateLimit > 0) {
+                if (!validatorService.checkRateLimit(api, actualClientIp)) {
+                    String userFriendlyMessage = "Too many requests. Please wait a moment and try again.";
 
-                if (capturedRequestId != null) {
-                    try {
-                        updateCapturedRequestWithError(requestId, capturedRequestId, 429,
-                                errorMsg, System.currentTimeMillis() - startTime);
-                    } catch (Exception ex) {
-                        log.error("Failed to update captured request with error: {}", ex.getMessage());
+                    // Create error map with technical details
+                    Map<String, Object> errorMap = new HashMap<>();
+                    errorMap.put("code", "RATE_LIMIT_EXCEEDED");
+                    errorMap.put("technicalMessage", String.format("Rate limit exceeded for IP: %s", actualClientIp));
+                    errorMap.put("clientIp", actualClientIp);
+                    errorMap.put("apiId", apiId);
+                    errorMap.put("rateLimit", rateLimit);
+                    errorMap.put("timestamp", LocalDateTime.now().toString());
+
+                    finalResponse = ExecuteApiResponseDTO.builder()
+                            .responseCode(429)
+                            .success(false)
+                            .message(userFriendlyMessage)
+                            .error(errorMap)
+                            .protocolType(protocolType)
+                            .contentType("application/json")
+                            .build();
+
+                    if (capturedRequestId != null) {
+                        try {
+                            String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
+                            apiRequestService.updateRequestWithError(
+                                    requestId, capturedRequestId, 429,
+                                    userFriendlyMessage, System.currentTimeMillis() - startTime, fullResponseBody);
+                        } catch (Exception ex) {
+                            log.error("Failed to update captured request with error: {}", ex.getMessage());
+                        }
                     }
+
+                    executionHelper.logExecution(executionLogRepository, api, validatedRequest,
+                            null, 429, System.currentTimeMillis() - startTime,
+                            performedBy, actualClientIp, userAgent, "Rate limit exceeded", objectMapper);
+
+                    return finalResponse;
                 }
-
-                executionHelper.logExecution(executionLogRepository, api, validatedRequest,
-                        null, 429, System.currentTimeMillis() - startTime,
-                        performedBy, actualClientIp, userAgent, errorMsg, objectMapper);
-
-                return ExecuteApiResponseDTO.builder()
-                        .responseCode(429)
-                        .success(false)
-                        .message(errorMsg)
-                        .protocolType(protocolType)
-                        .contentType("application/json")
-                        .build();
             }
 
             // 20. Extract source object from API
@@ -1829,11 +1982,9 @@ public class AutoAPIGeneratorEngineService {
                 executionTime = System.currentTimeMillis() - startTime;
 
                 // ============ CHECK IF RESULT IS ALREADY A FORMATTED RESPONSE ============
-                // This flattens the nested data structure
                 if (result instanceof Map) {
                     Map<String, Object> resultMap = (Map<String, Object>) result;
 
-                    // Check if this result already has the structure of a proper response
                     boolean hasData = resultMap.containsKey("data");
                     boolean hasSuccess = resultMap.containsKey("success");
                     boolean hasResponseCode = resultMap.containsKey("responseCode");
@@ -1841,13 +1992,11 @@ public class AutoAPIGeneratorEngineService {
                     if (hasData && hasSuccess && hasResponseCode) {
                         log.info("Result is already a properly formatted response - flattening nested data");
 
-                        // Extract the inner data (the actual payload)
                         Object innerData = resultMap.get("data");
                         Boolean innerSuccess = (Boolean) resultMap.get("success");
                         String innerMessage = (String) resultMap.get("message");
                         Object innerResponseCode = resultMap.get("responseCode");
 
-                        // Determine HTTP status code from inner response code
                         Integer httpStatus = 200;
                         if (innerResponseCode != null) {
                             String codeStr = innerResponseCode.toString();
@@ -1866,33 +2015,31 @@ public class AutoAPIGeneratorEngineService {
                                     httpStatus = 500;
                                 }
                             } else {
-                                httpStatus = 200; // Non-error codes are treated as success
+                                httpStatus = 200;
                             }
                         }
 
-                        // Update captured request with success
+                        finalResponse = ExecuteApiResponseDTO.builder()
+                                .responseCode(httpStatus)
+                                .success(innerSuccess != null ? innerSuccess : true)
+                                .message(innerMessage != null ? innerMessage : "Success")
+                                .data(innerData)
+                                .contentType("application/json")
+                                .protocolType(protocolType)
+                                .build();
+
                         if (capturedRequestId != null) {
                             try {
+                                String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
                                 apiRequestService.updateRequestWithResponse(
-                                        requestId, capturedRequestId,
-                                        ExecuteApiResponseDTO.builder()
-                                                .responseCode(httpStatus)
-                                                .success(innerSuccess != null ? innerSuccess : true)
-                                                .message(innerMessage != null ? innerMessage : "Success")
-                                                .data(innerData)  // Use the inner data, not the whole map
-                                                .contentType("application/json")
-                                                .protocolType(protocolType)
-                                                .build(),
-                                        httpStatus, innerMessage, executionTime);
+                                        requestId, capturedRequestId, finalResponse,
+                                        httpStatus, innerMessage, executionTime, fullResponseBody);
                             } catch (Exception e) {
                                 log.error("Failed to update captured request: {}", e.getMessage());
                             }
                         }
 
-                        // Update API statistics
                         executionHelper.updateApiStats(api, generatedAPIRepository);
-
-                        // Log the successful execution
                         executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                                 innerData, httpStatus, executionTime, performedBy,
                                 actualClientIp, userAgent, null, objectMapper);
@@ -1903,19 +2050,11 @@ public class AutoAPIGeneratorEngineService {
                                 " with protocol: " + protocolType +
                                 " - Time: " + executionTime + "ms");
 
-                        // Return flattened response - data contains the actual payload (not nested)
-                        return ExecuteApiResponseDTO.builder()
-                                .responseCode(httpStatus)
-                                .success(innerSuccess != null ? innerSuccess : true)
-                                .message(innerMessage != null ? innerMessage : "Success")
-                                .data(innerData)  // This is the actual user data, not wrapped again
-                                .contentType("application/json")
-                                .protocolType(protocolType)
-                                .build();
+                        return finalResponse;
                     }
                 }
 
-                // ============ HANDLE PROCEDURE RETURNING STATUS CODES (without data wrapper) ============
+                // ============ HANDLE PROCEDURE RETURNING STATUS CODES ============
                 boolean isResponseWithStatus = false;
                 Integer determinedHttpStatus = null;
                 String responseMessage = null;
@@ -1982,21 +2121,7 @@ public class AutoAPIGeneratorEngineService {
                 if (isResponseWithStatus && determinedHttpStatus != null && determinedHttpStatus >= 400) {
                     log.info("Procedure returned error status: HTTP={}", determinedHttpStatus);
 
-                    if (capturedRequestId != null) {
-                        try {
-                            String errorMessage = responseMessage != null ? responseMessage : "Procedure execution error";
-                            String dbErrorMessage = truncateErrorMessage(errorMessage, 250);
-                            apiRequestService.updateRequestWithError(
-                                    requestId, capturedRequestId, determinedHttpStatus,
-                                    dbErrorMessage, executionTime);
-                        } catch (Exception e) {
-                            log.error("Failed to update captured request: {}", e.getMessage());
-                        }
-                    }
-
-                    executionHelper.logExecution(executionLogRepository, api, validatedRequest,
-                            null, determinedHttpStatus, executionTime, performedBy,
-                            actualClientIp, userAgent, responseMessage, objectMapper);
+                    String userFriendlyMessage = "Unable to complete your request. Please try again or contact support if the issue persists.";
 
                     Object errorDataObj;
                     if (responseData != null) {
@@ -2013,14 +2138,39 @@ public class AutoAPIGeneratorEngineService {
                         errorDataObj = Collections.emptyList();
                     }
 
-                    return ExecuteApiResponseDTO.builder()
+                    Map<String, Object> errorMap = new HashMap<>();
+                    errorMap.put("code", "PROCEDURE_EXECUTION_ERROR");
+                    errorMap.put("technicalMessage", responseMessage != null ? responseMessage : "Unknown procedure error");
+                    errorMap.put("responseCode", determinedHttpStatus);
+                    errorMap.put("apiId", apiId);
+                    errorMap.put("timestamp", LocalDateTime.now().toString());
+
+                    finalResponse = ExecuteApiResponseDTO.builder()
                             .responseCode(determinedHttpStatus)
                             .success(false)
-                            .message(responseMessage != null ? responseMessage : "Operation failed")
+                            .message(userFriendlyMessage)
                             .data(errorDataObj)
+                            .error(errorMap)
                             .protocolType(protocolType)
                             .contentType("application/json")
                             .build();
+
+                    if (capturedRequestId != null) {
+                        try {
+                            String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
+                            apiRequestService.updateRequestWithError(
+                                    requestId, capturedRequestId, determinedHttpStatus,
+                                    userFriendlyMessage, executionTime, fullResponseBody);
+                        } catch (Exception e) {
+                            log.error("Failed to update captured request: {}", e.getMessage());
+                        }
+                    }
+
+                    executionHelper.logExecution(executionLogRepository, api, validatedRequest,
+                            null, determinedHttpStatus, executionTime, performedBy,
+                            actualClientIp, userAgent, responseMessage, objectMapper);
+
+                    return finalResponse;
                 }
 
                 // ============ PROTOCOL-SPECIFIC RESPONSE FORMATTING ============
@@ -2030,57 +2180,20 @@ public class AutoAPIGeneratorEngineService {
                 log.info("Formatting response for protocol: {}", protocolType);
 
                 if ("soap".equalsIgnoreCase(protocolType)) {
-                    // SOAP API - Format as XML
                     formattedResponse = formatAsSoapResponse(result, api);
                     responseContentType = "application/xml";
-                    log.info("🔄 SOAP API detected - formatting response as XML");
+                    log.info("SOAP API detected - formatting response as XML");
                 } else if ("graphql".equalsIgnoreCase(protocolType)) {
-                    // GraphQL API - Format as GraphQL response
                     formattedResponse = formatAsGraphQLResponse(result, api);
                     responseContentType = "application/json";
-                    log.info("🎯 GraphQL API detected - formatting response as GraphQL");
+                    log.info("GraphQL API detected - formatting response as GraphQL");
                 } else {
-                    // REST API - Use existing formatter
                     formattedResponse = responseHelper.formatResponse(api, result);
                     responseContentType = "application/json";
-                    log.info("📡 REST API detected - formatting response as JSON");
+                    log.info("REST API detected - formatting response as JSON");
                 }
 
-                // Update captured request with success response
-                if (capturedRequestId != null) {
-                    try {
-                        apiRequestService.updateRequestWithResponse(
-                                requestId, capturedRequestId,
-                                ExecuteApiResponseDTO.builder()
-                                        .responseCode(200)
-                                        .success(true)
-                                        .message("Success")
-                                        .data(formattedResponse)
-                                        .contentType(responseContentType)
-                                        .protocolType(protocolType)
-                                        .build(),
-                                200, "Success", executionTime);
-                    } catch (Exception e) {
-                        log.error("Failed to update captured request: {}", e.getMessage());
-                    }
-                }
-
-                // Update API statistics
-                executionHelper.updateApiStats(api, generatedAPIRepository);
-
-                // Log the successful execution
-                executionHelper.logExecution(executionLogRepository, api, validatedRequest,
-                        formattedResponse, 200, executionTime, performedBy,
-                        actualClientIp, userAgent, null, objectMapper);
-
-                // Build success response with proper content type
-                loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
-                        ", API executed successfully: " + apiId +
-                        " on database: " + databaseType +
-                        " with protocol: " + protocolType +
-                        " - Time: " + executionTime + "ms");
-
-                return ExecuteApiResponseDTO.builder()
+                finalResponse = ExecuteApiResponseDTO.builder()
                         .responseCode(200)
                         .success(true)
                         .message("Success")
@@ -2089,30 +2202,74 @@ public class AutoAPIGeneratorEngineService {
                         .protocolType(protocolType)
                         .build();
 
+                if (capturedRequestId != null) {
+                    try {
+                        String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
+                        apiRequestService.updateRequestWithResponse(
+                                requestId, capturedRequestId, finalResponse,
+                                200, "Success", executionTime, fullResponseBody);
+                    } catch (Exception e) {
+                        log.error("Failed to update captured request: {}", e.getMessage());
+                    }
+                }
+
+                executionHelper.updateApiStats(api, generatedAPIRepository);
+                executionHelper.logExecution(executionLogRepository, api, validatedRequest,
+                        formattedResponse, 200, executionTime, performedBy,
+                        actualClientIp, userAgent, null, objectMapper);
+
+                loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                        ", API executed successfully: " + apiId +
+                        " on database: " + databaseType +
+                        " with protocol: " + protocolType +
+                        " - Time: " + executionTime + "ms");
+
+                return finalResponse;
+
             } catch (Exception e) {
                 executionTime = System.currentTimeMillis() - startTime;
                 log.error("Database execution failed for {}: ", databaseType, e);
 
-                String detailedError = extractDatabaseError(e, databaseType);
-                log.info("Returning raw database error: {}", detailedError);
+                String technicalError = extractDatabaseError(e, databaseType);
+                String userFriendlyMessage = "Unable to process your request at this time. Please try again later.";
+
+                log.info("Returning user-friendly error message with technical details in error map");
 
                 Map<String, Object> errorData = new HashMap<>();
-                errorData.put("error", detailedError);
                 errorData.put("timestamp", LocalDateTime.now().toString());
                 errorData.put("executionTimeMs", executionTime);
 
+                Map<String, Object> errorMap = new HashMap<>();
+                errorMap.put("code", "DATABASE_EXECUTION_ERROR");
+                errorMap.put("technicalMessage", technicalError);
+                errorMap.put("databaseType", databaseType);
+                errorMap.put("apiId", apiId);
+                errorMap.put("sqlOperationType", api.getSqlOperationType());
+                errorMap.put("executionTimeMs", executionTime);
+                errorMap.put("timestamp", LocalDateTime.now().toString());
+
+                finalResponse = ExecuteApiResponseDTO.builder()
+                        .responseCode(500)
+                        .success(false)
+                        .message(userFriendlyMessage)
+                        .data(Collections.singletonList(errorData))
+                        .error(errorMap)
+                        .protocolType(protocolType)
+                        .contentType("application/json")
+                        .build();
+
                 if (capturedRequestId != null) {
                     try {
-                        String dbErrorMessage = truncateErrorMessage(detailedError, 250);
+                        String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
                         apiRequestService.updateRequestWithError(
-                                requestId, capturedRequestId, 500, dbErrorMessage, executionTime);
+                                requestId, capturedRequestId, 500, userFriendlyMessage, executionTime, fullResponseBody);
                     } catch (Exception updateError) {
                         log.error("Failed to update captured request: {}", updateError.getMessage());
                     }
                 }
 
                 try {
-                    String logErrorMessage = truncateErrorMessage(detailedError, 1000);
+                    String logErrorMessage = truncateErrorMessage(technicalError, 1000);
                     executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                             null, 500, executionTime, performedBy, actualClientIp, userAgent,
                             logErrorMessage, objectMapper);
@@ -2120,14 +2277,7 @@ public class AutoAPIGeneratorEngineService {
                     log.error("Failed to log execution error: {}", logError.getMessage());
                 }
 
-                return ExecuteApiResponseDTO.builder()
-                        .responseCode(500)
-                        .success(false)
-                        .message(detailedError)
-                        .data(Collections.singletonList(errorData))
-                        .protocolType(protocolType)
-                        .contentType("application/json")
-                        .build();
+                return finalResponse;
             }
 
         } catch (Exception e) {
@@ -2137,18 +2287,35 @@ public class AutoAPIGeneratorEngineService {
                     ", Error executing API: " + e.getMessage());
             log.error("Error executing API: ", e);
 
-            String detailedError = extractDatabaseError(e, databaseType);
+            String technicalError = extractDatabaseError(e, databaseType);
+            String userFriendlyMessage = "An unexpected error occurred. Please try again later or contact support.";
 
             Map<String, Object> errorData = new HashMap<>();
-            errorData.put("error", detailedError);
             errorData.put("timestamp", LocalDateTime.now().toString());
             errorData.put("executionTimeMs", executionTime);
 
+            Map<String, Object> errorMap = new HashMap<>();
+            errorMap.put("code", "GENERAL_ERROR");
+            errorMap.put("technicalMessage", technicalError);
+            errorMap.put("errorType", e.getClass().getSimpleName());
+            errorMap.put("apiId", apiId);
+            errorMap.put("timestamp", LocalDateTime.now().toString());
+
+            finalResponse = ExecuteApiResponseDTO.builder()
+                    .responseCode(500)
+                    .success(false)
+                    .message(userFriendlyMessage)
+                    .data(Collections.singletonList(errorData))
+                    .error(errorMap)
+                    .protocolType(protocolType)
+                    .contentType("application/json")
+                    .build();
+
             if (capturedRequestId != null) {
                 try {
-                    String dbErrorMessage = truncateErrorMessage(detailedError, 250);
+                    String fullResponseBody = objectMapper.writeValueAsString(finalResponse);
                     apiRequestService.updateRequestWithError(
-                            requestId, capturedRequestId, 500, dbErrorMessage, executionTime);
+                            requestId, capturedRequestId, 500, userFriendlyMessage, executionTime, fullResponseBody);
                 } catch (Exception updateError) {
                     log.error("Failed to update captured request: {}", updateError.getMessage());
                 }
@@ -2162,7 +2329,7 @@ public class AutoAPIGeneratorEngineService {
                     // Ignore
                 }
 
-                String logErrorMessage = truncateErrorMessage(detailedError, 1000);
+                String logErrorMessage = truncateErrorMessage(technicalError, 1000);
                 BaseApiExecutionHelper defaultHelper = executionHelperFactory.getExecutionHelper("oracle");
                 defaultHelper.logExecution(executionLogRepository, api, executeRequest,
                         null, 500, executionTime, performedBy, getClientIpAddress(httpServletRequest), userAgent,
@@ -2171,14 +2338,7 @@ public class AutoAPIGeneratorEngineService {
                 log.error("Failed to log execution error: {}", logError.getMessage());
             }
 
-            return ExecuteApiResponseDTO.builder()
-                    .responseCode(500)
-                    .success(false)
-                    .message(detailedError)
-                    .data(Collections.singletonList(errorData))
-                    .protocolType(protocolType)
-                    .contentType("application/json")
-                    .build();
+            return finalResponse;
         }
     }
 

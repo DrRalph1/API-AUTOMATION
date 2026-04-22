@@ -1062,6 +1062,207 @@ public class ApiRequestService {
         return dto;
     }
 
+
+
+    // Add these methods to your ApiRequestService class
+
+    /**
+     * Update a captured request with full response body (for success responses)
+     */
+    @Transactional
+    public ApiRequestResponseDTO updateRequestWithResponse(
+            String requestId,
+            String capturedRequestId,
+            ExecuteApiResponseDTO responseDTO,
+            Integer statusCode,
+            String statusMessage,
+            Long executionDurationMs,
+            String fullResponseBody) {
+
+        long startTime = System.currentTimeMillis();
+
+        try {
+            loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                    ", Updating captured request: " + capturedRequestId + " with full response");
+
+            // Find the captured request
+            ApiRequestEntity requestEntity = apiRequestRepository.findById(capturedRequestId)
+                    .orElseThrow(() -> new RuntimeException("Captured request not found with ID: " + capturedRequestId));
+
+            // Update with response details
+            requestEntity.setResponseTimestamp(LocalDateTime.now());
+
+            if (responseDTO != null) {
+                requestEntity.setResponseStatusCode(responseDTO.getResponseCode());
+                requestEntity.setResponseStatusMessage(responseDTO.getMessage());
+
+                // Store the FULL response body as JSON string
+                if (fullResponseBody != null) {
+                    try {
+                        // Parse the full response body to Map for storage
+                        Map<String, Object> fullResponseMap = objectMapper.readValue(fullResponseBody, Map.class);
+                        requestEntity.setResponseBody(fullResponseMap);
+                    } catch (Exception e) {
+                        log.warn("Could not parse full response body to Map: {}", e.getMessage());
+                        // Fallback: wrap in a map
+                        Map<String, Object> wrappedResponse = new HashMap<>();
+                        wrappedResponse.put("rawResponse", fullResponseBody);
+                        requestEntity.setResponseBody(wrappedResponse);
+                    }
+                } else if (responseDTO.getData() != null) {
+                    // Fallback to just data if full response not provided
+                    try {
+                        if (responseDTO.getData() instanceof Map) {
+                            requestEntity.setResponseBody((Map<String, Object>) responseDTO.getData());
+                        } else {
+                            Map<String, Object> wrappedResponse = new HashMap<>();
+                            wrappedResponse.put("data", responseDTO.getData());
+                            requestEntity.setResponseBody(wrappedResponse);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Could not convert response data to Map: {}", e.getMessage());
+                    }
+                }
+            }
+
+            // Override with explicit parameters if provided
+            if (statusCode != null) {
+                requestEntity.setResponseStatusCode(statusCode);
+            }
+            if (statusMessage != null) {
+                requestEntity.setResponseStatusMessage(statusMessage);
+            }
+            if (executionDurationMs != null) {
+                requestEntity.setExecutionDurationMs(executionDurationMs);
+            } else if (requestEntity.getExecutionDurationMs() == null) {
+                // Calculate duration if not set
+                requestEntity.calculateExecutionDuration();
+            }
+
+            // Determine request status based on response code
+            determineAndSetRequestStatus(requestEntity);
+
+            // Save the updated request
+            ApiRequestEntity updatedRequest = apiRequestRepository.save(requestEntity);
+
+            loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                    ", Request updated successfully with full response. Status: " + updatedRequest.getRequestStatus() +
+                    ", Status Code: " + updatedRequest.getResponseStatusCode() +
+                    " in " + (System.currentTimeMillis() - startTime) + "ms");
+
+            // Get the associated API for the response
+            GeneratedApiEntity api = updatedRequest.getGeneratedApi();
+
+            return mapToResponseDTO(updatedRequest, api);
+
+        } catch (Exception e) {
+            loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                    ", Error updating request with full response: " + e.getMessage());
+            log.error("Error updating request with full response", e);
+            throw new RuntimeException("Failed to update request with full response: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Update a captured request with full error response body
+     */
+    @Transactional
+    public ApiRequestResponseDTO updateRequestWithError(
+            String requestId,
+            String capturedRequestId,
+            Integer statusCode,
+            String errorMessage,
+            Long executionDurationMs,
+            String fullErrorResponseBody) {
+
+        try {
+            loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                    ", Updating captured request: " + capturedRequestId + " with full error response");
+
+            ApiRequestEntity requestEntity = apiRequestRepository.findById(capturedRequestId)
+                    .orElseThrow(() -> new RuntimeException("Captured request not found with ID: " + capturedRequestId));
+
+            requestEntity.setResponseTimestamp(LocalDateTime.now());
+            requestEntity.setResponseStatusCode(statusCode != null ? statusCode : 500);
+            requestEntity.setResponseStatusMessage(errorMessage);
+            requestEntity.setErrorMessage(errorMessage);
+            requestEntity.setRequestStatus(REQUEST_STATUS_FAILED);
+
+            if (executionDurationMs != null) {
+                requestEntity.setExecutionDurationMs(executionDurationMs);
+            } else {
+                requestEntity.calculateExecutionDuration();
+            }
+
+            // Store the FULL error response body
+            if (fullErrorResponseBody != null) {
+                try {
+                    // Parse the full error response body to Map for storage
+                    Map<String, Object> fullErrorMap = objectMapper.readValue(fullErrorResponseBody, Map.class);
+                    requestEntity.setResponseBody(fullErrorMap);
+                } catch (Exception e) {
+                    log.warn("Could not parse full error response body to Map: {}", e.getMessage());
+                    // Fallback: create error body map
+                    Map<String, Object> errorBody = new HashMap<>();
+                    errorBody.put("error", true);
+                    errorBody.put("message", errorMessage);
+                    errorBody.put("timestamp", LocalDateTime.now().toString());
+                    errorBody.put("statusCode", statusCode != null ? statusCode : 500);
+                    errorBody.put("fullResponse", fullErrorResponseBody);
+                    requestEntity.setResponseBody(errorBody);
+                }
+            } else {
+                // Fallback: create basic error body
+                Map<String, Object> errorBody = new HashMap<>();
+                errorBody.put("error", true);
+                errorBody.put("message", errorMessage);
+                errorBody.put("timestamp", LocalDateTime.now().toString());
+                errorBody.put("statusCode", statusCode != null ? statusCode : 500);
+                requestEntity.setResponseBody(errorBody);
+            }
+
+            ApiRequestEntity updatedRequest = apiRequestRepository.save(requestEntity);
+            GeneratedApiEntity api = updatedRequest.getGeneratedApi();
+
+            loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                    ", Request updated with full error response successfully");
+
+            return mapToResponseDTO(updatedRequest, api);
+
+        } catch (Exception e) {
+            loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                    ", Error updating request with full error response: " + e.getMessage());
+            throw new RuntimeException("Failed to update request with full error response: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Update a captured request with full response body (keeping original method signature for backward compatibility)
+     */
+    @Transactional
+    public ApiRequestResponseDTO updateRequestWithFullResponse(
+            String requestId,
+            String capturedRequestId,
+            int statusCode,
+            String message,
+            long executionTime,
+            String responseBody) {
+
+        // Create a simple response DTO
+        ExecuteApiResponseDTO responseDTO = ExecuteApiResponseDTO.builder()
+                .responseCode(statusCode)
+                .success(statusCode >= 200 && statusCode < 300)
+                .message(message)
+                .protocolType("rest")
+                .contentType("application/json")
+                .build();
+
+        return updateRequestWithResponse(requestId, capturedRequestId, responseDTO,
+                statusCode, message, executionTime, responseBody);
+    }
+
+
+
     /**
      * Map entity to response DTO
      */
