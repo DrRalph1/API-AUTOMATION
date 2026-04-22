@@ -388,12 +388,46 @@ public class AutoAPIGeneratorEngineService {
             GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
                     .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
 
-            String databaseType = api.getDatabaseType();
+            // ============ CRITICAL FIX: Get database type from request first for custom queries ============
+            String databaseType = request.getDatabaseType();
+
+            // If not in request, check sourceObject
+            if (databaseType == null || databaseType.isEmpty()) {
+                if (request.getSourceObject() != null && request.getSourceObject().containsKey("databaseType")) {
+                    databaseType = (String) request.getSourceObject().get("databaseType");
+                }
+            }
+
+            // For custom queries, detect from syntax if still not determined
+            if (databaseType == null || databaseType.isEmpty()) {
+                String customQuery = request.getCustomSelectStatement();
+                if (customQuery != null && !customQuery.trim().isEmpty()) {
+                    // Detect PostgreSQL-specific syntax
+                    if (customQuery.contains("::jsonb") ||
+                            customQuery.contains("ILIKE") ||
+                            customQuery.contains("->>") ||
+                            customQuery.matches(".*\\$\\d+.*")) {
+                        databaseType = "postgresql";
+                        log.info("Detected PostgreSQL syntax in custom query, setting databaseType to: postgresql");
+                    } else {
+                        databaseType = "oracle";
+                    }
+                } else {
+                    // Fall back to existing API's database type
+                    databaseType = api.getDatabaseType();
+                }
+            }
+
+            // Final fallback
             if (databaseType == null || databaseType.isEmpty()) {
                 databaseType = "oracle";
             }
 
+            // CRITICAL: Set the database type on the API entity
+            api.setDatabaseType(databaseType);
+
             log.info("Updating API: {} on database: {}", apiId, databaseType);
+            // ============ END FIX ============
 
             // ============ CHECK IF PROTOCOL IS CHANGING ============
             String currentProtocol = api.getProtocolType();
@@ -417,7 +451,7 @@ public class AutoAPIGeneratorEngineService {
 
             Object schemaService = databaseTypeFactory.getSchemaService(databaseType);
 
-            // CRITICAL: For custom queries, pass the custom SELECT statement through
+            // CRITICAL: For custom queries, pass the custom SELECT statement through with the correct database type
             ApiSourceObjectDTO sourceObjectDTO = convertAndValidateSourceObjectForUpdate(request, schemaService, databaseType);
 
             CollectionInfoDTO collectionInfo = validationHelper.validateAndGetCollectionInfo(request.getCollectionInfo());
@@ -430,6 +464,7 @@ public class AutoAPIGeneratorEngineService {
                     parameterGenerator, conversionHelper);
 
             api.setSourceRequestId(originalSourceRequestId);
+            // CRITICAL: Ensure database type is set again after recreation
             api.setDatabaseType(databaseType);
 
             // ============ UPDATE PROTOCOL-SPECIFIC FIELDS ============
@@ -531,6 +566,17 @@ public class AutoAPIGeneratorEngineService {
 
             log.info("Processing custom SELECT statement for API generation");
 
+            // CRITICAL FIX: Use the databaseType from the request, not defaulting to oracle
+            String actualDatabaseType = request.getDatabaseType();
+            if (actualDatabaseType == null || actualDatabaseType.isEmpty()) {
+                actualDatabaseType = databaseType; // Use the passed databaseType
+            }
+            if (actualDatabaseType == null || actualDatabaseType.isEmpty()) {
+                actualDatabaseType = "postgresql"; // Default to postgresql for custom queries with PostgreSQL syntax
+            }
+
+            log.info("Custom query database type: {}", actualDatabaseType);
+
             Map<String, Object> sourceObjectMap = request.getSourceObject();
             if (sourceObjectMap == null) {
                 sourceObjectMap = new HashMap<>();
@@ -538,12 +584,12 @@ public class AutoAPIGeneratorEngineService {
             sourceObjectMap.put("customSelectStatement", request.getCustomSelectStatement());
             sourceObjectMap.put("objectType", "CUSTOM_QUERY");
             sourceObjectMap.put("operation", "SELECT");
-            sourceObjectMap.put("databaseType", databaseType);
+            sourceObjectMap.put("databaseType", actualDatabaseType); // Use the actual database type
             sourceObjectMap.put("isCustomQuery", true);
             sourceObjectMap.put("useCustomQuery", true);
 
             return conversionHelper.convertAndValidateSourceObjectForCustomQuery(
-                    sourceObjectMap, objectMapper, databaseType, customQueryParserUtil
+                    sourceObjectMap, objectMapper, actualDatabaseType, customQueryParserUtil
             );
         }
 
@@ -575,6 +621,28 @@ public class AutoAPIGeneratorEngineService {
 
             log.info("Processing custom SELECT statement for API update");
 
+            // CRITICAL FIX: Use the databaseType from the parameter
+            String actualDatabaseType = databaseType;
+
+            // If still null, detect from syntax
+            if (actualDatabaseType == null || actualDatabaseType.isEmpty()) {
+                String customQuery = request.getCustomSelectStatement();
+                if (customQuery != null && !customQuery.trim().isEmpty()) {
+                    if (customQuery.contains("::jsonb") ||
+                            customQuery.contains("ILIKE") ||
+                            customQuery.contains("->>") ||
+                            customQuery.matches(".*\\$\\d+.*")) {
+                        actualDatabaseType = "postgresql";
+                    } else {
+                        actualDatabaseType = "oracle";
+                    }
+                } else {
+                    actualDatabaseType = "oracle";
+                }
+            }
+
+            log.info("Custom query database type for update: {}", actualDatabaseType);
+
             Map<String, Object> sourceObjectMap = request.getSourceObject();
             if (sourceObjectMap == null) {
                 sourceObjectMap = new HashMap<>();
@@ -582,12 +650,12 @@ public class AutoAPIGeneratorEngineService {
             sourceObjectMap.put("customSelectStatement", request.getCustomSelectStatement());
             sourceObjectMap.put("objectType", "CUSTOM_QUERY");
             sourceObjectMap.put("operation", "SELECT");
-            sourceObjectMap.put("databaseType", databaseType);
+            sourceObjectMap.put("databaseType", actualDatabaseType);
             sourceObjectMap.put("isCustomQuery", true);
             sourceObjectMap.put("useCustomQuery", true);
 
             return conversionHelper.convertAndValidateSourceObjectForCustomQuery(
-                    sourceObjectMap, objectMapper, databaseType, customQueryParserUtil
+                    sourceObjectMap, objectMapper, actualDatabaseType, customQueryParserUtil
             );
         }
 

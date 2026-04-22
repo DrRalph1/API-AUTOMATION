@@ -122,11 +122,11 @@ public abstract class BaseApiExecutionHelper {
     }
     
     // ==================== EXISTING METHODS WITH ENHANCEMENTS ====================
-    
+
     @Retryable(
-        value = {DataAccessException.class},
-        maxAttempts = MAX_RETRY_ATTEMPTS,
-        backoff = @Backoff(delay = RETRY_DELAY_MS, multiplier = 2)
+            value = {DataAccessException.class},
+            maxAttempts = MAX_RETRY_ATTEMPTS,
+            backoff = @Backoff(delay = RETRY_DELAY_MS, multiplier = 2)
     )
     public GeneratedApiEntity createAndSaveApiEntity(
             GenerateApiRequestDTO request,
@@ -163,11 +163,29 @@ public abstract class BaseApiExecutionHelper {
             api.setTotalCalls(0L);
             api.setDatabaseType(databaseType);
 
+            // ============ CRITICAL: Handle custom query fields ============
+            if (request.getUseCustomQuery() != null && request.getUseCustomQuery()) {
+                api.setUseCustomQuery(true);
+                if (request.getCustomSelectStatement() != null && !request.getCustomSelectStatement().trim().isEmpty()) {
+                    api.setCustomSelectStatement(request.getCustomSelectStatement());
+                    log.info("✅ Set customSelectStatement on new API entity (length: {} chars)",
+                            request.getCustomSelectStatement().length());
+                }
+            }
+            // ============ END CRITICAL ============
+
             if (sourceObjectDTO != null) {
                 try {
                     Map<String, Object> sourceObjectMap = objectMapper.convertValue(
                             sourceObjectDTO,
                             new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+
+                    // Ensure custom query flag is set in the map
+                    if (sourceObjectDTO.isCustomQuery()) {
+                        sourceObjectMap.put("isCustomQuery", true);
+                        sourceObjectMap.put("customSelectStatement", sourceObjectDTO.getCustomSelectStatement());
+                    }
+
                     api.setSourceObjectInfo(sourceObjectMap);
                 } catch (Exception e) {
                     log.error("Error converting source object to map", e);
@@ -189,7 +207,10 @@ public abstract class BaseApiExecutionHelper {
             setupApiRelationships(api, request, sourceObjectDTO, parameterGenerator, conversionHelper);
 
             GeneratedApiEntity savedApi = repository.save(api);
-            log.info("Created API entity with ID: {}, Database Type: {}", savedApi.getId(), savedApi.getDatabaseType());
+            log.info("Created API entity with ID: {}, Database Type: {}, UseCustomQuery: {}",
+                    savedApi.getId(),
+                    savedApi.getDatabaseType(),
+                    savedApi.getUseCustomQuery());
 
             return savedApi;
         });
@@ -201,9 +222,9 @@ public abstract class BaseApiExecutionHelper {
     }
 
     @Retryable(
-        value = {DataAccessException.class},
-        maxAttempts = 2,
-        backoff = @Backoff(delay = 500)
+            value = {DataAccessException.class},
+            maxAttempts = 2,
+            backoff = @Backoff(delay = 500)
     )
     @Transactional
     public void updateApiEntity(GeneratedApiEntity api,
@@ -229,6 +250,20 @@ public abstract class BaseApiExecutionHelper {
             api.setTags(request.getTags());
         }
 
+        // ============ CRITICAL: Handle custom query fields ============
+        if (request.getUseCustomQuery() != null && request.getUseCustomQuery()) {
+            api.setUseCustomQuery(true);
+            if (request.getCustomSelectStatement() != null && !request.getCustomSelectStatement().trim().isEmpty()) {
+                api.setCustomSelectStatement(request.getCustomSelectStatement());
+                log.info("✅ Set customSelectStatement on API entity (length: {} chars)",
+                        request.getCustomSelectStatement().length());
+            }
+        } else {
+            api.setUseCustomQuery(false);
+            api.setCustomSelectStatement(null);
+        }
+        // ============ END CRITICAL ============
+
         if (sourceObjectDTO != null) {
             try {
                 Map<String, Object> sourceObjectMap = new HashMap<>();
@@ -241,6 +276,17 @@ public abstract class BaseApiExecutionHelper {
                 sourceObjectMap.put("SCHEMA_NAME", sourceObjectDTO.getSchemaName());
                 sourceObjectMap.put("operation", sourceObjectDTO.getOperation());
                 sourceObjectMap.put("databaseType", sourceObjectDTO.getDatabaseType());
+
+                // ============ ADD CUSTOM QUERY INFO TO SOURCE OBJECT MAP ============
+                if (sourceObjectDTO.isCustomQuery()) {
+                    sourceObjectMap.put("isCustomQuery", true);
+                    sourceObjectMap.put("customSelectStatement", sourceObjectDTO.getCustomSelectStatement());
+                    sourceObjectMap.put("queryAlias", sourceObjectDTO.getQueryAlias());
+                    sourceObjectMap.put("sourceTables", sourceObjectDTO.getSourceTables());
+                    sourceObjectMap.put("parameterCount", sourceObjectDTO.getParameterCount());
+                    log.info("✅ Added custom query info to sourceObjectMap");
+                }
+                // ============ END ADD CUSTOM QUERY INFO ============
 
                 if (sourceObjectDTO.getIsSynonym() != null) {
                     sourceObjectMap.put("isSynonym", sourceObjectDTO.getIsSynonym());
@@ -267,7 +313,11 @@ public abstract class BaseApiExecutionHelper {
             }
         }
 
-        log.info("Updated API entity: {}, Preserving database type: {}", api.getId(), api.getDatabaseType());
+        log.info("Updated API entity: {}, Preserving database type: {}, UseCustomQuery: {}, CustomQueryLength: {}",
+                api.getId(),
+                api.getDatabaseType(),
+                api.getUseCustomQuery(),
+                api.getCustomSelectStatement() != null ? api.getCustomSelectStatement().length() : 0);
     }
 
     public void clearApiRelationships(GeneratedApiEntity api) {
@@ -297,11 +347,32 @@ public abstract class BaseApiExecutionHelper {
 
         log.debug("Recreating relationships for API: {}", api.getId());
 
-        if (api.getParameters() == null) api.setParameters(new ArrayList<>());
-        if (api.getHeaders() == null) api.setHeaders(new ArrayList<>());
-        if (api.getResponseMappings() == null) api.setResponseMappings(new ArrayList<>());
-        if (api.getTests() == null) api.setTests(new ArrayList<>());
+        // CRITICAL: Clear ALL existing collections BEFORE adding new ones
+        if (api.getParameters() != null) {
+            api.getParameters().clear();
+        } else {
+            api.setParameters(new ArrayList<>());
+        }
 
+        if (api.getHeaders() != null) {
+            api.getHeaders().clear();
+        } else {
+            api.setHeaders(new ArrayList<>());
+        }
+
+        if (api.getResponseMappings() != null) {
+            api.getResponseMappings().clear();
+        } else {
+            api.setResponseMappings(new ArrayList<>());
+        }
+
+        if (api.getTests() != null) {
+            api.getTests().clear();
+        } else {
+            api.setTests(new ArrayList<>());
+        }
+
+        // Now add the new relationships
         setupApiRelationships(api, request, sourceObjectDTO, parameterGenerator, conversionHelper);
 
         log.debug("Successfully recreated relationships for API: {}", api.getId());

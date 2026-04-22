@@ -82,6 +82,9 @@ public class GeneratedApiEntity {
     @Column(name = "endpoint_path")
     private String endpointPath;
 
+    @Column(name = "use_custom_query")
+    private Boolean useCustomQuery = false;
+
     @Column(name = "category")
     private String category;
 

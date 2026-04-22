@@ -111,31 +111,40 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
             api.setSettings(settings);
         }
 
-        // ADD to parameters collection (don't replace)
+        // ============ REPLACE parameters collection (CLEAR then ADD) ============
+        api.getParameters().clear();  // Clear existing parameters
+
         List<ApiParameterEntity> parameters = parameterGenerator.generateParameters(
                 sourceObjectDTO, request.getParameters(), api.getId());
         for (ApiParameterEntity param : parameters) {
             param.setGeneratedApi(api);
-            api.getParameters().add(param);  // ADD to existing collection, not set
+            api.getParameters().add(param);
         }
+        log.info("Recreated {} parameters for API: {}", parameters.size(), api.getId());
 
-        // ADD to headers collection (don't replace)
+        // ============ REPLACE headers collection (CLEAR then ADD) ============
+        api.getHeaders().clear();  // Clear existing headers
+
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
             List<ApiHeaderEntity> headers = conversionHelper.createHeaderEntities(request.getHeaders(), api);
             for (ApiHeaderEntity header : headers) {
                 header.setGeneratedApi(api);
-                api.getHeaders().add(header);  // ADD to existing collection
+                api.getHeaders().add(header);
             }
+            log.info("Recreated {} headers for API: {}", headers.size(), api.getId());
         }
 
-        // ADD to response mappings collection (don't replace)
+        // ============ REPLACE response mappings collection (CLEAR then ADD) ============
+        api.getResponseMappings().clear();  // Clear existing response mappings
+
         if (request.getResponseMappings() != null && !request.getResponseMappings().isEmpty()) {
             List<ApiResponseMappingEntity> responseMappings =
                     conversionHelper.createResponseMappingEntities(request.getResponseMappings(), api.getId());
             for (ApiResponseMappingEntity mapping : responseMappings) {
                 mapping.setGeneratedApi(api);
-                api.getResponseMappings().add(mapping);  // ADD to existing collection
+                api.getResponseMappings().add(mapping);
             }
+            log.info("Recreated {} response mappings for API: {}", responseMappings.size(), api.getId());
         }
 
         log.debug("Setup relationships for PostgreSQL API: {}", api.getId());

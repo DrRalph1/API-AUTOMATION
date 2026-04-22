@@ -75,7 +75,7 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
             CollectionInfoDTO collectionInfo,
             String endpointPath,
             String performedBy,
-            String requestId,  // This parameter might be renamed to generationRequestId for clarity
+            String requestId,
             GeneratedAPIRepository generatedAPIRepository,
             ObjectMapper objectMapper,
             DatabaseParameterGeneratorUtil parameterGenerator,
@@ -102,7 +102,6 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
                 .sourceObjectInfo(sourceObjectDTO != null ?
                         objectMapper.convertValue(sourceObjectDTO, Map.class) : null)
                 .collectionInfo(objectMapper.convertValue(collectionInfo, Map.class))
-                // REMOVE THIS LINE: .sourceRequestId(requestId)
                 .build();
 
         // Save configurations using helper setters
@@ -129,31 +128,31 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
         // Save parameters using helper methods
         if (request.getParameters() != null && !request.getParameters().isEmpty()) {
             List<ApiParameterEntity> parameters = createParametersFromDTOs(request.getParameters(), api);
-            api.replaceParameters(parameters);  // Using the new bulk replace method
+            api.replaceParameters(parameters);
         } else if (sourceObjectDTO != null) {
             List<ApiParameterEntity> parameters = parameterGenerator.generateParametersFromSource(sourceObjectDTO, api);
-            api.replaceParameters(parameters);  // Using the new bulk replace method
+            api.replaceParameters(parameters);
         }
 
         // Save response mappings using helper methods
         if (request.getResponseMappings() != null && !request.getResponseMappings().isEmpty()) {
             List<ApiResponseMappingEntity> mappings = createResponseMappingsFromDTOs(request.getResponseMappings(), api);
-            api.replaceResponseMappings(mappings);  // Using the new bulk replace method
+            api.replaceResponseMappings(mappings);
         } else if (sourceObjectDTO != null) {
             List<ApiResponseMappingEntity> mappings = parameterGenerator.generateResponseMappingsFromSource(sourceObjectDTO, api);
-            api.replaceResponseMappings(mappings);  // Using the new bulk replace method
+            api.replaceResponseMappings(mappings);
         }
 
         // Save headers using helper methods
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
             List<ApiHeaderEntity> headers = createHeadersFromDTOs(request.getHeaders(), api);
-            api.replaceHeaders(headers);  // Using the new bulk replace method
+            api.replaceHeaders(headers);
         }
 
         // Save tests using helper methods
         if (request.getTests() != null) {
             List<ApiTestEntity> tests = createTestEntities(request.getTests(), api);
-            api.replaceTests(tests);  // Using the new bulk replace method
+            api.replaceTests(tests);
         }
 
         return generatedAPIRepository.save(api);
@@ -176,7 +175,7 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
         api.setOwner(request.getOwner());
         api.setUpdatedAt(LocalDateTime.now());
         api.setUpdatedBy(performedBy);
-        api.replaceTags(request.getTags() != null ? request.getTags() : new ArrayList<>());  // Using replaceTags
+        api.replaceTags(request.getTags() != null ? request.getTags() : new ArrayList<>());
 
         if (sourceObjectDTO != null) {
             api.setSourceObjectInfo(new ObjectMapper().convertValue(sourceObjectDTO, Map.class));
@@ -188,14 +187,14 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
     }
 
     /**
-     * UPDATED: Clear all relationships using the new helper methods
+     * Clear all relationships using the helper methods
      */
     public void clearApiRelationships(GeneratedApiEntity api) {
         if (api == null) return;
 
         log.debug("Clearing relationships for API: {}", api.getId());
 
-        // Clear one-to-one relationships using helper setters
+        // Clear one-to-one relationships
         api.setSchemaConfig(null);
         api.setAuthConfig(null);
         api.setRequestConfig(null);
@@ -213,7 +212,7 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
     }
 
     /**
-     * UPDATED: Recreate relationships using the new helper methods
+     * Recreate relationships using the helper methods (REPLACE not APPEND)
      */
     public void recreateApiRelationships(GeneratedApiEntity api,
                                          GenerateApiRequestDTO request,
@@ -248,35 +247,47 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
             api.setSettings(mapToSettingsEntity(request.getSettings(), api));
         }
 
-        // Recreate parameters
+        // ============ REPLACE parameters (CLEAR then ADD) ============
+        api.clearParameters();  // Clear existing
+
         if (request.getParameters() != null && !request.getParameters().isEmpty()) {
             List<ApiParameterEntity> parameters = createParametersFromDTOs(request.getParameters(), api);
-            api.replaceParameters(parameters);  // Using bulk replace
+            api.replaceParameters(parameters);
         } else if (sourceObjectDTO != null) {
             List<ApiParameterEntity> parameters = parameterGenerator.generateParametersFromSource(sourceObjectDTO, api);
-            api.replaceParameters(parameters);  // Using bulk replace
+            api.replaceParameters(parameters);
         }
+        log.info("Recreated {} parameters for API: {}", api.getParameters().size(), api.getId());
 
-        // Recreate response mappings
+        // ============ REPLACE response mappings (CLEAR then ADD) ============
+        api.clearResponseMappings();  // Clear existing
+
         if (request.getResponseMappings() != null && !request.getResponseMappings().isEmpty()) {
             List<ApiResponseMappingEntity> mappings = createResponseMappingsFromDTOs(request.getResponseMappings(), api);
-            api.replaceResponseMappings(mappings);  // Using bulk replace
+            api.replaceResponseMappings(mappings);
         } else if (sourceObjectDTO != null) {
             List<ApiResponseMappingEntity> mappings = parameterGenerator.generateResponseMappingsFromSource(sourceObjectDTO, api);
-            api.replaceResponseMappings(mappings);  // Using bulk replace
+            api.replaceResponseMappings(mappings);
         }
+        log.info("Recreated {} response mappings for API: {}", api.getResponseMappings().size(), api.getId());
 
-        // Recreate headers
+        // ============ REPLACE headers (CLEAR then ADD) ============
+        api.clearHeaders();  // Clear existing
+
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
             List<ApiHeaderEntity> headers = createHeadersFromDTOs(request.getHeaders(), api);
-            api.replaceHeaders(headers);  // Using bulk replace
+            api.replaceHeaders(headers);
         }
+        log.info("Recreated {} headers for API: {}", api.getHeaders().size(), api.getId());
 
-        // Recreate tests
+        // ============ REPLACE tests (CLEAR then ADD) ============
+        api.clearTests();  // Clear existing
+
         if (request.getTests() != null) {
             List<ApiTestEntity> tests = createTestEntities(request.getTests(), api);
-            api.replaceTests(tests);  // Using bulk replace
+            api.replaceTests(tests);
         }
+        log.info("Recreated {} tests for API: {}", api.getTests().size(), api.getId());
 
         log.debug("Successfully recreated relationships for API: {}", api.getId());
     }
@@ -311,8 +322,7 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
         log.debug("Incoming headers: {}", headers);
         log.debug("Incoming body: {}", body);
 
-        // CRITICAL FIX: Extract path parameters from the URL if they're not already in pathParams
-        // This would normally be done by the Spring controller, but we need to ensure it's done
+        // Extract path parameters from the URL if they're not already in pathParams
         if (pathParams.isEmpty() && executeRequest.getUrl() != null && api.getEndpointPath() != null) {
             extractPathParamsFromUrl(api, executeRequest, pathParams);
         }
@@ -321,7 +331,6 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
         if (("POST".equals(api.getHttpMethod()) || "PUT".equals(api.getHttpMethod()))
                 && body != null) {
 
-            // Check if Content-Type is already present (case-insensitive)
             boolean hasContentType = false;
             for (String headerKey : headers.keySet()) {
                 if ("Content-Type".equalsIgnoreCase(headerKey)) {
@@ -338,7 +347,7 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
         }
 
         // Categorize parameters based on API configuration
-        if (api.hasParameters()) {  // Using the new utility method
+        if (api.hasParameters()) {
             Map<String, Object> allProvidedParams = new HashMap<>();
             allProvidedParams.putAll(pathParams);
             allProvidedParams.putAll(queryParams);
@@ -414,12 +423,6 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
         return validatedRequest;
     }
 
-
-
-
-    /**
-     * Extract path parameters from the URL based on the API's endpoint path pattern
-     */
     /**
      * Extract path parameters from the URL based on the API's endpoint path pattern
      */
@@ -447,9 +450,6 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
             log.info("Found {} path parameters in pattern: {}", paramNames.size(), paramNames);
 
             // Find the position where the endpoint path starts in the URL
-            // The URL format is: http://server:port/plx/api/gen/{apiId}/api/v1/{endpoint}/{params}
-
-            // First, find the API ID in the URL
             String apiId = api.getId();
             String apiIdPattern = "/gen/" + apiId;
             int apiIdIndex = url.indexOf(apiIdPattern);
@@ -463,7 +463,6 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
             String afterApiId = url.substring(apiIdIndex + apiIdPattern.length());
             log.info("URL after API ID: {}", afterApiId);
 
-            // Now afterApiId looks like: /api/v1/get-acctdescrp/001020551601
             // Split by "/" and filter out empty strings
             String[] urlSegments = afterApiId.split("/");
             List<String> filteredUrlSegments = new ArrayList<>();
@@ -487,7 +486,6 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
             log.info("Pattern segments: {}", filteredPatternSegments);
 
             // Find where the pattern starts in the URL segments
-            // The pattern might be at the end of the URL
             int patternStartIndex = -1;
             for (int i = 0; i <= filteredUrlSegments.size() - filteredPatternSegments.size(); i++) {
                 boolean matches = true;
@@ -495,11 +493,9 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
                     String patternSegment = filteredPatternSegments.get(j);
                     String urlSegment = filteredUrlSegments.get(i + j);
 
-                    // If pattern segment is a placeholder, it matches anything
                     if (patternSegment.startsWith("{") && patternSegment.endsWith("}")) {
                         continue;
                     }
-                    // Otherwise, they must match exactly
                     if (!patternSegment.equals(urlSegment)) {
                         matches = false;
                         break;
@@ -613,17 +609,13 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
         // Create consolidated params map for the executors
         Map<String, Object> consolidatedParams = createConsolidatedParams(request);
 
-        // System.out.println("operation::::" + operation);
-
         switch (targetType) {
             case "TABLE":
                 return executeTableOperation(oracleTableExecutorUtil, targetName, targetOwner, operation,
                         consolidatedParams, api, configuredParamDTOs);
             case "VIEW":
-                // FIX: Ensure owner is properly resolved before passing to ViewExecutorUtil
                 String viewOwner = targetOwner;
                 if (viewOwner == null || viewOwner.isEmpty()) {
-                    // Try to get from sourceObject
                     viewOwner = sourceObject.getOwner();
                     if (viewOwner == null || viewOwner.isEmpty()) {
                         viewOwner = sourceObject.getSchemaName();
@@ -771,7 +763,7 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
         }
     }
 
-    // Private mapping methods (same as in the original service)
+    // Private mapping methods
     private ApiSchemaConfigEntity mapToSchemaConfigEntity(ApiSchemaConfigDTO dto, GeneratedApiEntity api) {
         if (dto == null) return null;
         return ApiSchemaConfigEntity.builder()
@@ -1015,25 +1007,34 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
             api.setSettings(settings);
         }
 
-        // Generate and set parameters
+        // ============ REPLACE parameters (CLEAR then ADD) ============
+        api.clearParameters();  // Clear existing
+
         List<ApiParameterEntity> parameters = parameterGenerator.generateParameters(
                 sourceObjectDTO, request.getParameters(), api.getId());
         parameters.forEach(param -> param.setGeneratedApi(api));
-        api.setParameters(parameters);
+        api.replaceParameters(parameters);
+        log.info("Recreated {} parameters for API: {}", parameters.size(), api.getId());
 
-        // Set headers
+        // ============ REPLACE headers (CLEAR then ADD) ============
+        api.clearHeaders();  // Clear existing
+
         if (request.getHeaders() != null) {
             List<ApiHeaderEntity> headers = conversionHelper.createHeaderEntities(request.getHeaders(), api);
             headers.forEach(header -> header.setGeneratedApi(api));
-            api.setHeaders(headers);
+            api.replaceHeaders(headers);
+            log.info("Recreated {} headers for API: {}", headers.size(), api.getId());
         }
 
-        // Set response mappings
+        // ============ REPLACE response mappings (CLEAR then ADD) ============
+        api.clearResponseMappings();  // Clear existing
+
         if (request.getResponseMappings() != null) {
             List<ApiResponseMappingEntity> responseMappings =
                     conversionHelper.createResponseMappingEntities(request.getResponseMappings(), api.getId());
             responseMappings.forEach(mapping -> mapping.setGeneratedApi(api));
-            api.setResponseMappings(responseMappings);
+            api.replaceResponseMappings(responseMappings);
+            log.info("Recreated {} response mappings for API: {}", responseMappings.size(), api.getId());
         }
     }
 
@@ -1081,7 +1082,6 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
                                          ApiSourceObjectDTO sourceObject,
                                          ExecuteApiRequestDTO validatedRequest,
                                          List<ApiParameterDTO> configuredParamDTOs) {
-        // Your existing table execution logic
         String tableName = api.getSchemaConfig().getObjectName();
         String schema = api.getSchemaConfig().getSchemaName();
         String operation = api.getSchemaConfig().getOperation();
@@ -1107,19 +1107,17 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
         }
     }
 
-    // Add similar methods for view, procedure, function, package...
     private Object executeViewOperation(GeneratedApiEntity api,
                                         ApiSourceObjectDTO sourceObject,
                                         ExecuteApiRequestDTO validatedRequest,
                                         List<ApiParameterDTO> configuredParamDTOs) {
-        // Your view execution logic
         return oracleViewExecutorUtil.execute(
-                api,                          // GeneratedApiEntity api
-                sourceObject,                 // ApiSourceObjectDTO sourceObject
-                api.getSchemaConfig().getObjectName(),  // String viewName
-                api.getSchemaConfig().getSchemaName(),  // String owner
-                validatedRequest,             // ExecuteApiRequestDTO request
-                configuredParamDTOs           // List<ApiParameterDTO> configuredParamDTOs
+                api,
+                sourceObject,
+                api.getSchemaConfig().getObjectName(),
+                api.getSchemaConfig().getSchemaName(),
+                validatedRequest,
+                configuredParamDTOs
         );
     }
 
@@ -1127,30 +1125,27 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
                                              ApiSourceObjectDTO sourceObject,
                                              ExecuteApiRequestDTO validatedRequest,
                                              List<ApiParameterDTO> configuredParamDTOs) {
-        // Your procedure execution logic
         return oracleProcedureExecutorUtil.execute(
-                api,                          // GeneratedApiEntity api
-                sourceObject,                 // ApiSourceObjectDTO sourceObject
-                api.getSchemaConfig().getObjectName(),  // String procedureName
-                api.getSchemaConfig().getSchemaName(),  // String owner
-                validatedRequest,             // ExecuteApiRequestDTO request
-                configuredParamDTOs           // List<ApiParameterDTO> configuredParamDTOs
+                api,
+                sourceObject,
+                api.getSchemaConfig().getObjectName(),
+                api.getSchemaConfig().getSchemaName(),
+                validatedRequest,
+                configuredParamDTOs
         );
     }
-
 
     private Object executeFunctionOperation(GeneratedApiEntity api,
                                             ApiSourceObjectDTO sourceObject,
                                             ExecuteApiRequestDTO validatedRequest,
                                             List<ApiParameterDTO> configuredParamDTOs) {
-        // Your function execution logic
         return oracleFunctionExecutorUtil.execute(
-                api,                          // GeneratedApiEntity api
-                sourceObject,                 // ApiSourceObjectDTO sourceObject
-                api.getSchemaConfig().getObjectName(),  // String functionName
-                api.getSchemaConfig().getSchemaName(),  // String owner
-                validatedRequest,             // ExecuteApiRequestDTO request
-                configuredParamDTOs           // List<ApiParameterDTO> configuredParamDTOs
+                api,
+                sourceObject,
+                api.getSchemaConfig().getObjectName(),
+                api.getSchemaConfig().getSchemaName(),
+                validatedRequest,
+                configuredParamDTOs
         );
     }
 
@@ -1158,18 +1153,15 @@ public class OracleApiExecutionHelper extends BaseApiExecutionHelper {
                                            ApiSourceObjectDTO sourceObject,
                                            ExecuteApiRequestDTO validatedRequest,
                                            List<ApiParameterDTO> configuredParamDTOs) {
-        // Your package execution logic
-        // Check if OraclePackageExecutorUtil has a version without procedureName
         return oraclePackageExecutorUtil.execute(
-                api,                          // GeneratedApiEntity api
-                sourceObject,                 // ApiSourceObjectDTO sourceObject
-                api.getSchemaConfig().getObjectName(),  // String packageName
-                api.getSchemaConfig().getSchemaName(),  // String owner
-                validatedRequest,             // ExecuteApiRequestDTO request
-                configuredParamDTOs           // List<ApiParameterDTO> configuredParamDTOs
+                api,
+                sourceObject,
+                api.getSchemaConfig().getObjectName(),
+                api.getSchemaConfig().getSchemaName(),
+                validatedRequest,
+                configuredParamDTOs
         );
     }
-
 
     @Override
     protected boolean checkObjectExistsInDatabase(String schema, String objectName,

@@ -2400,10 +2400,12 @@ export default function AutoAPIGeneratorModal({
   isEditing = false,
   fromDashboard = false,
   // NEW: Custom query mode props
-  isCustomQuery = false,
   customQueryText = '',
   extractedParams = []
 }) {
+
+  
+  const [isCustomQuery, setIsCustomQuery] = useState(isCustomQuery || false);
 
   // Add this state to track source type
   const [sourceType, setSourceType] = useState(isCustomQuery ? 'custom_query' : 'database_object');
@@ -2966,7 +2968,8 @@ useEffect(() => {
       if (hasCustomQuery) {
         console.log('🔍 Editing existing custom query API detected');
         setIsEditingCustomQuery(true);
-        setSourceType('custom_query'); // <-- CRITICAL: Set sourceType here
+        setSourceType('custom_query');
+        setIsCustomQuery(true);  // <-- ADD THIS LINE
         
         // Extract the custom query text from various possible locations
         let extractedQuery = 
@@ -3110,88 +3113,103 @@ useEffect(() => {
     return 'Custom Query API';
   };
 
-  // Update the validateRequiredFields function to handle custom query mode and protocol-specific fields
-  const validateRequiredFields = () => {
-    const errors = {};
+  // Update the validateRequiredFields function (around line 1945) to handle mode-specific validation
+const validateRequiredFields = () => {
+  const errors = {};
 
-    // Check collection and folder
-    if (!selectedCollection) {
-      errors.collection = 'API Collection is required';
-    }
-    if (!selectedFolder) {
-      errors.folder = 'API Folder is required';
-    }
+  // Check collection and folder
+  if (!selectedCollection) {
+    errors.collection = 'API Collection is required';
+  }
+  if (!selectedFolder) {
+    errors.folder = 'API Folder is required';
+  }
 
-    // Check API details
-    if (!apiDetails.apiName?.trim()) {
-      errors.apiName = 'API Name is required';
-    }
-    if (!apiDetails.apiCode?.trim()) {
-      errors.apiCode = 'API Code is required';
-    }
-    if (protocolType === 'rest' && !apiDetails.endpointPath?.trim()) {
-      errors.endpointPath = 'Endpoint Path is required';
-    }
+  // Check API details
+  if (!apiDetails.apiName?.trim()) {
+    errors.apiName = 'API Name is required';
+  }
+  if (!apiDetails.apiCode?.trim()) {
+    errors.apiCode = 'API Code is required';
+  }
+  if (protocolType === 'rest' && !apiDetails.endpointPath?.trim()) {
+    errors.endpointPath = 'Endpoint Path is required';
+  }
 
-    // For custom queries, check that there's a query
-    if ((isCustomQuery || sourceType === 'custom_query' || isEditingCustomQuery) && !customQuery?.trim()) {
-      errors.customQuery = 'Custom SELECT statement is required';
-    }
+  // ============ CRITICAL FIX: Check source type correctly ============
+  // Determine if we're in custom query mode OR editing a custom query
+  const isCustomQueryMode = isCustomQuery || sourceType === 'custom_query' || isEditingCustomQuery;
+  
+  // For custom queries, check that there's a query
+  if (isCustomQueryMode && !customQuery?.trim()) {
+    errors.customQuery = 'Custom SELECT statement is required';
+  }
 
-    // For database objects (not custom queries), check schema config
-    if (!isCustomQuery && !isEditingCustomQuery && !isEditing && selectedDbObject) {
-      if (!schemaConfig.schemaName?.trim()) {
-        errors.schemaName = 'Schema Name is required';
-      }
-      if (!schemaConfig.objectName?.trim()) {
-        errors.objectName = 'Object Name is required';
-      }
+  // For database objects (not custom queries), check schema config
+  // IMPORTANT: Also check if we're NOT in edit mode OR if we're in edit mode but not a custom query
+  if (!isCustomQueryMode && !isEditingCustomQuery && !isEditing && selectedDbObject) {
+    if (!schemaConfig.schemaName?.trim()) {
+      errors.schemaName = 'Schema Name is required';
     }
-    
-    // SOAP specific validation
-    if (protocolType === 'soap') {
-      if (!soapConfig.soapAction?.trim()) {
-        errors.soapAction = 'SOAP Action is required';
-      }
-      if (!soapConfig.serviceName?.trim()) {
-        errors.serviceName = 'Service Name is required';
-      }
+    if (!schemaConfig.objectName?.trim()) {
+      errors.objectName = 'Object Name is required';
     }
-    
-    // GraphQL specific validation
-    if (protocolType === 'graphql') {
-      if (!graphqlConfig.operationName?.trim()) {
-        errors.operationName = 'Operation Name is required';
-      }
-      if (!graphqlConfig.schema?.trim()) {
-        errors.graphqlSchema = 'GraphQL Schema is required';
-      }
+  }
+  
+  // For editing mode with database object, also validate schema config
+  if (isEditing && !isCustomQueryMode && !sourceType === 'custom_query') {
+    if (!schemaConfig.schemaName?.trim() && selectedDbObject) {
+      errors.schemaName = 'Schema Name is required';
     }
+    if (!schemaConfig.objectName?.trim() && selectedDbObject) {
+      errors.objectName = 'Object Name is required';
+    }
+  }
+  
+  // SOAP specific validation
+  if (protocolType === 'soap') {
+    if (!soapConfig.soapAction?.trim()) {
+      errors.soapAction = 'SOAP Action is required';
+    }
+    if (!soapConfig.serviceName?.trim()) {
+      errors.serviceName = 'Service Name is required';
+    }
+  }
+  
+  // GraphQL specific validation
+  if (protocolType === 'graphql') {
+    if (!graphqlConfig.operationName?.trim()) {
+      errors.operationName = 'Operation Name is required';
+    }
+    if (!graphqlConfig.schema?.trim()) {
+      errors.graphqlSchema = 'GraphQL Schema is required';
+    }
+  }
 
-    // Check authentication specific required fields
-    if (authConfig.authType === 'apiKey') {
-      if (!authConfig.apiKeyHeader?.trim()) {
-        errors.apiKeyHeader = 'API Key Header is required';
-      }
-      if (!authConfig.apiSecretHeader?.trim()) {
-        errors.apiSecretHeader = 'API Secret Header is required';
-      }
-    } else if (authConfig.authType === 'bearer') {
-      if (!authConfig.jwtIssuer?.trim()) {
-        errors.jwtIssuer = 'JWT Issuer is required';
-      }
-    } else if (authConfig.authType === 'basic') {
-      if (!authConfig.basicUsername?.trim()) {
-        errors.basicUsername = 'Username is required';
-      }
-      if (!authConfig.basicPassword?.trim()) {
-        errors.basicPassword = 'Password is required';
-      }
+  // Check authentication specific required fields
+  if (authConfig.authType === 'apiKey') {
+    if (!authConfig.apiKeyHeader?.trim()) {
+      errors.apiKeyHeader = 'API Key Header is required';
     }
+    if (!authConfig.apiSecretHeader?.trim()) {
+      errors.apiSecretHeader = 'API Secret Header is required';
+    }
+  } else if (authConfig.authType === 'bearer') {
+    if (!authConfig.jwtIssuer?.trim()) {
+      errors.jwtIssuer = 'JWT Issuer is required';
+    }
+  } else if (authConfig.authType === 'basic') {
+    if (!authConfig.basicUsername?.trim()) {
+      errors.basicUsername = 'Username is required';
+    }
+    if (!authConfig.basicPassword?.trim()) {
+      errors.basicPassword = 'Password is required';
+    }
+  }
 
-    setValidationErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
+  setValidationErrors(errors);
+  return Object.keys(errors).length === 0;
+};
 
   // Update the handleSave function to handle custom query mode (including editing) and protocol type
   const handleSave = () => {
@@ -3405,9 +3423,19 @@ const handlePreviewConfirm = async () => {
             throw new Error('Collection and folder are required');
         }
 
-        const actualDatabaseType = selectedDbObject?.databaseType || databaseType || 'oracle';
-        
         const isCustomQueryMode = isCustomQuery || sourceType === 'custom_query' || isEditingCustomQuery;
+        
+        // CRITICAL FIX: For custom queries, use currentDatabaseType instead of selectedDbObject
+        let actualDatabaseType;
+        if (isCustomQueryMode) {
+            // Use the database type selected in the UI for custom queries
+            actualDatabaseType = currentDatabaseType;
+            console.log('🎯 Using custom query database type:', actualDatabaseType);
+        } else {
+            // For database objects, use the object's database type
+            actualDatabaseType = selectedDbObject?.databaseType || databaseType || 'oracle';
+            console.log('🎯 Using database object type:', actualDatabaseType);
+        }
         
         console.log('🚀 Generating/Updating API for:', isCustomQueryMode ? 'Custom Query' : 'Database Object');
         console.log('📦 Database type:', actualDatabaseType);
@@ -3434,7 +3462,7 @@ const handlePreviewConfirm = async () => {
             apiName: apiDetails.apiName,
             apiCode: apiDetails.apiCode,
             description: apiDetails.description,
-            databaseType: actualDatabaseType,
+            databaseType: actualDatabaseType, // Use the correctly determined database type
             version: apiDetails.version,
             httpMethod: apiDetails.httpMethod,
             basePath: apiDetails.basePath,
@@ -3444,7 +3472,7 @@ const handlePreviewConfirm = async () => {
             status: apiDetails.status,
             tags: apiDetails.tags,
             
-            // ============ PROTOCOL TYPE (CRITICAL) ============
+            // ============ PROTOCOL TYPE ============
             protocolType: protocolType,
             
             // ============ SOAP CONFIGURATION ============
@@ -3651,6 +3679,7 @@ const handlePreviewConfirm = async () => {
         };
 
         console.log('📡 Sending request with protocol:', generateRequest.protocolType);
+        console.log('📡 Database type being sent:', generateRequest.databaseType);
         console.log('📡 SOAP Config present:', !!generateRequest.soapConfig);
         console.log('📡 GraphQL Config present:', !!generateRequest.graphqlConfig);
         console.log('📡 File Upload Config present:', !!generateRequest.fileUploadConfig);
@@ -3680,7 +3709,9 @@ const handlePreviewConfirm = async () => {
                 protocolType: protocolType,
                 soapConfig: protocolType === 'soap' ? soapConfig : null,
                 graphqlConfig: protocolType === 'graphql' ? graphqlConfig : null,
-                fileUploadConfig: fileUploadConfig
+                fileUploadConfig: fileUploadConfig,
+                // CRITICAL: Preserve the database type in the response
+                databaseType: actualDatabaseType
             };
             setNewApiData(enrichedApiData);
             
@@ -4096,6 +4127,139 @@ useEffect(() => {
     return () => clearTimeout(timer);
   }
 }, [isEditing, parameters.length, requestBody.bodyType, protocolType]);
+
+
+// Add this useEffect to reset validation when switching source types
+useEffect(() => {
+  // Clear validation errors when source type changes
+  setValidationErrors(prev => ({
+    ...prev,
+    customQuery: null,
+    schemaName: null,
+    objectName: null
+  }));
+}, [sourceType, isCustomQuery, isEditingCustomQuery]);
+
+// ============ FIX: Initialize modal when opened with custom query data ============
+useEffect(() => {
+  if (isOpen && customQueryText && customQueryText.trim() !== '') {
+    console.log('🚀 AutoAPIGeneratorModal - Initializing with custom query data');
+    console.log('📝 Custom query length:', customQueryText.length);
+    console.log('📊 Extracted params count:', extractedParams.length);
+    
+    // Set source type to custom_query
+    setSourceType('custom_query');
+    setIsCustomQuery(true);
+    setIsEditingCustomQuery(true);
+    setCustomQuery(customQueryText);
+    setOriginalCustomQuery(customQueryText);
+    
+    // Set database type - use the one passed from QueryEditorModal or default to PostgreSQL
+    const dbType = databaseType || 'postgresql';
+    const normalizedDbType = dbType.toLowerCase() === 'postgresql' ? 'postgresql' : 'oracle';
+    setCurrentDatabaseType(normalizedDbType);
+    console.log('📦 Database type set to:', normalizedDbType);
+    
+    // Set extracted parameters if provided
+    if (extractedParams && extractedParams.length > 0) {
+      console.log('📊 Setting extracted parameters:', extractedParams);
+      
+      const paramsWithIds = extractedParams.map((param, index) => ({
+        id: `param-${Date.now()}-${index}`,
+        key: param.key || param.parameterName,
+        dbColumn: param.dbColumn || param.key || param.parameterName,
+        oracleType: param.dataType || 'VARCHAR2',
+        apiType: 'string',
+        parameterLocation: param.parameterLocation || 'query',
+        required: param.required !== undefined ? param.required : true,
+        description: param.description || `Parameter: ${param.key || param.parameterName}`,
+        example: param.example || '',
+        validationPattern: param.validationPattern || '',
+        defaultValue: param.defaultValue || '',
+        inBody: false,
+        isPrimaryKey: false,
+        paramMode: 'IN'
+      }));
+      
+      setParameters(paramsWithIds);
+      console.log('✅ Set parameters count:', paramsWithIds.length);
+    } else {
+      // Try to extract parameters from the custom query
+      console.log('📊 No extracted params provided, attempting to extract from query');
+      const paramMatches = customQueryText.match(/:\w+/g) || [];
+      const uniqueParams = [...new Set(paramMatches)];
+      
+      if (uniqueParams.length > 0) {
+        const extractedParamList = uniqueParams.map((param, idx) => ({
+          id: `param-${Date.now()}-${idx}`,
+          key: param.substring(1),
+          dbColumn: param.substring(1),
+          oracleType: 'VARCHAR2',
+          apiType: 'string',
+          parameterLocation: 'query',
+          required: true,
+          description: `Parameter: ${param.substring(1)}`,
+          example: '',
+          validationPattern: '',
+          defaultValue: '',
+          inBody: false,
+          isPrimaryKey: false,
+          paramMode: 'IN'
+        }));
+        setParameters(extractedParamList);
+        console.log('✅ Extracted and set parameters from query:', extractedParamList.length);
+      }
+    }
+    
+    // Generate a meaningful API name from the query
+    let generatedApiName = 'Custom Query API';
+    let generatedApiCode = 'CUSTOM_QUERY_API';
+    
+    // Try to extract table name from FROM clause
+    const fromMatch = customQueryText.match(/FROM\s+([^\s,;]+)/i);
+    if (fromMatch && fromMatch[1]) {
+      let tableName = fromMatch[1];
+      // Remove schema prefix if present
+      if (tableName.includes('.')) {
+        tableName = tableName.split('.').pop();
+      }
+      // Convert to proper case
+      tableName = tableName.charAt(0).toUpperCase() + tableName.slice(1).toLowerCase();
+      generatedApiName = `Get ${tableName} Data`;
+      generatedApiCode = `GET_${tableName.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+    }
+    
+    // Determine query type
+    const queryLower = customQueryText.toLowerCase();
+    if (queryLower.includes('select')) {
+      generatedApiName = generatedApiName || 'Query Data';
+    } else if (queryLower.includes('insert')) {
+      generatedApiName = 'Insert Data';
+      generatedApiCode = 'INSERT_DATA';
+    } else if (queryLower.includes('update')) {
+      generatedApiName = 'Update Data';
+      generatedApiCode = 'UPDATE_DATA';
+    } else if (queryLower.includes('delete')) {
+      generatedApiName = 'Delete Data';
+      generatedApiCode = 'DELETE_DATA';
+    }
+    
+    // Set API details
+    setApiDetails(prev => ({
+      ...prev,
+      apiName: prev.apiName || generatedApiName,
+      apiCode: prev.apiCode || generatedApiCode,
+      description: prev.description || `API generated from custom query: ${customQueryText.substring(0, 100)}...`,
+      httpMethod: 'POST', // Custom queries typically use POST
+      endpointPath: prev.endpointPath || `/${generatedApiCode.toLowerCase().replace(/_/g, '-')}`
+    }));
+    
+    // Clear any validation errors
+    setValidationErrors(prev => ({ ...prev, customQuery: null }));
+    
+    console.log('✅ AutoAPIGeneratorModal initialization complete for custom query');
+  }
+}, [isOpen, customQueryText, extractedParams, databaseType]);
 
 
   // Auto-generate sample response JSON when response mappings change
@@ -5157,6 +5321,454 @@ useEffect(() => {
 }, [protocolType, selectedDbObject, sourceType, isCustomQuery, isEditingCustomQuery, customQuery, apiDetails.apiName, soapConfig.serviceName, isEditing]);
 
 
+// ============ FULLY DYNAMIC AUTO-EXTRACT PARAMETERS AND MAPPINGS ==========
+useEffect(() => {
+  // Only run in custom query mode
+  if ((sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) && customQuery && customQuery.trim()) {
+    console.log('🔍 Dynamic extraction from custom query');
+    
+    // ============ 1. DYNAMIC PARAMETER EXTRACTION ==========
+    let allParams = [];
+    
+    // Extract :paramName but exclude PostgreSQL casts (::)
+    const colonMatches = customQuery.match(/(?<![:\w]):(\w+)/g) || [];
+    colonMatches.forEach(match => {
+      const paramName = match.substring(1);
+      const looksLikeDataType = /^(jsonb?|text|varchar|char|int|integer|bigint|smallint|decimal|numeric|float|double|bool|boolean|date|time|timestamp|bytea|clob|blob)$/i.test(paramName);
+      if (!looksLikeDataType) {
+        allParams.push(paramName);
+      }
+    });
+    
+    // Extract ${paramName}
+    const bracketMatches = customQuery.match(/\$\{(\w+)\}/g) || [];
+    bracketMatches.forEach(match => {
+      allParams.push(match.substring(2, match.length - 1));
+    });
+    
+    // Extract @paramName
+    const atMatches = customQuery.match(/@(\w+)/g) || [];
+    atMatches.forEach(match => {
+      allParams.push(match.substring(1));
+    });
+    
+    const uniqueParams = [...new Set(allParams)];
+    console.log(`📊 Found ${uniqueParams.length} dynamic parameters:`, uniqueParams);
+    
+    if (uniqueParams.length > 0) {
+      const dynamicParams = uniqueParams.map((paramName, idx) => {
+        // Check if parameter already exists and is from custom query
+        const existingParam = parameters.find(p => p.key === paramName && p._isFromCustomQuery);
+        if (existingParam) return existingParam;
+        
+        let oracleType = 'VARCHAR2';
+        let apiType = 'string';
+        let example = 'example';
+        const paramLower = paramName.toLowerCase();
+        
+        if (paramLower.match(/limit|page|offset|size|count|per_page/)) {
+          oracleType = 'NUMBER';
+          apiType = 'integer';
+          example = '10';
+        } else if (paramLower.match(/id$|_id|^id/)) {
+          oracleType = 'VARCHAR2';
+          apiType = 'string';
+          example = '123';
+        }
+        
+        return {
+          id: `param-${Date.now()}-${idx}`,
+          key: paramName,
+          dbColumn: paramName,
+          oracleType: oracleType,
+          apiType: apiType,
+          parameterLocation: 'query',
+          required: true,
+          description: `Parameter: ${paramName}`,
+          example: example,
+          validationPattern: '',
+          defaultValue: '',
+          inBody: false,
+          isPrimaryKey: false,
+          paramMode: 'IN',
+          _isPathParam: false,
+          _isFromCustomQuery: true  // Mark as custom query parameter
+        };
+      });
+      setParameters(dynamicParams);
+    } else {
+      // If no parameters found, clear them (but only if we're in custom query mode)
+      if (sourceType === 'custom_query') {
+        setParameters([]);
+      }
+    }
+    
+    // ============ 2. RESPONSE MAPPINGS EXTRACTION ==========
+    // Find the SELECT keyword position
+    const selectIndex = customQuery.toUpperCase().indexOf('SELECT');
+    if (selectIndex === -1) {
+      setResponseMappings([]);
+      return;
+    }
+    
+    // Find the FROM keyword that belongs to the main query
+    let fromIndex = -1;
+    let depth = 0;
+    let inString = false;
+    let stringChar = '';
+    let inComment = false;
+    
+    for (let i = selectIndex + 6; i < customQuery.length; i++) {
+      const char = customQuery[i];
+      const prevChar = customQuery[i - 1];
+      const nextThreeChars = customQuery.substring(i, i + 4).toUpperCase();
+      
+      // Handle comments
+      if (!inString && char === '-' && customQuery[i + 1] === '-') {
+        inComment = true;
+        i++;
+        continue;
+      }
+      if (inComment && char === '\n') {
+        inComment = false;
+        continue;
+      }
+      
+      if (!inComment) {
+        // Handle string literals
+        if ((char === "'" || char === '"') && prevChar !== '\\') {
+          if (!inString) {
+            inString = true;
+            stringChar = char;
+          } else if (char === stringChar) {
+            inString = false;
+          }
+        }
+        
+        if (!inString) {
+          // Track nested parentheses
+          if (char === '(') depth++;
+          if (char === ')') depth--;
+          
+          // Look for FROM at root level (depth === 0)
+          if (nextThreeChars === 'FROM' && depth === 0) {
+            fromIndex = i;
+            console.log(`Found FROM at index: ${fromIndex}`);
+            break;
+          }
+        }
+      }
+    }
+    
+    if (fromIndex === -1) {
+      console.log('Could not find FROM keyword');
+      setResponseMappings([]);
+      return;
+    }
+    
+    // Extract only the SELECT clause (between SELECT and FROM)
+    const selectClause = customQuery.substring(selectIndex + 6, fromIndex).trim();
+    
+    console.log('📝 SELECT clause length:', selectClause.length);
+    console.log('📝 SELECT clause full text:', selectClause);
+    
+    // Remove comments from select clause
+    let cleanedClause = selectClause.replace(/--.*$/gm, '');
+    
+    // Parse columns
+    const columns = [];
+    let currentColumn = '';
+    let parenDepth = 0;
+    let inStringLocal = false;
+    let stringCharLocal = '';
+    let inCommentLocal = false;
+    
+    for (let i = 0; i < cleanedClause.length; i++) {
+      const char = cleanedClause[i];
+      const prevChar = cleanedClause[i - 1];
+      
+      // Handle comments
+      if (!inStringLocal && char === '-' && cleanedClause[i + 1] === '-') {
+        inCommentLocal = true;
+        i++;
+        continue;
+      }
+      if (inCommentLocal && char === '\n') {
+        inCommentLocal = false;
+        continue;
+      }
+      
+      if (!inCommentLocal) {
+        // Handle string literals
+        if ((char === "'" || char === '"') && prevChar !== '\\') {
+          if (!inStringLocal) {
+            inStringLocal = true;
+            stringCharLocal = char;
+          } else if (char === stringCharLocal) {
+            inStringLocal = false;
+          }
+        }
+        
+        if (!inStringLocal) {
+          // Track parentheses depth
+          if (char === '(') parenDepth++;
+          if (char === ')') parenDepth--;
+        }
+        
+        // Split on commas at root level
+        if (char === ',' && parenDepth === 0 && !inStringLocal && !inCommentLocal) {
+          if (currentColumn.trim()) {
+            columns.push(currentColumn.trim());
+          }
+          currentColumn = '';
+          continue;
+        }
+      }
+      
+      currentColumn += char;
+    }
+    
+    // Add the last column
+    if (currentColumn.trim()) {
+      columns.push(currentColumn.trim());
+    }
+    
+    console.log(`📊 Found ${columns.length} columns in SELECT clause`);
+    columns.forEach((col, idx) => {
+      console.log(`Column ${idx + 1}:`, col.substring(0, 150));
+    });
+    
+    // Extract column names
+    const columnNames = [];  // <-- FIX: Declare columnNames here
+    const sqlKeywords = new Set([
+      'select', 'from', 'where', 'join', 'left', 'right', 'inner', 'outer',
+      'group', 'by', 'order', 'having', 'limit', 'offset', 'case', 'when',
+      'then', 'else', 'end', 'and', 'or', 'not', 'in', 'exists', 'between',
+      'like', 'is', 'null', 'true', 'false', 'as', 'on'
+    ]);
+    
+    for (let col of columns) {
+      let columnName = null;
+      col = col.replace(/--.*$/gm, '').trim();
+      
+      // Look for AS alias
+      let asMatch = col.match(/\s+AS\s+([^\s,]+)$/i);
+      if (asMatch && asMatch[1]) {
+        columnName = asMatch[1].replace(/['"]/g, '');
+        if (sqlKeywords.has(columnName.toLowerCase())) {
+          columnName = null;
+        }
+      }
+      
+      // For CASE statements
+      if (!columnName && col.toUpperCase().includes('CASE')) {
+        const thenMatch = col.match(/THEN\s+'([^']+)'/i);
+        if (thenMatch && thenMatch[1]) {
+          columnName = thenMatch[1].toLowerCase().replace(/[^a-z]/g, '_');
+        } else {
+          const whenMatch = col.match(/WHEN\s+(\w+)/i);
+          if (whenMatch && whenMatch[1]) {
+            columnName = `${whenMatch[1]}_type`;
+          } else {
+            columnName = 'calculated_field';
+          }
+        }
+      }
+      
+      // Fallback to last word
+      if (!columnName) {
+        const words = col.split(/\s+/);
+        for (let i = words.length - 1; i >= 0; i--) {
+          const word = words[i].replace(/[(),]/g, '');
+          if (word && !sqlKeywords.has(word.toLowerCase())) {
+            columnName = word;
+            break;
+          }
+        }
+      }
+      
+      if (columnName) {
+        columnName = columnName.replace(/[^\w]/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
+        if (columnName && !columnNames.includes(columnName) && !sqlKeywords.has(columnName)) {
+          columnNames.push(columnName);
+        }
+      }
+    }
+    
+    console.log(`📊 Extracted ${columnNames.length} response columns:`, columnNames);
+    
+    // Create response mappings
+    if (columnNames.length > 0) {
+      const dynamicMappings = columnNames.map((fieldName, idx) => {
+        let oracleType = 'VARCHAR2';
+        let apiType = 'string';
+        let format = '';
+        const fieldLower = fieldName.toLowerCase();
+        
+        if (fieldLower.match(/id$|^id|_id$/)) {
+          oracleType = 'VARCHAR2';
+          apiType = 'string';
+        } else if (fieldLower.match(/timestamp|date|time|_at$/)) {
+          oracleType = 'TIMESTAMP';
+          apiType = 'string';
+          format = 'date-time';
+        } else if (fieldLower.match(/duration|_ms$|milliseconds|seconds?$/)) {
+          oracleType = 'NUMBER';
+          apiType = 'integer';
+        } else if (fieldLower.match(/count|total|amount|price|cost|fee/)) {
+          oracleType = 'NUMBER';
+          apiType = 'number';
+        } else if (fieldLower.match(/status|type|method|mode|level/)) {
+          oracleType = 'VARCHAR2';
+          apiType = 'string';
+        } else if (fieldLower.match(/body|payload|content|data/)) {
+          oracleType = 'CLOB';
+          apiType = 'string';
+        }
+        
+        return {
+          id: `mapping-dynamic-${Date.now()}-${idx}`,
+          apiField: fieldName,
+          dbColumn: fieldName,
+          oracleType: oracleType,
+          apiType: apiType,
+          format: format,
+          nullable: true,
+          isPrimaryKey: fieldName === 'id',
+          includeInResponse: true,
+          inResponse: true,
+          paramMode: 'OUT',
+          _fromCustomQuery: true  // Mark as custom query mapping
+        };
+      });
+      
+      console.log(`✅ Dynamically generated ${dynamicMappings.length} response mappings`);
+      setResponseMappings(dynamicMappings);
+    } else {
+      setResponseMappings([]);
+    }
+    
+  } else if (sourceType === 'database_object' && selectedDbObject) {
+    // We're in database object mode but the useEffect might have been triggered
+    // This ensures we don't accidentally clear database object data
+    console.log('ℹ️ In database object mode, skipping custom query extraction');
+  }
+}, [customQuery, sourceType, isCustomQuery, isEditingCustomQuery, protocolType]);
+
+// ============ AUTO-GENERATE API NAME FROM CUSTOM QUERY ============
+useEffect(() => {
+  // Only run in custom query mode and not editing
+  if ((sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) && 
+      customQuery && customQuery.trim() && 
+      (!apiDetails.apiName || apiDetails.apiName === '' || apiDetails.apiName === 'Custom Query API')) {
+    
+    // Try to extract table name from the query
+    let tableName = 'CustomData';
+    const fromMatch = customQuery.match(/FROM\s+([^\s,;]+)/i);
+    if (fromMatch && fromMatch[1]) {
+      tableName = fromMatch[1];
+      // Remove schema prefix if present
+      if (tableName.includes('.')) {
+        tableName = tableName.split('.').pop();
+      }
+      // Convert to proper case
+      tableName = tableName.charAt(0).toUpperCase() + tableName.slice(1).toLowerCase();
+    }
+    
+    // Generate API name based on operation type
+    let operationPrefix = '';
+    const queryLower = customQuery.toLowerCase();
+    if (queryLower.includes('select')) {
+      operationPrefix = 'Get';
+    } else if (queryLower.includes('insert')) {
+      operationPrefix = 'Create';
+    } else if (queryLower.includes('update')) {
+      operationPrefix = 'Update';
+    } else if (queryLower.includes('delete')) {
+      operationPrefix = 'Delete';
+    } else {
+      operationPrefix = 'Execute';
+    }
+    
+    const generatedName = `${operationPrefix} ${tableName} Data`;
+    const generatedCode = `${operationPrefix.toUpperCase()}_${tableName.toUpperCase().replace(/\s+/g, '_')}`;
+    
+    console.log('📝 Auto-generating API name:', generatedName);
+    console.log('📝 Auto-generating API code:', generatedCode);
+    
+    setApiDetails(prev => ({
+      ...prev,
+      apiName: prev.apiName === '' || prev.apiName === 'Custom Query API' ? generatedName : prev.apiName,
+      apiCode: prev.apiCode === '' ? generatedCode : prev.apiCode,
+      description: prev.description === '' ? `API generated from custom query: ${customQuery.substring(0, 100)}...` : prev.description
+    }));
+  }
+}, [customQuery, sourceType, isCustomQuery, isEditingCustomQuery, apiDetails.apiName, apiDetails.apiCode]);
+
+
+
+// ============ CLEAR PARAMETERS WHEN CUSTOM QUERY IS CLEARED ============
+useEffect(() => {
+  // If custom query mode is active but query is empty, clear parameters
+  if ((sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) && 
+      (!customQuery || customQuery.trim() === '')) {
+    if (parameters.length > 0) {
+      console.log('🧹 Clearing parameters because custom query is empty');
+      setParameters([]);
+    }
+  }
+}, [customQuery, sourceType, isCustomQuery, isEditingCustomQuery]);
+
+// ============ CLEAR MAPPINGS WHEN CUSTOM QUERY IS CLEARED ============
+useEffect(() => {
+  // If custom query mode is active but query is empty, clear response mappings too
+  if ((sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) && 
+      (!customQuery || customQuery.trim() === '')) {
+    if (responseMappings.length > 0) {
+      console.log('🧹 Clearing response mappings because custom query is empty');
+      setResponseMappings([]);
+    }
+  }
+}, [customQuery, sourceType, isCustomQuery, isEditingCustomQuery, responseMappings.length]);
+
+
+// ============ RESTORE PARAMETERS AND MAPPINGS WHEN SWITCHING BACK TO DATABASE OBJECT MODE ============
+useEffect(() => {
+  // When switching back to database object mode from custom query mode
+  if (sourceType === 'database_object' && selectedDbObject && (isCustomQuery || isEditingCustomQuery)) {
+    console.log('🔄 Switching back to database object mode - restoring parameters and mappings from:', selectedDbObject.name);
+    
+    // Reset the custom query flags
+    setIsCustomQuery(false);
+    setIsEditingCustomQuery(false);
+    
+    // Repopulate from the selected database object
+    // Use preserveExistingApiDetails = true to keep any API details the user might have changed
+    populateFormFromObject(selectedDbObject, true);
+  }
+}, [sourceType, selectedDbObject]);
+
+// ============ CLEAR PARAMETERS AND MAPPINGS WHEN SWITCHING TO CUSTOM QUERY MODE ============
+useEffect(() => {
+  // When switching to custom query mode, clear both parameters and mappings
+  if (sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) {
+    // Clear parameters if we're just switching to custom query mode (and not editing an existing one)
+    const isJustSwitching = !isEditingCustomQuery && !originalCustomQuery && !customQuery;
+    
+    if (isJustSwitching) {
+      if (parameters.length > 0) {
+        console.log('🧹 Clearing parameters when switching to custom query mode');
+        setParameters([]);
+      }
+      if (responseMappings.length > 0) {
+        console.log('🧹 Clearing response mappings when switching to custom query mode');
+        setResponseMappings([]);
+      }
+    }
+  }
+}, [sourceType, isCustomQuery, isEditingCustomQuery]);
+
+
   // Auto-populate SOAP service name from database object
 // Update SOAP service name when source changes (database object OR custom query)
 useEffect(() => {
@@ -5578,6 +6190,7 @@ useEffect(() => {
   }, [authToken, populateFormFromObject]);
 
 
+// Replace your existing populateFormFromApiData function with this fixed version
 const populateFormFromApiData = useCallback(async (apiData) => {
     console.log('📝 populateFormFromApiData called with:', apiData);
     
@@ -5585,46 +6198,84 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     const sourceData = apiData.data || apiData;
     
     // ============ CHECK FOR CUSTOM QUERY FIRST ============
-    const isCustomQueryApi = sourceData?.isCustomQuery === true || 
-                            sourceData?.useCustomQuery === true ||
-                            sourceData?.sourceObject?.type === 'CUSTOM_QUERY' ||
-                            sourceData?.customSelectStatement ||
-                            sourceData?.sourceObject?.customSelectStatement ||
-                            sourceData?.sourceObject?.query;
+    // Check multiple locations where custom query data could be stored
+    const isCustomQueryApi = 
+        sourceData?.isCustomQuery === true || 
+        sourceData?.useCustomQuery === true ||
+        sourceData?.sourceObject?.type === 'CUSTOM_QUERY' ||
+        sourceData?.customSelectStatement ||
+        sourceData?.sourceObject?.customSelectStatement ||
+        sourceData?.sourceObject?.query ||
+        sourceData?.customQueryText ||
+        sourceData?.isCustomQuery === 'true' ||
+        sourceData?.useCustomQuery === 'true' ||
+        (sourceData?.sourceObject && sourceData.sourceObject.type === 'CUSTOM_QUERY') ||
+        (apiData?.isCustomQuery === true) ||
+        (apiData?.useCustomQuery === true);
+    
+    console.log('🔍 Custom query detection:', {
+        isCustomQueryApi,
+        hasCustomSelectStatement: !!sourceData?.customSelectStatement,
+        hasSourceObjectQuery: !!sourceData?.sourceObject?.query,
+        hasCustomQueryText: !!sourceData?.customQueryText,
+        sourceObjectType: sourceData?.sourceObject?.type
+    });
     
     if (isCustomQueryApi) {
         console.log('✅ Detected custom query API in populateFormFromApiData');
         setIsEditingCustomQuery(true);
-        setSourceType('custom_query');
+        setSourceType('custom_query'); // <-- CRITICAL: Set sourceType here
         
         // Extract custom query text from various possible locations
-        const customQueryText = sourceData?.customSelectStatement || 
-                               sourceData?.sourceObject?.customSelectStatement ||
-                               sourceData?.sourceObject?.query ||
-                               sourceData?.sourceObject?.customQuery ||
-                               sourceData?.customQueryText ||
-                               '';
+        let customQueryText = 
+            sourceData?.customSelectStatement ||
+            sourceData?.sourceObject?.customSelectStatement ||
+            sourceData?.sourceObject?.query ||
+            sourceData?.sourceObject?.customQuery ||
+            sourceData?.customQueryText ||
+            '';
+        
+        // Also check in the original selectedObject if sourceData doesn't have it
+        if (!customQueryText && apiData?.customSelectStatement) {
+            customQueryText = apiData.customSelectStatement;
+        }
+        if (!customQueryText && apiData?.sourceObject?.customSelectStatement) {
+            customQueryText = apiData.sourceObject.customSelectStatement;
+        }
+        if (!customQueryText && apiData?.sourceObject?.query) {
+            customQueryText = apiData.sourceObject.query;
+        }
         
         if (customQueryText) {
             setCustomQuery(customQueryText);
             setOriginalCustomQuery(customQueryText);
             console.log('📝 Set custom query:', customQueryText.substring(0, 100));
+        } else {
+            console.warn('⚠️ Custom query API detected but no query text found');
         }
         
         // Set database type for custom query
-        const customQueryDbType = sourceData?.databaseType || 
-                                  sourceData?.sourceObject?.databaseType ||
-                                  databaseType || 
-                                  'oracle';
+        const customQueryDbType = 
+            sourceData?.databaseType || 
+            sourceData?.sourceObject?.databaseType ||
+            sourceData?.schemaConfig?.databaseType ||
+            databaseType || 
+            'oracle';
         const normalizedDbType = customQueryDbType.toLowerCase() === 'postgresql' ? 'postgresql' : 'oracle';
         setCurrentDatabaseType(normalizedDbType);
         console.log('📦 Database type for custom query:', normalizedDbType);
+        
+        // Also set a flag to indicate this is a custom query being edited
+        // This helps with the handleSave function to know it's a custom query
+        setIsCustomQuery(true);
+        
     } else {
         // Reset custom query states if not a custom query
         setIsEditingCustomQuery(false);
         setSourceType('database_object');
         setCustomQuery('');
         setOriginalCustomQuery('');
+        setIsCustomQuery(false);
         
         // Set database type for database object
         const dbType = sourceData?.databaseType || 
@@ -5649,7 +6300,7 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     setProtocolType(protocol);
     console.log('🔌 Protocol type set to:', protocol);
     
-    // ============ SET SOAP CONFIG (CRITICAL FIX) ============
+    // ============ SET SOAP CONFIG ============
     let soapConfigData = null;
     if (sourceData.soapConfig) {
         soapConfigData = sourceData.soapConfig;
@@ -5660,23 +6311,23 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     }
     
     if (soapConfigData) {
-      setSoapConfig({
-        version: soapConfigData.version || '1.1',
-        bindingStyle: soapConfigData.bindingStyle || 'document',
-        encodingStyle: soapConfigData.encodingStyle || 'literal',
-        soapAction: soapConfigData.soapAction || '',
-        wsdlUrl: soapConfigData.wsdlUrl || '',
-        namespace: soapConfigData.namespace || 'http://tempuri.org/',
-        serviceName: soapConfigData.serviceName || '',  // Preserve existing service name from the API
-        portName: soapConfigData.portName || '',
-        useAsyncPattern: soapConfigData.useAsyncPattern || false,
-        includeMtom: soapConfigData.includeMtom || false,
-        soapHeaderElements: soapConfigData.soapHeaderElements || []
-      });
-      console.log('📦 SOAP config loaded with service name:', soapConfigData.serviceName);
+        setSoapConfig({
+            version: soapConfigData.version || '1.1',
+            bindingStyle: soapConfigData.bindingStyle || 'document',
+            encodingStyle: soapConfigData.encodingStyle || 'literal',
+            soapAction: soapConfigData.soapAction || '',
+            wsdlUrl: soapConfigData.wsdlUrl || '',
+            namespace: soapConfigData.namespace || 'http://tempuri.org/',
+            serviceName: soapConfigData.serviceName || '',
+            portName: soapConfigData.portName || '',
+            useAsyncPattern: soapConfigData.useAsyncPattern || false,
+            includeMtom: soapConfigData.includeMtom || false,
+            soapHeaderElements: soapConfigData.soapHeaderElements || []
+        });
+        console.log('📦 SOAP config loaded with service name:', soapConfigData.serviceName);
     }
     
-    // ============ SET GRAPHQL CONFIG (CRITICAL FIX) ============
+    // ============ SET GRAPHQL CONFIG ============
     let graphqlConfigData = null;
     if (sourceData.graphqlConfig) {
         graphqlConfigData = sourceData.graphqlConfig;
@@ -5751,7 +6402,7 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     }
 
     // ============ SET SCHEMA CONFIG ============
-    if (sourceData.schemaConfig) {
+    if (sourceData.schemaConfig && !isCustomQueryApi) {
         setSchemaConfig({
             schemaName: sourceData.schemaConfig.schemaName || '',
             objectType: sourceData.schemaConfig.objectType || '',
@@ -5815,30 +6466,33 @@ const populateFormFromApiData = useCallback(async (apiData) => {
 
     // ============ SET PARAMETERS ============
     if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
-      const paramsWithIds = sourceData.parameters.map((p, idx) => {
-        // Force path parameters to be required
-        const isPathParam = p.parameterLocation === 'path';
-        return {
-          ...p,
-          id: p.id || `param-${Date.now()}-${idx}`,
-          key: p.key || p.parameterName,
-          dbColumn: p.dbColumn || p.key,
-          oracleType: p.oracleType || p.dataType || 'VARCHAR2',
-          apiType: p.apiType || 'string',
-          parameterLocation: p.parameterLocation || (isCustomQueryApi ? 'query' : 'body'),
-          required: isPathParam ? true : (p.required !== undefined ? p.required : true), // Force path params to required
-          description: p.description || `Parameter: ${p.key || p.parameterName}`,
-          example: p.example || '',
-          validationPattern: p.validationPattern || '',
-          defaultValue: p.defaultValue || '',
-          inBody: p.inBody !== undefined ? p.inBody : (p.parameterLocation === 'body'),
-          isPrimaryKey: p.isPrimaryKey || false,
-          paramMode: p.paramMode || (isCustomQueryApi ? 'IN' : 'IN'),
-          _isPathParam: isPathParam // Add flag for path params
-        };
-      });
-      setParameters(paramsWithIds);
-      console.log('📦 Loaded parameters from API data:', paramsWithIds.length);
+        const paramsWithIds = sourceData.parameters.map((p, idx) => {
+            // Force path parameters to be required
+            const isPathParam = p.parameterLocation === 'path';
+            // Check if this is a file parameter
+            const isFileParam = p.oracleType === 'FILE' || p.oracleType === 'BLOB' || p.oracleType === 'BYTEA' || p.oracleType === 'MULTIPART_FILE';
+            
+            return {
+                ...p,
+                id: p.id || `param-${Date.now()}-${idx}`,
+                key: p.key || p.parameterName,
+                dbColumn: p.dbColumn || p.key,
+                oracleType: p.oracleType || p.dataType || 'VARCHAR2',
+                apiType: p.apiType || (isFileParam ? 'file' : 'string'),
+                parameterLocation: p.parameterLocation || (isCustomQueryApi ? 'query' : 'body'),
+                required: isPathParam ? true : (p.required !== undefined ? p.required : true),
+                description: p.description || `Parameter: ${p.key || p.parameterName}`,
+                example: p.example || (isFileParam ? 'Select a file...' : ''),
+                validationPattern: p.validationPattern || '',
+                defaultValue: p.defaultValue || '',
+                inBody: p.inBody !== undefined ? p.inBody : (p.parameterLocation === 'body'),
+                isPrimaryKey: p.isPrimaryKey || false,
+                paramMode: p.paramMode || (isCustomQueryApi ? 'IN' : 'IN'),
+                _isPathParam: isPathParam
+            };
+        });
+        setParameters(paramsWithIds);
+        console.log('📦 Loaded parameters from API data:', paramsWithIds.length);
     }
 
     // ============ SET RESPONSE MAPPINGS ============
@@ -6441,13 +7095,13 @@ if (protocolType === 'soap') {
           const isPathParam = parameterLocation === 'path';
 
           newParameters.push({
-            id: `param-col-${Date.now()}-${index}`,
+            id: `param-col-${Date.now()}-${index}`,  // ✅ Use 'col' reference
             key: cleanKey,
-            dbColumn: colName,
+            dbColumn: colName,  // ✅ Use the column name
             oracleType: oracleType,
             apiType: apiType,
             parameterLocation: parameterLocation,
-            required: isPathParam ? true : (isPrimaryKey || colNullable === 'N'), // Path params always required
+            required: isPathParam ? true : (isPrimaryKey || colNullable === 'N'),
             description: col.comment || col.COMMENTS || `From ${object.name || object.objectName}.${colName}`,
             example: colName.includes('ID') ? '1' : 
                     colName.includes('DATE') ? '2024-01-01' :
@@ -6457,13 +7111,15 @@ if (protocolType === 'soap') {
             inBody: parameterLocation === 'body',
             isPrimaryKey: isPrimaryKey,
             paramMode: null,
-            _isPathParam: isPathParam // Add flag
+            _isPathParam: isPathParam,
+            _isFromDatabaseObject: true  // ✅ Add this flag
           });
 
+          // When creating mappings:
           newMappings.push({
-            id: `mapping-col-${Date.now()}-${index}`,
+            id: `mapping-col-${Date.now()}-${index}`,  // ✅ Use col reference
             apiField: cleanKey,
-            dbColumn: colName,
+            dbColumn: colName,  // ✅ Use column name
             oracleType: oracleType,
             apiType: apiType,
             format: oracleType === 'DATE' ? 'date-time' : '',
@@ -6471,7 +7127,8 @@ if (protocolType === 'soap') {
             isPrimaryKey: isPrimaryKey,
             includeInResponse: true,
             inResponse: true,
-            paramMode: null
+            paramMode: null,
+            _fromDatabaseObject: true
           });
         }
       });
@@ -8925,10 +9582,10 @@ COMMIT;
                     </p>
                     {/* Database Type Badge */}
                     <span className="text-xs px-2 py-0.5 rounded-full" style={{ 
-                      backgroundColor: selectedDbObject.databaseType === 'PostgreSQL' ? '#3b82f620' : '#ef444420',
-                      color: selectedDbObject.databaseType === 'PostgreSQL' ? '#3b82f6' : '#ef4444'
+                      backgroundColor: selectedDbObject.databaseType === 'postgresql' ? '#3b82f620' : '#ef444420',
+                      color: selectedDbObject.databaseType === 'postgresql' ? '#3b82f6' : '#ef4444'
                     }}>
-                      {selectedDbObject.databaseType === 'PostgreSQL' ? 'PostgreSQL' : 'Oracle'}
+                      {selectedDbObject.databaseType === 'postgresql' ? 'PostgreSQL' : 'Oracle'}
                     </span>
                     <button
                       onClick={() => setShowObjectSelector(true)}
@@ -9801,379 +10458,556 @@ COMMIT;
                 {activeTab === 'schema' && !isEditing && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                      Database Schema Configuration
+                      {isEditing ? 'Database Schema Configuration' : 'Source Configuration'}
                     </h3>
 
-                    <div className="mb-4 p-4 rounded-lg border" style={{ 
-                      borderColor: themeColors.info + '40',
-                      backgroundColor: themeColors.info + '10'
-                    }}>
-                      <h4 className="font-medium mb-2 flex items-center gap-2" style={{ color: themeColors.info }}>
+                    {/* Source Type Selection - Show for both new and edit mode */}
+                    <div className="mb-6">
+                      <label className="text-xs font-medium flex items-center gap-2 mb-2" style={{ color: themeColors.text }}>
                         <Database className="h-4 w-4" />
-                        Selected Object Information
-                      </h4>
-                      <div className="grid grid-cols-2 gap-4 text-xs">
-                        <div>
-                          <span style={{ color: themeColors.textSecondary }}>Object:</span>
-                          <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                            {selectedDbObject?.owner || selectedObject?.owner}.{selectedDbObject?.name || selectedObject?.name}
-                          </span>
-                        </div>
-                        <div>
-                          <span style={{ color: themeColors.textSecondary }}>Type:</span>
-                          <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                            {selectedDbObject?.type || selectedObject?.type}
-                          </span>
-                        </div>
-                        {selectedDbObject?.columns && (
-                          <div>
-                            <span style={{ color: themeColors.textSecondary }}>Columns:</span>
-                            <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                              {selectedDbObject.columns.length}
-                            </span>
-                          </div>
-                        )}
-                        {selectedDbObject?.parameters && (
-                          <div>
-                            <span style={{ color: themeColors.textSecondary }}>Parameters:</span>
-                            <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                              {selectedDbObject.parameters.length}
-                            </span>
-                          </div>
-                        )}
-                        {validationResult && validationResult.valid && (
-                          <div className="col-span-2">
-                            <span className="text-xs px-2 py-1 rounded" style={{ 
-                              backgroundColor: themeColors.success + '20',
-                              color: themeColors.success
-                            }}>
-                              ✓ Valid for API Generation
-                            </span>
-                          </div>
-                        )}
+                        Source Type
+                      </label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            value="database_object"
+                            checked={sourceType === 'database_object'}
+                            onChange={(e) => {
+                              setSourceType(e.target.value);
+                              
+                              // ============ CRITICAL FIX: Clear custom query data ============
+                              console.log('🔄 Switching to Database Object mode - Clearing custom query data');
+                              
+                              // 1. Reset custom query related states
+                              setIsCustomQuery(false);
+                              setIsEditingCustomQuery(false);
+                              setCustomQuery('');
+                              setOriginalCustomQuery('');
+                              
+                              // 2. Clear custom query parameters and response mappings
+                              setParameters([]);
+                              setResponseMappings([]);
+                              
+                              // 3. Reset file upload config (if it was set for custom query)
+                              setFileUploadConfig({
+                                maxFileSize: 10485760,
+                                allowedFileTypes: ['*/*'],
+                                multipleFiles: false,
+                                fileParameterName: 'file'
+                              });
+                              
+                              // 4. Clear validation errors
+                              setValidationErrors(prev => ({ 
+                                ...prev, 
+                                customQuery: null, 
+                                schemaName: null, 
+                                objectName: null 
+                              }));
+                              
+                              // 5. Reset request body type if it was changed for custom query
+                              setRequestBody(prev => ({
+                                ...prev,
+                                bodyType: 'none',  // Reset to default
+                                sample: null
+                              }));
+                              
+                              // 6. Handle database object selection
+                              if (!selectedDbObject && !isEditing) {
+                                // No database object selected yet - show the object selector
+                                console.log('📦 No database object selected, showing object selector');
+                                setShowObjectSelector(true);
+                              } else if (selectedDbObject) {
+                                // We have a database object - restore its parameters and mappings
+                                console.log('📦 Restoring database object:', selectedDbObject.name);
+                                
+                                // Show loading state while restoring
+                                setLoading(true);
+                                
+                                // Use setTimeout to ensure state updates are processed
+                                setTimeout(async () => {
+                                  try {
+                                    // Re-populate form from the selected database object
+                                    // Pass preserveExistingApiDetails = true to keep API name/code if they were set
+                                    await populateFormFromObject(selectedDbObject, true);
+                                    console.log('✅ Successfully restored database object parameters and mappings');
+                                  } catch (error) {
+                                    console.error('❌ Error restoring database object:', error);
+                                  } finally {
+                                    setLoading(false);
+                                  }
+                                }, 0);
+                              }
+                            }}
+                            className="h-4 w-4"
+                            style={{ accentColor: themeColors.info }}
+                          />
+                          <span className="text-sm" style={{ color: themeColors.text }}>Database Object</span>
+                        </label>
+                                                                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            value="custom_query"
+                            checked={sourceType === 'custom_query'}
+                            onChange={(e) => {
+                              setSourceType(e.target.value);
+                              // Set custom query mode flags
+                              setIsCustomQuery(true);
+                              setIsEditingCustomQuery(true);
+                              
+                              // ============ CRITICAL FIX: Clear database object data ============
+                              console.log('🔄 Switching to Custom Query mode - Clearing database object data');
+                              
+                              // 1. Clear database object reference
+                              setSelectedDbObject(null);
+                              
+                              // 2. Clear any existing parameters and response mappings (from database object)
+                              setParameters([]);
+                              setResponseMappings([]);
+                              
+                              // 3. Reset schema config (since it's no longer relevant)
+                              setSchemaConfig({
+                                schemaName: '',
+                                objectType: '',
+                                objectName: '',
+                                operation: 'SELECT',
+                                primaryKeyColumn: '',
+                                sequenceName: '',
+                                enablePagination: true,
+                                pageSize: 10,
+                                enableSorting: true,
+                                defaultSortColumn: '',
+                                defaultSortDirection: 'ASC'
+                              });
+                              
+                              // 4. Clear validation errors for schema
+                              setValidationErrors(prev => ({ 
+                                ...prev, 
+                                schemaName: null, 
+                                objectName: null,
+                                customQuery: null 
+                              }));
+                              
+                              // ============ FIX: Get custom query from state or from selectedObject ============
+                              // Try to get custom query from multiple sources
+                              let existingCustomQuery = customQuery;
+                              
+                              // If customQuery state is empty, try to get it from selectedObject (for edit mode)
+                              if (!existingCustomQuery && selectedObject) {
+                                const sourceObj = selectedObject.sourceObject || selectedObject;
+                                const apiData = selectedObject.data || selectedObject;
+                                
+                                existingCustomQuery = 
+                                  selectedObject?.customSelectStatement ||
+                                  selectedObject?.sourceObject?.customSelectStatement ||
+                                  sourceObj?.customSelectStatement ||
+                                  sourceObj?.query ||
+                                  selectedObject?.customQueryText ||
+                                  apiData?.customSelectStatement ||
+                                  apiData?.sourceObject?.customSelectStatement ||
+                                  '';
+                                  
+                                if (existingCustomQuery) {
+                                  console.log('📝 Retrieved custom query from selectedObject:', existingCustomQuery.substring(0, 100));
+                                  // Also update the customQuery state
+                                  setCustomQuery(existingCustomQuery);
+                                  setOriginalCustomQuery(existingCustomQuery);
+                                }
+                              }
+                              
+                              // 5. If there's an existing custom query, regenerate its parameters and mappings
+                              if (existingCustomQuery && existingCustomQuery.trim()) {
+                                console.log('📊 Regenerating parameters from existing custom query');
+                                
+                                // Extract parameters from the custom query
+                                const paramMatches = existingCustomQuery.match(/:\w+/g) || [];
+                                const uniqueParams = [...new Set(paramMatches)];
+                                
+                                if (uniqueParams.length > 0) {
+                                  const regeneratedParams = uniqueParams.map((param, idx) => ({
+                                    id: `param-${Date.now()}-${idx}`,
+                                    key: param.substring(1),
+                                    dbColumn: param.substring(1),
+                                    oracleType: 'VARCHAR2',
+                                    apiType: 'string',
+                                    parameterLocation: 'query',
+                                    required: true,
+                                    description: `Parameter: ${param.substring(1)}`,
+                                    example: '',
+                                    validationPattern: '',
+                                    defaultValue: '',
+                                    inBody: false,
+                                    isPrimaryKey: false,
+                                    paramMode: 'IN',
+                                    _isFromCustomQuery: true  // Mark as custom query parameter
+                                  }));
+                                  setParameters(regeneratedParams);
+                                  console.log(`✅ Regenerated ${regeneratedParams.length} parameters from custom query`);
+                                }
+                                
+                                // Extract response columns from the SELECT clause
+                                const selectMatch = existingCustomQuery.match(/SELECT\s+(.*?)\s+FROM/i);
+                                if (selectMatch && selectMatch[1]) {
+                                  const selectClause = selectMatch[1];
+                                  // Split by commas (simple approach - for complex queries you might need a parser)
+                                  const columnMatches = selectClause.match(/(?:[^,\s]+\s+AS\s+)?(\w+)/gi) || [];
+                                  const uniqueColumns = [...new Set(columnMatches.map(col => {
+                                    const asMatch = col.match(/AS\s+(\w+)/i);
+                                    return asMatch ? asMatch[1].toLowerCase() : col.toLowerCase();
+                                  }))];
+                                  
+                                  if (uniqueColumns.length > 0) {
+                                    const regeneratedMappings = uniqueColumns.slice(0, 20).map((fieldName, idx) => ({
+                                      id: `mapping-${Date.now()}-${idx}`,
+                                      apiField: fieldName,
+                                      dbColumn: fieldName,
+                                      oracleType: fieldName.includes('id') ? 'NUMBER' : 'VARCHAR2',
+                                      apiType: fieldName.includes('id') ? 'integer' : 'string',
+                                      format: '',
+                                      nullable: true,
+                                      isPrimaryKey: fieldName === 'id',
+                                      includeInResponse: true,
+                                      inResponse: true,
+                                      paramMode: 'OUT',
+                                      _fromCustomQuery: true
+                                    }));
+                                    setResponseMappings(regeneratedMappings);
+                                    console.log(`✅ Regenerated ${regeneratedMappings.length} response mappings from custom query`);
+                                  } else {
+                                    // Fallback: create basic response structure
+                                    setResponseMappings([
+                                      {
+                                        id: `mapping-${Date.now()}-0`,
+                                        apiField: 'id',
+                                        dbColumn: 'id',
+                                        oracleType: 'NUMBER',
+                                        apiType: 'integer',
+                                        format: '',
+                                        nullable: true,
+                                        isPrimaryKey: true,
+                                        includeInResponse: true,
+                                        inResponse: true,
+                                        paramMode: 'OUT'
+                                      },
+                                      {
+                                        id: `mapping-${Date.now()}-1`,
+                                        apiField: 'message',
+                                        dbColumn: 'message',
+                                        oracleType: 'VARCHAR2',
+                                        apiType: 'string',
+                                        format: '',
+                                        nullable: true,
+                                        isPrimaryKey: false,
+                                        includeInResponse: true,
+                                        inResponse: true,
+                                        paramMode: 'OUT'
+                                      }
+                                    ]);
+                                  }
+                                } else {
+                                  // No SELECT clause found, set basic mappings
+                                  setResponseMappings([
+                                    {
+                                      id: `mapping-${Date.now()}-0`,
+                                      apiField: 'id',
+                                      dbColumn: 'id',
+                                      oracleType: 'NUMBER',
+                                      apiType: 'integer',
+                                      format: '',
+                                      nullable: true,
+                                      isPrimaryKey: true,
+                                      includeInResponse: true,
+                                      inResponse: true,
+                                      paramMode: 'OUT'
+                                    },
+                                    {
+                                      id: `mapping-${Date.now()}-1`,
+                                      apiField: 'message',
+                                      dbColumn: 'message',
+                                      oracleType: 'VARCHAR2',
+                                      apiType: 'string',
+                                      format: '',
+                                      nullable: true,
+                                      isPrimaryKey: false,
+                                      includeInResponse: true,
+                                      inResponse: true,
+                                      paramMode: 'OUT'
+                                    }
+                                  ]);
+                                }
+                              } else {
+                                console.log('🧹 No custom query present, cleared all parameters and mappings');
+                              }
+                              
+                              // 6. Force a re-trigger of the custom query extraction useEffect
+                              setTimeout(() => {
+                                if (existingCustomQuery && existingCustomQuery.trim()) {
+                                  console.log('🔄 Re-running custom query extraction after switch');
+                                  // The useEffect with [customQuery, sourceType, isCustomQuery, isEditingCustomQuery] will trigger
+                                }
+                              }, 50);
+                            }}
+                            className="h-4 w-4"
+                            style={{ accentColor: themeColors.info }}
+                          />
+                          <span className="text-sm" style={{ color: themeColors.text }}>Custom SQL Query</span>
+                        </label>
                       </div>
+                    </div>
 
-                      {/* Show parameters from selected object - only show IN parameters in this preview */}
-                      {selectedDbObject?.parameters && selectedDbObject.parameters.length > 0 && (
-                        <div className="mt-4">
-                          <h5 className="text-xs font-medium mb-2" style={{ color: themeColors.text }}>
-                            Object Parameters (IN/IN OUT only):
-                          </h5>
-                          <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                            {selectedDbObject.parameters
-                              .filter(p => {
-                                const mode = p.mode || p.IN_OUT || p.in_out;
-                                return !mode || mode === 'IN';
-                              })
-                              .map((param, index) => {
-                                const mode = param.mode || param.IN_OUT || param.in_out || 'IN';
-                                return (
-                                  <div key={index} className="flex items-center justify-between text-xs p-2 rounded" 
-                                    style={{ backgroundColor: themeColors.hover }}>
-                                    <div>
-                                      <span className="font-medium" style={{ color: themeColors.text }}>
-                                        {param.name || param.ARGUMENT_NAME || param.argument_name}
-                                      </span>
-                                      <span className="ml-2 text-xs px-2 py-0.5 rounded" style={{ 
-                                        backgroundColor: mode === 'IN' ? themeColors.info + '20' : 
-                                                      mode === 'OUT' ? themeColors.success + '20' : 
-                                                      themeColors.warning + '20',
-                                        color: mode === 'IN' ? themeColors.info : 
-                                              mode === 'OUT' ? themeColors.success : 
-                                              themeColors.warning
-                                      }}>
-                                        {mode}
-                                      </span>
-                                    </div>
-                                    <div style={{ color: themeColors.textSecondary }}>
-                                      {param.type || param.DATA_TYPE}
-                                      {(param.defaultValue || param.DATA_DEFAULT) && (
-                                        <span className="ml-2 text-xs">
-                                          (Default: {param.defaultValue || param.DATA_DEFAULT})
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                          </div>
+                    {/* Database Object Selection Section */}
+                    {sourceType === 'database_object' && (
+                      <>
+                        {/* Object Selector Button */}
+                        <div className="mb-6">
+                          <button
+                            onClick={() => setShowObjectSelector(true)}
+                            className="px-4 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors hover-lift"
+                            style={{ backgroundColor: themeColors.info, color: themeColors.white }}
+                          >
+                            <Search className="h-4 w-4" />
+                            {selectedDbObject ? 'Change Database Object' : 'Select Database Object'}
+                          </button>
                           
-                          {/* Show OUT parameters separately in a note */}
-                          {selectedDbObject.parameters.some(p => {
-                            const mode = p.mode || p.IN_OUT || p.in_out;
-                            return mode === 'OUT' || mode === 'IN/OUT' || mode === 'IN_OUT';
-                          }) && (
-                            <p className="text-xs mt-2" style={{ color: themeColors.info }}>
-                              Note: OUT/IN OUT parameters will appear in the Response Mapping tab.
-                            </p>
+                          {selectedDbObject && (
+                            <div className="mt-3 p-3 rounded-lg border" style={{ 
+                              borderColor: themeColors.success + '40',
+                              backgroundColor: themeColors.success + '10'
+                            }}>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-medium text-sm" style={{ color: themeColors.text }}>
+                                    {selectedDbObject.name}
+                                  </div>
+                                  <div className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
+                                    {selectedDbObject.owner}.{selectedDbObject.name} ({selectedDbObject.type})
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-2">
+                                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ 
+                                      backgroundColor: selectedDbObject.databaseType === 'PostgreSQL' ? '#3b82f620' : '#ef444420',
+                                      color: selectedDbObject.databaseType === 'PostgreSQL' ? '#3b82f6' : '#ef4444'
+                                    }}>
+                                      {selectedDbObject.databaseType === 'PostgreSQL' ? 'PostgreSQL' : 'Oracle'}
+                                    </span>
+                                    {sourceObjectInfo.isSynonym && (
+                                      <span className="text-xs px-2 py-0.5 rounded-full" style={{ 
+                                        backgroundColor: themeColors.warning + '20',
+                                        color: themeColors.warning
+                                      }}>
+                                        Synonym → {sourceObjectInfo.targetType}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    setSelectedDbObject(null);
+                                    setSchemaConfig({
+                                      schemaName: '',
+                                      objectType: '',
+                                      objectName: '',
+                                      operation: 'SELECT',
+                                      primaryKeyColumn: '',
+                                      sequenceName: '',
+                                      enablePagination: true,
+                                      pageSize: 10,
+                                      enableSorting: true,
+                                      defaultSortColumn: '',
+                                      defaultSortDirection: 'ASC'
+                                    });
+                                    setParameters([]);
+                                    setResponseMappings([]);
+                                  }}
+                                  className="p-1.5 rounded transition-colors hover-lift"
+                                  style={{ backgroundColor: themeColors.error + '20', color: themeColors.error }}
+                                  title="Clear selection"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Show manual schema config when no object selected */}
+                          {!selectedDbObject && (
+                            <div className="mt-4 text-center p-4 rounded-lg border border-dashed" style={{ 
+                              borderColor: themeColors.info + '40',
+                              backgroundColor: themeColors.info + '10'
+                            }}>
+                              <Database className="h-8 w-8 mx-auto mb-2" style={{ color: themeColors.info }} />
+                              <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                                No database object selected. Click the button above to select one.
+                              </p>
+                            </div>
                           )}
                         </div>
-                      )}
 
-                      {/* Show columns from selected object */}
-                      {selectedDbObject?.columns && selectedDbObject.columns.length > 0 && (
-                        <div className="mt-4">
-                          <h5 className="text-xs font-medium mb-2" style={{ color: themeColors.text }}>
-                            Object Columns (Auto-generated as parameters):
-                          </h5>
-                          <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                            {selectedDbObject.columns.slice(0, 8).map((col, index) => (
-                              <div key={index} className="flex items-center justify-between text-xs p-2 rounded" 
-                                style={{ backgroundColor: themeColors.hover }}>
-                                <div>
-                                  <span className="font-medium" style={{ color: themeColors.text }}>
-                                    {col.name || col.COLUMN_NAME || col.column_name}
-                                  </span>
-                                  {((col.key === 'PK') || (col.CONSTRAINT_TYPE === 'P')) && (
-                                    <span className="ml-2 text-xs px-2 py-0.5 rounded" style={{ 
-                                      backgroundColor: themeColors.success + '20',
-                                      color: themeColors.success
-                                    }}>
-                                      PK
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span style={{ color: themeColors.textSecondary }}>
-                                    {col.type || col.DATA_TYPE || col.data_type}
-                                  </span>
-                                  <span className="text-xs px-2 py-0.5 rounded" style={{ 
-                                    backgroundColor: (col.nullable === 'Y' || col.nullable === 'YES' || col.nullable === true || col.NULLABLE === 'Y') ? themeColors.warning + '20' : themeColors.error + '20',
-                                    color: (col.nullable === 'Y' || col.nullable === 'YES' || col.nullable === true || col.NULLABLE === 'Y') ? themeColors.warning : themeColors.error
-                                  }}>
-                                    {(col.nullable === 'Y' || col.nullable === 'YES' || col.nullable === true || col.NULLABLE === 'Y') ? 'NULL' : 'NOT NULL'}
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
-                            {selectedDbObject.columns.length > 8 && (
-                              <div className="text-center pt-2">
-                                <span className="text-xs" style={{ color: themeColors.textSecondary }}>
-                                  + {selectedDbObject.columns.length - 8} more columns
+                        {/* Manual Schema Configuration Form - Only show when object is selected */}
+                        {selectedDbObject && (
+                          <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                              {/* ... existing schema config form ... */}
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+
+                    {/* Custom Query Section - Show for both new and edit mode when sourceType is custom_query */}
+                    {sourceType === 'custom_query' && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-medium flex items-center gap-2" style={{ color: themeColors.text }}>
+                            <Wand2 size={14} style={{ color: themeColors.info }} />
+                            Custom SQL Statement
+                            {!customQuery?.trim() && validationErrors.customQuery && (
+                              <span className="text-xs" style={{ color: themeColors.error }}>(Required)</span>
+                            )}
+                          </label>
+                          
+                          {isEditingCustomQuery && (
+                            <span className="text-xs px-2 py-1 rounded-full" style={{
+                              backgroundColor: themeColors.warning + '20',
+                              color: themeColors.warning
+                            }}>
+                              <Edit className="h-3 w-3 inline mr-1" />
+                              Editing Mode
+                            </span>
+                          )}
+                        </div>
+                        
+                        <textarea
+                          value={customQuery}
+                          onChange={(e) => setCustomQuery(e.target.value)}
+                          className="w-full px-3 py-3 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-opacity-50"
+                          style={{ 
+                            backgroundColor: themeColors.codeBg || (theme === 'dark' ? '#1a202c' : '#f8fafc'),
+                            border: `1px solid ${validationErrors.customQuery ? themeColors.error : themeColors.border}`,
+                            color: themeColors.text,
+                            fontFamily: 'monospace',
+                            fontSize: '13px',
+                            lineHeight: '1.5',
+                            minHeight: '200px'
+                          }}
+                          placeholder="SELECT * FROM your_table WHERE column = :paramName"
+                          spellCheck={false}
+                        />
+                        
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                            Use :paramName syntax for parameters (e.g., WHERE id = :userId)
+                          </p>
+                          
+                          <button
+                            onClick={() => {
+                              // Extract parameters from the custom query
+                              const paramMatches = customQuery.match(/:\w+/g) || [];
+                              const uniqueParams = [...new Set(paramMatches)];
+                              const newParams = uniqueParams.map((param, idx) => ({
+                                id: `param-${Date.now()}-${idx}`,
+                                key: param.substring(1),
+                                dbColumn: param.substring(1),
+                                oracleType: 'VARCHAR2',
+                                apiType: 'string',
+                                parameterLocation: 'query',
+                                required: true,
+                                description: `Parameter: ${param.substring(1)}`,
+                                example: '',
+                                validationPattern: '',
+                                defaultValue: '',
+                                inBody: false,
+                                isPrimaryKey: false,
+                                paramMode: 'IN'
+                              }));
+                              setParameters(newParams);
+                            }}
+                            className="text-xs px-3 py-1 rounded-lg flex items-center gap-1 transition-colors hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.info + '20',
+                              color: themeColors.info,
+                              border: `1px solid ${themeColors.info + '40'}`
+                            }}
+                          >
+                            <RefreshCw className="h-3 w-3" />
+                            Extract Parameters
+                          </button>
+                        </div>
+                        
+                        {/* Query Preview / Analysis */}
+                        {customQuery && customQuery.trim() !== '' && (
+                          <div className="p-3 rounded-lg border" style={{ 
+                            borderColor: themeColors.success + '40',
+                            backgroundColor: themeColors.success + '10'
+                          }}>
+                            <div className="flex items-center gap-2 mb-2">
+                              <CheckCircle className="h-3 w-3" style={{ color: themeColors.success }} />
+                              <span className="text-xs font-medium" style={{ color: themeColors.success }}>Query Analysis</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div>
+                                <span style={{ color: themeColors.textSecondary }}>Tables referenced:</span>
+                                <span className="ml-2 font-mono" style={{ color: themeColors.text }}>
+                                  {(customQuery.match(/FROM\s+([^\s,;]+)/i) || []).slice(1).join(', ') || 'Unknown'}
                                 </span>
                               </div>
-                            )}
+                              <div>
+                                <span style={{ color: themeColors.textSecondary }}>Parameters found:</span>
+                                <span className="ml-2 font-mono" style={{ color: themeColors.text }}>
+                                  {(customQuery.match(/:\w+/g) || []).length}
+                                </span>
+                              </div>
+                              <div className="col-span-2">
+                                <span style={{ color: themeColors.textSecondary }}>Estimated complexity:</span>
+                                <span className="ml-2 font-mono" style={{ color: themeColors.text }}>
+                                  {customQuery.split(/\s+/).length > 50 ? 'Complex' : 
+                                  customQuery.split(/\s+/).length > 20 ? 'Moderate' : 'Simple'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Database Type for Custom Query */}
+                        <div className="mt-4 p-4 rounded-lg border" style={{ 
+                          borderColor: themeColors.border,
+                          backgroundColor: themeColors.card
+                        }}>
+                          <label className="text-xs font-medium flex items-center gap-2 mb-3" style={{ color: themeColors.text }}>
+                            <Database className="h-4 w-4" />
+                            Database Type for Custom Query
+                          </label>
+                          <div className="flex gap-4">
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                value="oracle"
+                                checked={currentDatabaseType === 'oracle'}
+                                onChange={(e) => setCurrentDatabaseType(e.target.value)}
+                                className="h-4 w-4"
+                                style={{ accentColor: '#ef4444' }}
+                              />
+                              <span className="text-sm" style={{ color: themeColors.text }}>Oracle</span>
+                            </label>
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                value="postgresql"
+                                checked={currentDatabaseType === 'postgresql'}
+                                onChange={(e) => setCurrentDatabaseType(e.target.value)}
+                                className="h-4 w-4"
+                                style={{ accentColor: '#3b82f6' }}
+                              />
+                              <span className="text-sm" style={{ color: themeColors.text }}>PostgreSQL</span>
+                            </label>
                           </div>
                           <p className="text-xs mt-2" style={{ color: themeColors.textSecondary }}>
-                            These columns will be auto-generated as API parameters and response fields.
+                            {currentDatabaseType === 'postgresql' 
+                              ? 'Query will be executed against PostgreSQL database' 
+                              : 'Query will be executed against Oracle database'}
                           </p>
-                        </div>
-                      )}
-
-                      {sourceObjectInfo.isSynonym && (
-                        <div className="mt-4 p-3 rounded" style={{ backgroundColor: themeColors.warning + '20' }}>
-                          <p className="text-xs flex items-center gap-2" style={{ color: themeColors.warning }}>
-                            <Link className="h-4 w-4" />
-                            This is a synonym pointing to {sourceObjectInfo.targetType}: {sourceObjectInfo.targetOwner}.{sourceObjectInfo.targetName}
-                          </p>
-                          <p className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
-                            Parameters and response fields are generated from the target object.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-4">
-                        {renderRequiredInput(
-                          'schemaName',
-                          'Schema Name',
-                          schemaConfig.schemaName,
-                          handleSchemaConfigChange,
-                          'HR'
-                        )}
-
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Object Type
-                          </label>
-                          <select
-                            value={schemaConfig.objectType}
-                            onChange={(e) => handleSchemaConfigChange('objectType', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.bg,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                          >
-                            <option value="TABLE">Table</option>
-                            <option value="VIEW">View</option>
-                            <option value="PROCEDURE">Procedure</option>
-                            <option value="FUNCTION">Function</option>
-                            <option value="PACKAGE">Package</option>
-                            <option value="TRIGGER">Trigger</option>
-                            <option value="SEQUENCE">Sequence</option>
-                            <option value="TYPE">Type</option>
-                            <option value="SYNONYM">Synonym</option>
-                          </select>
-                        </div>
-
-                        {renderRequiredInput(
-                          'objectName',
-                          'Object Name',
-                          schemaConfig.objectName,
-                          handleSchemaConfigChange,
-                          'EMPLOYEES'
-                        )}
-
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Operation
-                          </label>
-                          <select
-                            value={schemaConfig.operation}
-                            onChange={(e) => handleSchemaConfigChange('operation', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.bg,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                          >
-                            <option value="SELECT">SELECT (Read)</option>
-                            <option value="INSERT">INSERT (Create)</option>
-                            <option value="UPDATE">UPDATE (Update)</option>
-                            <option value="DELETE">DELETE (Delete)</option>
-                            <option value="EXECUTE">EXECUTE (Procedure/Function)</option>
-                          </select>
                         </div>
                       </div>
-
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Primary Key Column
-                          </label>
-                          <input
-                            type="text"
-                            value={schemaConfig.primaryKeyColumn}
-                            onChange={(e) => handleSchemaConfigChange('primaryKeyColumn', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.card,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                            placeholder="ID"
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Sequence Name (for INSERT)
-                          </label>
-                          <input
-                            type="text"
-                            value={schemaConfig.sequenceName}
-                            onChange={(e) => handleSchemaConfigChange('sequenceName', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.card,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                            placeholder="SEQ_TABLE_NAME"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              Enable Pagination
-                            </label>
-                            <div className="flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={schemaConfig.enablePagination}
-                                onChange={(e) => handleSchemaConfigChange('enablePagination', e.target.checked)}
-                                className="h-4 w-4 rounded"
-                                style={{ 
-                                  accentColor: themeColors.info,
-                                  backgroundColor: themeColors.card
-                                }}
-                              />
-                              <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>Yes</span>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              Page Size
-                            </label>
-                            <input
-                              type="number"
-                              value={schemaConfig.pageSize}
-                              onChange={(e) => handleSchemaConfigChange('pageSize', parseInt(e.target.value))}
-                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                              style={{ 
-                                backgroundColor: themeColors.card,
-                                borderColor: themeColors.border,
-                                color: themeColors.text
-                              }}
-                              min="1"
-                              max="1000"
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              Enable Sorting
-                            </label>
-                            <div className="flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={schemaConfig.enableSorting}
-                                onChange={(e) => handleSchemaConfigChange('enableSorting', e.target.checked)}
-                                className="h-4 w-4 rounded"
-                                style={{ 
-                                  accentColor: themeColors.info,
-                                  backgroundColor: themeColors.card
-                                }}
-                              />
-                              <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>Yes</span>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              Default Sort Column
-                            </label>
-                            <input
-                              type="text"
-                              value={schemaConfig.defaultSortColumn}
-                              onChange={(e) => handleSchemaConfigChange('defaultSortColumn', e.target.value)}
-                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                              style={{ 
-                                backgroundColor: themeColors.card,
-                                borderColor: themeColors.border,
-                                color: themeColors.text
-                              }}
-                              placeholder="CREATED_DATE"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Default Sort Direction
-                          </label>
-                          <select
-                            value={schemaConfig.defaultSortDirection}
-                            onChange={(e) => handleSchemaConfigChange('defaultSortDirection', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.bg,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                          >
-                            <option value="ASC">Ascending (ASC)</option>
-                            <option value="DESC">Descending (DESC)</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )}
 
@@ -10191,44 +11025,291 @@ COMMIT;
                         Source Type
                       </label>
                       <div className="flex gap-4">
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            value="database_object"
-                            checked={sourceType === 'database_object'}
-                            onChange={(e) => {
-                              setSourceType(e.target.value);
-                              if (isEditingCustomQuery) {
-                                setIsEditingCustomQuery(false);
-                                setCustomQuery('');
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          value="database_object"
+                          checked={sourceType === 'database_object'}
+                          onChange={(e) => {
+                            setSourceType(e.target.value);
+                            
+                            // ============ CRITICAL FIX: Clear custom query data ============
+                            console.log('🔄 Switching to Database Object mode - Clearing custom query data');
+                            
+                            // 1. Reset custom query related states
+                            setIsCustomQuery(false);
+                            setIsEditingCustomQuery(false);
+                            setCustomQuery('');
+                            setOriginalCustomQuery('');
+                            
+                            // 2. Clear custom query parameters and response mappings
+                            setParameters([]);
+                            setResponseMappings([]);
+                            
+                            // 3. Reset file upload config (if it was set for custom query)
+                            setFileUploadConfig({
+                              maxFileSize: 10485760,
+                              allowedFileTypes: ['*/*'],
+                              multipleFiles: false,
+                              fileParameterName: 'file'
+                            });
+                            
+                            // 4. Clear validation errors
+                            setValidationErrors(prev => ({ 
+                              ...prev, 
+                              customQuery: null, 
+                              schemaName: null, 
+                              objectName: null 
+                            }));
+                            
+                            // 5. Reset request body type if it was changed for custom query
+                            setRequestBody(prev => ({
+                              ...prev,
+                              bodyType: 'none',  // Reset to default
+                              sample: null
+                            }));
+                            
+                            // 6. Handle database object selection
+                            if (!selectedDbObject && !isEditing) {
+                              // No database object selected yet - show the object selector
+                              console.log('📦 No database object selected, showing object selector');
+                              setShowObjectSelector(true);
+                            } else if (selectedDbObject) {
+                              // We have a database object - restore its parameters and mappings
+                              console.log('📦 Restoring database object:', selectedDbObject.name);
+                              
+                              // Show loading state while restoring
+                              setLoading(true);
+                              
+                              // Use setTimeout to ensure state updates are processed
+                              setTimeout(async () => {
+                                try {
+                                  // Re-populate form from the selected database object
+                                  // Pass preserveExistingApiDetails = true to keep API name/code if they were set
+                                  await populateFormFromObject(selectedDbObject, true);
+                                  console.log('✅ Successfully restored database object parameters and mappings');
+                                } catch (error) {
+                                  console.error('❌ Error restoring database object:', error);
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }, 0);
+                            }
+                          }}
+                          className="h-4 w-4"
+                          style={{ accentColor: themeColors.info }}
+                        />
+                        <span className="text-sm" style={{ color: themeColors.text }}>Database Object</span>
+                      </label>
+                                              <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          value="custom_query"
+                          checked={sourceType === 'custom_query'}
+                          onChange={(e) => {
+                            setSourceType(e.target.value);
+                            // Set custom query mode flags
+                            setIsCustomQuery(true);
+                            setIsEditingCustomQuery(true);
+                            
+                            // ============ CRITICAL FIX: Clear database object data ============
+                            console.log('🔄 Switching to Custom Query mode - Clearing database object data');
+                            
+                            // 1. Clear database object reference
+                            setSelectedDbObject(null);
+                            
+                            // 2. Clear any existing parameters and response mappings (from database object)
+                            setParameters([]);
+                            setResponseMappings([]);
+                            
+                            // 3. Reset schema config (since it's no longer relevant)
+                            setSchemaConfig({
+                              schemaName: '',
+                              objectType: '',
+                              objectName: '',
+                              operation: 'SELECT',
+                              primaryKeyColumn: '',
+                              sequenceName: '',
+                              enablePagination: true,
+                              pageSize: 10,
+                              enableSorting: true,
+                              defaultSortColumn: '',
+                              defaultSortDirection: 'ASC'
+                            });
+                            
+                            // 4. Clear validation errors for schema
+                            setValidationErrors(prev => ({ 
+                              ...prev, 
+                              schemaName: null, 
+                              objectName: null,
+                              customQuery: null 
+                            }));
+                            
+                            // ============ FIX: Get custom query from state or from selectedObject ============
+                            // Try to get custom query from multiple sources
+                            let existingCustomQuery = customQuery;
+                            
+                            // If customQuery state is empty, try to get it from selectedObject (for edit mode)
+                            if (!existingCustomQuery && selectedObject) {
+                              const sourceObj = selectedObject.sourceObject || selectedObject;
+                              const apiData = selectedObject.data || selectedObject;
+                              
+                              existingCustomQuery = 
+                                selectedObject?.customSelectStatement ||
+                                selectedObject?.sourceObject?.customSelectStatement ||
+                                sourceObj?.customSelectStatement ||
+                                sourceObj?.query ||
+                                selectedObject?.customQueryText ||
+                                apiData?.customSelectStatement ||
+                                apiData?.sourceObject?.customSelectStatement ||
+                                '';
+                                
+                              if (existingCustomQuery) {
+                                console.log('📝 Retrieved custom query from selectedObject:', existingCustomQuery.substring(0, 100));
+                                // Also update the customQuery state
+                                setCustomQuery(existingCustomQuery);
+                                setOriginalCustomQuery(existingCustomQuery);
                               }
-                              // Clear validation error
-                              setValidationErrors(prev => ({ ...prev, customQuery: null }));
-                            }}
-                            className="h-4 w-4"
-                            style={{ accentColor: themeColors.info }}
-                          />
-                          <span className="text-sm" style={{ color: themeColors.text }}>Database Object</span>
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            value="custom_query"
-                            checked={sourceType === 'custom_query'}
-                            onChange={(e) => {
-                              setSourceType(e.target.value);
-                              if (!isEditingCustomQuery) {
-                                setIsEditingCustomQuery(true);
+                            }
+                            
+                            // 5. If there's an existing custom query, regenerate its parameters and mappings
+                            if (existingCustomQuery && existingCustomQuery.trim()) {
+                              console.log('📊 Regenerating parameters from existing custom query');
+                              
+                              // Extract parameters from the custom query
+                              const paramMatches = existingCustomQuery.match(/:\w+/g) || [];
+                              const uniqueParams = [...new Set(paramMatches)];
+                              
+                              if (uniqueParams.length > 0) {
+                                const regeneratedParams = uniqueParams.map((param, idx) => ({
+                                  id: `param-${Date.now()}-${idx}`,
+                                  key: param.substring(1),
+                                  dbColumn: param.substring(1),
+                                  oracleType: 'VARCHAR2',
+                                  apiType: 'string',
+                                  parameterLocation: 'query',
+                                  required: true,
+                                  description: `Parameter: ${param.substring(1)}`,
+                                  example: '',
+                                  validationPattern: '',
+                                  defaultValue: '',
+                                  inBody: false,
+                                  isPrimaryKey: false,
+                                  paramMode: 'IN',
+                                  _isFromCustomQuery: true  // Mark as custom query parameter
+                                }));
+                                setParameters(regeneratedParams);
+                                console.log(`✅ Regenerated ${regeneratedParams.length} parameters from custom query`);
                               }
-                              // Clear validation error
-                              setValidationErrors(prev => ({ ...prev, customQuery: null }));
-                            }}
-                            className="h-4 w-4"
-                            style={{ accentColor: themeColors.info }}
-                          />
-                          <span className="text-sm" style={{ color: themeColors.text }}>Custom SQL Query</span>
-                        </label>
-                      </div>
+                              
+                              // Extract response columns from the SELECT clause
+                              const selectMatch = existingCustomQuery.match(/SELECT\s+(.*?)\s+FROM/i);
+                              if (selectMatch && selectMatch[1]) {
+                                const selectClause = selectMatch[1];
+                                // Split by commas (simple approach - for complex queries you might need a parser)
+                                const columnMatches = selectClause.match(/(?:[^,\s]+\s+AS\s+)?(\w+)/gi) || [];
+                                const uniqueColumns = [...new Set(columnMatches.map(col => {
+                                  const asMatch = col.match(/AS\s+(\w+)/i);
+                                  return asMatch ? asMatch[1].toLowerCase() : col.toLowerCase();
+                                }))];
+                                
+                                if (uniqueColumns.length > 0) {
+                                  const regeneratedMappings = uniqueColumns.slice(0, 20).map((fieldName, idx) => ({
+                                    id: `mapping-${Date.now()}-${idx}`,
+                                    apiField: fieldName,
+                                    dbColumn: fieldName,
+                                    oracleType: fieldName.includes('id') ? 'NUMBER' : 'VARCHAR2',
+                                    apiType: fieldName.includes('id') ? 'integer' : 'string',
+                                    format: '',
+                                    nullable: true,
+                                    isPrimaryKey: fieldName === 'id',
+                                    includeInResponse: true,
+                                    inResponse: true,
+                                    paramMode: 'OUT',
+                                    _fromCustomQuery: true
+                                  }));
+                                  setResponseMappings(regeneratedMappings);
+                                  console.log(`✅ Regenerated ${regeneratedMappings.length} response mappings from custom query`);
+                                } else {
+                                  // Fallback: create basic response structure
+                                  setResponseMappings([
+                                    {
+                                      id: `mapping-${Date.now()}-0`,
+                                      apiField: 'id',
+                                      dbColumn: 'id',
+                                      oracleType: 'NUMBER',
+                                      apiType: 'integer',
+                                      format: '',
+                                      nullable: true,
+                                      isPrimaryKey: true,
+                                      includeInResponse: true,
+                                      inResponse: true,
+                                      paramMode: 'OUT'
+                                    },
+                                    {
+                                      id: `mapping-${Date.now()}-1`,
+                                      apiField: 'message',
+                                      dbColumn: 'message',
+                                      oracleType: 'VARCHAR2',
+                                      apiType: 'string',
+                                      format: '',
+                                      nullable: true,
+                                      isPrimaryKey: false,
+                                      includeInResponse: true,
+                                      inResponse: true,
+                                      paramMode: 'OUT'
+                                    }
+                                  ]);
+                                }
+                              } else {
+                                // No SELECT clause found, set basic mappings
+                                setResponseMappings([
+                                  {
+                                    id: `mapping-${Date.now()}-0`,
+                                    apiField: 'id',
+                                    dbColumn: 'id',
+                                    oracleType: 'NUMBER',
+                                    apiType: 'integer',
+                                    format: '',
+                                    nullable: true,
+                                    isPrimaryKey: true,
+                                    includeInResponse: true,
+                                    inResponse: true,
+                                    paramMode: 'OUT'
+                                  },
+                                  {
+                                    id: `mapping-${Date.now()}-1`,
+                                    apiField: 'message',
+                                    dbColumn: 'message',
+                                    oracleType: 'VARCHAR2',
+                                    apiType: 'string',
+                                    format: '',
+                                    nullable: true,
+                                    isPrimaryKey: false,
+                                    includeInResponse: true,
+                                    inResponse: true,
+                                    paramMode: 'OUT'
+                                  }
+                                ]);
+                              }
+                            } else {
+                              console.log('🧹 No custom query present, cleared all parameters and mappings');
+                            }
+                            
+                            // 6. Force a re-trigger of the custom query extraction useEffect
+                            setTimeout(() => {
+                              if (existingCustomQuery && existingCustomQuery.trim()) {
+                                console.log('🔄 Re-running custom query extraction after switch');
+                                // The useEffect with [customQuery, sourceType, isCustomQuery, isEditingCustomQuery] will trigger
+                              }
+                            }, 50);
+                          }}
+                          className="h-4 w-4"
+                          style={{ accentColor: themeColors.info }}
+                        />
+                        <span className="text-sm" style={{ color: themeColors.text }}>Custom SQL Query</span>
+                      </label>  
+                    </div>
                     </div>
 
                     {/* Database Object Selection Section */}
