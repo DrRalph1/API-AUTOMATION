@@ -28,6 +28,52 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
     private final PostgreSQLFunctionExecutorUtil postgreSQLFunctionExecutorUtil;
     private final CustomQueryExecutionHelper customQueryExecutionHelper;
 
+    // SOAP Action to SQL operation mapping
+    private static final Map<String, String> SOAP_ACTION_TO_SQL_OPERATION = Map.ofEntries(
+            Map.entry("SELECT", "SELECT"),
+            Map.entry("SELECT_ONE", "SELECT"),
+            Map.entry("SEARCH", "SELECT"),
+            Map.entry("COUNT", "SELECT"),
+            Map.entry("AGGREGATE", "SELECT"),
+            Map.entry("EXPORT", "SELECT"),
+            Map.entry("PAGINATE", "SELECT"),
+            Map.entry("GET", "SELECT"),
+            Map.entry("QUERY", "SELECT"),
+            Map.entry("ANALYZE", "SELECT"),
+            Map.entry("EXPLAIN", "SELECT"),
+            Map.entry("EXISTS", "SELECT"),
+
+            Map.entry("INSERT", "INSERT"),
+            Map.entry("CREATE", "INSERT"),
+            Map.entry("BULK_INSERT", "INSERT"),
+            Map.entry("ADD", "INSERT"),
+
+            Map.entry("UPDATE", "UPDATE"),
+            Map.entry("MODIFY", "UPDATE"),
+            Map.entry("UPSERT", "UPDATE"),
+            Map.entry("BULK_UPDATE", "UPDATE"),
+            Map.entry("EDIT", "UPDATE"),
+            Map.entry("CHANGE", "UPDATE"),
+
+            Map.entry("DELETE", "DELETE"),
+            Map.entry("REMOVE", "DELETE"),
+            Map.entry("PURGE", "DELETE"),
+
+            Map.entry("EXECUTE", "CALL"),
+            Map.entry("VALIDATE", "CALL"),
+            Map.entry("PROCESS", "CALL"),
+            Map.entry("RUN", "CALL"),
+            Map.entry("EXECUTE_PROCEDURE", "CALL"),
+            Map.entry("EXECUTE_FUNCTION", "CALL")
+    );
+
+    // GraphQL Operation Type to SQL operation mapping
+    private static final Map<String, String> GRAPHQL_OP_TYPE_TO_SQL = Map.ofEntries(
+            Map.entry("query", "SELECT"),
+            Map.entry("mutation", "CALL"),
+            Map.entry("subscription", "SELECT")
+    );
+
     @Autowired
     @Qualifier("postgresqlJdbcTemplate")
     private JdbcTemplate postgresqlJdbcTemplate;
@@ -40,7 +86,8 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
             PostgreSQLTableExecutorUtil postgreSQLTableExecutorUtil,
             PostgreSQLViewExecutorUtil postgreSQLViewExecutorUtil,
             PostgreSQLProcedureExecutorUtil postgreSQLProcedureExecutorUtil,
-            PostgreSQLFunctionExecutorUtil postgreSQLFunctionExecutorUtil, CustomQueryExecutionHelper customQueryExecutionHelper,
+            PostgreSQLFunctionExecutorUtil postgreSQLFunctionExecutorUtil,
+            CustomQueryExecutionHelper customQueryExecutionHelper,
             @Qualifier("postgresqlJdbcTemplate") JdbcTemplate postgresqlJdbcTemplate) {
         super(responseHelper, loggerUtil, conversionHelper, transactionTemplate);
         this.postgreSQLTableExecutorUtil = postgreSQLTableExecutorUtil;
@@ -94,7 +141,6 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
         if (sourceObjectDTO != null) {
             ApiSchemaConfigEntity schemaConfig = conversionHelper.createSchemaConfigEntity(sourceObjectDTO);
 
-            // If schema name is null, default to "public" for PostgreSQL
             if (schemaConfig.getSchemaName() == null || schemaConfig.getSchemaName().isEmpty()) {
                 schemaConfig.setSchemaName("public");
                 log.info("Defaulting to 'public' schema for PostgreSQL table: {}", schemaConfig.getObjectName());
@@ -112,7 +158,7 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
         }
 
         // ============ REPLACE parameters collection (CLEAR then ADD) ============
-        api.getParameters().clear();  // Clear existing parameters
+        api.getParameters().clear();
 
         List<ApiParameterEntity> parameters = parameterGenerator.generateParameters(
                 sourceObjectDTO, request.getParameters(), api.getId());
@@ -123,7 +169,7 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
         log.info("Recreated {} parameters for API: {}", parameters.size(), api.getId());
 
         // ============ REPLACE headers collection (CLEAR then ADD) ============
-        api.getHeaders().clear();  // Clear existing headers
+        api.getHeaders().clear();
 
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
             List<ApiHeaderEntity> headers = conversionHelper.createHeaderEntities(request.getHeaders(), api);
@@ -135,7 +181,7 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
         }
 
         // ============ REPLACE response mappings collection (CLEAR then ADD) ============
-        api.getResponseMappings().clear();  // Clear existing response mappings
+        api.getResponseMappings().clear();
 
         if (request.getResponseMappings() != null && !request.getResponseMappings().isEmpty()) {
             List<ApiResponseMappingEntity> responseMappings =
@@ -159,7 +205,6 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
         log.info("Executing PostgreSQL operation for API: {}", api.getId());
 
         // ============ CHECK FOR CUSTOM QUERY FIRST ============
-        // This won't affect existing flow since isCustomQuery() returns false for regular objects
         if (sourceObject != null && sourceObject.isCustomQuery()) {
             log.info("Executing custom SELECT query for PostgreSQL API: {}", api.getApiCode());
             return customQueryExecutionHelper.executeCustomQuery(
@@ -176,7 +221,10 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
         String objectType = schemaConfig.getObjectType();
         String objectName = schemaConfig.getObjectName();
         String schema = schemaConfig.getSchemaName();
-        String operation = schemaConfig.getOperation();
+
+        // ============ DETERMINE OPERATION BASED ON PROTOCOL ============
+        String operation = determineOperationFromProtocol(api, schemaConfig);
+        log.info("Final operation for API {}: {}", api.getApiCode(), operation);
 
         // Create consolidated params
         Map<String, Object> params = new HashMap<>();
@@ -204,6 +252,141 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
         }
     }
 
+    /**
+     * Determine the SQL operation based on the API's protocol:
+     * - SOAP: Uses SOAP Action mapping
+     * - GraphQL: Uses GraphQL Operation Type mapping
+     * - REST: Uses the schema config operation (SELECT, INSERT, UPDATE, DELETE)
+     */
+    private String determineOperationFromProtocol(GeneratedApiEntity api, ApiSchemaConfigEntity schemaConfig) {
+        String protocolType = api.getProtocolType();
+
+        // ============ SOAP PROTOCOL ============
+        if ("soap".equalsIgnoreCase(protocolType) && api.getSoapConfig() != null) {
+            String soapAction = api.getSoapConfig().getSoapAction();
+            log.info("SOAP API detected - using SOAP Action to determine operation: {}", soapAction);
+
+            if (soapAction != null && !soapAction.trim().isEmpty()) {
+                // Try exact match first
+                String mappedOperation = SOAP_ACTION_TO_SQL_OPERATION.get(soapAction.toUpperCase());
+                if (mappedOperation != null) {
+                    log.info("SOAP Action '{}' mapped to SQL operation: {}", soapAction, mappedOperation);
+                    return mappedOperation;
+                }
+
+                // Try prefix match
+                for (Map.Entry<String, String> entry : SOAP_ACTION_TO_SQL_OPERATION.entrySet()) {
+                    if (soapAction.toUpperCase().startsWith(entry.getKey())) {
+                        log.info("SOAP Action '{}' matched prefix '{}' -> SQL operation: {}",
+                                soapAction, entry.getKey(), entry.getValue());
+                        return entry.getValue();
+                    }
+                }
+
+                // Try contains match
+                for (Map.Entry<String, String> entry : SOAP_ACTION_TO_SQL_OPERATION.entrySet()) {
+                    if (soapAction.toUpperCase().contains(entry.getKey())) {
+                        log.info("SOAP Action '{}' contains '{}' -> SQL operation: {}",
+                                soapAction, entry.getKey(), entry.getValue());
+                        return entry.getValue();
+                    }
+                }
+
+                log.warn("SOAP Action '{}' not recognized, defaulting to SELECT", soapAction);
+                return "SELECT";
+            }
+
+            log.warn("No SOAP Action defined, defaulting to SELECT");
+            return "SELECT";
+        }
+
+        // ============ GRAPHQL PROTOCOL ============
+        if ("graphql".equalsIgnoreCase(protocolType) && api.getGraphqlConfig() != null) {
+            String operationType = api.getGraphqlConfig().getOperationType();
+            String operationName = api.getGraphqlConfig().getOperationName();
+            log.info("GraphQL API detected - using Operation Type to determine operation: {}", operationType);
+
+            if (operationType != null && !operationType.trim().isEmpty()) {
+                String mappedOperation = GRAPHQL_OP_TYPE_TO_SQL.get(operationType.toLowerCase());
+                if (mappedOperation != null) {
+                    // For mutation, we can refine based on operation name
+                    if ("CALL".equals(mappedOperation) && operationName != null) {
+                        String refined = refineFromGraphQLOperationName(operationName);
+                        if (refined != null) {
+                            log.info("GraphQL mutation '{}' refined from CALL to {} based on operation name",
+                                    operationName, refined);
+                            return refined;
+                        }
+                    }
+                    log.info("GraphQL Operation Type '{}' mapped to SQL operation: {}", operationType, mappedOperation);
+                    return mappedOperation;
+                }
+
+                log.warn("GraphQL Operation Type '{}' not recognized, defaulting to SELECT", operationType);
+                return "SELECT";
+            }
+
+            log.warn("No GraphQL Operation Type defined, defaulting to SELECT");
+            return "SELECT";
+        }
+
+        // ============ REST PROTOCOL (or default) ============
+        String configuredOperation = schemaConfig.getOperation();
+        if (configuredOperation == null || configuredOperation.isEmpty()) {
+            configuredOperation = "SELECT";
+        }
+        log.info("REST API detected - using configured operation: {}", configuredOperation);
+        return configuredOperation;
+    }
+
+    /**
+     * Refine GraphQL mutation operation based on operation name patterns
+     */
+    private String refineFromGraphQLOperationName(String operationName) {
+        if (operationName == null || operationName.trim().isEmpty()) {
+            return null;
+        }
+
+        String lowerName = operationName.toLowerCase();
+
+        if (lowerName.startsWith("create") || lowerName.startsWith("add") ||
+                lowerName.startsWith("insert") || lowerName.startsWith("save") ||
+                lowerName.startsWith("register")) {
+            return "INSERT";
+        }
+
+        if (lowerName.startsWith("update") || lowerName.startsWith("modify") ||
+                lowerName.startsWith("edit") || lowerName.startsWith("change") ||
+                lowerName.startsWith("set") || lowerName.startsWith("upsert")) {
+            return "UPDATE";
+        }
+
+        if (lowerName.startsWith("delete") || lowerName.startsWith("remove") ||
+                lowerName.startsWith("purge") || lowerName.startsWith("destroy")) {
+            return "DELETE";
+        }
+
+        if (lowerName.startsWith("execute") || lowerName.startsWith("run") ||
+                lowerName.startsWith("process") || lowerName.startsWith("validate") ||
+                lowerName.startsWith("calculate") || lowerName.startsWith("compute")) {
+            return "CALL";
+        }
+
+        if (lowerName.contains("create") || lowerName.contains("add") || lowerName.contains("insert")) {
+            return "INSERT";
+        }
+
+        if (lowerName.contains("update") || lowerName.contains("modify")) {
+            return "UPDATE";
+        }
+
+        if (lowerName.contains("delete") || lowerName.contains("remove")) {
+            return "DELETE";
+        }
+
+        return null;
+    }
+
     private Object executeTableOperation(String tableName, String schema, String operation,
                                          Map<String, Object> params, GeneratedApiEntity api,
                                          List<ApiParameterDTO> configuredParamDTOs) {
@@ -227,7 +410,6 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
                 throw new RuntimeException("Unsupported table operation: " + operation);
         }
     }
-
 
     @Override
     protected boolean checkObjectExistsInDatabase(String schema, String objectName,
@@ -265,7 +447,6 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
     @Override
     protected String resolveSchemaFromDatabase(String objectName, String defaultSchema, String databaseType) {
         try {
-            // Try to find the object in accessible schemas
             String sql = "SELECT n.nspname FROM pg_class c " +
                     "JOIN pg_namespace n ON c.relnamespace = n.oid " +
                     "WHERE c.relname = ? AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +
@@ -276,7 +457,6 @@ public class PostgreSQLApiExecutionHelper extends BaseApiExecutionHelper {
                 return schemas.get(0);
             }
 
-            // Check for functions/procedures
             sql = "SELECT n.nspname FROM pg_proc p " +
                     "JOIN pg_namespace n ON p.pronamespace = n.oid " +
                     "WHERE p.proname = ? AND n.nspname NOT IN ('pg_catalog', 'information_schema') " +

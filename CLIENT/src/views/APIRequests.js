@@ -258,6 +258,225 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
     setTimeout(() => setToast(null), 3000);
   };
 
+
+    // Helper to detect content type (XML, GraphQL, or JSON)
+const getContentType = (content) => {
+  if (!content) return 'json';
+  const str = typeof content === 'string' ? content : JSON.stringify(content);
+  const trimmed = str.trim();
+  
+  // Check for XML/SOAP
+  if (trimmed.startsWith('<') && (trimmed.includes('<?xml') || trimmed.includes('<soap:') || trimmed.includes('<SOAP-ENV:'))) {
+    return 'xml';
+  }
+  
+  // Check for GraphQL - looks for query/mutation keywords
+  // Also handles stringified GraphQL like {"query": "..."}
+  const lowerContent = trimmed.toLowerCase();
+  if (lowerContent.includes('query') || lowerContent.includes('mutation')) {
+    return 'graphql';
+  }
+  
+  // Check if it's a JSON object with a query field (common for GraphQL over HTTP)
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed.query || parsed.mutation) {
+      return 'graphql';
+    }
+  } catch (e) {
+    // Not valid JSON
+  }
+  
+  return 'json';
+};
+
+// Helper to format GraphQL content nicely
+const formatGraphQLContent = (graphQLString) => {
+  if (!graphQLString) return '';
+  
+  let content = typeof graphQLString === 'string' ? graphQLString : JSON.stringify(graphQLString);
+  
+  // Handle stringified JSON that contains a query field
+  if (content.startsWith('{') && content.includes('"query"')) {
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed.query) {
+        content = parsed.query;
+      } else if (parsed.mutation) {
+        content = parsed.mutation;
+      }
+    } catch (e) {
+      // Keep original
+    }
+  }
+  
+  // Remove outer quotes if present
+  if (content.startsWith('"') && content.endsWith('"')) {
+    try {
+      content = JSON.parse(content);
+    } catch (e) {
+      content = content.slice(1, -1).replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\r/g, '');
+    }
+  }
+  
+  // Clean up escape sequences
+  content = String(content)
+    .replace(/\\n/g, '\n')
+    .replace(/\\"/g, '"')
+    .replace(/\\r/g, '')
+    .replace(/\\t/g, '  ');
+  
+  // Basic GraphQL formatting - add line breaks and indentation
+  let formatted = content
+    .replace(/\{/g, '{\n  ')
+    .replace(/\}/g, '\n}')
+    .replace(/\(/g, '(\n    ')
+    .replace(/\)/g, '\n  )')
+    .replace(/\,/g, ',\n    ');
+  
+  // Fix indentation
+  const lines = formatted.split('\n');
+  let indent = 0;
+  const result = [];
+  
+  for (let line of lines) {
+    if (line.includes('}') || line.includes(')')) {
+      indent = Math.max(0, indent - 1);
+    }
+    
+    result.push('  '.repeat(indent) + line.trimStart());
+    
+    if (line.includes('{') || line.includes('(')) {
+      indent++;
+    }
+  }
+  
+  return result.join('\n');
+};
+
+ // Helper to detect if content is XML/SOAP
+const isXmlContent = (content) => {
+  if (!content) return false;
+  const str = typeof content === 'string' ? content : JSON.stringify(content);
+  const trimmed = str.trim();
+  return trimmed.startsWith('<') && (trimmed.includes('<?xml') || trimmed.includes('<soap:') || trimmed.includes('<SOAP-ENV:'));
+};
+
+// Helper to format XML content nicely
+const formatXmlContent = (xmlString) => {
+  if (!xmlString) return '';
+  
+  // If it's a string, try to format it
+  if (typeof xmlString === 'string') {
+    try {
+      // Simple XML formatting - add line breaks between tags
+      let formatted = xmlString
+        .replace(/>\s*</g, '>\n<')  // Add line breaks between tags
+        .replace(/></g, '>\n<');     // Handle self-closing tags
+      
+      // Add indentation
+      const lines = formatted.split('\n');
+      let indent = 0;
+      const result = [];
+      
+      for (let line of lines) {
+        if (line.match(/<\/\w+[^>]*>/) && !line.match(/<[^/][^>]*\/>/)) {
+          indent--;
+        }
+        
+        result.push('  '.repeat(Math.max(0, indent)) + line);
+        
+        if (line.match(/<[^/][^>]*>/) && !line.match(/<[^/][^>]*\/>/) && !line.match(/<\/\w+[^>]*>/)) {
+          indent++;
+        }
+      }
+      
+      return result.join('\n');
+    } catch (e) {
+      return xmlString;
+    }
+  }
+  
+  // If it's an object, stringify it
+  if (typeof xmlString === 'object') {
+    return JSON.stringify(xmlString, null, 2);
+  }
+  
+  return String(xmlString);
+};
+
+
+  // Helper to get formatted body for display
+  const getFormattedBody = (body, contentType) => {
+    if (!body) return '// No body content';
+    
+    if (contentType === 'xml') {
+      return formatXmlContent(body);
+    }
+    
+    if (contentType === 'graphql') {
+      return formatGraphQLContent(body);
+    }
+    
+    // For JSON, format nicely
+    if (typeof body === 'object') {
+      return JSON.stringify(body, null, 2);
+    }
+    
+    // Try to parse string as JSON
+    if (typeof body === 'string') {
+      try {
+        const parsed = JSON.parse(body);
+        // Check if parsed JSON contains GraphQL
+        if (parsed.query || parsed.mutation) {
+          return formatGraphQLContent(body);
+        }
+        return JSON.stringify(parsed, null, 2);
+      } catch (e) {
+        // Check if it might be GraphQL
+        if (body.includes('query') || body.includes('mutation')) {
+          return formatGraphQLContent(body);
+        }
+        // Check if it might be XML
+        if (body.trim().startsWith('<')) {
+          return formatXmlContent(body);
+        }
+        return body;
+      }
+    }
+    
+    return String(body);
+  };
+
+  // Get raw request body (prefer rawRequestBody if available)
+  const getRawRequestBody = () => {
+    if (request.rawRequestBody) {
+      return request.rawRequestBody;
+    }
+    if (request.requestBody) {
+      return request.requestBody;
+    }
+    return null;
+  };
+
+  // Get raw response body (prefer rawResponseBody if available)
+  const getRawResponseBody = () => {
+    if (request.rawResponseBody) {
+      return request.rawResponseBody;
+    }
+    if (request.responseBody) {
+      return request.responseBody;
+    }
+    return null;
+  };
+
+  const rawRequestBody = getRawRequestBody();
+  const rawResponseBody = getRawResponseBody();
+  const requestContentType = getContentType(rawRequestBody);
+  const responseContentType = getContentType(rawResponseBody);
+  const isRequestXml = requestContentType === 'xml';
+  const isResponseXml = responseContentType === 'xml';
+
   const isRequestSuccessfulHelper = (request) => {
     return request?.responseStatusCode >= 200 && request?.responseStatusCode < 300;
   };
@@ -273,33 +492,32 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
 
   const formatExecutionTimeHelper = (ms) => {
     if (ms === null || ms === undefined) return 'N/A';
-
     const time = Number(ms);
-
     if (isNaN(time)) return 'N/A';
-
     if (time < 1000) return `${time.toFixed(2)}ms`;
     if (time < 60000) return `${(time / 1000).toFixed(2)}s`;
     return `${(time / 60000).toFixed(2)}m`;
   };
 
-  const copyToClipboard = (text, type = 'json') => {
+  const copyToClipboard = (text, type = 'content') => {
     if (!text) {
       showToast(`Nothing to copy`, 'warning');
       return;
     }
     
+    const contentToCopy = typeof text === 'string' ? text : JSON.stringify(text, null, 2);
+    
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text)
+      navigator.clipboard.writeText(contentToCopy)
         .then(() => {
           showToast(`Copied ${type} to clipboard!`, 'success');
         })
         .catch((err) => {
           console.error('Clipboard write failed:', err);
-          fallbackCopy(text, type);
+          fallbackCopy(contentToCopy, type);
         });
     } else {
-      fallbackCopy(text, type);
+      fallbackCopy(contentToCopy, type);
     }
     
     function fallbackCopy(text, type) {
@@ -326,33 +544,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
       
       document.body.removeChild(textarea);
     }
-  };
-
-  // Helper functions to get request and response data
-  const getRequestData = () => {
-    const requestData = {
-      method: request.httpMethod,
-      url: request.url,
-      headers: request.headers,
-      body: request.requestBody,
-      correlationId: request.correlationId,
-      requestName: request.requestName,
-      timestamp: request.requestTimestamp || request.createdAt
-    };
-    return JSON.stringify(requestData, null, 2);
-  };
-
-  const getResponseData = () => {
-    const responseData = {
-      statusCode: request.responseStatusCode,
-      statusMessage: request.responseStatusMessage,
-      body: request.responseBody,
-      headers: request.responseHeaders,
-      size: request.responseSizeBytes,
-      timestamp: request.responseTimestamp,
-      duration: request.executionDurationMs
-    };
-    return JSON.stringify(responseData, null, 2);
   };
 
   const getFullJsonData = () => {
@@ -446,13 +637,34 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 </div>
               </div>
 
-              {request.requestBody && (
+              {rawRequestBody && (
                 <div>
-                  <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Request Body</h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Request Body</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs px-2 py-1 rounded" style={{ 
+                        backgroundColor: requestContentType === 'xml' ? colors.info : 
+                                        requestContentType === 'graphql' ? colors.warning : 
+                                        colors.success,
+                        color: 'white'
+                      }}>
+                        {requestContentType === 'xml' ? 'XML/SOAP' : 
+                        requestContentType === 'graphql' ? 'GraphQL' : 'JSON'}
+                      </span>
+                      <button
+                        onClick={() => copyToClipboard(rawRequestBody, requestContentType.toUpperCase())}
+                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                        style={{ backgroundColor: colors.hover }}
+                      >
+                        <Copy size={12} style={{ color: colors.textSecondary }} />
+                      </button>
+                    </div>
+                  </div>
                   <div className="p-3 rounded max-h-60 overflow-auto" style={{ backgroundColor: colors.codeBg }}>
                     <SyntaxHighlighter 
-                      language="json"
-                      code={typeof request.requestBody === 'object' ? JSON.stringify(request.requestBody, null, 2) : String(request.requestBody)}
+                      language={requestContentType === 'xml' ? 'xml' : 
+                                requestContentType === 'graphql' ? 'graphql' : 'json'}
+                      code={getFormattedBody(rawRequestBody, requestContentType)}
                     />
                   </div>
                 </div>
@@ -479,13 +691,34 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 </div>
               </div>
 
-              {request.responseBody && (
+              {rawResponseBody && (
                 <div>
-                  <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Response Body</h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Response Body</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs px-2 py-1 rounded" style={{ 
+                        backgroundColor: responseContentType === 'xml' ? colors.info : 
+                                        responseContentType === 'graphql' ? colors.warning : 
+                                        colors.success,
+                        color: 'white'
+                      }}>
+                        {responseContentType === 'xml' ? 'XML/SOAP' : 
+                        responseContentType === 'graphql' ? 'GraphQL' : 'JSON'}
+                      </span>
+                      <button
+                        onClick={() => copyToClipboard(rawResponseBody, responseContentType.toUpperCase())}
+                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                        style={{ backgroundColor: colors.hover }}
+                      >
+                        <Copy size={12} style={{ color: colors.textSecondary }} />
+                      </button>
+                    </div>
+                  </div>
                   <div className="p-3 rounded max-h-96 overflow-auto" style={{ backgroundColor: colors.codeBg }}>
                     <SyntaxHighlighter 
-                      language="json"
-                      code={typeof request.responseBody === 'object' ? JSON.stringify(request.responseBody, null, 2) : String(request.responseBody)}
+                      language={responseContentType === 'xml' ? 'xml' : 
+                                responseContentType === 'graphql' ? 'graphql' : 'json'}
+                      code={getFormattedBody(rawResponseBody, responseContentType)}
                     />
                   </div>
                 </div>
@@ -581,7 +814,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
         </div>
 
         <div className="flex items-center justify-end gap-2 px-6 py-3 border-t" style={{ borderColor: colors.border }}>
-          {activeTab === 'request' && (
+          {activeTab === 'request' && rawRequestBody && (
             <>
               <button
                 onClick={() => copyToClipboard(getFullJsonData(), 'JSON')}
@@ -592,17 +825,17 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 Copy JSON
               </button>
               <button
-                onClick={() => copyToClipboard(getRequestData(), 'Request')}
+                onClick={() => copyToClipboard(rawRequestBody, isRequestXml ? 'XML' : 'JSON')}
                 className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
                 style={{ backgroundColor: colors.info, color: 'white' }}
               >
                 <Copy size={12} />
-                Copy Request
+                Copy {isRequestXml ? 'XML' : 'JSON'}
               </button>
             </>
           )}
           
-          {activeTab === 'response' && (
+          {activeTab === 'response' && rawResponseBody && (
             <>
               <button
                 onClick={() => copyToClipboard(getFullJsonData(), 'JSON')}
@@ -613,12 +846,12 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 Copy JSON
               </button>
               <button
-                onClick={() => copyToClipboard(getResponseData(), 'Response')}
+                onClick={() => copyToClipboard(rawResponseBody, isResponseXml ? 'XML' : 'JSON')}
                 className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
                 style={{ backgroundColor: getResponseButtonColor(), color: 'white' }}
               >
                 <Copy size={12} />
-                Copy Response
+                Copy {isResponseXml ? 'XML' : 'JSON'}
               </button>
             </>
           )}
@@ -1216,6 +1449,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
   };
 
+
   // Helper functions
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
@@ -1796,22 +2030,35 @@ const getStatusText = (statusCode) => {
 
   // Handle view request details
   const handleViewDetails = async (request) => {
-    if (!authToken || !request?.id) return;
+  if (!authToken || !request?.id) return;
 
-    try {
-      const response = await getRequestById(authToken, request.id);
+  try {
+    const response = await getRequestById(authToken, request.id);
+    
+    if (response?.responseCode === 200) {
+      // Ensure raw bodies are properly set from the response
+      const requestData = response.data;
       
-      if (response?.responseCode === 200) {
-        setSelectedRequest(response.data);
-        setShowDetailsModal(true);
-      } else {
-        showToast(response?.message || 'Failed to load request details', 'error');
+      // If rawRequestBody is not set but requestBody is, set it
+      if (!requestData.rawRequestBody && requestData.requestBody) {
+        requestData.rawRequestBody = requestData.requestBody;
       }
-    } catch (error) {
-      console.error('Error loading request details:', error);
-      showToast(error.message || 'Failed to load request details', 'error');
+      
+      // If rawResponseBody is not set but responseBody is, set it
+      if (!requestData.rawResponseBody && requestData.responseBody) {
+        requestData.rawResponseBody = requestData.responseBody;
+      }
+      
+      setSelectedRequest(requestData);
+      setShowDetailsModal(true);
+    } else {
+      showToast(response?.message || 'Failed to load request details', 'error');
     }
-  };
+  } catch (error) {
+    console.error('Error loading request details:', error);
+    showToast(error.message || 'Failed to load request details', 'error');
+  }
+};
 
   // Handle API selection from sidebar
   const handleApiSelect = (apiId) => {

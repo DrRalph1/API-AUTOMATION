@@ -48,6 +48,13 @@ public class ApiRequestResponseDTO {
     private Map<String, Object> multipartData;
 
     // =====================================================
+    // RAW Request/Response (EXACTLY as sent/received)
+    // =====================================================
+
+    private String rawRequestBody;      // Exact raw request body (XML/SOAP or JSON)
+    private String rawResponseBody;     // Exact raw response body (XML/SOAP or JSON)
+
+    // =====================================================
     // Response Details
     // =====================================================
 

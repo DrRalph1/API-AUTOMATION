@@ -39,6 +39,13 @@ public class ApiRequestDTO {
     private Map<String, Object> multipartData;
 
     // =====================================================
+    // RAW Request/Response Storage (NO MODIFICATION)
+    // =====================================================
+
+    private String rawRequestBody;      // Exact raw request body as received (XML/JSON)
+    private String rawResponseBody;     // Exact raw response body as returned (XML/JSON)
+
+    // =====================================================
     // Authentication
     // =====================================================
 

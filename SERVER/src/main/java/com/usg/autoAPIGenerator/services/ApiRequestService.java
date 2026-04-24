@@ -1001,12 +1001,32 @@ public class ApiRequestService {
         entity.setFormData(dto.getFormData());
         entity.setMultipartData(dto.getMultipartData());
 
+        // ============ CRITICAL: Store raw request body EXACTLY as received ============
+        if (dto.getRawRequestBody() != null) {
+            log.info("╔══════════════════════════════════════════════════════════════════╗");
+            log.info("║           RAW REQUEST BODY - INITIAL CAPTURE                      ║");
+            log.info("╚══════════════════════════════════════════════════════════════════╝");
+            log.info("Storing raw request body ({} chars)", dto.getRawRequestBody().length());
+            log.info("Raw Request Body Content:");
+            log.info("┌─────────────────────────────────────────────────────────────────┐");
+            String[] lines = dto.getRawRequestBody().split("\n");
+            for (String line : lines) {
+                log.info("│ {}", line);
+            }
+            log.info("└─────────────────────────────────────────────────────────────────┘");
+
+            entity.setRawRequestBody(dto.getRawRequestBody());
+            log.info("✅ Raw request body stored in entity");
+        } else {
+            log.warn("No raw request body provided in DTO");
+        }
+
         // Set authentication
         entity.setAuthType(dto.getAuthType());
-        entity.setAuthToken(dto.getAuthToken()); // In production, encrypt this!
-        entity.setApiKey(dto.getApiKey()); // In production, encrypt this!
+        entity.setAuthToken(dto.getAuthToken());
+        entity.setApiKey(dto.getApiKey());
 
-        // Set client information (prioritize DTO, then HTTP request)
+        // Set client information
         entity.setClientIpAddress(dto.getClientIpAddress());
         entity.setUserAgent(dto.getUserAgent());
         entity.setSourceApplication(dto.getSourceApplication());
@@ -1044,14 +1064,27 @@ public class ApiRequestService {
             dto.setHeaders(new HashMap<>(executeRequest.getHeaders()));
         }
 
-        // Convert body
+        // Convert body and capture raw
         if (executeRequest.getBody() != null) {
-            if (executeRequest.getBody() instanceof Map) {
-                dto.setRequestBody((Map<String, Object>) executeRequest.getBody());
-            } else {
+            // Store the raw body exactly as received
+            if (executeRequest.getBody() instanceof String) {
+                dto.setRawRequestBody((String) executeRequest.getBody());
+
+                // Also store as structured for backward compatibility
                 Map<String, Object> wrappedBody = new HashMap<>();
-                wrappedBody.put("data", executeRequest.getBody());
+                wrappedBody.put("raw", executeRequest.getBody());
                 dto.setRequestBody(wrappedBody);
+            } else {
+                try {
+                    String jsonBody = objectMapper.writeValueAsString(executeRequest.getBody());
+                    dto.setRawRequestBody(jsonBody);
+                    dto.setRequestBody((Map<String, Object>) executeRequest.getBody());
+                } catch (Exception e) {
+                    dto.setRawRequestBody(executeRequest.getBody().toString());
+                    Map<String, Object> wrappedBody = new HashMap<>();
+                    wrappedBody.put("data", executeRequest.getBody());
+                    dto.setRequestBody(wrappedBody);
+                }
             }
         }
 
@@ -1062,6 +1095,265 @@ public class ApiRequestService {
         return dto;
     }
 
+
+
+    @Transactional
+    public ApiRequestResponseDTO updateRequestWithRawRequestAndResponse(
+            String requestId,
+            String capturedRequestId,
+            String rawRequestBody,
+            String rawResponseBody,
+            Integer statusCode,
+            String statusMessage,
+            Long executionDurationMs) {
+
+        try {
+            loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                    ", Updating captured request with RAW data: " + capturedRequestId);
+
+            // ============ LOG RAW REQUEST BODY BEING STORED ============
+            log.info("╔══════════════════════════════════════════════════════════════════╗");
+            log.info("║           RAW REQUEST BODY BEING STORED IN DATABASE              ║");
+            log.info("╚══════════════════════════════════════════════════════════════════╝");
+            log.info("Captured Request ID: {}", capturedRequestId);
+
+            if (rawRequestBody != null) {
+                log.info("Raw Request Body Length: {} characters", rawRequestBody.length());
+                log.info("Raw Request Body Content Type: {}",
+                        rawRequestBody.trim().startsWith("<") ? "XML/SOAP" : "JSON");
+                log.info("Raw Request Body (FULL):");
+                log.info("┌─────────────────────────────────────────────────────────────────┐");
+                // Log the full raw request body line by line
+                String[] lines = rawRequestBody.split("\n");
+                for (String line : lines) {
+                    log.info("│ {}", line);
+                }
+                log.info("└─────────────────────────────────────────────────────────────────┘");
+            } else {
+                log.warn("Raw Request Body is NULL - nothing to store");
+            }
+
+            // Find the request entity
+            ApiRequestEntity requestEntity = apiRequestRepository.findById(capturedRequestId)
+                    .orElseThrow(() -> new RuntimeException("Captured request not found with ID: " + capturedRequestId));
+
+            // Store EXACT raw request body - NO MODIFICATION
+            if (rawRequestBody != null) {
+                requestEntity.setRawRequestBody(rawRequestBody);
+                log.info("✅ Raw request body stored successfully in entity");
+            }
+
+            // Update response details
+            requestEntity.setResponseTimestamp(LocalDateTime.now());
+            requestEntity.setResponseStatusCode(statusCode != null ? statusCode : 200);
+            requestEntity.setResponseStatusMessage(statusMessage);
+
+            if (executionDurationMs != null) {
+                requestEntity.setExecutionDurationMs(executionDurationMs);
+            } else {
+                requestEntity.calculateExecutionDuration();
+            }
+
+            // ============ LOG RAW RESPONSE BODY BEING STORED ============
+            log.info("╔══════════════════════════════════════════════════════════════════╗");
+            log.info("║           RAW RESPONSE BODY BEING STORED IN DATABASE             ║");
+            log.info("╚══════════════════════════════════════════════════════════════════╝");
+
+            if (rawResponseBody != null) {
+                log.info("Raw Response Body Length: {} characters", rawResponseBody.length());
+                log.info("Raw Response Body Content Type: {}",
+                        rawResponseBody.trim().startsWith("<") ? "XML/SOAP" : "JSON");
+                log.info("Raw Response Body (FULL):");
+                log.info("┌─────────────────────────────────────────────────────────────────┐");
+                // Log the full raw response body line by line
+                String[] lines = rawResponseBody.split("\n");
+                for (String line : lines) {
+                    log.info("│ {}", line);
+                }
+                log.info("└─────────────────────────────────────────────────────────────────┘");
+            } else {
+                log.warn("Raw Response Body is NULL - nothing to store");
+            }
+
+            // Store EXACT raw response body - NO MODIFICATION
+            if (rawResponseBody != null) {
+                requestEntity.setRawResponseBody(rawResponseBody);
+                log.info("✅ Raw response body stored successfully in entity");
+            }
+
+            // Determine request status
+            if (statusCode != null && statusCode >= 200 && statusCode < 300) {
+                requestEntity.setRequestStatus("SUCCESS");
+                log.info("Request Status: SUCCESS");
+            } else if (statusCode != null && (statusCode == 408 || statusCode == 504)) {
+                requestEntity.setRequestStatus("TIMEOUT");
+                log.info("Request Status: TIMEOUT");
+            } else if (statusCode != null) {
+                requestEntity.setRequestStatus("FAILED");
+                log.info("Request Status: FAILED");
+            } else {
+                requestEntity.setRequestStatus("SUCCESS");
+                log.info("Request Status: SUCCESS (default)");
+            }
+
+            // Save to database
+            ApiRequestEntity updatedRequest = apiRequestRepository.save(requestEntity);
+
+            // ============ VERIFY WHAT WAS ACTUALLY SAVED ============
+            log.info("╔══════════════════════════════════════════════════════════════════╗");
+            log.info("║           VERIFICATION - WHAT WAS SAVED IN DATABASE              ║");
+            log.info("╚══════════════════════════════════════════════════════════════════╝");
+            log.info("Saved Request ID: {}", updatedRequest.getId());
+
+            // Verify raw request body was saved
+            String savedRawRequest = updatedRequest.getRawRequestBody();
+            if (savedRawRequest != null) {
+                log.info("✅ Verified Raw Request Body in DB ({} chars)", savedRawRequest.length());
+                if (savedRawRequest.equals(rawRequestBody)) {
+                    log.info("✅ Raw Request Body matches exactly what was sent");
+                } else {
+                    log.warn("⚠️ Raw Request Body mismatch! Sent length: {}, Saved length: {}",
+                            rawRequestBody != null ? rawRequestBody.length() : 0,
+                            savedRawRequest.length());
+                }
+            } else {
+                log.error("❌ Raw Request Body was NOT saved to database!");
+            }
+
+            // Verify raw response body was saved
+            String savedRawResponse = updatedRequest.getRawResponseBody();
+            if (savedRawResponse != null) {
+                log.info("✅ Verified Raw Response Body in DB ({} chars)", savedRawResponse.length());
+                if (savedRawResponse.equals(rawResponseBody)) {
+                    log.info("✅ Raw Response Body matches exactly what was returned");
+                } else {
+                    log.warn("⚠️ Raw Response Body mismatch! Sent length: {}, Saved length: {}",
+                            rawResponseBody != null ? rawResponseBody.length() : 0,
+                            savedRawResponse.length());
+                }
+            } else {
+                log.error("❌ Raw Response Body was NOT saved to database!");
+            }
+
+            log.info("════════════════════════════════════════════════════════════════════");
+
+            loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                    ", Request updated with RAW data successfully");
+
+            GeneratedApiEntity api = updatedRequest.getGeneratedApi();
+            return mapToResponseDTO(updatedRequest, api);
+
+        } catch (Exception e) {
+            log.error("ERROR storing raw data: {}", e.getMessage(), e);
+            loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                    ", Error updating request with RAW data: " + e.getMessage());
+            throw new RuntimeException("Failed to update request with RAW data: " + e.getMessage(), e);
+        }
+    }
+
+    @Transactional
+    public ApiRequestResponseDTO updateRequestWithRawResponse(
+            String requestId,
+            String capturedRequestId,
+            Integer statusCode,
+            String statusMessage,
+            Long executionDurationMs,
+            String rawResponseBody) {
+
+        try {
+            loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                    ", Updating captured request with RAW response: " + capturedRequestId);
+
+            // ============ LOG RAW RESPONSE BODY BEING STORED ============
+            log.info("╔══════════════════════════════════════════════════════════════════╗");
+            log.info("║           RAW RESPONSE BODY BEING STORED IN DATABASE             ║");
+            log.info("╚══════════════════════════════════════════════════════════════════╝");
+            log.info("Captured Request ID: {}", capturedRequestId);
+            log.info("Status Code: {}, Status Message: {}", statusCode, statusMessage);
+            log.info("Execution Duration: {} ms", executionDurationMs);
+
+            if (rawResponseBody != null) {
+                log.info("Raw Response Body Length: {} characters", rawResponseBody.length());
+                log.info("Raw Response Body Content Type: {}",
+                        rawResponseBody.trim().startsWith("<") ? "XML/SOAP" : "JSON");
+                log.info("Raw Response Body (FULL):");
+                log.info("┌─────────────────────────────────────────────────────────────────┐");
+                String[] lines = rawResponseBody.split("\n");
+                for (String line : lines) {
+                    log.info("│ {}", line);
+                }
+                log.info("└─────────────────────────────────────────────────────────────────┘");
+            } else {
+                log.warn("Raw Response Body is NULL - nothing to store");
+            }
+
+            ApiRequestEntity requestEntity = apiRequestRepository.findById(capturedRequestId)
+                    .orElseThrow(() -> new RuntimeException("Captured request not found with ID: " + capturedRequestId));
+
+            requestEntity.setResponseTimestamp(LocalDateTime.now());
+            requestEntity.setResponseStatusCode(statusCode != null ? statusCode : 500);
+            requestEntity.setResponseStatusMessage(statusMessage);
+
+            if (executionDurationMs != null) {
+                requestEntity.setExecutionDurationMs(executionDurationMs);
+            } else {
+                requestEntity.calculateExecutionDuration();
+            }
+
+            // Store EXACT raw response body - NO MODIFICATION
+            if (rawResponseBody != null) {
+                requestEntity.setRawResponseBody(rawResponseBody);
+                log.info("✅ Raw response body stored successfully in entity");
+            }
+
+            // Determine request status
+            if (statusCode != null && statusCode >= 200 && statusCode < 300) {
+                requestEntity.setRequestStatus("SUCCESS");
+                log.info("Request Status: SUCCESS");
+            } else if (statusCode != null && (statusCode == 408 || statusCode == 504)) {
+                requestEntity.setRequestStatus("TIMEOUT");
+                log.info("Request Status: TIMEOUT");
+            } else {
+                requestEntity.setRequestStatus("FAILED");
+                log.info("Request Status: FAILED");
+            }
+
+            ApiRequestEntity updatedRequest = apiRequestRepository.save(requestEntity);
+
+            // ============ VERIFY WHAT WAS SAVED ============
+            log.info("╔══════════════════════════════════════════════════════════════════╗");
+            log.info("║           VERIFICATION - WHAT WAS SAVED IN DATABASE              ║");
+            log.info("╚══════════════════════════════════════════════════════════════════╝");
+
+            String savedRawResponse = updatedRequest.getRawResponseBody();
+            if (savedRawResponse != null) {
+                log.info("✅ Verified Raw Response Body in DB ({} chars)", savedRawResponse.length());
+                if (savedRawResponse.equals(rawResponseBody)) {
+                    log.info("✅ Raw Response Body matches exactly what was returned");
+                } else {
+                    log.warn("⚠️ Raw Response Body mismatch! Sent length: {}, Saved length: {}",
+                            rawResponseBody != null ? rawResponseBody.length() : 0,
+                            savedRawResponse.length());
+                }
+            } else {
+                log.error("❌ Raw Response Body was NOT saved to database!");
+            }
+
+            log.info("════════════════════════════════════════════════════════════════════");
+
+            loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                    ", Request updated with RAW response successfully");
+
+            GeneratedApiEntity api = updatedRequest.getGeneratedApi();
+            return mapToResponseDTO(updatedRequest, api);
+
+        } catch (Exception e) {
+            log.error("ERROR storing raw response: {}", e.getMessage(), e);
+            loggerUtil.log("autoAPIGenerator", "Request ID: " + requestId +
+                    ", Error updating request with RAW response: " + e.getMessage());
+            throw new RuntimeException("Failed to update request with RAW response: " + e.getMessage(), e);
+        }
+    }
 
 
     // Add these methods to your ApiRequestService class
@@ -1294,6 +1586,20 @@ public class ApiRequestService {
         dto.setFormData(entity.getFormData());
         dto.setMultipartData(entity.getMultipartData());
 
+        // ============ ADD RAW FIELDS ============
+        dto.setRawRequestBody(entity.getRawRequestBody());
+        dto.setRawResponseBody(entity.getRawResponseBody());
+
+        // Optional: Log if raw fields are present
+        if (entity.getRawRequestBody() != null) {
+            log.debug("Raw request body present ({} chars) for request: {}",
+                    entity.getRawRequestBody().length(), entity.getId());
+        }
+        if (entity.getRawResponseBody() != null) {
+            log.debug("Raw response body present ({} chars) for request: {}",
+                    entity.getRawResponseBody().length(), entity.getId());
+        }
+
         // Response details
         dto.setResponseStatusCode(entity.getResponseStatusCode());
         dto.setResponseStatusMessage(entity.getResponseStatusMessage());
@@ -1341,6 +1647,7 @@ public class ApiRequestService {
 
         return dto;
     }
+
 
     /**
      * Build request summary for an API

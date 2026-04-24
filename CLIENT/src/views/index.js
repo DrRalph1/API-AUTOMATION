@@ -1634,7 +1634,7 @@ export default function EntryPage({ userRole }) {
                       isDark ? 'bg-gray-900 border border-gray-800' : 'bg-white border border-gray-200'
                     }`}>
                       {/* Role Badge */}
-                      <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
+                      {/* <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
                         <div className="flex items-center gap-2 mb-2">
                           <div className={`px-2 py-1 rounded-md text-xs font-medium ${
                             isAdmin 
@@ -1650,7 +1650,7 @@ export default function EntryPage({ userRole }) {
                         <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
                           {user?.email || (isAdmin ? "admin@example.com" : "user@example.com")}
                         </p>
-                      </div>
+                      </div> */}
 
                       {/* Actions Section */}
                       <div className="p-2">

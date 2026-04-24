@@ -89,6 +89,17 @@ public class ApiRequestEntity {
     private Map<String, Object> multipartData;
 
     // =====================================================
+    // RAW Request/Response Storage (NO MODIFICATION)
+    // Stores EXACT raw body as sent/received - XML for SOAP, JSON for REST/GraphQL
+    // =====================================================
+
+    @Column(name = "raw_request_body", columnDefinition = "TEXT")
+    private String rawRequestBody;      // Exact raw request body as received
+
+    @Column(name = "raw_response_body", columnDefinition = "TEXT")
+    private String rawResponseBody;     // Exact raw response body as returned
+
+    // =====================================================
     // Request Execution Details
     // =====================================================
 
@@ -261,6 +272,7 @@ public class ApiRequestEntity {
 
     /**
      * Generate curl command from request details
+     * Prefers rawRequestBody for accurate representation
      */
     public void generateCurlCommand() {
         StringBuilder curl = new StringBuilder("curl -X ").append(httpMethod);
@@ -272,9 +284,19 @@ public class ApiRequestEntity {
             );
         }
 
-        // Add request body
-        if (requestBody != null && !requestBody.isEmpty()) {
-            curl.append(" -d '").append(requestBody.toString()).append("'");
+        // Add request body - prefer raw if available
+        if (rawRequestBody != null && !rawRequestBody.isEmpty()) {
+            // Escape single quotes in the request body
+            String escapedBody = rawRequestBody.replace("'", "'\\''");
+            curl.append(" -d '").append(escapedBody).append("'");
+        } else if (requestBody != null && !requestBody.isEmpty()) {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                String bodyJson = mapper.writeValueAsString(requestBody);
+                curl.append(" -d '").append(bodyJson).append("'");
+            } catch (Exception e) {
+                curl.append(" -d '").append(requestBody.toString()).append("'");
+            }
         }
 
         // Add URL

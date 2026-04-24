@@ -47,9 +47,106 @@ public class CustomQueryExecutionHelper {
             DateTimeFormatter.ofPattern("MM-dd-yyyy")
     );
 
+    // SOAP Action to SQL operation mapping
+    private static final Map<String, String> SOAP_ACTION_TO_SQL_TYPE = Map.ofEntries(
+            Map.entry("SELECT", "SELECT"),
+            Map.entry("SELECT_ONE", "SELECT"),
+            Map.entry("SEARCH", "SELECT"),
+            Map.entry("COUNT", "SELECT"),
+            Map.entry("AGGREGATE", "SELECT"),
+            Map.entry("EXPORT", "SELECT"),
+            Map.entry("PAGINATE", "SELECT"),
+            Map.entry("GET", "SELECT"),
+            Map.entry("QUERY", "SELECT"),
+            Map.entry("ANALYZE", "SELECT"),
+            Map.entry("EXPLAIN", "SELECT"),
+
+            Map.entry("INSERT", "INSERT"),
+            Map.entry("CREATE", "INSERT"),
+            Map.entry("BULK_INSERT", "INSERT"),
+
+            Map.entry("UPDATE", "UPDATE"),
+            Map.entry("MODIFY", "UPDATE"),
+            Map.entry("UPSERT", "UPDATE"),
+            Map.entry("BULK_UPDATE", "UPDATE"),
+
+            Map.entry("DELETE", "DELETE"),
+            Map.entry("REMOVE", "DELETE"),
+            Map.entry("PURGE", "DELETE"),
+
+            Map.entry("EXECUTE", "CALL"),
+            Map.entry("VALIDATE", "CALL"),
+            Map.entry("DRY_RUN", "CALL"),
+            Map.entry("SCHEDULE", "CALL"),
+            Map.entry("ASYNC", "CALL"),
+            Map.entry("DEBUG", "CALL"),
+            Map.entry("PROFILE", "CALL"),
+            Map.entry("EXECUTE_PROCEDURE", "CALL"),
+            Map.entry("EXECUTE_FUNCTION", "CALL"),
+            Map.entry("GET_STATE", "CALL"),
+            Map.entry("RESET", "CALL"),
+
+            Map.entry("PROCESS", "CALL"),
+            Map.entry("EXISTS", "SELECT")
+    );
+
+    // GraphQL Operation Type to SQL operation mapping
+    private static final Map<String, String> GRAPHQL_OP_TYPE_TO_SQL = Map.ofEntries(
+            // Query operations (read-only)
+            Map.entry("query", "SELECT"),
+            Map.entry("get", "SELECT"),
+            Map.entry("find", "SELECT"),
+            Map.entry("list", "SELECT"),
+            Map.entry("search", "SELECT"),
+            Map.entry("fetch", "SELECT"),
+            Map.entry("lookup", "SELECT"),
+            Map.entry("aggregate", "SELECT"),
+            Map.entry("count", "SELECT"),
+            Map.entry("exists", "SELECT"),
+
+            // Mutation operations (write operations)
+            Map.entry("mutation", "CALL"),
+            Map.entry("create", "INSERT"),
+            Map.entry("add", "INSERT"),
+            Map.entry("insert", "INSERT"),
+            Map.entry("save", "INSERT"),
+            Map.entry("register", "INSERT"),
+
+            Map.entry("update", "UPDATE"),
+            Map.entry("modify", "UPDATE"),
+            Map.entry("edit", "UPDATE"),
+            Map.entry("change", "UPDATE"),
+            Map.entry("set", "UPDATE"),
+            Map.entry("upsert", "UPDATE"),
+
+            Map.entry("delete", "DELETE"),
+            Map.entry("remove", "DELETE"),
+            Map.entry("purge", "DELETE"),
+            Map.entry("destroy", "DELETE"),
+
+            // Subscription operations (real-time)
+            Map.entry("subscription", "SELECT"),
+            Map.entry("subscribe", "SELECT"),
+            Map.entry("watch", "SELECT"),
+            Map.entry("listen", "SELECT"),
+            Map.entry("on", "SELECT"),
+
+            // Procedure/Function calls
+            Map.entry("execute", "CALL"),
+            Map.entry("run", "CALL"),
+            Map.entry("process", "CALL"),
+            Map.entry("validate", "CALL"),
+            Map.entry("calculate", "CALL"),
+            Map.entry("compute", "CALL")
+    );
+
     /**
      * Execute a custom SQL statement
      * Handles SELECT, INSERT, UPDATE, DELETE, DDL, CALL, EXECUTE, and PLSQL
+     *
+     * For SOAP APIs: Uses SOAP Action to determine operation
+     * For GraphQL APIs: Uses GraphQL Operation Type to determine operation
+     * For REST APIs: Parses the SQL to determine operation
      */
     public Object executeCustomQuery(GeneratedApiEntity api,
                                      ApiSourceObjectDTO sourceObject,
@@ -70,7 +167,8 @@ public class CustomQueryExecutionHelper {
             String cleanedQuery = cleanSqlQuery(sql);
             log.debug("Cleaned Query: {}", cleanedQuery);
 
-            String queryType = getQueryType(cleanedQuery);
+            // Determine query type based on protocol type
+            String queryType = determineQueryType(api, cleanedQuery);
             log.info("Detected Query Type: {}", queryType);
 
             if ("UNKNOWN".equals(queryType)) {
@@ -140,21 +238,217 @@ public class CustomQueryExecutionHelper {
     }
 
     /**
-     * Determine SQL query type
+     * Determine query type based on the API's protocol:
+     * - SOAP: Uses SOAP Action mapping
+     * - GraphQL: Uses GraphQL Operation Type mapping
+     * - REST: Parses the SQL query
+     *
+     * @param api The API entity containing GraphQL/SOAP configuration
+     * @param query The SQL query
+     * @return The query type (SELECT, INSERT, UPDATE, DELETE, CALL, etc.)
      */
-    private String getQueryType(String query) {
+    private String determineQueryType(GeneratedApiEntity api, String query) {
+        // Check protocol type from API
+        String protocolType = null;
+        if (api != null) {
+            protocolType = api.getProtocolType();
+        }
+
+        // For SOAP APIs: Use SOAP Action ONLY
+        if ("soap".equalsIgnoreCase(protocolType) && api != null && api.getSoapConfig() != null) {
+            String soapAction = api.getSoapConfig().getSoapAction();
+
+            if (soapAction != null && !soapAction.trim().isEmpty()) {
+                log.info("SOAP API detected - using SOAP Action to determine operation: {}", soapAction);
+
+                // Try exact match first
+                String mappedType = SOAP_ACTION_TO_SQL_TYPE.get(soapAction.toUpperCase());
+                if (mappedType != null) {
+                    log.info("SOAP Action '{}' mapped to SQL operation: {}", soapAction, mappedType);
+                    return mappedType;
+                }
+
+                // Try to match by prefix (e.g., "SELECT_USER" -> "SELECT")
+                for (Map.Entry<String, String> entry : SOAP_ACTION_TO_SQL_TYPE.entrySet()) {
+                    if (soapAction.toUpperCase().startsWith(entry.getKey())) {
+                        log.info("SOAP Action '{}' matched prefix '{}' -> SQL operation: {}",
+                                soapAction, entry.getKey(), entry.getValue());
+                        return entry.getValue();
+                    }
+                }
+
+                // Try to match by contains (e.g., "GET_USER_BY_ID" contains "GET" -> "SELECT")
+                for (Map.Entry<String, String> entry : SOAP_ACTION_TO_SQL_TYPE.entrySet()) {
+                    if (soapAction.toUpperCase().contains(entry.getKey())) {
+                        log.info("SOAP Action '{}' contains '{}' -> SQL operation: {}",
+                                soapAction, entry.getKey(), entry.getValue());
+                        return entry.getValue();
+                    }
+                }
+
+                log.warn("SOAP Action '{}' not recognized, defaulting to SELECT", soapAction);
+                return "SELECT";
+            }
+
+            // Check if it's a procedure/function execution based on SOAP binding style
+            if (api.getSoapConfig().getBindingStyle() != null) {
+                String bindingStyle = api.getSoapConfig().getBindingStyle();
+                if ("rpc".equalsIgnoreCase(bindingStyle)) {
+                    log.info("RPC binding style detected, treating as procedure/function execution");
+                    return "CALL";
+                }
+            }
+
+            log.warn("No SOAP Action defined, defaulting to SELECT");
+            return "SELECT";
+        }
+
+        // For GraphQL APIs: Use GraphQL Operation Type ONLY
+        if ("graphql".equalsIgnoreCase(protocolType) && api != null && api.getGraphqlConfig() != null) {
+            String operationType = api.getGraphqlConfig().getOperationType();
+            String operationName = api.getGraphqlConfig().getOperationName();
+
+            if (operationType != null && !operationType.trim().isEmpty()) {
+                log.info("GraphQL API detected - using Operation Type to determine operation: {}", operationType);
+
+                // Try exact match first
+                String mappedType = GRAPHQL_OP_TYPE_TO_SQL.get(operationType.toLowerCase());
+                if (mappedType != null) {
+                    log.info("GraphQL Operation Type '{}' mapped to SQL operation: {}", operationType, mappedType);
+                    return refineGraphQLOperation(mappedType, operationName);
+                }
+
+                log.warn("GraphQL Operation Type '{}' not recognized, defaulting to SELECT", operationType);
+                return "SELECT";
+            }
+
+            log.warn("No GraphQL Operation Type defined, defaulting to SELECT");
+            return "SELECT";
+        }
+
+        // For REST APIs (or any other protocol): Parse the SQL query directly
+        log.info("REST API or unknown protocol - parsing SQL to determine operation");
+        return getQueryTypeFromSql(query);
+    }
+
+    /**
+     * Refine GraphQL operation type based on operation name
+     *
+     * @param baseType The base SQL operation type from operation type
+     * @param operationName The GraphQL operation name
+     * @return The refined SQL operation type
+     */
+    private String refineGraphQLOperation(String baseType, String operationName) {
+        // For mutation operations, we need to determine if it's INSERT, UPDATE, or DELETE
+        if ("CALL".equals(baseType) && operationName != null) {
+            String refined = determineFromGraphQLOperationName(operationName);
+            if (refined != null) {
+                log.info("Refined GraphQL mutation '{}' from 'CALL' to '{}' based on operation name: {}",
+                        operationName, refined, operationName);
+                return refined;
+            }
+        }
+        return baseType;
+    }
+
+    /**
+     * Determine SQL operation type from GraphQL operation name patterns
+     *
+     * @param operationName The GraphQL operation name
+     * @return The SQL operation type or null if not determinable
+     */
+    private String determineFromGraphQLOperationName(String operationName) {
+        if (operationName == null || operationName.trim().isEmpty()) {
+            return null;
+        }
+
+        String lowerName = operationName.toLowerCase();
+
+        // Check for mutation patterns first (these are more specific)
+        if (lowerName.startsWith("create") || lowerName.startsWith("add") ||
+                lowerName.startsWith("insert") || lowerName.startsWith("save") ||
+                lowerName.startsWith("register")) {
+            return "INSERT";
+        }
+
+        if (lowerName.startsWith("update") || lowerName.startsWith("modify") ||
+                lowerName.startsWith("edit") || lowerName.startsWith("change") ||
+                lowerName.startsWith("set") || lowerName.startsWith("upsert")) {
+            return "UPDATE";
+        }
+
+        if (lowerName.startsWith("delete") || lowerName.startsWith("remove") ||
+                lowerName.startsWith("purge") || lowerName.startsWith("destroy")) {
+            return "DELETE";
+        }
+
+        if (lowerName.startsWith("execute") || lowerName.startsWith("run") ||
+                lowerName.startsWith("process") || lowerName.startsWith("validate") ||
+                lowerName.startsWith("calculate") || lowerName.startsWith("compute")) {
+            return "CALL";
+        }
+
+        // Check for query patterns (read-only)
+        if (lowerName.startsWith("get") || lowerName.startsWith("find") ||
+                lowerName.startsWith("list") || lowerName.startsWith("search") ||
+                lowerName.startsWith("fetch") || lowerName.startsWith("lookup") ||
+                lowerName.startsWith("query") || lowerName.startsWith("aggregate") ||
+                lowerName.startsWith("count") || lowerName.startsWith("exists")) {
+            return "SELECT";
+        }
+
+        // Check content of operation name for hints
+        if (lowerName.contains("find") || lowerName.contains("get") ||
+                lowerName.contains("list") || lowerName.contains("search")) {
+            return "SELECT";
+        }
+
+        if (lowerName.contains("insert") || lowerName.contains("create") ||
+                lowerName.contains("add")) {
+            return "INSERT";
+        }
+
+        if (lowerName.contains("update") || lowerName.contains("modify")) {
+            return "UPDATE";
+        }
+
+        if (lowerName.contains("delete") || lowerName.contains("remove")) {
+            return "DELETE";
+        }
+
+        return null;
+    }
+
+    /**
+     * Determine SQL query type by parsing the SQL statement (for REST APIs)
+     *
+     * @param query The SQL query
+     * @return The query type
+     */
+    private String getQueryTypeFromSql(String query) {
         if (query == null) return "UNKNOWN";
 
         String trimmed = query.trim().toUpperCase();
 
-        if (trimmed.matches("^SELECT\\b.*")) return "SELECT";
+        // Check for SELECT (including WITH clause common in PostgreSQL)
+        if (trimmed.matches("^SELECT\\b.*") || trimmed.matches("^WITH\\b.*SELECT\\b.*")) {
+            return "SELECT";
+        }
+
         if (trimmed.matches("^INSERT\\b.*")) return "INSERT";
         if (trimmed.matches("^UPDATE\\b.*")) return "UPDATE";
         if (trimmed.matches("^DELETE\\b.*")) return "DELETE";
         if (trimmed.matches("^(CREATE|ALTER|DROP|TRUNCATE)\\b.*")) return "DDL";
+
+        // Check for CALL (Oracle/PostgreSQL procedures)
         if (trimmed.matches("^CALL\\b.*")) return "CALL";
         if (trimmed.matches("^EXEC(UTE)?\\b.*")) return "EXECUTE";
+
+        // Check for BEGIN (PL/SQL or PL/pgSQL anonymous block)
         if (trimmed.matches("^(BEGIN|DECLARE)\\b.*")) return "PLSQL";
+
+        // Check for DO (PostgreSQL anonymous block)
+        if (trimmed.matches("^DO\\b.*")) return "PLSQL";
 
         return "UNKNOWN";
     }
@@ -198,7 +492,6 @@ public class CustomQueryExecutionHelper {
 
     /**
      * Validate and format IP address for PostgreSQL inet type
-     * PostgreSQL JDBC driver will handle the conversion if we pass a valid IP string
      */
     private String validateAndFormatInet(String ipStr) {
         if (ipStr == null || ipStr.trim().isEmpty()) {
@@ -206,7 +499,6 @@ public class CustomQueryExecutionHelper {
         }
 
         try {
-            // Validate IP address format (both IPv4 and IPv6)
             InetAddress inetAddress = InetAddress.getByName(ipStr.trim());
             String validatedIp = inetAddress.getHostAddress();
             log.debug("Validated IP address: {} -> {}", ipStr, validatedIp);
@@ -225,7 +517,6 @@ public class CustomQueryExecutionHelper {
             return null;
         }
 
-        // Try to parse with different formatters
         for (DateTimeFormatter formatter : DATE_FORMATTERS) {
             try {
                 LocalDate localDate = LocalDate.parse(dateStr.trim(), formatter);
@@ -235,7 +526,6 @@ public class CustomQueryExecutionHelper {
             }
         }
 
-        // If all formatters fail, try direct conversion
         try {
             return Date.valueOf(dateStr.trim());
         } catch (IllegalArgumentException e) {
@@ -253,10 +543,8 @@ public class CustomQueryExecutionHelper {
         }
 
         try {
-            // Try standard format first
             return Timestamp.valueOf(timestampStr.trim());
         } catch (IllegalArgumentException e) {
-            // Try to parse as LocalDateTime first
             try {
                 LocalDateTime localDateTime = LocalDateTime.parse(timestampStr.trim(), DateTimeFormatter.ISO_LOCAL_DATE_TIME);
                 return Timestamp.valueOf(localDateTime);
@@ -292,7 +580,6 @@ public class CustomQueryExecutionHelper {
                 continue;
             }
 
-            // Get the expected column type (case-insensitive lookup)
             String columnType = columnTypes.getOrDefault(key.toLowerCase(), "VARCHAR").toUpperCase();
             log.debug("Processing parameter '{}' with value '{}' as type: {}", key, value, columnType);
 
@@ -348,7 +635,6 @@ public class CustomQueryExecutionHelper {
                         }
                         break;
 
-                    // PostgreSQL specific types - handled by validation and passing string
                     case "INET":
                         if (value instanceof String) {
                             String validatedIp = validateAndFormatInet((String) value);
@@ -361,7 +647,6 @@ public class CustomQueryExecutionHelper {
 
                     case "CIDR":
                         if (value instanceof String) {
-                            // CIDR validation - basic format check
                             String cidrStr = ((String) value).trim();
                             if (!cidrStr.matches("^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$")) {
                                 log.warn("Invalid CIDR format: {}", cidrStr);
@@ -375,7 +660,6 @@ public class CustomQueryExecutionHelper {
 
                     case "MACADDR":
                         if (value instanceof String) {
-                            // MAC address validation - basic format check
                             String macStr = ((String) value).trim();
                             if (!macStr.matches("^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$")) {
                                 log.warn("Invalid MAC address format: {}", macStr);
@@ -407,7 +691,6 @@ public class CustomQueryExecutionHelper {
                     case "JSON":
                     case "JSONB":
                         if (value instanceof String) {
-                            // Validate JSON format
                             try {
                                 objectMapper.readTree((String) value);
                                 parameterSource.addValue(key, value, Types.OTHER);
@@ -417,7 +700,6 @@ public class CustomQueryExecutionHelper {
                                 parameterSource.addValue(key, value);
                             }
                         } else {
-                            // If it's already a Map/List, convert to JSON string
                             try {
                                 String jsonValue = objectMapper.writeValueAsString(value);
                                 parameterSource.addValue(key, jsonValue, Types.OTHER);
@@ -514,18 +796,15 @@ public class CustomQueryExecutionHelper {
                     case "TEXT":
                     case "BPCHAR":
                     default:
-                        // For VARCHAR, TEXT, CHAR, etc. - keep as string
                         parameterSource.addValue(key, value, Types.VARCHAR);
                         log.debug("Keeping '{}' as string type", key);
                 }
             } catch (Exception e) {
                 log.error("Error converting parameter '{}' with value '{}' to type {}: {}", key, value, columnType, e.getMessage());
-                // Fall back to original value
                 parameterSource.addValue(key, value);
             }
         }
 
-        // Add defaults from configuredParamDTOs if not already present
         if (configuredParamDTOs != null) {
             for (ApiParameterDTO param : configuredParamDTOs) {
                 if (!parameterSource.hasValue(param.getKey()) && param.getDefaultValue() != null) {

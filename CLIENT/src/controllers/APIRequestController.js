@@ -858,6 +858,10 @@ const transformApiRequestResponse = (response) => {
         formData: data.formData,
         multipartData: data.multipartData,
         
+        // ============ ADD RAW FIELDS ============
+        rawRequestBody: data.rawRequestBody,     // Exact raw request body
+        rawResponseBody: data.rawResponseBody,   // Exact raw response body
+        
         // Response details
         responseStatusCode: data.responseStatusCode,
         responseStatusMessage: data.responseStatusMessage,

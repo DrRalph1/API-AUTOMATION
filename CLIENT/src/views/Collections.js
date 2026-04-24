@@ -3945,108 +3945,84 @@ console.log('📋 Set requestHeaders:', uniqueHeaders.length);
   
   // Re-detect protocol from API details
   let finalProtocol = detectedProtocol;
-        const isSoapFromApi = details.protocolType === 'soap' || 
-                              details.bodyType === 'soap' ||
-                              details.requestBody?.bodyType === 'soap';
         const isGraphQLFromApi = details.protocolType === 'graphql' || 
                                  details.bodyType === 'graphql' ||
                                  details.requestBody?.bodyType === 'graphql';
         
-        if (isSoapFromApi) {
-  finalProtocol = 'soap';
-  setCurrentProtocol('soap');
-  setRequestBodyType('xml');
-  setRawBodyType('xml');
-  skipAutoTabChange.current = true;
-  setActiveTab('body');
-  console.log('🔄 SOAP protocol confirmed from API');
-  
-  // Get ALL parameters from multiple possible sources
-  let allParameters = [];
-  
-  // Check details.parameters
-  if (details.parameters && details.parameters.length > 0) {
-    allParameters = [...details.parameters];
-    console.log(`📊 Found ${allParameters.length} parameters in details.parameters`);
-  }
-  
-  console.log('📊 Total parameters for SOAP body:', allParameters.map(p => ({ key: p.key, location: p.parameterLocation })));
-  
-  // ========== GENERATE SOAP BODY FROM ALL PARAMETERS ==========
-  if (allParameters.length > 0) {
-  // Build the SOAP body XML with the parameters
-  let soapBodyContent = '';
-  
-  allParameters.forEach(param => {
-    if (param.key) {
-      // Get the default value based on type
-      let defaultValue = '';
-      const oracleType = param.oracleType || param.type || 'string';
-      
-      if (oracleType === 'VARCHAR2' || oracleType === 'string') {
-        defaultValue = 'string';
-      } else if (oracleType === 'NUMBER' || oracleType === 'number' || oracleType === 'INTEGER') {
-        defaultValue = '0';
-      } else if (oracleType === 'DATE' || oracleType === 'date' || oracleType === 'TIMESTAMP') {
-        defaultValue = new Date().toISOString();
-      } else if (oracleType === 'BOOLEAN' || oracleType === 'boolean') {
-        defaultValue = 'false';
-      } else {
-        defaultValue = '';
-      }
-      
-      soapBodyContent += `      <${param.key}>${defaultValue}</${param.key}>\n`;
-      console.log(`📝 Added SOAP parameter: ${param.key} (${oracleType}) -> ${defaultValue}`);
-    }
-  });
-  
-  // Get SOAP config from the response
-  const soapConfig = details.soapConfig || {};
-  const namespace = soapConfig.namespace || 'http://tempuri.org/';
-  const soapAction = details.apiCode || details.apiName || soapConfig.soapAction || 'ExecuteQuery';
-  
-  // Generate the full SOAP envelope
-  const soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <soap:Header/>
-  <soap:Body>
-    <${soapAction} xmlns="${namespace}">
-${soapBodyContent}    </${soapAction}>
-  </soap:Body>
-</soap:Envelope>`;
-  
-  setRequestBody(soapEnvelope);
-  console.log('✅ Generated SOAP envelope with parameters:', allParameters.map(p => p.key));
-  console.log('✅ SOAP Envelope preview:', soapEnvelope.substring(0, 300) + '...');
-  
-  // FORCE a re-render by incrementing the body key
-  setBodyKey(prev => prev + 1);
-} 
+        // ========== SOAP HANDLING ==========
+        const isSoapFromApi = details.protocolType === 'soap' || 
+                              details.bodyType === 'soap' ||
+                              details.requestBody?.bodyType === 'soap';
 
-  else if (details.requestBody?.sample && details.requestBody.sample.trim() !== '') {
-    setRequestBody(details.requestBody.sample);
-    console.log('✅ Using provided SOAP sample');
-  }
-  else {
-    // Create template with parameter hints
-    let parameterHints = '';
-    if (details.parameters && details.parameters.length > 0) {
-      parameterHints = `\n      <!-- Available parameters: ${details.parameters.map(p => p.key).join(', ')} -->`;
-    }
-    
-    const soapTemplate = `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <request>${parameterHints}
-      <!-- Add your SOAP request parameters here -->
-    </request>
-  </soap:Body>
-</soap:Envelope>`;
-    setRequestBody(soapTemplate);
-    console.log('⚠️ No parameters or sample found, using template with hints');
-  }
-  // ========== END SOAP GENERATION ==========
-}
+        if (isSoapFromApi) {
+          detectedProtocol = 'soap';
+          setCurrentProtocol('soap');
+          setRequestBodyType('xml');
+          setRawBodyType('xml');
+          skipAutoTabChange.current = true;
+          setActiveTab('body');
+          console.log('🔄 SOAP protocol confirmed from API');
+          
+          // Use the sample from API directly
+          if (details.requestBody && details.requestBody.sample && details.requestBody.sample.trim() !== '') {
+            let sampleBody = details.requestBody.sample;
+            
+            // Add missing xmlns:xsd and xmlns:xsi attributes if not present
+            if (!sampleBody.includes('xmlns:xsd')) {
+              sampleBody = sampleBody.replace(
+                '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">',
+                '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+              );
+            }
+            
+            setRequestBody(sampleBody);
+            console.log('✅ Set SOAP body from API sample');
+          }
+          
+          setBodyKey(prev => prev + 1);
+          
+          // Set headers for SOAP
+          let allHeaders = [];
+          if (details.headers && details.headers.length > 0) {
+            details.headers.forEach(header => {
+              allHeaders.push({
+                id: header.id || `header-${Date.now()}`,
+                key: header.key,
+                value: header.value || '',
+                enabled: header.enabled !== false
+              });
+            });
+          }
+          setRequestHeaders(allHeaders);
+          
+          // Cache and finish - EARLY RETURN
+          const cacheData = {
+            templateUrl: initialTemplateUrl,
+            resolvedUrl: displayUrl,
+            method: requestMethod,
+            body: requestBody,
+            headers: allHeaders,
+            cachedProtocol: 'soap'
+          };
+          requestDetailsCache.current.set(request.id, cacheData);
+          
+          setLoading(prev => ({ ...prev, request: false }));
+          
+          const requestWithContext = { 
+            ...request, 
+            collectionId, 
+            folderId,
+            isSaved: request.isSaved !== false,
+            protocolType: 'soap'
+          };
+          setSelectedRequest(requestWithContext);
+          updateRequestTabs(request, collectionId, folderId);
+          setActiveTab('body');
+          
+          return; // EARLY RETURN
+        }
+        // ========== END SOAP HANDLING ==========
+
         else if (isGraphQLFromApi) {
           finalProtocol = 'graphql';
           setCurrentProtocol('graphql');
