@@ -781,99 +781,80 @@ ${inParameters.map(p => `        <${p.key}>${p.example || ''}</${p.key}>`).join(
 </soap:Envelope>`;
   };
 
-  // Generate SOAP Response Envelope
-  const generateSoapResponseEnvelope = () => {
-    const soapConfig = apiData.soapConfig || {};
-    const operationName = soapConfig.soapAction || apiData.apiCode || 'ProcessRequest';
-    const namespace = soapConfig.namespace || 'http://tempuri.org/';
-    const bindingStyle = soapConfig.bindingStyle || 'document';
-    
-    let responseContent = '';
-    
-    if (bindingStyle === 'rpc') {
-      responseContent = `<${operationName}Response>
-${outMappings.map(m => `        <${m.apiField}>${m.example || ''}</${m.apiField}>`).join('\n')}
+  // Generate SOAP Response Envelope - MODIFIED TO SHOW ALL MAPPINGS
+const generateSoapResponseEnvelope = () => {
+  const soapConfig = apiData.soapConfig || {};
+  const operationName = soapConfig.soapAction || apiData.apiCode || 'ProcessRequest';
+  const namespace = soapConfig.namespace || 'http://tempuri.org/';
+  const bindingStyle = soapConfig.bindingStyle || 'document';
+  
+  // Use ALL outMappings (not just slice)
+  const allMappings = outMappings;
+  
+  console.log('📊 SOAP Response - Total mappings:', allMappings.length);
+  
+  let responseContent = '';
+  
+  if (bindingStyle === 'rpc') {
+    responseContent = `<${operationName}Response>
+${allMappings.map(m => `        <${m.apiField}>${m.example || (m.apiType === 'integer' ? '123' : 'value')}</${m.apiField}>`).join('\n')}
       </${operationName}Response>`;
-    } else {
-      responseContent = `<${operationName}Response xmlns="${namespace}">
-${outMappings.map(m => `        <${m.apiField}>${m.example || ''}</${m.apiField}>`).join('\n')}
+  } else {
+    responseContent = `<${operationName}Response xmlns="${namespace}">
+${allMappings.map(m => `        <${m.apiField}>${m.example || (m.apiType === 'integer' ? '123' : 'value')}</${m.apiField}>`).join('\n')}
       </${operationName}Response>`;
-    }
-    
-    return responseContent;
-  };
-
-  // Generate GraphQL Query Example
-  const generateGraphQLQueryExample = () => {
-    const graphqlConfig = apiData.graphqlConfig || {};
-    const operationType = graphqlConfig.operationType || 'query';
-    const operationName = graphqlConfig.operationName || 'query';
-    
-    if (operationType === 'query') {
-      const queryParams = inParameters.filter(p => p.parameterLocation !== 'body');
-      const paramsString = queryParams.length > 0 
-        ? `(${queryParams.map(p => `${p.key}: "${p.example || 'value'}"`).join(', ')})` 
-        : '';
-      
-      return `${operationType} {
-  ${operationName}${paramsString} {
-    ${outMappings.slice(0, 5).map(m => m.apiField).join('\n    ')}
-    ${outMappings.length > 5 ? '  // ... more fields' : ''}
   }
-}`;
-    } else {
-      const bodyParams = inParameters.filter(p => p.parameterLocation === 'body');
-      const inputParams = bodyParams.length > 0 ? bodyParams : inParameters;
-      
-      return `${operationType} {
-  ${operationName}(input: {
-    ${inputParams.slice(0, 3).map(p => `${p.key}: "${p.example || 'value'}"`).join('\n    ')}
-  }) {
-    success
-    message
-    data {
-      ${outMappings.slice(0, 3).map(m => m.apiField).join('\n      ')}
-    }
-  }
-}`;
-    }
-  };
+  
+  return responseContent;
+};
 
-  // Generate GraphQL Response Example
-  const generateGraphQLResponseExample = () => {
-    const graphqlConfig = apiData.graphqlConfig || {};
-    const operationName = graphqlConfig.operationName || 'query';
-    
-    const responseData = {};
-    outMappings.slice(0, 5).forEach(mapping => {
-      if (mapping.apiType === 'integer') {
-        responseData[mapping.apiField] = 123;
-      } else if (mapping.apiType === 'string') {
-        if (mapping.format === 'date-time') {
-          responseData[mapping.apiField] = '2024-01-01T00:00:00Z';
-        } else if (mapping.apiField === 'id') {
-          responseData[mapping.apiField] = 1;
-        } else {
-          responseData[mapping.apiField] = 'sample';
-        }
-      } else if (mapping.apiType === 'boolean') {
-        responseData[mapping.apiField] = true;
+// Generate GraphQL Response Example - MODIFIED TO SHOW ALL MAPPINGS
+const generateGraphQLResponseExample = () => {
+  const graphqlConfigData = apiData.graphqlConfig || {};
+  const operationName = graphqlConfigData.operationName || 'query';
+  
+  // Use ALL outMappings (not just slice)
+  const allMappings = outMappings;
+  
+  console.log('📊 GraphQL Response - Total mappings:', allMappings.length);
+  
+  const responseData = {};
+  allMappings.forEach(mapping => {
+    if (mapping.apiType === 'integer') {
+      responseData[mapping.apiField] = 123;
+    } else if (mapping.apiType === 'string') {
+      if (mapping.format === 'date-time') {
+        responseData[mapping.apiField] = '2024-01-01T00:00:00Z';
+      } else if (mapping.apiField === 'id') {
+        responseData[mapping.apiField] = 1;
       } else {
-        responseData[mapping.apiField] = 'value';
+        responseData[mapping.apiField] = 'sample';
       }
-    });
-    
-    return JSON.stringify({
-      data: {
-        [operationName]: responseData
-      }
-    }, null, 2);
-  };
+    } else if (mapping.apiType === 'boolean') {
+      responseData[mapping.apiField] = true;
+    } else if (mapping.apiType === 'number') {
+      responseData[mapping.apiField] = 123.45;
+    } else if (mapping.apiType === 'array') {
+      responseData[mapping.apiField] = [];
+    } else if (mapping.apiType === 'object') {
+      responseData[mapping.apiField] = {};
+    } else {
+      responseData[mapping.apiField] = 'value';
+    }
+  });
+  
+  return JSON.stringify({
+    data: {
+      [operationName]: responseData
+    }
+  }, null, 2);
+};
+
 
   // Generate REST JSON Response Example
   const generateRestResponseExample = () => {
     const responseData = {};
-    outMappings.slice(0, 5).forEach(mapping => {
+    outMappings.slice(0, 50).forEach(mapping => {
       if (mapping.apiType === 'integer') {
         responseData[mapping.apiField] = 123;
       } else if (mapping.apiType === 'string') {
@@ -906,6 +887,189 @@ ${outMappings.map(m => `        <${m.apiField}>${m.example || ''}</${m.apiField}
       }
     }, null, 2);
   };
+
+// Generate GraphQL Query Example - MODIFIED TO SHOW ALL MAPPINGS IN RESPONSE
+const generateGraphQLQueryExample = () => {
+  // Get config from apiData instead of undefined variable
+  const graphqlConfigData = apiData.graphqlConfig || {};
+  const operationType = graphqlConfigData.operationType || 'query';
+  const operationName = graphqlConfigData.operationName || 'query';
+  
+  // Get parameters from apiData (filtered to IN params)
+  const inParameters = (apiData.parameters || []).filter(p => 
+    !p.paramMode || p.paramMode === 'IN'
+  );
+  
+  // Get ALL response fields from apiData (not just slice)
+  const outMappingsData = (apiData.responseMappings || []).filter(m => 
+    (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
+  );
+  
+  console.log('📊 generateGraphQLQueryExample - Parameters:', inParameters.length);
+  console.log('📊 generateGraphQLQueryExample - Mappings (ALL):', outMappingsData.length);
+  console.log('📊 Mapping fields:', outMappingsData.map(m => m.apiField));
+  
+  // Separate parameters by location
+  const queryParams = inParameters.filter(p => p.parameterLocation !== 'body');
+  const inputParams = inParameters.filter(p => p.parameterLocation === 'body');
+  
+  let variableDefinitions = '';
+  let variableUsages = '';
+  let variablesObject = {};
+  
+  if (operationType === 'query' && queryParams.length > 0) {
+    // Build variable definitions with proper GraphQL types
+    variableDefinitions = '(' + queryParams.map(p => {
+      const graphqlType = getGraphQLTypeForModal(p.oracleType, !p.required);
+      return `$${p.key}: ${graphqlType}`;
+    }).join(', ') + ')';
+    
+    // Use variables in query
+    variableUsages = '(' + queryParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
+    
+    // Build variables object with proper typed values
+    queryParams.forEach(p => {
+      let val = p.example;
+      if (!val || val === '') {
+        if (p.apiType === 'integer') val = 123;
+        else if (p.apiType === 'number') val = 123.45;
+        else if (p.apiType === 'boolean') val = true;
+        else val = 'sample';
+      } else {
+        if (p.apiType === 'integer') {
+          val = parseInt(val, 10);
+          if (isNaN(val)) val = 123;
+        } else if (p.apiType === 'number') {
+          val = parseFloat(val);
+          if (isNaN(val)) val = 123.45;
+        } else if (p.apiType === 'boolean') {
+          val = val === 'true' || val === '1' || val === 'yes';
+        }
+      }
+      variablesObject[p.key] = val;
+    });
+  }
+  
+  if (operationType === 'mutation' && inputParams.length > 0) {
+    variableDefinitions = `($input: ${operationName}Input!)`;
+    variableUsages = '(input: $input)';
+    
+    const inputObject = {};
+    inputParams.forEach(p => {
+      let val = p.example;
+      if (!val || val === '') {
+        if (p.apiType === 'integer') val = 123;
+        else if (p.apiType === 'number') val = 123.45;
+        else if (p.apiType === 'boolean') val = true;
+        else val = 'sample';
+      } else {
+        if (p.apiType === 'integer') {
+          val = parseInt(val, 10);
+          if (isNaN(val)) val = 123;
+        } else if (p.apiType === 'number') {
+          val = parseFloat(val);
+          if (isNaN(val)) val = 123.45;
+        } else if (p.apiType === 'boolean') {
+          val = val === 'true' || val === '1' || val === 'yes';
+        }
+      }
+      inputObject[p.key] = val;
+    });
+    variablesObject = { input: inputObject };
+  }
+  
+  // Build the query string with ALL response fields (mappings)
+  let queryString = '';
+  if (operationType === 'query') {
+    if (queryParams.length > 0) {
+      queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n`;
+      // Show ALL response fields
+      if (outMappingsData.length > 0) {
+        queryString += outMappingsData.map(m => `    ${m.apiField}`).join('\n');
+        if (outMappingsData.length > 10) {
+          queryString += `\n    # ... total ${outMappingsData.length} fields`;
+        }
+      } else {
+        queryString += `    id\n    createdAt\n    updatedAt`;
+      }
+      queryString += `\n  }\n}`;
+    } else {
+      queryString = `${operationType} {\n  ${operationName} {\n`;
+      if (outMappingsData.length > 0) {
+        queryString += outMappingsData.map(m => `    ${m.apiField}`).join('\n');
+        if (outMappingsData.length > 10) {
+          queryString += `\n    # ... total ${outMappingsData.length} fields`;
+        }
+      } else {
+        queryString += `    id\n    createdAt\n    updatedAt`;
+      }
+      queryString += `\n  }\n}`;
+    }
+  } else if (operationType === 'mutation') {
+    if (inputParams.length > 0) {
+      queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n    success\n    message\n    data {\n`;
+      if (outMappingsData.length > 0) {
+        queryString += outMappingsData.map(m => `      ${m.apiField}`).join('\n');
+        if (outMappingsData.length > 10) {
+          queryString += `\n      # ... total ${outMappingsData.length} fields`;
+        }
+      } else {
+        queryString += `      id\n      createdAt`;
+      }
+      queryString += `\n    }\n  }\n}`;
+    } else if (queryParams.length > 0) {
+      queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n    success\n    message\n  }\n}`;
+    } else {
+      queryString = `${operationType} {\n  ${operationName} {\n    success\n    message\n  }\n}`;
+    }
+  }
+  
+  const finalRequest = JSON.stringify({
+    query: queryString,
+    variables: Object.keys(variablesObject).length > 0 ? variablesObject : {}
+  }, null, 2);
+  
+  console.log('📝 Final GraphQL request with ALL mappings:', finalRequest);
+  
+  return finalRequest;
+};
+
+
+  // Add this helper function inside ApiPreviewModal component
+const getGraphQLTypeForModal = (oracleType, isNullable = false) => {
+  let graphqlType = 'String';
+  const type = oracleType?.toUpperCase() || 'VARCHAR2';
+  
+  switch(type) {
+    case 'NUMBER':
+    case 'INTEGER':
+    case 'FLOAT':
+    case 'DECIMAL':
+      graphqlType = 'Int';
+      break;
+    case 'DATE':
+    case 'TIMESTAMP':
+    case 'TIMESTAMP WITH TIME ZONE':
+      graphqlType = 'DateTime';
+      break;
+    case 'BOOLEAN':
+      graphqlType = 'Boolean';
+      break;
+    case 'JSON':
+    case 'JSONB':
+      graphqlType = 'JSON';
+      break;
+    case 'CLOB':
+    case 'TEXT':
+      graphqlType = 'String';
+      break;
+    default:
+      graphqlType = 'String';
+  }
+  
+  return isNullable ? graphqlType : `${graphqlType}!`;
+};
+
 
   // Generate REST Request Body Example
   const generateRestRequestBodyExample = () => {
@@ -2457,33 +2621,30 @@ export default function AutoAPIGeneratorModal({
   });
 
 
-  // Generate example GraphQL query based on schema
-const generateGraphQLQueryExample = () => {
-  const inParams = getInParameters();
-  const outMappings = getOutMappings();
-  const operationName = graphqlConfig.operationName || 'query';
+// Add helper function for GraphQL type mapping in preview
+const getGraphQLTypeForPreview = (oracleType, isNullable = false) => {
+  let graphqlType = 'String';
+  const type = oracleType?.toUpperCase() || 'VARCHAR2';
   
-  if (graphqlConfig.operationType === 'query') {
-    return `${graphqlConfig.operationType} {
-  ${operationName}(${inParams.slice(0, 2).map(p => `${p.key}: "${p.example || 'value'}"`).join(', ')}) {
-    success
-    message
-    data {
-      ${outMappings.slice(0, 3).map(m => m.apiField).join('\n      ')}
-    }
+  switch(type) {
+    case 'NUMBER':
+    case 'INTEGER':
+    case 'FLOAT':
+    case 'DECIMAL':
+      graphqlType = 'Int';
+      break;
+    case 'DATE':
+    case 'TIMESTAMP':
+      graphqlType = 'DateTime';
+      break;
+    case 'BOOLEAN':
+      graphqlType = 'Boolean';
+      break;
+    default:
+      graphqlType = 'String';
   }
-}`;
-  } else {
-    return `${graphqlConfig.operationType} {
-  ${operationName}(input: {
-    ${inParams.slice(0, 3).map(p => `${p.key}: "${p.example || 'value'}"`).join('\n    ')}
-  }) {
-    success
-    message
-    ${outMappings.length > 0 ? Object.keys(outMappings[0])[0] : 'id'}
-  }
-}`;
-  }
+  
+  return isNullable ? graphqlType : `${graphqlType}!`;
 };
 
 
@@ -3956,6 +4117,597 @@ useEffect(() => {
   }
 }, [parameters, requestBody.bodyType, protocolType, graphqlConfig.operationName, graphqlConfig.operationType]);
 
+
+// Regenerate request body when parameter apiType or example changes
+useEffect(() => {
+  // Only run for REST and GraphQL protocols
+  if (protocolType === 'rest' || protocolType === 'graphql') {
+    // Skip for body types that don't need sample generation
+    if (requestBody.bodyType === 'none' || requestBody.bodyType === 'binary' || requestBody.bodyType === 'soap') {
+      return;
+    }
+    
+    // Get body parameters (for REST) or all parameters (for GraphQL)
+    const bodyParams = protocolType === 'graphql' 
+      ? getInParameters()  // GraphQL uses all parameters as arguments
+      : getInParameters().filter(p => p.parameterLocation === 'body');
+    
+    if (bodyParams.length === 0) {
+      // No parameters, set empty sample
+      if (requestBody.bodyType === 'json') {
+        handleRequestBodyChange('sample', '{}');
+      } else if (requestBody.bodyType === 'xml') {
+        handleRequestBodyChange('sample', '<request/>');
+      } else if (requestBody.bodyType === 'graphql') {
+        // Keep existing GraphQL sample or generate minimal
+        if (!requestBody.sample || requestBody.sample === '') {
+          const operationName = graphqlConfig.operationName || 'query';
+          const operationType = graphqlConfig.operationType || 'query';
+          const queryString = `${operationType} {\n  ${operationName} {\n    id\n  }\n}`;
+          handleRequestBodyChange('sample', JSON.stringify({ query: queryString, variables: {} }, null, 2));
+        }
+      }
+      return;
+    }
+    
+    // Check if we need to regenerate (if sample is empty or default)
+    const currentSample = requestBody.sample;
+    const needsRegeneration = !currentSample || 
+      currentSample === '' ||
+      currentSample === '{}' ||
+      currentSample === '<request/>' ||
+      currentSample === '{\n  "key": "value"\n}' ||
+      currentSample === '{\n  "query": "...",\n  "variables": {}\n}';
+    
+    if (needsRegeneration) {
+      console.log('🔄 Regenerating request body due to parameter type/example changes...');
+      
+      if (protocolType === 'graphql') {
+        // GraphQL request generation with proper type handling
+        const operationName = graphqlConfig.operationName || 'query';
+        const operationType = graphqlConfig.operationType || 'query';
+        const inParams = getInParameters();
+        const outMappingsForQuery = getOutMappings();
+        
+        let variableDefinitions = '';
+        let variableUsages = '';
+        let variablesObject = {};
+        
+        if (inParams.length > 0) {
+          // Build variable definitions with proper GraphQL types based on apiType
+          variableDefinitions = '(' + inParams.map(p => {
+            let graphqlType = 'String';
+            switch(p.apiType?.toLowerCase()) {
+              case 'integer':
+                graphqlType = 'Int';
+                break;
+              case 'number':
+                graphqlType = 'Float';
+                break;
+              case 'boolean':
+                graphqlType = 'Boolean';
+                break;
+              default:
+                graphqlType = 'String';
+            }
+            if (p.required) {
+              graphqlType = `${graphqlType}!`;
+            }
+            return `$${p.key}: ${graphqlType}`;
+          }).join(', ') + ')';
+          
+          // Use variables in query
+          variableUsages = '(' + inParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
+          
+          // Build variables object with properly typed values based on apiType
+          inParams.forEach(p => {
+            let val = p.example;
+            
+            // Generate default value if example is empty
+            if (!val || val === '') {
+              switch(p.apiType?.toLowerCase()) {
+                case 'integer':
+                  val = 123;
+                  break;
+                case 'number':
+                  val = 123.45;
+                  break;
+                case 'boolean':
+                  val = true;
+                  break;
+                default:
+                  val = 'sample';
+              }
+            } else {
+              // Parse value based on apiType
+              switch(p.apiType?.toLowerCase()) {
+                case 'integer':
+                  val = parseInt(val, 10);
+                  if (isNaN(val)) val = 123;
+                  break;
+                case 'number':
+                  val = parseFloat(val);
+                  if (isNaN(val)) val = 123.45;
+                  break;
+                case 'boolean':
+                  val = val === 'true' || val === '1' || val === 'yes';
+                  break;
+                default:
+                  // Keep as string
+              }
+            }
+            variablesObject[p.key] = val;
+          });
+        }
+        
+        // Build query string
+        let queryString = '';
+        if (operationType === 'query') {
+          if (inParams.length > 0) {
+            queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n`;
+            if (outMappingsForQuery.length > 0) {
+              queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
+              if (outMappingsForQuery.length > 20) {
+                queryString += `\n    # ... ${outMappingsForQuery.length - 20} more fields`;
+              }
+            } else {
+              queryString += `    id\n    createdAt\n    updatedAt`;
+            }
+            queryString += `\n  }\n}`;
+          } else {
+            queryString = `${operationType} {\n  ${operationName} {\n`;
+            if (outMappingsForQuery.length > 0) {
+              queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
+              if (outMappingsForQuery.length > 20) {
+                queryString += `\n    # ... ${outMappingsForQuery.length - 20} more fields`;
+              }
+            } else {
+              queryString += `    id\n    createdAt\n    updatedAt`;
+            }
+            queryString += `\n  }\n}`;
+          }
+        } else {
+          queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n    success\n    message\n    data {\n`;
+          if (outMappingsForQuery.length > 0) {
+            queryString += outMappingsForQuery.slice(0, 20).map(m => `      ${m.apiField}`).join('\n');
+            if (outMappingsForQuery.length > 20) {
+              queryString += `\n      # ... ${outMappingsForQuery.length - 20} more fields`;
+            }
+          } else {
+            queryString += `      id\n      createdAt`;
+          }
+          queryString += `\n    }\n  }\n}`;
+        }
+        
+        const graphqlRequest = JSON.stringify({
+          query: queryString,
+          variables: variablesObject
+        }, null, 2);
+        
+        if (requestBody.sample !== graphqlRequest) {
+          console.log('✅ Updating GraphQL request body with new parameter types');
+          handleRequestBodyChange('sample', graphqlRequest);
+        }
+        
+      } else if (requestBody.bodyType === 'json') {
+        // JSON request body generation with proper type handling
+        const requestBodyObj = {};
+        bodyParams.forEach(p => {
+          let value;
+          
+          if (p.example && p.example !== '') {
+            // Parse based on apiType
+            switch(p.apiType?.toLowerCase()) {
+              case 'integer':
+                value = parseInt(p.example, 10);
+                if (isNaN(value)) value = 123;
+                break;
+              case 'number':
+                value = parseFloat(p.example);
+                if (isNaN(value)) value = 123.45;
+                break;
+              case 'boolean':
+                value = p.example === 'true' || p.example === '1' || p.example === 'yes';
+                break;
+              case 'array':
+                value = [];
+                break;
+              case 'object':
+                value = {};
+                break;
+              default:
+                value = p.example;
+            }
+          } else {
+            // Generate default based on apiType
+            switch(p.apiType?.toLowerCase()) {
+              case 'integer':
+                value = 123;
+                break;
+              case 'number':
+                value = 123.45;
+                break;
+              case 'boolean':
+                value = true;
+                break;
+              case 'array':
+                value = [];
+                break;
+              case 'object':
+                value = {};
+                break;
+              default:
+                value = `sample_${p.key}`;
+            }
+          }
+          requestBodyObj[p.key] = value;
+        });
+        
+        const jsonSample = JSON.stringify(requestBodyObj, null, 2);
+        if (requestBody.sample !== jsonSample) {
+          console.log('✅ Updating JSON request body with new parameter types');
+          handleRequestBodyChange('sample', jsonSample);
+        }
+        
+      } else if (requestBody.bodyType === 'xml') {
+        // XML request body generation
+        let xmlSample = `<?xml version="1.0" encoding="UTF-8"?>\n<request>\n`;
+        bodyParams.forEach(p => {
+          let value = p.example || `sample_${p.key}`;
+          // For numeric types, don't wrap in quotes
+          if (p.apiType === 'integer' || p.apiType === 'number') {
+            xmlSample += `  <${p.key}>${value}</${p.key}>\n`;
+          } else {
+            xmlSample += `  <${p.key}>${value}</${p.key}>\n`;
+          }
+        });
+        xmlSample += `</request>`;
+        
+        if (requestBody.sample !== xmlSample) {
+          console.log('✅ Updating XML request body with new parameter types');
+          handleRequestBodyChange('sample', xmlSample);
+        }
+      }
+    }
+  }
+}, [parameters, requestBody.bodyType, protocolType, graphqlConfig.operationName, graphqlConfig.operationType, getInParameters, getOutMappings]);
+
+
+
+// Regenerate request body when parameter apiType or example changes - ALL PROTOCOLS
+useEffect(() => {
+  // ============ GRAPHQL PROTOCOL ============
+  if (protocolType === 'graphql') {
+    console.log('🔄 GraphQL: Regenerating request body due to parameter changes...');
+    const operationName = graphqlConfig.operationName || 'query';
+    const operationType = graphqlConfig.operationType || 'query';
+    const inParams = getInParameters();
+    const outMappingsForQuery = getOutMappings();
+    
+    let variableDefinitions = '';
+    let variableUsages = '';
+    let variablesObject = {};
+    
+    if (inParams.length > 0) {
+      // Build variable definitions with proper GraphQL types based on apiType
+      variableDefinitions = '(' + inParams.map(p => {
+        let graphqlType = 'String';
+        switch(p.apiType?.toLowerCase()) {
+          case 'integer':
+            graphqlType = 'Int';
+            break;
+          case 'number':
+            graphqlType = 'Float';
+            break;
+          case 'boolean':
+            graphqlType = 'Boolean';
+            break;
+          default:
+            graphqlType = 'String';
+        }
+        if (p.required) {
+          graphqlType = `${graphqlType}!`;
+        }
+        return `$${p.key}: ${graphqlType}`;
+      }).join(', ') + ')';
+      
+      // Use variables in query
+      variableUsages = '(' + inParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
+      
+      // Build variables object with properly typed values based on apiType
+      inParams.forEach(p => {
+        let val = p.example;
+        
+        // Generate default value if example is empty
+        if (!val || val === '') {
+          switch(p.apiType?.toLowerCase()) {
+            case 'integer':
+              val = 123;
+              break;
+            case 'number':
+              val = 123.45;
+              break;
+            case 'boolean':
+              val = true;
+              break;
+            default:
+              val = 'sample';
+          }
+        } else {
+          // Parse value based on apiType
+          switch(p.apiType?.toLowerCase()) {
+            case 'integer':
+              val = parseInt(val, 10);
+              if (isNaN(val)) val = 123;
+              break;
+            case 'number':
+              val = parseFloat(val);
+              if (isNaN(val)) val = 123.45;
+              break;
+            case 'boolean':
+              val = val === 'true' || val === '1' || val === 'yes';
+              break;
+            default:
+              // Keep as string
+          }
+        }
+        variablesObject[p.key] = val;
+      });
+    }
+    
+    // Build query string
+    let queryString = '';
+    if (operationType === 'query') {
+      if (inParams.length > 0) {
+        queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n`;
+        if (outMappingsForQuery.length > 0) {
+          queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
+          if (outMappingsForQuery.length > 20) {
+            queryString += `\n    # ... ${outMappingsForQuery.length - 20} more fields`;
+          }
+        } else {
+          queryString += `    id\n    createdAt\n    updatedAt`;
+        }
+        queryString += `\n  }\n}`;
+      } else {
+        queryString = `${operationType} {\n  ${operationName} {\n`;
+        if (outMappingsForQuery.length > 0) {
+          queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
+          if (outMappingsForQuery.length > 20) {
+            queryString += `\n    # ... ${outMappingsForQuery.length - 20} more fields`;
+          }
+        } else {
+          queryString += `    id\n    createdAt\n    updatedAt`;
+        }
+        queryString += `\n  }\n}`;
+      }
+    } else {
+      queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n    success\n    message\n    data {\n`;
+      if (outMappingsForQuery.length > 0) {
+        queryString += outMappingsForQuery.slice(0, 20).map(m => `      ${m.apiField}`).join('\n');
+        if (outMappingsForQuery.length > 20) {
+          queryString += `\n      # ... ${outMappingsForQuery.length - 20} more fields`;
+        }
+      } else {
+        queryString += `      id\n      createdAt`;
+      }
+      queryString += `\n    }\n  }\n}`;
+    }
+    
+    const graphqlRequest = JSON.stringify({
+      query: queryString,
+      variables: variablesObject
+    }, null, 2);
+    
+    if (requestBody.sample !== graphqlRequest) {
+      console.log('✅ Updating GraphQL request body');
+      handleRequestBodyChange('sample', graphqlRequest);
+    }
+    return;
+  }
+  
+  // ============ SOAP PROTOCOL ============
+  if (protocolType === 'soap') {
+    console.log('🔄 SOAP: Regenerating request body due to parameter changes...');
+    const soapVersion = soapConfig.version === '1.2' ? 'http://www.w3.org/2003/05/soap-envelope' : 'http://schemas.xmlsoap.org/soap/envelope/';
+    const operationName = soapConfig.soapAction || apiDetails.apiCode || 'ProcessRequest';
+    const inParams = getInParameters();
+    
+    let bodyContent = '';
+    
+    if (soapConfig.bindingStyle === 'rpc') {
+      if (inParams.length > 0) {
+        bodyContent = `<${operationName}>\n${inParams.map(p => {
+          let value = p.example;
+          if (!value || value === '') {
+            // Generate default based on apiType
+            switch(p.apiType?.toLowerCase()) {
+              case 'integer':
+                value = '123';
+                break;
+              case 'number':
+                value = '123.45';
+                break;
+              case 'boolean':
+                value = 'true';
+                break;
+              default:
+                value = 'sample';
+            }
+          }
+          return `        <${p.key}>${value}</${p.key}>`;
+        }).join('\n')}\n      </${operationName}>`;
+      } else {
+        bodyContent = `<${operationName}/>`;
+      }
+    } else {
+      if (inParams.length > 0) {
+        bodyContent = `<${operationName} xmlns="${soapConfig.namespace}">\n${inParams.map(p => {
+          let value = p.example;
+          if (!value || value === '') {
+            switch(p.apiType?.toLowerCase()) {
+              case 'integer':
+                value = '123';
+                break;
+              case 'number':
+                value = '123.45';
+                break;
+              case 'boolean':
+                value = 'true';
+                break;
+              default:
+                value = 'sample';
+            }
+          }
+          return `        <${p.key}>${value}</${p.key}>`;
+        }).join('\n')}\n      </${operationName}>`;
+      } else {
+        bodyContent = `<${operationName} xmlns="${soapConfig.namespace}"/>`;
+      }
+    }
+    
+    const soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="${soapVersion}"${soapConfig.version === '1.2' ? '' : ' xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/"'}>
+  <soap:Header>
+    <!-- Optional SOAP headers -->
+  </soap:Header>
+  <soap:Body>
+    ${bodyContent}
+  </soap:Body>
+</soap:Envelope>`;
+    
+    if (requestBody.sample !== soapEnvelope) {
+      console.log('✅ Updating SOAP request body');
+      handleRequestBodyChange('sample', soapEnvelope);
+    }
+    return;
+  }
+  
+  // ============ REST PROTOCOL ============
+  if (protocolType === 'rest') {
+    // Skip for body types that don't need sample generation
+    if (requestBody.bodyType === 'none' || requestBody.bodyType === 'binary') {
+      return;
+    }
+    
+    // Get body parameters
+    const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
+    
+    if (bodyParams.length === 0) {
+      // No body parameters, set empty sample
+      if (requestBody.bodyType === 'json') {
+        if (requestBody.sample !== '{}') {
+          console.log('✅ Setting empty JSON request body');
+          handleRequestBodyChange('sample', '{}');
+        }
+      } else if (requestBody.bodyType === 'xml') {
+        if (requestBody.sample !== '<request/>') {
+          console.log('✅ Setting empty XML request body');
+          handleRequestBodyChange('sample', '<request/>');
+        }
+      }
+      return;
+    }
+    
+    console.log('🔄 REST: Regenerating request body due to parameter changes...');
+    
+    // Handle JSON body type
+    if (requestBody.bodyType === 'json') {
+      const requestBodyObj = {};
+      bodyParams.forEach(p => {
+        let value;
+        
+        if (p.example && p.example !== '') {
+          // Parse based on apiType
+          switch(p.apiType?.toLowerCase()) {
+            case 'integer':
+              value = parseInt(p.example, 10);
+              if (isNaN(value)) value = 123;
+              break;
+            case 'number':
+              value = parseFloat(p.example);
+              if (isNaN(value)) value = 123.45;
+              break;
+            case 'boolean':
+              value = p.example === 'true' || p.example === '1' || p.example === 'yes';
+              break;
+            case 'array':
+              value = [];
+              break;
+            case 'object':
+              value = {};
+              break;
+            default:
+              value = p.example;
+          }
+        } else {
+          // Generate default based on apiType
+          switch(p.apiType?.toLowerCase()) {
+            case 'integer':
+              value = 123;
+              break;
+            case 'number':
+              value = 123.45;
+              break;
+            case 'boolean':
+              value = true;
+              break;
+            case 'array':
+              value = [];
+              break;
+            case 'object':
+              value = {};
+              break;
+            default:
+              value = `sample_${p.key}`;
+          }
+        }
+        requestBodyObj[p.key] = value;
+      });
+      
+      const jsonSample = JSON.stringify(requestBodyObj, null, 2);
+      if (requestBody.sample !== jsonSample) {
+        console.log('✅ Updating REST JSON request body');
+        handleRequestBodyChange('sample', jsonSample);
+      }
+    }
+    // Handle XML body type
+    else if (requestBody.bodyType === 'xml') {
+      let xmlSample = `<?xml version="1.0" encoding="UTF-8"?>\n<request>\n`;
+      bodyParams.forEach(p => {
+        let value = p.example;
+        if (!value || value === '') {
+          switch(p.apiType?.toLowerCase()) {
+            case 'integer':
+              value = '123';
+              break;
+            case 'number':
+              value = '123.45';
+              break;
+            case 'boolean':
+              value = 'true';
+              break;
+            default:
+              value = `sample_${p.key}`;
+          }
+        }
+        xmlSample += `  <${p.key}>${value}</${p.key}>\n`;
+      });
+      xmlSample += `</request>`;
+      
+      if (requestBody.sample !== xmlSample) {
+        console.log('✅ Updating REST XML request body');
+        handleRequestBodyChange('sample', xmlSample);
+      }
+    }
+    // For form-data and urlencoded, we don't need to update the sample textarea
+    else if (requestBody.bodyType === 'form-data' || requestBody.bodyType === 'urlencoded') {
+      console.log('ℹ️ Form-data/urlencoded body type - parameters visible in UI, no sample needed');
+    }
+  }
+}, [parameters, requestBody.bodyType, protocolType, graphqlConfig.operationName, graphqlConfig.operationType, graphqlConfig.operationType, soapConfig.version, soapConfig.bindingStyle, soapConfig.namespace, soapConfig.soapAction, apiDetails.apiCode]);
+
+
 // Also auto-generate when switching to Request tab for the first time
 const requestTabRef = useRef(false);
 
@@ -3997,27 +4749,76 @@ useEffect(() => {
       console.log('🔄 Auto-generating request body sample on Request tab activation...');
       
       if (protocolType === 'graphql') {
+        // FIXED: Generate proper GraphQL request with variables
+        const inParams = getInParameters();
+        const outMappingsForQuery = getOutMappings();
         const operationName = graphqlConfig.operationName || 'query';
         const operationType = graphqlConfig.operationType || 'query';
         
+        // Treat ALL parameters as query parameters for GraphQL queries
+        const queryParams = inParams;
+        let variableDefinitions = '';
+        let variableUsages = '';
+        let variablesObject = {};
+        
+        if (queryParams.length > 0) {
+          // Build variable definitions
+          variableDefinitions = '(' + queryParams.map(p => {
+            const graphqlType = getGraphQLType(p.oracleType, !p.required);
+            return `$${p.key}: ${graphqlType}`;
+          }).join(', ') + ')';
+          
+          // Use variables in query
+          variableUsages = '(' + queryParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
+          
+          // Build variables object
+          queryParams.forEach(p => {
+            let val = p.example;
+            if (!val) {
+              if (p.apiType === 'integer') val = 123;
+              else if (p.apiType === 'boolean') val = true;
+              else val = 'sample';
+            }
+            if (p.apiType === 'integer') val = parseInt(val) || 123;
+            if (p.apiType === 'boolean') val = val === 'true';
+            variablesObject[p.key] = val;
+          });
+        }
+        
+        // Build query string with ALL response fields
         let queryString = '';
         if (operationType === 'query') {
-          const queryParams = bodyParams.filter(p => p.parameterLocation !== 'body');
-          const paramsString = queryParams.length > 0 
-            ? `(${queryParams.map(p => `${p.key}: "${p.example || 'value'}"`).join(', ')})` 
-            : '';
-          
-          queryString = `${operationType} {\n  ${operationName}${paramsString} {\n    ${getOutMappings().slice(0, 3).map(m => m.apiField).join('\n    ')}\n  }\n}`;
-        } else {
-          const inputParams = bodyParams.length > 0 ? bodyParams : getInParameters();
-          queryString = `${operationType} {\n  ${operationName}(input: {\n    ${inputParams.slice(0, 3).map(p => `${p.key}: "${p.example || 'value'}"`).join('\n    ')}\n  }) {\n    success\n    message\n    data {\n      ${getOutMappings().slice(0, 3).map(m => m.apiField).join('\n      ')}\n    }\n  }\n}`;
+          if (queryParams.length > 0) {
+            queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n`;
+            if (outMappingsForQuery.length > 0) {
+              queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
+              if (outMappingsForQuery.length > 20) {
+                queryString += `\n    # ... ${outMappingsForQuery.length - 20} more fields`;
+              }
+            } else {
+              queryString += `    id\n    createdAt\n    updatedAt`;
+            }
+            queryString += `\n  }\n}`;
+          } else {
+            queryString = `${operationType} {\n  ${operationName} {\n`;
+            if (outMappingsForQuery.length > 0) {
+              queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
+              if (outMappingsForQuery.length > 20) {
+                queryString += `\n    # ... ${outMappingsForQuery.length - 20} more fields`;
+              }
+            } else {
+              queryString += `    id\n    createdAt\n    updatedAt`;
+            }
+            queryString += `\n  }\n}`;
+          }
         }
         
         const graphqlRequest = JSON.stringify({
           query: queryString,
-          variables: {}
+          variables: variablesObject
         }, null, 2);
         
+        console.log('📝 Auto-generated GraphQL request with variables and all mappings:', graphqlRequest);
         handleRequestBodyChange('sample', graphqlRequest);
         
       } else if (requestBody.bodyType === 'json' && bodyParams.length > 0) {
@@ -4366,6 +5167,187 @@ useEffect(() => {
     }
   }
 }, [responseMappings, parameters, protocolType, graphqlConfig.operationName, apiDetails.version]);
+
+
+// Force SOAP request body to update when parameters change
+useEffect(() => {
+  if (protocolType === 'soap' && parameters.length > 0) {
+    // Generate fresh SOAP envelope from current parameters
+    const freshSoapEnvelope = generateSOAPEnvelope();
+    
+    // Update the request body sample
+    if (requestBody.sample !== freshSoapEnvelope) {
+      console.log('🔄 Updating SOAP request body due to parameter changes');
+      handleRequestBodyChange('sample', freshSoapEnvelope);
+    }
+  }
+}, [parameters, protocolType, soapConfig.version, soapConfig.bindingStyle, soapConfig.namespace, soapConfig.soapAction]);
+
+
+// Force REST request body to update when parameters change
+useEffect(() => {
+  if (protocolType === 'rest') {
+    // Skip if body type is 'none' or 'binary' or 'soap' or 'graphql'
+    if (requestBody.bodyType === 'none' || requestBody.bodyType === 'binary') {
+      return;
+    }
+    
+    // Get body parameters
+    const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
+    
+    // Only regenerate if there are body parameters
+    if (bodyParams.length > 0) {
+      let freshRequestBody = '';
+      
+      if (requestBody.bodyType === 'json') {
+        const requestBodyObj = {};
+        bodyParams.forEach(param => {
+          if (param.apiType === 'integer') {
+            requestBodyObj[param.key] = parseInt(param.example) || 123;
+          } else if (param.apiType === 'boolean') {
+            requestBodyObj[param.key] = param.example === 'true' || false;
+          } else if (param.apiType === 'array') {
+            requestBodyObj[param.key] = [];
+          } else if (param.apiType === 'object') {
+            requestBodyObj[param.key] = {};
+          } else {
+            requestBodyObj[param.key] = param.example || `sample_${param.key}`;
+          }
+        });
+        freshRequestBody = JSON.stringify(requestBodyObj, null, 2);
+      } else if (requestBody.bodyType === 'xml') {
+        let xmlSample = `<?xml version="1.0" encoding="UTF-8"?>\n<request>\n`;
+        bodyParams.forEach(param => {
+          xmlSample += `  <${param.key}>${param.example || `sample_${param.key}`}</${param.key}>\n`;
+        });
+        xmlSample += `</request>`;
+        freshRequestBody = xmlSample;
+      } else if (requestBody.bodyType === 'form-data' || requestBody.bodyType === 'urlencoded') {
+        // For form-data and urlencoded, we don't update the sample textarea
+        // The UI already shows the fields dynamically
+        return;
+      }
+      
+      // Update the request body sample
+      if (freshRequestBody && requestBody.sample !== freshRequestBody) {
+        console.log('🔄 Updating REST request body due to parameter changes', {
+          bodyType: requestBody.bodyType,
+          paramsCount: bodyParams.length
+        });
+        handleRequestBodyChange('sample', freshRequestBody);
+      }
+    } else if (bodyParams.length === 0 && requestBody.bodyType !== 'none' && requestBody.bodyType !== 'binary') {
+      // No body parameters, set empty sample
+      let emptySample = '';
+      if (requestBody.bodyType === 'json') {
+        emptySample = '{}';
+      } else if (requestBody.bodyType === 'xml') {
+        emptySample = '<request/>';
+      }
+      
+      if (requestBody.sample !== emptySample) {
+        console.log('🔄 Setting empty REST request body (no parameters)');
+        handleRequestBodyChange('sample', emptySample);
+      }
+    }
+  }
+}, [parameters, getInParameters, protocolType, requestBody.bodyType]);
+
+
+
+// Force GraphQL request body to update when parameters or mappings change
+useEffect(() => {
+  if (protocolType === 'graphql') {
+    console.log('🔄 Generating GraphQL request body for UI display...');
+    
+    const operationName = graphqlConfig.operationName || 'query';
+    const operationType = graphqlConfig.operationType || 'query';
+    
+    // Get IN parameters directly from the parameters state
+    const inParams = parameters.filter(p => !p.paramMode || p.paramMode === 'IN');
+    // Get OUT mappings directly from responseMappings state
+    const outMappingsForQuery = responseMappings.filter(m => 
+      (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
+    );
+    
+    console.log('📊 IN params count:', inParams.length);
+    console.log('📊 OUT mappings count:', outMappingsForQuery.length);
+    console.log('📊 IN params details:', inParams.map(p => ({ key: p.key, apiType: p.apiType, example: p.example })));
+    console.log('📊 OUT mappings details:', outMappingsForQuery.map(m => m.apiField));
+    
+    // For GraphQL queries, treat ALL parameters as query parameters
+    const queryParams = inParams;
+    
+    let variableDefinitions = '';
+    let variableUsages = '';
+    let variablesObject = {};
+    
+    if (queryParams.length > 0) {
+      // Build variable definitions
+      variableDefinitions = '(' + queryParams.map(p => {
+        const graphqlType = getGraphQLType(p.oracleType, !p.required);
+        return `$${p.key}: ${graphqlType}`;
+      }).join(', ') + ')';
+      
+      // Use variables in query
+      variableUsages = '(' + queryParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
+      
+      // Build variables object from parameter examples
+      queryParams.forEach(p => {
+        let val = p.example;
+        if (!val || val === '') {
+          if (p.apiType === 'integer') val = 123;
+          else if (p.apiType === 'boolean') val = true;
+          else val = 'sample';
+        }
+        if (p.apiType === 'integer') val = parseInt(val) || 123;
+        if (p.apiType === 'boolean') val = val === 'true';
+        variablesObject[p.key] = val;
+      });
+      
+      console.log('📊 Variables object:', variablesObject);
+    }
+    
+    // Build the query string with ALL response fields
+    let queryString = '';
+    if (operationType === 'query') {
+      if (queryParams.length > 0) {
+        queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n`;
+        if (outMappingsForQuery.length > 0) {
+          queryString += outMappingsForQuery.map(m => `    ${m.apiField}`).join('\n');
+        } else {
+          queryString += `    id\n    createdAt\n    updatedAt`;
+        }
+        queryString += `\n  }\n}`;
+      } else {
+        queryString = `${operationType} {\n  ${operationName} {\n`;
+        if (outMappingsForQuery.length > 0) {
+          queryString += outMappingsForQuery.map(m => `    ${m.apiField}`).join('\n');
+        } else {
+          queryString += `    id\n    createdAt\n    updatedAt`;
+        }
+        queryString += `\n  }\n}`;
+      }
+    }
+    
+    const freshGraphQLRequest = JSON.stringify({
+      query: queryString,
+      variables: Object.keys(variablesObject).length > 0 ? variablesObject : {}
+    }, null, 2);
+    
+    console.log('📝 Generated GraphQL request for UI:', freshGraphQLRequest);
+    
+    // DIRECTLY update the requestBody sample
+    // This bypasses handleRequestBodyChange to ensure it updates
+    setRequestBody(prev => {
+      if (prev.sample !== freshGraphQLRequest) {
+        console.log('✅ Updating requestBody.sample');
+        return { ...prev, sample: freshGraphQLRequest };
+      }
+      return prev;
+    });
+  }
+}, [parameters, responseMappings, protocolType, graphqlConfig.operationName, graphqlConfig.operationType]);
 
 // Also auto-generate when switching to Response tab for the first time
 const responseTabRef = useRef(false);
@@ -6192,7 +7174,7 @@ useEffect(() => {
   }, [authToken, populateFormFromObject]);
 
 
-// Replace your existing populateFormFromApiData function with this fixed version
+// ============ COMPLETE FIXED populateFormFromApiData ============
 const populateFormFromApiData = useCallback(async (apiData) => {
     console.log('📝 populateFormFromApiData called with:', apiData);
     
@@ -6200,7 +7182,6 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     const sourceData = apiData.data || apiData;
     
     // ============ CHECK FOR CUSTOM QUERY FIRST ============
-    // Check multiple locations where custom query data could be stored
     const isCustomQueryApi = 
         sourceData?.isCustomQuery === true || 
         sourceData?.useCustomQuery === true ||
@@ -6226,9 +7207,9 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     if (isCustomQueryApi) {
         console.log('✅ Detected custom query API in populateFormFromApiData');
         setIsEditingCustomQuery(true);
-        setSourceType('custom_query'); // <-- CRITICAL: Set sourceType here
+        setSourceType('custom_query');
+        setIsCustomQuery(true);
         
-        // Extract custom query text from various possible locations
         let customQueryText = 
             sourceData?.customSelectStatement ||
             sourceData?.sourceObject?.customSelectStatement ||
@@ -6237,7 +7218,6 @@ const populateFormFromApiData = useCallback(async (apiData) => {
             sourceData?.customQueryText ||
             '';
         
-        // Also check in the original selectedObject if sourceData doesn't have it
         if (!customQueryText && apiData?.customSelectStatement) {
             customQueryText = apiData.customSelectStatement;
         }
@@ -6256,7 +7236,6 @@ const populateFormFromApiData = useCallback(async (apiData) => {
             console.warn('⚠️ Custom query API detected but no query text found');
         }
         
-        // Set database type for custom query
         const customQueryDbType = 
             sourceData?.databaseType || 
             sourceData?.sourceObject?.databaseType ||
@@ -6267,19 +7246,13 @@ const populateFormFromApiData = useCallback(async (apiData) => {
         setCurrentDatabaseType(normalizedDbType);
         console.log('📦 Database type for custom query:', normalizedDbType);
         
-        // Also set a flag to indicate this is a custom query being edited
-        // This helps with the handleSave function to know it's a custom query
-        setIsCustomQuery(true);
-        
     } else {
-        // Reset custom query states if not a custom query
         setIsEditingCustomQuery(false);
         setSourceType('database_object');
         setCustomQuery('');
         setOriginalCustomQuery('');
         setIsCustomQuery(false);
         
-        // Set database type for database object
         const dbType = sourceData?.databaseType || 
                        sourceData?.sourceObject?.databaseType ||
                        sourceData?.schemaConfig?.databaseType ||
@@ -6290,7 +7263,7 @@ const populateFormFromApiData = useCallback(async (apiData) => {
         console.log('📦 Database type for database object:', normalizedDbType);
     }
     
-    // ============ SET PROTOCOL TYPE (CRITICAL FIX) ============
+    // ============ SET PROTOCOL TYPE ============
     let protocol = 'rest';
     if (sourceData.protocolType) {
         protocol = sourceData.protocolType;
@@ -6339,6 +7312,9 @@ const populateFormFromApiData = useCallback(async (apiData) => {
         graphqlConfigData = apiData.graphqlConfig;
     }
     
+    // Determine if this is a GraphQL query (not mutation)
+    const isGraphQLQuery = protocol === 'graphql' && graphqlConfigData?.operationType === 'query';
+    
     if (graphqlConfigData) {
         setGraphqlConfig({
             operationType: graphqlConfigData.operationType || 'query',
@@ -6351,7 +7327,7 @@ const populateFormFromApiData = useCallback(async (apiData) => {
             subscriptionsEnabled: graphqlConfigData.subscriptionsEnabled || false,
             customDirectives: graphqlConfigData.customDirectives || []
         });
-        console.log('📦 GraphQL config loaded');
+        console.log('📦 GraphQL config loaded, operation type:', graphqlConfigData.operationType);
     }
     
     // ============ SET FILE UPLOAD CONFIG ============
@@ -6466,33 +7442,39 @@ const populateFormFromApiData = useCallback(async (apiData) => {
         });
     }
 
-    // ============ SET PARAMETERS ============
+    // ============ SET PARAMETERS - CRITICAL FIX FOR GRAPHQL QUERIES ============
     if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
         const paramsWithIds = sourceData.parameters.map((p, idx) => {
-            // Force path parameters to be required
             const isPathParam = p.parameterLocation === 'path';
-            // Check if this is a file parameter
             const isFileParam = p.oracleType === 'FILE' || p.oracleType === 'BLOB' || p.oracleType === 'BYTEA' || p.oracleType === 'MULTIPART_FILE';
             
-            // CRITICAL FIX: Preserve the original parameter location
-            // Don't override it with default logic
             let location = p.parameterLocation;
             
-            // If location is missing, try to determine from other fields
             if (!location) {
                 if (p.inBody === true || p.inBody === 'true') {
                     location = 'body';
                 } else if (p.paramMode === 'OUT' || p.paramMode === 'IN/OUT') {
                     location = 'body';
                 } else {
-                    location = 'query'; // fallback
+                    location = 'query';
                 }
             }
             
-            // ALSO CRITICAL: Preserve the original inBody value
+            // ============ CRITICAL FIX FOR GRAPHQL QUERIES ============
+            // For GraphQL queries, all parameters MUST be in 'query' location
+            if (isGraphQLQuery && location === 'body') {
+                location = 'query';
+                console.log(`🔄 GraphQL Query: Converting parameter "${p.key || p.parameterName}" from 'body' to 'query' location`);
+            }
+            
             let inBodyValue = p.inBody;
             if (inBodyValue === undefined) {
                 inBodyValue = location === 'body';
+            }
+            
+            // Force inBody to false for GraphQL queries
+            if (isGraphQLQuery) {
+                inBodyValue = false;
             }
             
             return {
@@ -6502,21 +7484,20 @@ const populateFormFromApiData = useCallback(async (apiData) => {
                 dbColumn: p.dbColumn || p.key,
                 oracleType: p.oracleType || p.dataType || 'VARCHAR2',
                 apiType: p.apiType || (isFileParam ? 'file' : 'string'),
-                parameterLocation: location, // Use preserved location
+                parameterLocation: location,
                 required: isPathParam ? true : (p.required !== undefined ? p.required : true),
                 description: p.description || `Parameter: ${p.key || p.parameterName}`,
                 example: p.example || (isFileParam ? 'Select a file...' : ''),
                 validationPattern: p.validationPattern || '',
                 defaultValue: p.defaultValue || '',
-                inBody: inBodyValue, // Use preserved inBody value
+                inBody: inBodyValue,
                 isPrimaryKey: p.isPrimaryKey || false,
                 paramMode: p.paramMode || (isCustomQueryApi ? 'IN' : 'IN'),
                 _isPathParam: isPathParam
             };
         });
         setParameters(paramsWithIds);
-        console.log('📦 Loaded parameters from API data:', paramsWithIds);
-        // Add debug log to verify loaded locations
+        console.log('📦 Loaded parameters from API data:', paramsWithIds.length);
         console.log('🔍 Parameter locations after load:', paramsWithIds.map(p => ({ key: p.key, location: p.parameterLocation, inBody: p.inBody })));
     }
 
@@ -6537,14 +7518,22 @@ const populateFormFromApiData = useCallback(async (apiData) => {
             paramMode: m.paramMode || 'OUT'
         }));
         setResponseMappings(mappingsWithIds);
+        console.log('📦 Loaded response mappings from API data:', mappingsWithIds.length);
     } else if (isCustomQueryApi) {
         setResponseMappings([]);
     }
 
     // ============ SET REQUEST BODY ============
     if (sourceData.requestBody) {
+        let bodyType = sourceData.requestBody.bodyType || (isCustomQueryApi ? 'none' : 'json');
+        
+        // For GraphQL, force body type to 'graphql'
+        if (protocol === 'graphql') {
+            bodyType = 'graphql';
+        }
+        
         setRequestBody({
-            bodyType: sourceData.requestBody.bodyType || (isCustomQueryApi ? 'none' : 'json'),
+            bodyType: bodyType,
             sample: sourceData.requestBody.sample || '',
             requiredFields: sourceData.requestBody.requiredFields || [],
             validateSchema: sourceData.requestBody.validateSchema !== undefined ? sourceData.requestBody.validateSchema : true,
@@ -6553,7 +7542,7 @@ const populateFormFromApiData = useCallback(async (apiData) => {
         });
     } else {
         setRequestBody({
-            bodyType: isCustomQueryApi ? 'none' : 'json',
+            bodyType: protocol === 'graphql' ? 'graphql' : (isCustomQueryApi ? 'none' : 'json'),
             sample: null,
             requiredFields: [],
             validateSchema: true,
@@ -6658,6 +7647,7 @@ const populateFormFromApiData = useCallback(async (apiData) => {
         isCustomQuery: isCustomQueryApi,
         sourceType: isCustomQueryApi ? 'custom_query' : 'database_object',
         protocolType: protocol,
+        isGraphQLQuery: isGraphQLQuery,
         apiName: sourceData.apiName,
         apiCode: sourceData.apiCode,
         parametersCount: sourceData.parameters?.length || 0,
@@ -6668,6 +7658,8 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     });
     
 }, [collections, databaseType, currentDatabaseType]);
+
+
 
   // Function to populate form from selected object - FIXED VERSION WITH PROPER MODE FILTERING
   const populateFormFromObject = useCallback((object, preserveExistingApiDetails = false) => {
@@ -7265,18 +8257,22 @@ if (protocolType === 'soap') {
   };
 
   // Helper function to filter parameters to only show IN parameters
-  const getInParameters = () => {
-    return parameters.filter(p => 
+  const getInParameters = useCallback(() => {
+    const filtered = parameters.filter(p => 
       !p.paramMode || p.paramMode === 'IN'
     );
-  };
+    console.log('📊 getInParameters - Total parameters:', parameters.length, 'Filtered IN:', filtered.length, filtered.map(p => ({ key: p.key, paramMode: p.paramMode })));
+    return filtered;
+  }, [parameters]);
 
   // Helper function to filter response mappings to only show OUT parameters and other mappings
-  const getOutMappings = () => {
-    return responseMappings.filter(m => 
+  const getOutMappings = useCallback(() => {
+    const filtered = responseMappings.filter(m => 
       (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
     );
-  };
+    console.log('📊 getOutMappings - Total mappings:', responseMappings.length, 'Filtered OUT:', filtered.length, filtered.map(m => ({ apiField: m.apiField, paramMode: m.paramMode })));
+    return filtered;
+  }, [responseMappings]);
 
   // Validate source object with the API Generation Engine - FIXED to resolve synonyms
   const validateObject = async (object, type) => {
@@ -7914,59 +8910,299 @@ useEffect(() => {
 }, [protocolType, selectedDbObject, sourceType, isCustomQuery, isEditingCustomQuery, customQuery, apiDetails.apiName, graphqlConfig.operationName, graphqlConfig.schema, graphqlConfig.operationType]); // Removed isEditing from dependencies
 
 
-// Force GraphQL auto-population when switching to GraphQL tab in edit mode
+
+// Force GraphQL request body to update when parameters or mappings change
 useEffect(() => {
   if (protocolType === 'graphql') {
-    // Check if we need to populate operation name
-    if (!graphqlConfig.operationName) {
-      let generatedOperationName = '';
+    console.log('🔄 Generating GraphQL request body...');
+    console.log('📊 Current parameters state:', parameters);
+    console.log('📊 Current responseMappings state:', responseMappings);
+    
+    const operationName = graphqlConfig.operationName || 'query';
+    const operationType = graphqlConfig.operationType || 'query';
+    
+    // Get IN parameters directly from the parameters state
+    const inParams = parameters.filter(p => !p.paramMode || p.paramMode === 'IN');
+    const outMappingsForQuery = responseMappings.filter(m => 
+      (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
+    );
+    
+    console.log('📊 IN parameters count (direct):', inParams.length, inParams.map(p => ({ key: p.key, location: p.parameterLocation, apiType: p.apiType, example: p.example })));
+    console.log('📊 OUT mappings count (direct):', outMappingsForQuery.length);
+    
+    // For GraphQL queries, parameters should be in the query location
+    let queryParams = [];
+    let inputParams = [];
+    
+    if (operationType === 'query') {
+      // For queries, treat ALL parameters as query parameters
+      queryParams = inParams;
+      inputParams = [];
+      console.log('📊 GraphQL Query mode - treating all parameters as query arguments:', queryParams.map(p => p.key));
+    } else if (operationType === 'mutation') {
+      // For mutations, parameters can be in body as input object
+      queryParams = inParams.filter(p => p.parameterLocation !== 'body');
+      inputParams = inParams.filter(p => p.parameterLocation === 'body');
+      console.log('📊 GraphQL Mutation mode - query params:', queryParams.map(p => p.key));
+      console.log('📊 GraphQL Mutation mode - input params:', inputParams.map(p => p.key));
+    }
+    
+    let variableDefinitions = '';
+    let variableUsages = '';
+    let variablesObject = {};
+    
+    // Build variables for query parameters
+    if (queryParams.length > 0) {
+      console.log('📊 Building variables from params:', queryParams.map(p => p.key));
       
-      const sourceObjectName = selectedDbObject?.name || schemaConfig.objectName || apiDetails.apiName?.replace(/\s+/g, '');
+      // Build variable definitions with proper GraphQL types
+      variableDefinitions = '(' + queryParams.map(p => {
+        const graphqlType = getGraphQLType(p.oracleType, !p.required);
+        return `$${p.key}: ${graphqlType}`;
+      }).join(', ') + ')';
       
-      if (sourceObjectName && sourceObjectName !== '') {
-        const objectName = sourceObjectName;
-        const objectType = selectedDbObject?.type || schemaConfig.objectType || 'TABLE';
+      // Use variables in query
+      variableUsages = '(' + queryParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
+      
+      // Build variables object with CORRECTLY PARSED example values
+      queryParams.forEach(p => {
+        let val = p.example;
         
-        if (graphqlConfig.operationType === 'query') {
-          generatedOperationName = `get${objectName.charAt(0).toUpperCase() + objectName.slice(1)}${objectType === 'TABLE' ? 's' : ''}`;
-        } else if (graphqlConfig.operationType === 'mutation') {
-          const mutationType = apiDetails.httpMethod === 'POST' ? 'create' :
-                              apiDetails.httpMethod === 'PUT' ? 'update' :
-                              apiDetails.httpMethod === 'DELETE' ? 'delete' : 'create';
-          generatedOperationName = `${mutationType}${objectName.charAt(0).toUpperCase() + objectName.slice(1)}`;
+        // If no example provided, generate based on type
+        if (!val || val === '') {
+          if (p.apiType === 'integer') {
+            val = 123;
+          } else if (p.apiType === 'number') {
+            val = 123.45;
+          } else if (p.apiType === 'boolean') {
+            val = true;
+          } else {
+            val = 'sample';
+          }
         } else {
-          generatedOperationName = `${objectName.charAt(0).toUpperCase() + objectName.slice(1)}Changed`;
+          // Parse the value based on its type
+          if (p.apiType === 'integer') {
+            val = parseInt(val, 10);
+            if (isNaN(val)) val = 123;
+          } else if (p.apiType === 'number') {
+            val = parseFloat(val);
+            if (isNaN(val)) val = 123.45;
+          } else if (p.apiType === 'boolean') {
+            val = val === 'true' || val === '1' || val === 'yes';
+          }
+          // For string, keep as is
         }
         
-        generatedOperationName = generatedOperationName.replace(/[^a-zA-Z0-9]/g, '');
-        generatedOperationName = generatedOperationName.charAt(0).toLowerCase() + generatedOperationName.slice(1);
+        variablesObject[p.key] = val;
+      });
+      
+      console.log('📊 Variables object built:', variablesObject);
+    }
+    
+    // Build variables for mutations with input object
+    let mutationVariableDef = '';
+    let mutationVariableUsage = '';
+    let mutationVariablesObject = {};
+    
+    if (operationType === 'mutation' && inputParams.length > 0) {
+      console.log('📊 Building mutation input from:', inputParams.map(p => p.key));
+      
+      mutationVariableDef = `($input: ${operationName}Input!)`;
+      mutationVariableUsage = '(input: $input)';
+      
+      const inputObject = {};
+      inputParams.forEach(p => {
+        let val = p.example;
         
-        if (generatedOperationName) {
-          console.log('🔧 Force populating GraphQL operation name in edit mode:', generatedOperationName);
-          setGraphqlConfig(prev => ({ ...prev, operationName: generatedOperationName }));
+        if (!val || val === '') {
+          if (p.apiType === 'integer') {
+            val = 123;
+          } else if (p.apiType === 'number') {
+            val = 123.45;
+          } else if (p.apiType === 'boolean') {
+            val = true;
+          } else {
+            val = 'sample';
+          }
+        } else {
+          if (p.apiType === 'integer') {
+            val = parseInt(val, 10);
+            if (isNaN(val)) val = 123;
+          } else if (p.apiType === 'number') {
+            val = parseFloat(val);
+            if (isNaN(val)) val = 123.45;
+          } else if (p.apiType === 'boolean') {
+            val = val === 'true' || val === '1' || val === 'yes';
+          }
         }
+        
+        inputObject[p.key] = val;
+      });
+      mutationVariablesObject = { input: inputObject };
+    }
+    
+    // Build the query string with response fields
+    let queryString = '';
+    if (operationType === 'query') {
+      if (queryParams.length > 0) {
+        queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n`;
+        if (outMappingsForQuery.length > 0) {
+          queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
+          if (outMappingsForQuery.length > 20) {
+            queryString += `\n    # ... ${outMappingsForQuery.length - 20} more fields`;
+          }
+        } else {
+          queryString += `    id\n    createdAt\n    updatedAt`;
+        }
+        queryString += `\n  }\n}`;
+      } else {
+        queryString = `${operationType} {\n  ${operationName} {\n`;
+        if (outMappingsForQuery.length > 0) {
+          queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
+          if (outMappingsForQuery.length > 20) {
+            queryString += `\n    # ... ${outMappingsForQuery.length - 20} more fields`;
+          }
+        } else {
+          queryString += `    id\n    createdAt\n    updatedAt`;
+        }
+        queryString += `\n  }\n}`;
+      }
+    } else if (operationType === 'mutation') {
+      if (inputParams.length > 0) {
+        queryString = `${operationType} ${operationName}${mutationVariableDef} {\n  ${operationName}${mutationVariableUsage} {\n    success\n    message\n    data {\n`;
+        if (outMappingsForQuery.length > 0) {
+          queryString += outMappingsForQuery.slice(0, 20).map(m => `      ${m.apiField}`).join('\n');
+          if (outMappingsForQuery.length > 20) {
+            queryString += `\n      # ... ${outMappingsForQuery.length - 20} more fields`;
+          }
+        } else {
+          queryString += `      id\n      createdAt`;
+        }
+        queryString += `\n    }\n  }\n}`;
+      } else if (queryParams.length > 0) {
+        queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n    success\n    message\n  }\n}`;
+      } else {
+        queryString = `${operationType} {\n  ${operationName} {\n    success\n    message\n  }\n}`;
       }
     }
     
-    // Check if we need to populate schema
-    if (!graphqlConfig.schema || graphqlConfig.schema === '') {
-      let generatedSchema = '';
+    // Use the appropriate variables based on operation type
+    const finalVariables = operationType === 'mutation' && inputParams.length > 0 
+      ? mutationVariablesObject 
+      : variablesObject;
+    
+    const freshGraphQLRequest = JSON.stringify({
+      query: queryString,
+      variables: Object.keys(finalVariables).length > 0 ? finalVariables : {}
+    }, null, 2);
+    
+    console.log('📝 Generated GraphQL request:', freshGraphQLRequest);
+    
+    // Update the request body sample
+    if (requestBody.sample !== freshGraphQLRequest) {
+      handleRequestBodyChange('sample', freshGraphQLRequest);
+    }
+  }
+}, [parameters, responseMappings, protocolType, graphqlConfig.operationName, graphqlConfig.operationType, requestBody.bodyType]);
+
+
+
+const generateSOAPEnvelope = useCallback(() => {
+  const inParams = getInParameters();
+  const soapVersion = soapConfig.version === '1.2' ? 'http://www.w3.org/2003/05/soap-envelope' : 'http://schemas.xmlsoap.org/soap/envelope/';
+  const operationName = soapConfig.soapAction || (apiDetails.apiCode || 'ProcessRequest');
+  
+  let bodyContent = '';
+  
+  if (soapConfig.bindingStyle === 'rpc') {
+    if (inParams.length > 0) {
+      bodyContent = `<${operationName}>
+${inParams.map(p => `        <${p.key}>${p.example || ''}</${p.key}>`).join('\n')}
+      </${operationName}>`;
+    } else {
+      bodyContent = `<${operationName}/>`;
+    }
+  } else {
+    if (inParams.length > 0) {
+      bodyContent = `<${operationName} xmlns="${soapConfig.namespace}">
+${inParams.map(p => `        <${p.key}>${p.example || ''}</${p.key}>`).join('\n')}
+      </${operationName}>`;
+    } else {
+      bodyContent = `<${operationName} xmlns="${soapConfig.namespace}"/>`;
+    }
+  }
+  
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="${soapVersion}"${soapConfig.version === '1.2' ? '' : ' xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/"'}>
+  <soap:Header>
+    <!-- Optional SOAP headers -->
+  </soap:Header>
+  <soap:Body>
+    ${bodyContent}
+  </soap:Body>
+</soap:Envelope>`;
+}, [soapConfig.version, soapConfig.bindingStyle, soapConfig.namespace, soapConfig.soapAction, apiDetails.apiCode, getInParameters]);
+
+
+// Refresh request body when switching to Request tab (for all protocols)
+useEffect(() => {
+  if (activeTab === 'request') {
+    if (protocolType === 'soap') {
+      const freshSoapEnvelope = generateSOAPEnvelope();
+      if (requestBody.sample !== freshSoapEnvelope) {
+        console.log('🔄 Refreshing SOAP request body on Request tab activation');
+        handleRequestBodyChange('sample', freshSoapEnvelope);
+      }
+    } else if (protocolType === 'graphql') {
+      const operationName = graphqlConfig.operationName || 'query';
+      const operationType = graphqlConfig.operationType || 'query';
+      const inParams = getInParameters();
+      const outMappings = getOutMappings();
       
-      if (selectedDbObject?.name || schemaConfig.objectName) {
-        generatedSchema = generateGraphQLSchemaFromObject();
-      } else if (sourceType === 'custom_query' && customQuery) {
-        generatedSchema = generateGraphQLSchemaFromCustomQuery();
+      let queryString = '';
+      if (operationType === 'query') {
+        const queryParams = inParams.filter(p => p.parameterLocation !== 'body');
+        const paramsString = queryParams.length > 0 
+          ? `(${queryParams.slice(0, 50).map(p => `${p.key}: "${p.example || 'value'}"`).join(', ')})` 
+          : '';
+        queryString = `${operationType} {\n  ${operationName}${paramsString} {\n    ${outMappings.slice(0, 50).map(m => m.apiField).join('\n    ')}\n  }\n}`;
+      } else {
+        const inputParams = inParams.length > 0 ? inParams : [];
+        queryString = `${operationType} {\n  ${operationName}(input: {\n    ${inputParams.slice(0, 50).map(p => `${p.key}: "${p.example || 'value'}"`).join('\n    ')}\n  }) {\n    success\n    message\n    data {\n      ${outMappings.slice(0, 50).map(m => m.apiField).join('\n      ')}\n    }\n  }\n}`;
       }
       
-      if (generatedSchema) {
-        console.log('🔧 Force populating GraphQL schema in edit mode');
-        setGraphqlConfig(prev => ({ ...prev, schema: generatedSchema }));
+      const freshGraphQLRequest = JSON.stringify({ query: queryString, variables: {} }, null, 2);
+      if (requestBody.sample !== freshGraphQLRequest) {
+        console.log('🔄 Refreshing GraphQL request body on Request tab activation');
+        handleRequestBodyChange('sample', freshGraphQLRequest);
+      }
+    } else if (protocolType === 'rest' && requestBody.bodyType !== 'none' && requestBody.bodyType !== 'binary') {
+      const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
+      if (bodyParams.length > 0) {
+        let freshRequestBody = '';
+        if (requestBody.bodyType === 'json') {
+          const requestBodyObj = {};
+          bodyParams.forEach(param => {
+            requestBodyObj[param.key] = param.example || `sample_${param.key}`;
+          });
+          freshRequestBody = JSON.stringify(requestBodyObj, null, 2);
+        } else if (requestBody.bodyType === 'xml') {
+          let xmlSample = `<?xml version="1.0" encoding="UTF-8"?>\n<request>\n`;
+          bodyParams.forEach(param => {
+            xmlSample += `  <${param.key}>${param.example || `sample_${param.key}`}</${param.key}>\n`;
+          });
+          xmlSample += `</request>`;
+          freshRequestBody = xmlSample;
+        }
+        
+        if (freshRequestBody && requestBody.sample !== freshRequestBody) {
+          console.log('🔄 Refreshing REST request body on Request tab activation');
+          handleRequestBodyChange('sample', freshRequestBody);
+        }
       }
     }
   }
-}, [protocolType, graphqlConfig.operationName, graphqlConfig.schema, selectedDbObject, schemaConfig.objectName, apiDetails.apiName, graphqlConfig.operationType, apiDetails.httpMethod, sourceType, customQuery]);
-
-
+}, [activeTab, protocolType, parameters, responseMappings, getInParameters, getOutMappings, graphqlConfig.operationName, graphqlConfig.operationType, requestBody.bodyType, requestBody.sample]);
 
 // Add this effect to protect against invalid body type configurations
 useEffect(() => {
@@ -7986,46 +9222,18 @@ useEffect(() => {
   }
 }, [apiDetails.httpMethod, requestBody.bodyType]);
 
-
-// Make sure generateSOAPEnvelope is defined before the useEffect
-const generateSOAPEnvelope = useCallback(() => {
-  const inParams = getInParameters();
-  const soapVersion = soapConfig.version === '1.2' ? 'http://www.w3.org/2003/05/soap-envelope' : 'http://schemas.xmlsoap.org/soap/envelope/';
-  const operationName = soapConfig.soapAction || (apiDetails.apiCode || 'ProcessRequest');
-  
-  let bodyContent = '';
-  
-  if (soapConfig.bindingStyle === 'rpc') {
-    bodyContent = `<${operationName}>
-${inParams.map(p => `        <${p.key}>${p.example || ''}</${p.key}>`).join('\n')}
-      </${operationName}>`;
-  } else {
-    bodyContent = `<${operationName} xmlns="${soapConfig.namespace}">
-${inParams.map(p => `        <${p.key}>${p.example || ''}</${p.key}>`).join('\n')}
-      </${operationName}>`;
-  }
-  
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="${soapVersion}"${soapConfig.version === '1.2' ? '' : ' xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/"'}>
-  <soap:Header>
-    <!-- Optional SOAP headers -->
-  </soap:Header>
-  <soap:Body>
-    ${bodyContent}
-  </soap:Body>
-</soap:Envelope>`;
-}, [soapConfig, apiDetails.apiCode, getInParameters]);
-
 // Auto-generate request and response samples when protocol type changes OR when mappings change
 useEffect(() => {
   if (protocolType === 'soap') {
-    // Generate SOAP request envelope
+    // Generate SOAP request envelope using current parameters
     const soapEnvelope = generateSOAPEnvelope();
-    handleRequestBodyChange('sample', soapEnvelope);
+    if (requestBody.sample !== soapEnvelope) {
+      handleRequestBodyChange('sample', soapEnvelope);
+    }
     
     // Generate SOAP response envelope - use the most up-to-date out mappings
     const operationName = soapConfig.soapAction || apiDetails.apiCode || 'Operation';
-    const outMappings = getOutMappings(); // Get fresh mappings
+    const outMappings = getOutMappings();
     
     const soapSuccess = `<?xml version="1.0" encoding="UTF-8"?>
 <soap:Envelope xmlns:soap="${soapConfig.version === '1.2' ? 'http://www.w3.org/2003/05/soap-envelope' : 'http://schemas.xmlsoap.org/soap/envelope/'}">
@@ -8033,7 +9241,7 @@ useEffect(() => {
     <${operationName}Response xmlns="${soapConfig.namespace}">
       <success>true</success>
       <message>Request processed successfully</message>
-      ${outMappings.slice(0, 5).map(m =>
+      ${outMappings.slice(0, 50).map(m =>
         `<${m.apiField}>${m.apiType === 'integer' ? '123' : m.apiType === 'boolean' ? 'true' : 'value'}</${m.apiField}>`
       ).join('\n      ')}
     </${operationName}Response>
@@ -8054,7 +9262,8 @@ useEffect(() => {
     </soap:Fault>
   </soap:Body>
 </soap:Envelope>`;
-    handleResponseBodyChange('errorSchema', soapFault);
+  
+ handleResponseBodyChange('errorSchema', soapFault);
     
   } else if (protocolType === 'graphql') {
     // Generate GraphQL query sample
@@ -8085,7 +9294,7 @@ useEffect(() => {
     
     // Generate GraphQL response
     const responseData = {};
-    outMappings.slice(0, 5).forEach(mapping => {
+    outMappings.slice(0, 50).forEach(mapping => {
       if (mapping.apiType === 'integer') {
         responseData[mapping.apiField] = 123;
       } else if (mapping.apiType === 'boolean') {
@@ -8200,7 +9409,7 @@ useEffect(() => {
     <${operationName}Response xmlns="${soapConfig.namespace}">
       <success>true</success>
       <message>Request processed successfully</message>
-      ${outMappings.slice(0, 5).map(m =>
+      ${outMappings.slice(0, 50).map(m =>
         `<${m.apiField}>${m.apiType === 'integer' ? '123' : m.apiType === 'boolean' ? 'true' : 'value'}</${m.apiField}>`
       ).join('\n      ')}
     </${operationName}Response>
@@ -9925,7 +11134,12 @@ COMMIT;
                 'apiCode',
                 'API Code',
                 apiDetails.apiCode,
-                (field, value) => handleApiDetailChange(field, value),
+                (field, value) => {
+                  // Transform the value: uppercase and replace spaces with underscores
+                  let transformedValue = value.toUpperCase();
+                  transformedValue = transformedValue.replace(/\s+/g, '_');
+                  handleApiDetailChange(field, transformedValue);
+                },
                 'GET_USERS',
                 'text',
                 isEditing // Disable code editing when editing
@@ -12405,19 +13619,65 @@ COMMIT;
                           </button>
                         </div>
                         <textarea
-                          key={`graphql-schema-${graphqlConfig.schema?.substring(0, 100)}`}
-                          value={graphqlConfig.schema}
-                          onChange={(e) => handleGraphqlConfigChange('schema', e.target.value)}
-                          className="w-full h-64 px-3 py-2 border rounded-lg text-xs font-mono hover-lift"
+                          key={`graphql-request-${parameters.length}-${responseMappings.length}`}
+                          value={(() => {
+                            // Force regeneration when parameters or mappings change
+                            if (protocolType === 'graphql') {
+                              const inParams = parameters.filter(p => !p.paramMode || p.paramMode === 'IN');
+                              const outMappingsForQuery = responseMappings.filter(m => 
+                                (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
+                              );
+                              
+                              const queryParams = inParams;
+                              let variableDefinitions = '';
+                              let variableUsages = '';
+                              let variablesObject = {};
+                              
+                              if (queryParams.length > 0) {
+                                variableDefinitions = '(' + queryParams.map(p => {
+                                  const graphqlType = getGraphQLType(p.oracleType, !p.required);
+                                  return `$${p.key}: ${graphqlType}`;
+                                }).join(', ') + ')';
+                                
+                                variableUsages = '(' + queryParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
+                                
+                                queryParams.forEach(p => {
+                                  let val = p.example;
+                                  if (!val) {
+                                    if (p.apiType === 'integer') val = 123;
+                                    else if (p.apiType === 'boolean') val = true;
+                                    else val = 'sample';
+                                  }
+                                  if (p.apiType === 'integer') val = parseInt(val) || 123;
+                                  if (p.apiType === 'boolean') val = val === 'true';
+                                  variablesObject[p.key] = val;
+                                });
+                              }
+                              
+                              let queryString = `${graphqlConfig.operationType || 'query'} ${graphqlConfig.operationName || 'query'}${variableDefinitions} {\n  ${graphqlConfig.operationName || 'query'}${variableUsages} {\n`;
+                              if (outMappingsForQuery.length > 0) {
+                                queryString += outMappingsForQuery.slice(0, 15).map(m => `    ${m.apiField}`).join('\n');
+                                if (outMappingsForQuery.length > 15) {
+                                  queryString += `\n    # ... ${outMappingsForQuery.length - 15} more fields`;
+                                }
+                              } else {
+                                queryString += `    id\n    createdAt\n    updatedAt`;
+                              }
+                              queryString += `\n  }\n}`;
+                              
+                              return JSON.stringify({
+                                query: queryString,
+                                variables: variablesObject
+                              }, null, 2);
+                            }
+                            return requestBody.sample || '';
+                          })()}
+                          onChange={(e) => handleRequestBodyChange('sample', e.target.value)}
+                          className="w-full h-96 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
                           style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: validationErrors.graphqlSchema ? themeColors.error : themeColors.border,
-                            color: themeColors.text,
-                            resize: 'vertical',
-                            fontFamily: 'monospace',
-                            fontSize: '11px'
+                            backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                            color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
                           }}
-                          placeholder={generateGraphQLSchemaFromObject()}
                         />
                         <p className="text-xs" style={{ color: themeColors.textSecondary }}>
                           Define your GraphQL schema using SDL (Schema Definition Language). 
@@ -13149,41 +14409,144 @@ COMMIT;
                             <span className="text-xs font-medium" style={{ color: themeColors.text }}>
                               Sample {requestBody.bodyType.toUpperCase()}
                             </span>
-                            {requestBody.bodyType !== 'soap' && requestBody.bodyType !== 'graphql' && (
+                            {(requestBody.bodyType === 'graphql' || requestBody.bodyType === 'json' || requestBody.bodyType === 'xml') && (
                               <button
                                 onClick={() => {
-                                  const sample = {};
-                                  const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
-                                  bodyParams.forEach(p => {
-                                    sample[p.key] = p.example || (p.apiType === 'integer' ? 123 : 'sample');
-                                  });
-                                  handleRequestBodyChange('sample', JSON.stringify(sample, null, 2));
+                                  if (requestBody.bodyType === 'graphql') {
+                                    // Generate fresh GraphQL request
+                                    const inParams = getInParameters();
+                                    const outMappingsForQuery = getOutMappings();
+                                    const queryParams = inParams;
+                                    let variableDefinitions = '';
+                                    let variableUsages = '';
+                                    let variablesObject = {};
+                                    
+                                    if (queryParams.length > 0) {
+                                      variableDefinitions = '(' + queryParams.map(p => {
+                                        const graphqlType = getGraphQLType(p.oracleType, !p.required);
+                                        return `$${p.key}: ${graphqlType}`;
+                                      }).join(', ') + ')';
+                                      
+                                      variableUsages = '(' + queryParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
+                                      
+                                      queryParams.forEach(p => {
+                                        let val = p.example;
+                                        if (!val) {
+                                          if (p.apiType === 'integer') val = 123;
+                                          else if (p.apiType === 'boolean') val = true;
+                                          else val = 'sample';
+                                        }
+                                        if (p.apiType === 'integer') val = parseInt(val) || 123;
+                                        if (p.apiType === 'boolean') val = val === 'true';
+                                        variablesObject[p.key] = val;
+                                      });
+                                    }
+                                    
+                                    let queryString = `${graphqlConfig.operationType || 'query'} ${graphqlConfig.operationName || 'query'}${variableDefinitions} {\n  ${graphqlConfig.operationName || 'query'}${variableUsages} {\n`;
+                                    if (outMappingsForQuery.length > 0) {
+                                      queryString += outMappingsForQuery.map(m => `    ${m.apiField}`).join('\n');
+                                    } else {
+                                      queryString += `    id\n    createdAt\n    updatedAt`;
+                                    }
+                                    queryString += `\n  }\n}`;
+                                    
+                                    const graphqlRequest = JSON.stringify({
+                                      query: queryString,
+                                      variables: variablesObject
+                                    }, null, 2);
+                                    
+                                    handleRequestBodyChange('sample', graphqlRequest);
+                                  } else if (requestBody.bodyType === 'json') {
+                                    const sample = {};
+                                    const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
+                                    bodyParams.forEach(p => {
+                                      sample[p.key] = p.example || (p.apiType === 'integer' ? 123 : 'sample');
+                                    });
+                                    handleRequestBodyChange('sample', JSON.stringify(sample, null, 2));
+                                  } else if (requestBody.bodyType === 'xml') {
+                                    let xmlSample = `<?xml version="1.0" encoding="UTF-8"?>\n<request>\n`;
+                                    const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
+                                    bodyParams.forEach(p => {
+                                      xmlSample += `  <${p.key}>${p.example || `sample_${p.key}`}</${p.key}>\n`;
+                                    });
+                                    xmlSample += `</request>`;
+                                    handleRequestBodyChange('sample', xmlSample);
+                                  }
                                 }}
                                 className="px-3 py-1 text-xs rounded border transition-colors hover-lift"
                                 style={{ 
-                                  backgroundColor: themeColors.hover,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
+                                  backgroundColor: themeColors.info,
+                                  borderColor: themeColors.info,
+                                  color: themeColors.white
                                 }}
                               >
-                                Generate from Parameters
+                                <RefreshCw className="h-3 w-3 inline mr-1" />
+                                Generate from {requestBody.bodyType === 'graphql' ? 'Parameters & Mappings' : 'Parameters'}
                               </button>
                             )}
                           </div>
                           <textarea
-                            value={requestBody.sample || ''}
+                            key={`${protocolType}-${requestBody.bodyType}-${parameters.length}-${responseMappings.length}`}
+                            value={
+                              requestBody.bodyType === 'graphql' 
+                                ? (() => {
+                                    // Force fresh generation on every render
+                                    const inParams = getInParameters();
+                                    const outMappingsForQuery = getOutMappings();
+                                    const queryParams = inParams;
+                                    let variableDefinitions = '';
+                                    let variableUsages = '';
+                                    let variablesObject = {};
+                                    
+                                    if (queryParams.length > 0) {
+                                      variableDefinitions = '(' + queryParams.map(p => {
+                                        const graphqlType = getGraphQLType(p.oracleType, !p.required);
+                                        return `$${p.key}: ${graphqlType}`;
+                                      }).join(', ') + ')';
+                                      
+                                      variableUsages = '(' + queryParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
+                                      
+                                      queryParams.forEach(p => {
+                                        let val = p.example;
+                                        if (!val) {
+                                          if (p.apiType === 'integer') val = 123;
+                                          else if (p.apiType === 'boolean') val = true;
+                                          else val = 'sample';
+                                        }
+                                        if (p.apiType === 'integer') val = parseInt(val) || 123;
+                                        if (p.apiType === 'boolean') val = val === 'true';
+                                        variablesObject[p.key] = val;
+                                      });
+                                    }
+                                    
+                                    let queryString = `${graphqlConfig.operationType || 'query'} ${graphqlConfig.operationName || 'query'}${variableDefinitions} {\n  ${graphqlConfig.operationName || 'query'}${variableUsages} {\n`;
+                                    if (outMappingsForQuery.length > 0) {
+                                      queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
+                                      if (outMappingsForQuery.length > 20) {
+                                        queryString += `\n    # ... ${outMappingsForQuery.length - 20} more fields`;
+                                      }
+                                    } else {
+                                      queryString += `    id\n    createdAt\n    updatedAt`;
+                                    }
+                                    queryString += `\n  }\n}`;
+                                    
+                                    return JSON.stringify({
+                                      query: queryString,
+                                      variables: variablesObject
+                                    }, null, 2);
+                                  })()
+                                : requestBody.sample || ''
+                            }
                             onChange={(e) => handleRequestBodyChange('sample', e.target.value)}
-                            className="w-full h-48 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
+                            className="w-full h-96 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
                             style={{ 
                               backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
                               color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
                             }}
                             placeholder={requestBody.bodyType === 'json' ? '{\n  "key": "value"\n}' : 
-                                       requestBody.bodyType === 'xml' ? '<request>\n  <key>value</key>\n</request>' :
-                                       requestBody.bodyType === 'soap' ? '<?xml version="1.0" encoding="UTF-8"?>\n<soap:Envelope ...>' :
-                                       requestBody.bodyType === 'graphql' ? '{\n  "query": "{ users { id name } }"\n}' :
-                                       requestBody.bodyType === 'form-data' ? 'Field1: value1\nField2: value2' :
-                                       'Enter request body...'}
+                                      requestBody.bodyType === 'xml' ? '<request>\n  <key>value</key>\n</request>' :
+                                      requestBody.bodyType === 'graphql' ? '{\n  "query": "...",\n  "variables": {...}\n}' :
+                                      'Enter request body...'}
                           />
                         </div>
                       </div>
@@ -13449,7 +14812,7 @@ COMMIT;
                     const operationName = graphqlConfig.operationName || 'query';
                     const gqlSuccess = JSON.stringify({
                       data: {
-                        [operationName]: getOutMappings().slice(0, 5).reduce((acc, m) => {
+                        [operationName]: getOutMappings().slice(0, 50).reduce((acc, m) => {
                           acc[m.apiField] = m.apiType === 'integer' ? 123 : m.apiType === 'boolean' ? true : 'value';
                           return acc;
                         }, {})
@@ -13613,7 +14976,7 @@ COMMIT;
     <${operationName}Response xmlns="${soapConfig.namespace}">
       <success>true</success>
       <message>Request processed successfully</message>
-      ${getOutMappings().slice(0, 5).map(m =>
+      ${getOutMappings().slice(0, 50).map(m =>
         `<${m.apiField}>${m.apiType === 'integer' ? '123' : m.apiType === 'boolean' ? 'true' : 'value'}</${m.apiField}>`
       ).join('\n      ')}
     </${operationName}Response>
@@ -13638,7 +15001,7 @@ COMMIT;
 
           } else if (protocolType === 'graphql') {
             const operationName = graphqlConfig.operationName || 'operation';
-            const responseData = getOutMappings().slice(0, 5).reduce((acc, m) => {
+            const responseData = getOutMappings().slice(0, 50).reduce((acc, m) => {
               acc[m.apiField] = m.apiType === 'integer' ? 123 : m.apiType === 'boolean' ? true : 'value';
               return acc;
             }, {});

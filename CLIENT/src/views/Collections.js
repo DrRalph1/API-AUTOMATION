@@ -2162,63 +2162,83 @@ const determineActiveTab = useCallback(() => {
     return activeTab;
   }
   
-  // CRITICAL: For SOAP and GraphQL, ALWAYS return 'body' - don't check content
+  // CRITICAL: For SOAP and GraphQL, ALWAYS return 'body'
   if (currentProtocol === 'soap' || currentProtocol === 'graphql') {
     console.log('🎯 [determineActiveTab] Protocol is', currentProtocol, '- returning body tab');
     return 'body';
   }
   
-  // For REST, check actual content
+  // For REST, check what content exists
   let hasPathParamsWithValues = false;
   let hasQueryParamsWithValues = false;
   let hasBodyContent = false;
   
-  // Only calculate if we have data
+  // Check path params
   if (memoizedRequestPathParams && memoizedRequestPathParams.length > 0) {
     hasPathParamsWithValues = memoizedRequestPathParams.some(p => 
       p.enabled && p.key && p.key.trim() !== '' && p.value && p.value.trim() !== ''
     );
   }
   
+  // Check query params
   if (memoizedRequestParams && memoizedRequestParams.length > 0) {
     hasQueryParamsWithValues = memoizedRequestParams.some(p => 
       p.enabled && p.key && p.key.trim() !== '' && p.value && p.value.trim() !== ''
     );
   }
   
-  // For REST, check actual body content
-  if (requestBody && requestBodyType !== 'none' && requestBodyType !== 'xml' && requestBodyType !== 'graphql') {
-    hasBodyContent = requestBody.trim() !== '' && 
-      requestBody !== '{}' && 
-      requestBody !== '{\n  \n}';
-    
-    // Also check if there are form-data or urlencoded fields
-    if (!hasBodyContent && requestBodyType === 'form-data' && formData.length > 0) {
-      hasBodyContent = formData.some(f => f.enabled && f.key);
+  // Check body content - MORE COMPREHENSIVE
+  if (requestBodyType !== 'none') {
+    // Check raw body content
+    if (requestBody && requestBody.trim() !== '' && 
+        requestBody !== '{}' && 
+        requestBody !== '{\n  \n}') {
+      hasBodyContent = true;
     }
+    
+    // Check form-data fields
+    if (!hasBodyContent && requestBodyType === 'form-data' && formData.length > 0) {
+      hasBodyContent = formData.some(f => f.enabled && f.key && (f.value || f.file));
+    }
+    
+    // Check urlencoded fields
     if (!hasBodyContent && requestBodyType === 'x-www-form-urlencoded' && urlEncodedData.length > 0) {
       hasBodyContent = urlEncodedData.some(u => u.enabled && u.key);
     }
   }
   
-  // Priority based on actual content
-  let newTab = activeTab;
-  if (hasPathParamsWithValues) {
-    newTab = 'path-params';
-  } else if (hasQueryParamsWithValues) {
-    newTab = 'query-params';
-  } else if (hasBodyContent) {
-    newTab = 'body';
-  } else {
-    newTab = 'path-params';
+  // GET, DELETE, HEAD, OPTIONS methods - prioritize path params, then query params
+  const readMethods = ['GET', 'DELETE', 'HEAD', 'OPTIONS'];
+  if (readMethods.includes(requestMethod)) {
+    if (hasPathParamsWithValues) {
+      console.log('🎯 [determineActiveTab] GET/DELETE with path params - showing path-params tab');
+      return 'path-params';
+    }
+    if (hasQueryParamsWithValues) {
+      console.log('🎯 [determineActiveTab] GET/DELETE with query params - showing query-params tab');
+      return 'query-params';
+    }
+    console.log('🎯 [determineActiveTab] GET/DELETE with no params - showing path-params tab');
+    return 'path-params';
   }
   
-  // Only log if actually changing
-  if (newTab !== activeTab) {
-    console.log('🎯 Auto-switching tab from', activeTab, 'to', newTab);
+  // POST, PUT, PATCH methods - prioritize body tab
+  const writeMethods = ['POST', 'PUT', 'PATCH'];
+  if (writeMethods.includes(requestMethod)) {
+    // Always show body tab for write operations if there's ANY body content OR body type is set
+    if (hasBodyContent || requestBodyType !== 'none') {
+      console.log('🎯 [determineActiveTab] Write operation - showing body tab');
+      return 'body';
+    }
+    // If no body content and body type is none, but it's a write operation, still show body tab
+    // because user might want to add body content
+    console.log('🎯 [determineActiveTab] Write operation (no body yet) - showing body tab');
+    return 'body';
   }
   
-  return newTab;
+  // Default to body for any other case
+  console.log('🎯 [determineActiveTab] Default case - showing body tab');
+  return 'body';
 }, [
   memoizedRequestPathParams,
   memoizedRequestParams,
@@ -2227,7 +2247,10 @@ const determineActiveTab = useCallback(() => {
   formData,
   urlEncodedData,
   currentProtocol,
-  activeTab
+  activeTab,
+  requestMethod,
+  loading.request,
+  loading.initialLoad
 ]);
 
 useEffect(() => {
@@ -2410,6 +2433,17 @@ useEffect(() => {
   if (selectedRequest && !loading.request && !loading.initialLoad && initialLoadCompleteRef.current) {
     // Don't auto-switch if user manually selected a tab
     if (!skipAutoTabChange.current && !isTabAutoSwitching.current) {
+      // CRITICAL: For POST/PUT/PATCH methods, ALWAYS stay on body tab if there's body content
+      const nonGetMethods = ['POST', 'PUT', 'PATCH'];
+      const isWriteOperation = nonGetMethods.includes(requestMethod);
+      
+      if (isWriteOperation && (requestBodyType !== 'none' || requestBody)) {
+        // Force body tab for write operations with body content
+        console.log('🎯 [After Load Complete] Write operation - forcing body tab');
+        setActiveTab('body');
+        return;
+      }
+      
       const activeTabToSet = determineActiveTab();
       if (activeTabToSet !== activeTab) {
         console.log('🎯 [After Load Complete] Setting active tab to:', activeTabToSet);
@@ -2422,11 +2456,12 @@ useEffect(() => {
         setTimeout(() => {
           isTabAutoSwitching.current = false;
         }, 300);
+      } else {
+        console.log('🎯 [After Load Complete] Tab unchanged:', activeTab);
       }
     }
   }
-}, [selectedRequest, determineActiveTab, activeTab, loading.request, loading.initialLoad]);
-
+}, [selectedRequest, determineActiveTab, activeTab, loading.request, loading.initialLoad, requestMethod, requestBodyType, requestBody]);
 
 // Fix 4: Add effect to update URL when path params change (as a backup)
 useEffect(() => {
@@ -4024,79 +4059,108 @@ console.log('📋 Set requestHeaders:', uniqueHeaders.length);
         // ========== END SOAP HANDLING ==========
 
         else if (isGraphQLFromApi) {
-          finalProtocol = 'graphql';
-          setCurrentProtocol('graphql');
-          setRequestBodyType('graphql');
-          skipAutoTabChange.current = true;
-          setActiveTab('body');
-          console.log('🎯 GraphQL protocol confirmed from API');
-          
-          // ========== GENERATE GRAPHQL QUERY FROM PARAMETERS ==========
-          if (details.parameters && details.parameters.length > 0) {
-            // Build GraphQL query based on the operation name
-            const operationName = details.apiName || 'MyQuery';
-            let graphQLQuery = '';
-            let variables = {};
-            
-            // For GraphQL, parameters typically go as variables
-            const allParams = details.parameters;
-            
-            // Build variable definitions
-            const variableDefs = allParams.map(param => {
-              let type = 'String';
-              if (param.oracleType === 'NUMBER' || param.type === 'number') type = 'Int';
-              if (param.oracleType === 'DATE' || param.type === 'date') type = 'String';
-              if (param.required) type += '!';
-              return `$${param.key}: ${type}`;
-            }).join(', ');
-            
-            // Build the query fields based on response schema
-            let queryFields = '';
-            if (details.responseBody?.successSchema) {
-              try {
-                const successSchema = JSON.parse(details.responseBody.successSchema);
-                if (successSchema.data) {
-                  // Extract fields from the response schema
-                  queryFields = Object.keys(successSchema.data).map(key => key).join('\n    ');
-                }
-              } catch(e) {
-                queryFields = 'id\n    name\n    status';
-              }
-            } else {
-              queryFields = 'success\n    message\n    data';
-            }
-            
-            graphQLQuery = `${operationName}(${variableDefs}) {
-  ${operationName.toLowerCase()}(${allParams.map(p => `${p.key}: $${p.key}`).join(', ')}) {
-    ${queryFields}
+  finalProtocol = 'graphql';
+  setCurrentProtocol('graphql');
+  setRequestBodyType('graphql');
+  skipAutoTabChange.current = true;
+  setActiveTab('body');
+  console.log('🎯 GraphQL protocol confirmed from API');
+  
+  // ========== FIX: Show all IN parameters as variables ==========
+  
+  // Get all parameters that are IN parameters (not OUT)
+  const inParams = (details.parameters || []).filter(p => 
+    !p.paramMode || p.paramMode === 'IN'
+  );
+  
+  console.log('📊 GraphQL IN parameters count:', inParams.length);
+  console.log('📊 GraphQL IN parameters:', inParams.map(p => p.key));
+  
+  // Build variables object from the IN parameters
+  const variablesObject = {};
+  inParams.forEach(param => {
+    let value = param.example || param.defaultValue || '';
+    
+    // Set default values based on type if no example provided
+    if (!value || value === '') {
+      if (param.oracleType === 'NUMBER' || param.apiType === 'integer') {
+        value = 0;
+      } else if (param.oracleType === 'DATE' || param.oracleType === 'TIMESTAMP') {
+        value = new Date().toISOString().split('T')[0];
+      } else if (param.apiType === 'boolean') {
+        value = false;
+      } else {
+        value = '';
+      }
+    }
+    
+    variablesObject[param.key] = value;
+  });
+  
+  const variablesJson = JSON.stringify(variablesObject, null, 2);
+  console.log('📝 Setting GraphQL variables JSON from IN parameters:', variablesJson);
+  
+  // IMPORTANT: Set graphqlVariables BEFORE building the query
+  setGraphqlVariables(variablesJson);
+  
+  // Build the GraphQL query from the request body sample or generate it
+  if (details.requestBody?.sample && details.requestBody.sample.trim() !== '') {
+    try {
+      const parsed = JSON.parse(details.requestBody.sample);
+      if (parsed.query) {
+        setGraphqlQuery(parsed.query);
+      }
+      // DO NOT overwrite variables from sample
+      console.log('✅ Using provided GraphQL query sample (keeping variables from IN parameters)');
+    } catch (e) {
+      setGraphqlQuery(details.requestBody.sample);
+      console.log('✅ Using sample as raw text');
+    }
+  } else if (inParams.length > 0 || details.responseMappings?.length > 0) {
+    // Generate a basic query if no sample exists
+    const operationName = details.apiName || 'MyQuery';
+    const operationType = details.graphqlConfig?.operationType || 'query';
+    
+    // Build selection set from response mappings or default
+    let selectionSet = 'id\n    name\n    createdAt';
+    if (details.responseMappings && details.responseMappings.length > 0) {
+      selectionSet = details.responseMappings.slice(0, 10).map(m => m.apiField).join('\n    ');
+    }
+    
+    // Build the query with variables - use the same variable names as IN parameters
+    const variableDefs = inParams.map(p => `$${p.key}: ${p.apiType === 'integer' ? 'Int' : 'String'}`).join(', ');
+    const variableArgs = inParams.map(p => `${p.key}: $${p.key}`).join(', ');
+    
+    let query = '';
+    if (operationType === 'query') {
+      query = `${operationType} ${operationName}(${variableDefs}) {
+  ${operationName}(${variableArgs}) {
+    ${selectionSet}
   }
 }`;
-            
-            // Build variables object with default values
-            allParams.forEach(param => {
-              let defaultValue = '';
-              if (param.oracleType === 'VARCHAR2' || param.type === 'string') defaultValue = '';
-              if (param.oracleType === 'NUMBER' || param.type === 'number') defaultValue = 0;
-              if (param.oracleType === 'DATE' || param.type === 'date') defaultValue = new Date().toISOString().split('T')[0];
-              variables[param.key] = defaultValue;
-            });
-            
-            setGraphqlQuery(graphQLQuery);
-            setGraphqlVariables(JSON.stringify(variables, null, 2));
-            console.log('✅ Generated GraphQL query from parameters');
-          }
-          else if (details.requestBody?.sample && details.requestBody.sample.trim() !== '') {
-            try {
-              const parsed = JSON.parse(details.requestBody.sample);
-              if (parsed.query) setGraphqlQuery(parsed.query);
-              if (parsed.variables) setGraphqlVariables(JSON.stringify(parsed.variables, null, 2));
-            } catch (e) {
-              setGraphqlQuery(details.requestBody.sample);
-            }
-            console.log('✅ Using provided GraphQL sample');
-          }
-          // ========== END GRAPHQL GENERATION ==========
-        }
+    } else {
+      query = `${operationType} ${operationName}(${variableDefs}) {
+  ${operationName}(${variableArgs}) {
+    ${selectionSet}
+  }
+}`;
+    }
+    
+    setGraphqlQuery(query);
+    console.log('✅ Generated GraphQL query from parameters');
+  }
+  
+  // Force multiple re-renders to ensure variables appear
+  setTimeout(() => {
+    console.log('🔄 Forcing body tab refresh for GraphQL (first pass)');
+    setBodyKey(prev => prev + 1);
+  }, 50);
+  
+  setTimeout(() => {
+    console.log('🔄 Forcing body tab refresh for GraphQL (second pass)');
+    setBodyKey(prev => prev + 1);
+  }, 150);
+}
         
         if (details.method) {
           setRequestMethod(details.method);
@@ -4206,94 +4270,208 @@ console.log('📋 Set requestHeaders:', uniqueHeaders.length);
             
             // SOAP specific handling - ONLY for SOAP protocols
             if (finalProtocol === 'soap') {
-              console.log('📝 [SOAP] Setting up SOAP body, current requestBody length:', requestBody?.length);
-              setRequestBodyType('xml');
-              setActiveTab('body');
-              skipAutoTabChange.current = true;
-              
-              // Check if we already have a generated SOAP body by checking if the body was just set above
-              // We can use a ref or check if the generated envelope was created in this same function call
-              if (allParameters.length > 0) {
-                // If we generated parameters above, the body is already set
-                console.log('✅ [SOAP] Parameters were generated above, keeping existing body');
-                // Do nothing - body already set by the generation code
-              } else if (details.requestBody?.sample && details.requestBody.sample.trim() !== '') {
-                setRequestBody(details.requestBody.sample);
-                console.log('✅ [SOAP] Using provided SOAP sample');
-              } else if (!requestBody || requestBody === '') {
-                // Only set default if no body exists
-                const defaultSoap = '<?xml version="1.0" encoding="UTF-8"?>\n<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">\n  <soap:Body>\n    <request>\n      \n    </request>\n  </soap:Body>\n</soap:Envelope>';
-                setRequestBody(defaultSoap);
-                console.log('⚠️ [SOAP] Using default template');
-              }
-            }
+  console.log('📝 [SOAP] Setting up SOAP body, current requestBody length:', requestBody?.length);
+  setRequestBodyType('xml');
+  setActiveTab('body');
+  skipAutoTabChange.current = true;
+  
+  // Check if we already have a generated SOAP body
+  if (details.requestBody && details.requestBody.sample && details.requestBody.sample.trim() !== '') {
+    let sampleBody = details.requestBody.sample;
+    
+    // Add missing xmlns:xsd and xmlns:xsi attributes if not present
+    if (!sampleBody.includes('xmlns:xsd')) {
+      sampleBody = sampleBody.replace(
+        '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">',
+        '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+      );
+    }
+    
+    setRequestBody(sampleBody);
+    console.log('✅ Set SOAP body from API sample');
+  } else if (details.parameters && details.parameters.length > 0) {
+    // Generate SOAP envelope from parameters
+    const soapEnvelope = generateSoapEnvelope(details);
+    if (soapEnvelope) {
+      setRequestBody(soapEnvelope);
+      console.log('✅ Generated SOAP envelope from parameters');
+    }
+  } else if (!requestBody || requestBody === '') {
+    // Only set default if no body exists
+    const defaultSoap = `<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <${details.apiName || 'request'}>
+      <!-- Add your parameters here -->
+    </${details.apiName || 'request'}>
+  </soap:Body>
+</soap:Envelope>`;
+    setRequestBody(defaultSoap);
+    console.log('⚠️ [SOAP] Using default template');
+  }
+  
+  setBodyKey(prev => prev + 1);
+  
+  // Set headers for SOAP
+  let allHeaders = [];
+  if (details.headers && details.headers.length > 0) {
+    details.headers.forEach(header => {
+      allHeaders.push({
+        id: header.id || `header-${Date.now()}`,
+        key: header.key,
+        value: header.value || '',
+        enabled: header.enabled !== false
+      });
+    });
+  }
+  
+  // Ensure Content-Type header for SOAP
+  const hasContentType = allHeaders.some(h => h.key.toLowerCase() === 'content-type');
+  if (!hasContentType) {
+    allHeaders.push({
+      id: `header-content-type-${Date.now()}`,
+      key: 'Content-Type',
+      value: 'text/xml; charset=utf-8',
+      description: 'SOAP content type',
+      enabled: true,
+      required: true
+    });
+  }
+  
+  setRequestHeaders(allHeaders);
+  
+  // Cache and finish
+  const cacheData = {
+    templateUrl: initialTemplateUrl,
+    resolvedUrl: displayUrl,
+    method: requestMethod,
+    body: requestBody,
+    headers: allHeaders,
+    cachedProtocol: 'soap'
+  };
+  requestDetailsCache.current.set(request.id, cacheData);
+  
+  setLoading(prev => ({ ...prev, request: false }));
+  
+  const requestWithContext = { 
+    ...request, 
+    collectionId, 
+    folderId,
+    isSaved: request.isSaved !== false,
+    protocolType: 'soap'
+  };
+  setSelectedRequest(requestWithContext);
+  updateRequestTabs(request, collectionId, folderId);
+  setActiveTab('body');
+  
+  return; // EARLY RETURN
+}
             // GraphQL specific handling - ONLY for GraphQL protocols
+            // Enhanced GraphQL handler - same pattern as SOAP
             else if (finalProtocol === 'graphql') {
               console.log('📝 [GraphQL] Setting up GraphQL body');
               setRequestBodyType('graphql');
               setActiveTab('body');
               skipAutoTabChange.current = true;
               
+              // PRIORITY 1: Use provided sample if available (like SOAP)
               if (details.requestBody?.sample && details.requestBody.sample.trim() !== '') {
                 try {
                   const parsed = JSON.parse(details.requestBody.sample);
                   if (parsed.query) setGraphqlQuery(parsed.query);
                   if (parsed.variables) setGraphqlVariables(JSON.stringify(parsed.variables, null, 2));
+                  console.log('✅ [GraphQL] Using provided sample');
                 } catch (e) {
                   setGraphqlQuery(details.requestBody.sample);
+                  console.log('✅ [GraphQL] Using sample as raw text');
                 }
               }
+              // PRIORITY 2: Generate from parameters if no sample
+              else if (details.parameters && details.parameters.length > 0) {
+                // Build GraphQL query from parameters
+                const operationName = details.apiName || 'MyQuery';
+                const variableDefs = details.parameters.map(param => {
+                  let type = 'String';
+                  if (param.oracleType === 'NUMBER' || param.type === 'number') type = 'Int';
+                  if (param.oracleType === 'DATE' || param.type === 'date') type = 'String';
+                  if (param.required) type += '!';
+                  return `$${param.key}: ${type}`;
+                }).join(', ');
+                
+                const queryFields = 'success\n    message\n    data';
+                
+                const graphQLQuery = `${operationName}(${variableDefs}) {
+              ${operationName.toLowerCase()}(${details.parameters.map(p => `${p.key}: $${p.key}`).join(', ')}) {
+                ${queryFields}
+              }
+            }`;
+                
+                setGraphqlQuery(graphQLQuery);
+                console.log('✅ [GraphQL] Generated query from parameters');
+              }
+              // PRIORITY 3: Use default template
+              else {
+                const defaultQuery = `query {
+              hello
+            }`;
+                setGraphqlQuery(defaultQuery);
+                console.log('⚠️ [GraphQL] Using default template');
+              }
             }
-            // REST handling - ONLY for REST protocols
+            // REST handling - same pattern as SOAP
             else if (finalProtocol === 'rest') {
-              console.log('📝 [REST] Setting up REST body');
-              setRequestBodyType(bodyType === 'json' || bodyType === 'raw' ? 'raw' : bodyType);
-              if (bodyType === 'raw') setRawBodyType('json');
-              
-              if (bodyType === 'form-data' && bodyParams.length > 0) {
-                setRequestBodyType('form-data');
-                setActiveTab('body');
-                skipAutoTabChange.current = true;
-                const newFormData = bodyParams.map((param, index) => ({
-                  id: param.id || `form-${Date.now()}-${index}`,
-                  key: param.key,
-                  value: param.value,
-                  type: param.isFile ? 'file' : 'text',
-                  enabled: param.enabled !== false,
-                  file: null,
-                  description: param.description || '',
-                  required: param.required || false,
-                  dataType: param.dataType
-                }));
-                setFormData(newFormData);
-              } 
-              else if ((bodyType === 'raw' || bodyType === 'json') && bodyParams.length > 0) {
-                setRequestBodyType('raw');
-                setRawBodyType('json');
-                setActiveTab('body');
-                skipAutoTabChange.current = true;
-                const jsonBody = {};
-                bodyParams.forEach(param => {
-                  if (param.key) {
-                    jsonBody[param.key] = param.value !== undefined && param.value !== null && param.value !== '' 
-                      ? param.value 
-                      : getDefaultValueByType(param.dataType, param.key);
-                  }
-                });
-                let jsonString = JSON.stringify(jsonBody, null, 2);
-                if (details.requestBody?.sample && details.requestBody.sample !== '{}') {
-                  try {
-                    const parsedSample = JSON.parse(details.requestBody.sample);
-                    const merged = { ...parsedSample, ...jsonBody };
-                    jsonString = JSON.stringify(merged, null, 2);
-                  } catch (e) {}
-                }
-                setRequestBody(jsonString);
-              }
-              else if (details.requestBody?.sample) {
-                setRequestBody(details.requestBody.sample);
-              }
-            }
+  console.log('📝 [REST] Setting up REST body');
+  
+  if (details.requestBody && details.requestBody.sample && details.requestBody.sample.trim() !== '') {
+    // Try to beautify if JSON
+    try {
+      const parsed = JSON.parse(details.requestBody.sample);
+      setRequestBody(JSON.stringify(parsed, null, 2));
+      console.log('✅ [REST] Using JSON sample (beautified)');
+    } catch (e) {
+      setRequestBody(details.requestBody.sample);
+      console.log('✅ [REST] Using sample as raw text');
+    }
+  } 
+  else if (bodyParams.length > 0) {
+    // Generate JSON from body parameters
+    const jsonBody = {};
+    bodyParams.forEach(param => {
+      if (param.key) {
+        let value = param.value;
+        if (value === undefined || value === null || value === '') {
+          if (param.dataType === 'jsonb' || param.dataType === 'json') {
+            value = {};
+          } else if (param.dataType === 'number' || param.dataType === 'int') {
+            value = 0;
+          } else if (param.dataType === 'boolean') {
+            value = false;
+          } else {
+            value = '';
+          }
+        }
+        jsonBody[param.key] = value;
+      }
+    });
+    
+    if (Object.keys(jsonBody).length > 0) {
+      setRequestBody(JSON.stringify(jsonBody, null, 2));
+      console.log('✅ [REST] Generated JSON from body parameters');
+    }
+  }
+  else {
+    setRequestBody('');
+    console.log('⚠️ [REST] No body content');
+  }
+  
+  // Set appropriate body type
+  if (requestMethod === 'GET' || requestMethod === 'DELETE') {
+    setRequestBodyType('none');
+  } else {
+    setRequestBodyType('raw');
+    setRawBodyType('json');
+  }
+}
           }
           
           console.log('📋 Setting requestHeaders from headerParams:', headerParams);
@@ -6769,7 +6947,6 @@ const renderQueryParamsTab = () => {
                 }}
                 onClick={() => {
                   try {
-                    // Simple XML beautification
                     const formatted = requestBody
                       .replace(/>\s*</g, '>\n<')
                       .split('\n')
@@ -6829,77 +7006,172 @@ const renderQueryParamsTab = () => {
       );
     }
 
-    // GraphQL Editor
-    if (currentProtocol === 'graphql' && requestBodyType === 'graphql') {
-      return (
-        <div className="space-y-4">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium" style={{ color: colors.text }}>GraphQL Query</label>
-              <button 
-                type="button"
-                className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
-                onClick={() => {
-                  if (graphqlQuery) {
-                    copyToClipboard(graphqlQuery, showToast);
+    // GraphQL Editor - Updated to show variables from IN parameters
+if (currentProtocol === 'graphql' && requestBodyType === 'graphql') {
+  // Debug log
+  console.log('🎨 renderBodyTab - Current graphqlVariables:', graphqlVariables);
+  
+  // Use the correct state variable - it's 'graphqlVariables' not 'parameters'
+  let displayVariables = graphqlVariables;
+  
+  // If empty, try to generate from requestParams (which are the IN parameters)
+  if ((!displayVariables || displayVariables === '' || displayVariables === '{}') && requestParams && requestParams.length > 0) {
+    const variablesObj = {};
+    requestParams.forEach(param => {
+      variablesObj[param.key] = param.example || param.defaultValue || '';
+    });
+    displayVariables = JSON.stringify(variablesObj, null, 2);
+    console.log('🎨 Generated variables from requestParams:', displayVariables);
+  }
+  
+  if (!displayVariables || displayVariables === '') {
+    displayVariables = '{}';
+  }
+  
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-sm font-medium" style={{ color: colors.text }}>GraphQL Query</label>
+          <div className="flex gap-2">
+            <button 
+              type="button"
+              className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+              onClick={() => {
+                if (graphqlQuery) {
+                  copyToClipboard(graphqlQuery, showToast);
+                }
+              }}>
+              Copy Query
+            </button>
+            <button 
+              type="button"
+              className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+              onClick={() => {
+                try {
+                  let formattedQuery = graphqlQuery;
+                  if (graphqlQuery && !graphqlQuery.includes('\n')) {
+                    formattedQuery = graphqlQuery
+                      .replace(/{/g, '{\n  ')
+                      .replace(/}/g, '\n}')
+                      .replace(/,/g, ',\n  ');
                   }
-                }}>
-                Copy Query
-              </button>
-            </div>
-            <textarea
-              value={graphqlQuery}
-              onChange={(e) => setGraphqlQuery(e.target.value)}
-              className="w-full h-64 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
-              style={{
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                color: colors.text,
-                lineHeight: '1.5'
-              }}
-              placeholder={`query {
+                  setGraphqlQuery(formattedQuery);
+                  showToast('Query beautified!', 'success');
+                } catch (e) {
+                  showToast('Could not beautify query', 'warning');
+                }
+              }}>
+              Beautify
+            </button>
+          </div>
+        </div>
+        <textarea
+          value={graphqlQuery}
+          onChange={(e) => setGraphqlQuery(e.target.value)}
+          className="w-full font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
+          style={{
+            backgroundColor: colors.codeBg || (isDark ? '#1a202c' : '#f8fafc'),
+            borderColor: colors.border,
+            color: colors.text,
+            lineHeight: '1.5',
+            minHeight: '250px'
+          }}
+          placeholder={`query {
   getUser(id: 1) {
     id
     name
     email
   }
-}
-
-# Or mutation:
-mutation {
-  createUser(input: {
-    name: "John"
-    email: "john@example.com"
-  }) {
-    id
-    name
-  }
 }`}
-              spellCheck="false"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Variables (JSON)</label>
-            <textarea
-              value={graphqlVariables}
-              onChange={(e) => setGraphqlVariables(e.target.value)}
-              className="w-full h-32 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
-              style={{
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                color: colors.text,
-                lineHeight: '1.5'
-              }}
-              placeholder={`{
-  "id": 1
-}`}
-              spellCheck="false"
-            />
+          spellCheck="false"
+        />
+      </div>
+      
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-sm font-medium" style={{ color: colors.text }}>Variables (JSON)</label>
+          <div className="flex gap-2">
+            <button 
+              type="button"
+              className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+              onClick={() => {
+                const varsToCopy = displayVariables || graphqlVariables;
+                if (varsToCopy && varsToCopy !== '{}') {
+                  copyToClipboard(varsToCopy, showToast);
+                } else {
+                  showToast('No variables to copy', 'info');
+                }
+              }}>
+              Copy Variables
+            </button>
+            <button 
+              type="button"
+              className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+              onClick={() => {
+                try {
+                  const varsToFormat = displayVariables || graphqlVariables;
+                  if (varsToFormat && varsToFormat !== '{}') {
+                    const parsed = JSON.parse(varsToFormat);
+                    const formatted = JSON.stringify(parsed, null, 2);
+                    setGraphqlVariables(formatted);
+                    showToast('Variables formatted!', 'success');
+                  } else if (requestParams && requestParams.length > 0) {
+                    // Generate from requestParams
+                    const variablesObj = {};
+                    requestParams.forEach(param => {
+                      variablesObj[param.key] = param.example || param.defaultValue || '';
+                    });
+                    const formatted = JSON.stringify(variablesObj, null, 2);
+                    setGraphqlVariables(formatted);
+                    showToast('Generated variables from parameters!', 'success');
+                  } else {
+                    showToast('No variables to format', 'info');
+                  }
+                } catch (e) {
+                  showToast('Invalid JSON in variables', 'error');
+                }
+              }}>
+              Format JSON
+            </button>
           </div>
         </div>
-      );
-    }
+        <textarea
+          value={displayVariables || graphqlVariables}
+          onChange={(e) => setGraphqlVariables(e.target.value)}
+          className="w-full font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
+          style={{
+            backgroundColor: colors.codeBg || (isDark ? '#1a202c' : '#f8fafc'),
+            borderColor: colors.border,
+            color: colors.text,
+            lineHeight: '1.5',
+            minHeight: '150px'
+          }}
+          placeholder={`{
+  "id": 1,
+  "name": "example"
+}`}
+          spellCheck="false"
+        />
+      </div>
+      
+      {/* Show note about variables */}
+      {(displayVariables && displayVariables !== '{}') || (graphqlVariables && graphqlVariables !== '{}') ? (
+        <div className="text-xs p-2 rounded" style={{ 
+          backgroundColor: colors.info + '10',
+          borderLeft: `3px solid ${colors.info}`,
+          color: colors.textSecondary
+        }}>
+          <span className="font-medium" style={{ color: colors.info }}>Note:</span> Variables are auto-generated from the API's IN parameters. Edit them as needed for your request.
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
     // REST Body Types
     switch (requestBodyType) {
@@ -7436,7 +7708,6 @@ mutation {
               type="button"
               onClick={() => {
                 setRequestBodyType(type.id);
-                // Clear body data when switching to none
                 if (type.id === 'none') {
                   setRequestBody('');
                   setFormData([]);
