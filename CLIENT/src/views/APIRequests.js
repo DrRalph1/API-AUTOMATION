@@ -246,251 +246,190 @@ const SyntaxHighlighter = ({ language, code }) => {
   );
 };
 
-// ============ REQUEST DETAILS MODAL COMPONENT ============
+
+// ============ UPDATED resolveUrlWithPathParams ============
+const resolveUrlWithPathParams = (url, requestData) => {
+  if (!url) return url;
+  
+  let resolvedUrl = url;
+  
+  // Get path parameters from the request data
+  const pathParams = requestData?.pathParameters || {};
+  
+  // Also check if there are path parameters in a different format
+  const alternativePathParams = requestData?.parameters?.filter(p => p.parameterLocation === 'path') || [];
+  
+  // Combine both sources
+  const allPathParams = { ...pathParams };
+  
+  alternativePathParams.forEach(param => {
+    if (param.key && param.value) {
+      allPathParams[param.key] = param.value;
+    }
+  });
+  
+  // Replace all placeholders with actual values
+  Object.entries(allPathParams).forEach(([key, value]) => {
+    if (key && value) {
+      const placeholder = `{${key}}`;
+      const colonPlaceholder = `:${key}`;
+      
+      if (resolvedUrl.includes(placeholder)) {
+        resolvedUrl = resolvedUrl.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value);
+      }
+      if (resolvedUrl.includes(colonPlaceholder)) {
+        resolvedUrl = resolvedUrl.replace(new RegExp(colonPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value);
+      }
+    }
+  });
+  
+  console.log('Resolved URL:', { original: url, resolved: resolvedUrl, pathParams: allPathParams });
+  
+  return resolvedUrl;
+};
+
+
 const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getStatusText, getStatusCodeColorHelper }) => {
   if (!isOpen || !request) return null;
 
-  const [activeTab, setActiveTab] = useState('request');
+  const [activeTab, setActiveTab] = useState('overview');
   const [toast, setToast] = useState(null);
+  const [copiedField, setCopiedField] = useState(null);
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-
-    // Helper to detect content type (XML, GraphQL, or JSON)
-const getContentType = (content) => {
-  if (!content) return 'json';
-  const str = typeof content === 'string' ? content : JSON.stringify(content);
-  const trimmed = str.trim();
-  
-  // Check for XML/SOAP
-  if (trimmed.startsWith('<') && (trimmed.includes('<?xml') || trimmed.includes('<soap:') || trimmed.includes('<SOAP-ENV:'))) {
-    return 'xml';
-  }
-  
-  // Check for GraphQL - looks for query/mutation keywords
-  // Also handles stringified GraphQL like {"query": "..."}
-  const lowerContent = trimmed.toLowerCase();
-  if (lowerContent.includes('query') || lowerContent.includes('mutation')) {
-    return 'graphql';
-  }
-  
-  // Check if it's a JSON object with a query field (common for GraphQL over HTTP)
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (parsed.query || parsed.mutation) {
+  // Helper to detect content type
+  const getContentType = (content) => {
+    if (!content) return 'json';
+    const str = typeof content === 'string' ? content : JSON.stringify(content);
+    const trimmed = str.trim();
+    
+    if (trimmed.startsWith('<') && (trimmed.includes('<?xml') || trimmed.includes('<soap:') || trimmed.includes('<SOAP-ENV:'))) {
+      return 'xml';
+    }
+    
+    const lowerContent = trimmed.toLowerCase();
+    if (lowerContent.includes('query ') || lowerContent.includes('mutation ') || (lowerContent.includes('{') && lowerContent.includes('query'))) {
       return 'graphql';
     }
-  } catch (e) {
-    // Not valid JSON
-  }
-  
-  return 'json';
-};
+    
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed.query || parsed.mutation) return 'graphql';
+    } catch (e) {}
+    
+    return 'json';
+  };
 
-// Helper to format GraphQL content nicely
-const formatGraphQLContent = (graphQLString) => {
-  if (!graphQLString) return '';
-  
-  let content = typeof graphQLString === 'string' ? graphQLString : JSON.stringify(graphQLString);
-  
-  // Handle stringified JSON that contains a query field
-  if (content.startsWith('{') && content.includes('"query"')) {
-    try {
-      const parsed = JSON.parse(content);
-      if (parsed.query) {
-        content = parsed.query;
-      } else if (parsed.mutation) {
-        content = parsed.mutation;
-      }
-    } catch (e) {
-      // Keep original
-    }
-  }
-  
-  // Remove outer quotes if present
-  if (content.startsWith('"') && content.endsWith('"')) {
-    try {
-      content = JSON.parse(content);
-    } catch (e) {
-      content = content.slice(1, -1).replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\r/g, '');
-    }
-  }
-  
-  // Clean up escape sequences
-  content = String(content)
-    .replace(/\\n/g, '\n')
-    .replace(/\\"/g, '"')
-    .replace(/\\r/g, '')
-    .replace(/\\t/g, '  ');
-  
-  // Basic GraphQL formatting - add line breaks and indentation
-  let formatted = content
-    .replace(/\{/g, '{\n  ')
-    .replace(/\}/g, '\n}')
-    .replace(/\(/g, '(\n    ')
-    .replace(/\)/g, '\n  )')
-    .replace(/\,/g, ',\n    ');
-  
-  // Fix indentation
-  const lines = formatted.split('\n');
-  let indent = 0;
-  const result = [];
-  
-  for (let line of lines) {
-    if (line.includes('}') || line.includes(')')) {
-      indent = Math.max(0, indent - 1);
+  const formatGraphQLContent = (graphQLString) => {
+    if (!graphQLString) return '';
+    let content = typeof graphQLString === 'string' ? graphQLString : JSON.stringify(graphQLString);
+    
+    if (content.startsWith('{') && content.includes('"query"')) {
+      try {
+        const parsed = JSON.parse(content);
+        content = parsed.query || parsed.mutation || content;
+      } catch (e) {}
     }
     
-    result.push('  '.repeat(indent) + line.trimStart());
-    
-    if (line.includes('{') || line.includes('(')) {
-      indent++;
-    }
-  }
-  
-  return result.join('\n');
-};
-
- // Helper to detect if content is XML/SOAP
-const isXmlContent = (content) => {
-  if (!content) return false;
-  const str = typeof content === 'string' ? content : JSON.stringify(content);
-  const trimmed = str.trim();
-  return trimmed.startsWith('<') && (trimmed.includes('<?xml') || trimmed.includes('<soap:') || trimmed.includes('<SOAP-ENV:'));
-};
-
-// Helper to format XML content nicely
-const formatXmlContent = (xmlString) => {
-  if (!xmlString) return '';
-  
-  // If it's a string, try to format it
-  if (typeof xmlString === 'string') {
-    try {
-      // Simple XML formatting - add line breaks between tags
-      let formatted = xmlString
-        .replace(/>\s*</g, '>\n<')  // Add line breaks between tags
-        .replace(/></g, '>\n<');     // Handle self-closing tags
-      
-      // Add indentation
-      const lines = formatted.split('\n');
-      let indent = 0;
-      const result = [];
-      
-      for (let line of lines) {
-        if (line.match(/<\/\w+[^>]*>/) && !line.match(/<[^/][^>]*\/>/)) {
-          indent--;
-        }
-        
-        result.push('  '.repeat(Math.max(0, indent)) + line);
-        
-        if (line.match(/<[^/][^>]*>/) && !line.match(/<[^/][^>]*\/>/) && !line.match(/<\/\w+[^>]*>/)) {
-          indent++;
-        }
+    if (content.startsWith('"') && content.endsWith('"')) {
+      try {
+        content = JSON.parse(content);
+      } catch (e) {
+        content = content.slice(1, -1).replace(/\\"/g, '"').replace(/\\n/g, '\n');
       }
-      
-      return result.join('\n');
-    } catch (e) {
-      return xmlString;
     }
-  }
-  
-  // If it's an object, stringify it
-  if (typeof xmlString === 'object') {
-    return JSON.stringify(xmlString, null, 2);
-  }
-  
-  return String(xmlString);
-};
+    
+    content = String(content).replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\r/g, '').replace(/\\t/g, '  ');
+    
+    let formatted = content.replace(/\{/g, '{\n  ').replace(/\}/g, '\n}').replace(/\(/g, '(\n    ').replace(/\)/g, '\n  )').replace(/,/g, ',\n    ');
+    
+    const lines = formatted.split('\n');
+    let indent = 0;
+    const result = [];
+    
+    for (let line of lines) {
+      if (line.includes('}') || line.includes(')')) indent = Math.max(0, indent - 1);
+      result.push('  '.repeat(indent) + line.trimStart());
+      if (line.includes('{') || line.includes('(')) indent++;
+    }
+    
+    return result.join('\n');
+  };
 
+  const formatXmlContent = (xmlString) => {
+    if (!xmlString) return '';
+    if (typeof xmlString === 'string') {
+      try {
+        let formatted = xmlString.replace(/>\s*</g, '>\n<').replace(/></g, '>\n<');
+        const lines = formatted.split('\n');
+        let indent = 0;
+        const result = [];
+        
+        for (let line of lines) {
+          if (line.match(/<\/\w+[^>]*>/) && !line.match(/<[^/][^>]*\/>/)) indent--;
+          result.push('  '.repeat(Math.max(0, indent)) + line);
+          if (line.match(/<[^/][^>]*>/) && !line.match(/<[^/][^>]*\/>/) && !line.match(/<\/\w+[^>]*>/)) indent++;
+        }
+        
+        return result.join('\n');
+      } catch (e) {
+        return xmlString;
+      }
+    }
+    return typeof xmlString === 'object' ? JSON.stringify(xmlString, null, 2) : String(xmlString);
+  };
 
-  // Helper to get formatted body for display
   const getFormattedBody = (body, contentType) => {
     if (!body) return '// No body content';
+    if (contentType === 'xml') return formatXmlContent(body);
+    if (contentType === 'graphql') return formatGraphQLContent(body);
+    if (typeof body === 'object') return JSON.stringify(body, null, 2);
     
-    if (contentType === 'xml') {
-      return formatXmlContent(body);
-    }
-    
-    if (contentType === 'graphql') {
-      return formatGraphQLContent(body);
-    }
-    
-    // For JSON, format nicely
-    if (typeof body === 'object') {
-      return JSON.stringify(body, null, 2);
-    }
-    
-    // Try to parse string as JSON
     if (typeof body === 'string') {
       try {
         const parsed = JSON.parse(body);
-        // Check if parsed JSON contains GraphQL
-        if (parsed.query || parsed.mutation) {
-          return formatGraphQLContent(body);
-        }
+        if (parsed.query || parsed.mutation) return formatGraphQLContent(body);
         return JSON.stringify(parsed, null, 2);
       } catch (e) {
-        // Check if it might be GraphQL
-        if (body.includes('query') || body.includes('mutation')) {
-          return formatGraphQLContent(body);
-        }
-        // Check if it might be XML
-        if (body.trim().startsWith('<')) {
-          return formatXmlContent(body);
-        }
+        if (body.includes('query') || body.includes('mutation')) return formatGraphQLContent(body);
+        if (body.trim().startsWith('<')) return formatXmlContent(body);
         return body;
       }
     }
-    
     return String(body);
   };
 
-  // Get raw request body (prefer rawRequestBody if available)
-  const getRawRequestBody = () => {
-    if (request.rawRequestBody) {
-      return request.rawRequestBody;
-    }
-    if (request.requestBody) {
-      return request.requestBody;
-    }
-    return null;
-  };
-
-  // Get raw response body (prefer rawResponseBody if available)
-  const getRawResponseBody = () => {
-    if (request.rawResponseBody) {
-      return request.rawResponseBody;
-    }
-    if (request.responseBody) {
-      return request.responseBody;
-    }
-    return null;
-  };
+  const getRawRequestBody = () => request.rawRequestBody || request.requestBody || null;
+  const getRawResponseBody = () => request.rawResponseBody || request.responseBody || null;
 
   const rawRequestBody = getRawRequestBody();
   const rawResponseBody = getRawResponseBody();
   const requestContentType = getContentType(rawRequestBody);
   const responseContentType = getContentType(rawResponseBody);
-  const isRequestXml = requestContentType === 'xml';
-  const isResponseXml = responseContentType === 'xml';
 
-  const isRequestSuccessfulHelper = (request) => {
-    return request?.responseStatusCode >= 200 && request?.responseStatusCode < 300;
-  };
-
-  const formatRequestTimestampHelper = (timestamp) => {
+  const formatTimestamp = (timestamp) => {
     if (!timestamp) return 'N/A';
     try {
-      return new Date(timestamp).toLocaleString();
-    } catch (e) {
+      const date = new Date(timestamp);
+      return date.toLocaleString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+    } catch {
       return timestamp;
     }
   };
 
-  const formatExecutionTimeHelper = (ms) => {
+  const formatDuration = (ms) => {
     if (ms === null || ms === undefined) return 'N/A';
     const time = Number(ms);
     if (isNaN(time)) return 'N/A';
@@ -499,59 +438,37 @@ const formatXmlContent = (xmlString) => {
     return `${(time / 60000).toFixed(2)}m`;
   };
 
-  const copyToClipboard = (text, type = 'content') => {
+  const copyToClipboard = async (text, field) => {
     if (!text) {
-      showToast(`Nothing to copy`, 'warning');
+      showToast('No content to copy', 'warning');
       return;
     }
     
     const contentToCopy = typeof text === 'string' ? text : JSON.stringify(text, null, 2);
     
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(contentToCopy)
-        .then(() => {
-          showToast(`Copied ${type} to clipboard!`, 'success');
-        })
-        .catch((err) => {
-          console.error('Clipboard write failed:', err);
-          fallbackCopy(contentToCopy, type);
-        });
-    } else {
-      fallbackCopy(contentToCopy, type);
-    }
-    
-    function fallbackCopy(text, type) {
+    try {
+      await navigator.clipboard.writeText(contentToCopy);
+      setCopiedField(field);
+      showToast(`Copied to clipboard`, 'success');
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (err) {
       const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.style.position = 'fixed';
-      textarea.style.top = '-9999px';
-      textarea.style.left = '-9999px';
+      textarea.value = contentToCopy;
+      textarea.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
       document.body.appendChild(textarea);
-      textarea.focus();
       textarea.select();
       
       try {
-        const successful = document.execCommand('copy');
-        if (successful) {
-          showToast(`Copied ${type} to clipboard!`, 'success');
-        } else {
-          showToast(`Failed to copy ${type}`, 'error');
-        }
-      } catch (err) {
-        console.error('Fallback copy failed:', err);
-        showToast(`Failed to copy ${type}`, 'error');
+        document.execCommand('copy');
+        showToast(`Copied to clipboard`, 'success');
+      } catch {
+        showToast(`Failed to copy`, 'error');
       }
-      
       document.body.removeChild(textarea);
     }
   };
 
-  const getFullJsonData = () => {
-    return JSON.stringify(request, null, 2);
-  };
-
-  // Get button color based on response status code
-  const getResponseButtonColor = () => {
+  const getResponseColor = () => {
     const statusCode = request.responseStatusCode;
     if (!statusCode) return colors.textSecondary;
     if (statusCode >= 200 && statusCode < 300) return colors.success;
@@ -561,332 +478,410 @@ const formatXmlContent = (xmlString) => {
     return colors.textSecondary;
   };
 
+  const tabs = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'request', label: 'Request' },
+    { id: 'response', label: 'Response' },
+    { id: 'headers', label: 'Headers' },
+    { id: 'timeline', label: 'Timeline' }
+  ];
+
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50">
+    <div className="fixed inset-0 flex items-center justify-center z-50" style={{ padding: '2rem' }}>
+      {/* Backdrop */}
       <div 
-        className="absolute inset-0 backdrop-blur-2xl bg-black/70"
+        className="absolute inset-0 backdrop-blur-md" 
+        style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
         onClick={onClose} 
       />
-      <div className="relative w-3/4 max-w-4xl max-h-[80vh] rounded-lg overflow-hidden" style={{ 
-        backgroundColor: colors.bg,
-        border: `1px solid ${colors.border}`
-      }}>
-        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: colors.border }}>
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold" style={{ color: colors.text }}>
-              Request Details
-            </h2>
+      
+      {/* Modal */}
+      <div 
+        className="relative w-full max-w-5xl rounded-lg shadow-xl overflow-hidden"
+        style={{ 
+          backgroundColor: colors.bg,
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0" style={{ borderColor: colors.border }}>
+          <div className="flex items-center gap-4">
+            <div>
+              <h2 className="text-lg font-semibold" style={{ color: colors.text }}>Request Details</h2>
+              <p className="text-sm mt-0.5" style={{ color: colors.textSecondary }}>{request.requestName || 'API Request'}</p>
+            </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs px-2 py-1 rounded" style={{ 
-                backgroundColor: getStatusCodeColorHelper(request.responseStatusCode),
-                color: 'white'
-              }}>
-                {request.responseStatusCode || 'Pending'}
-              </span>
-              <span className="text-xs px-2 py-1 rounded" style={{ 
-                backgroundColor: `${getStatusCodeColorHelper(request.responseStatusCode)}20`,
-                color: getStatusCodeColorHelper(request.responseStatusCode)
-              }}>
+              <div 
+                className="px-3 py-1 rounded-md text-sm font-mono font-medium"
+                style={{ 
+                  backgroundColor: getStatusCodeColorHelper(request.responseStatusCode),
+                  color: '#fff'
+                }}
+              >
+                {request.responseStatusCode || '—'}
+              </div>
+              <div 
+                className="px-3 py-1 rounded-md text-sm"
+                style={{ 
+                  backgroundColor: `${getStatusCodeColorHelper(request.responseStatusCode)}15`,
+                  color: getStatusCodeColorHelper(request.responseStatusCode)
+                }}
+              >
                 {getStatusText(request.responseStatusCode)}
-              </span>
+              </div>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-opacity-50 transition-colors">
-            <X size={18} style={{ color: colors.textSecondary }} />
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-md flex items-center justify-center transition-colors hover:bg-opacity-80"
+            style={{ backgroundColor: colors.hover }}
+          >
+            <span style={{ color: colors.textSecondary }}>×</span>
           </button>
         </div>
 
-        <div className="flex items-center px-6 border-b" style={{ borderColor: colors.border }}>
-          {['request', 'response', 'headers', 'timeline', 'summary'].map(tab => (
+        {/* Tab Bar */}
+        <div className="flex items-center gap-1 px-6 border-b flex-shrink-0" style={{ borderColor: colors.border }}>
+          {tabs.map(tab => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 text-sm font-medium capitalize border-b-2 transition-colors`}
-              style={{ 
-                borderBottomColor: activeTab === tab ? colors.primary : 'transparent',
-                color: activeTab === tab ? colors.primary : colors.textSecondary
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className="px-4 py-2.5 text-sm font-medium transition-all relative"
+              style={{
+                color: activeTab === tab.id ? colors.primary : colors.textSecondary,
+                borderBottom: activeTab === tab.id ? `2px solid ${colors.primary}` : '2px solid transparent'
               }}
             >
-              {tab}
+              {tab.label}
             </button>
           ))}
         </div>
 
-        <div className="p-6 overflow-auto max-h-[calc(80vh-120px)]">
+        {/* Content */}
+        <div className="flex-1 overflow-auto p-6">
+          
+          {/* OVERVIEW TAB */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              {/* Key Metrics Grid */}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: colors.textSecondary }}>Method</div>
+                  <div className="text-lg font-semibold font-mono" style={{ color: colors.primary }}>{request.httpMethod || '—'}</div>
+                </div>
+                <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: colors.textSecondary }}>Duration</div>
+                  <div className="text-lg font-semibold" style={{ color: colors.text }}>{formatDuration(request.executionDurationMs)}</div>
+                </div>
+                <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: colors.textSecondary }}>Response Size</div>
+                  <div className="text-lg font-semibold" style={{ color: colors.text }}>{request.responseSizeBytes ? `${(request.responseSizeBytes / 1024).toFixed(2)} KB` : '—'}</div>
+                </div>
+                <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: colors.textSecondary }}>Correlation ID</div>
+                  <div className="text-sm font-mono truncate" style={{ color: colors.text }} title={request.correlationId}>{request.correlationId || '—'}</div>
+                </div>
+              </div>
+
+              {/* URL Section */}
+              <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
+                <div className="text-xs font-medium uppercase tracking-wide mb-3" style={{ color: colors.textSecondary }}>Endpoint</div>
+                <code className="text-sm font-mono break-all" style={{ color: colors.text }}>
+                  {resolveUrlWithPathParams(request.url, request)}
+                </code>
+              </div>
+
+              {/* Parameters Summary */}
+              <div className={`grid gap-4 ${(request.pathParameters && Object.keys(request.pathParameters).length > 0) && (request.queryParameters && Object.keys(request.queryParameters).length > 0) ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                {request.pathParameters && Object.keys(request.pathParameters).length > 0 && (
+                  <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
+                    <div className="text-xs font-medium uppercase tracking-wide mb-3" style={{ color: colors.textSecondary }}>Path Parameters</div>
+                    <div className="space-y-2">
+                      {Object.entries(request.pathParameters).slice(0, 3).map(([key, value]) => (
+                        <div key={key} className="flex justify-between text-sm">
+                          <span className="font-mono" style={{ color: colors.primary }}>{key}</span>
+                          <span className="font-mono" style={{ color: colors.text }}>{String(value)}</span>
+                        </div>
+                      ))}
+                      {Object.keys(request.pathParameters).length > 3 && (
+                        <div className="text-xs" style={{ color: colors.textSecondary }}>+{Object.keys(request.pathParameters).length - 3} more</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {request.queryParameters && Object.keys(request.queryParameters).length > 0 && (
+                  <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
+                    <div className="text-xs font-medium uppercase tracking-wide mb-3" style={{ color: colors.textSecondary }}>Query Parameters</div>
+                    <div className="space-y-2">
+                      {Object.entries(request.queryParameters).slice(0, 3).map(([key, value]) => (
+                        <div key={key} className="flex justify-between text-sm">
+                          <span className="font-mono" style={{ color: colors.info }}>{key}</span>
+                          <span className="font-mono" style={{ color: colors.text }}>{String(value)}</span>
+                        </div>
+                      ))}
+                      {Object.keys(request.queryParameters).length > 3 && (
+                        <div className="text-xs" style={{ color: colors.textSecondary }}>+{Object.keys(request.queryParameters).length - 3} more</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Request/Response Preview - Conditional layout */}
+              <div className={`grid gap-4 ${rawRequestBody && rawResponseBody ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                {rawRequestBody && (
+                  <div className="rounded-md overflow-hidden border" style={{ borderColor: colors.border }}>
+                    <div className="px-4 py-2 border-b flex justify-between items-center" style={{ borderColor: colors.border, backgroundColor: `${colors.hover}50` }}>
+                      <span className="text-xs font-medium uppercase tracking-wide" style={{ color: colors.textSecondary }}>Request Body</span>
+                      <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: requestContentType === 'xml' ? colors.info : requestContentType === 'graphql' ? colors.warning : colors.success, color: '#fff' }}>
+                        {requestContentType.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="p-3 font-mono text-xs overflow-auto" style={{ backgroundColor: colors.codeBg, maxHeight: '200px', color: colors.text }}>
+                      <pre className="whitespace-pre-wrap break-words">{getFormattedBody(rawRequestBody, requestContentType).slice(0, 500)}{getFormattedBody(rawRequestBody, requestContentType).length > 500 ? '...' : ''}</pre>
+                    </div>
+                  </div>
+                )}
+
+                {rawResponseBody && (
+                  <div className="rounded-md overflow-hidden border" style={{ borderColor: colors.border }}>
+                    <div className="px-4 py-2 border-b flex justify-between items-center" style={{ borderColor: colors.border, backgroundColor: `${colors.hover}50` }}>
+                      <span className="text-xs font-medium uppercase tracking-wide" style={{ color: colors.textSecondary }}>Response Body</span>
+                      <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: responseContentType === 'xml' ? colors.info : responseContentType === 'graphql' ? colors.warning : colors.success, color: '#fff' }}>
+                        {responseContentType.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="p-3 font-mono text-xs overflow-auto" style={{ backgroundColor: colors.codeBg, maxHeight: '200px', color: colors.text }}>
+                      <pre className="whitespace-pre-wrap break-words">{getFormattedBody(rawResponseBody, responseContentType).slice(0, 500)}{getFormattedBody(rawResponseBody, responseContentType).length > 500 ? '...' : ''}</pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* REQUEST TAB */}
           {activeTab === 'request' && (
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Request Information</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Request Name</div>
-                    <div className="text-sm font-medium" style={{ color: colors.text }}>{request.requestName || 'N/A'}</div>
-                  </div>
-                  <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Correlation ID</div>
-                    <div className="text-xs font-mono break-all" style={{ color: colors.text }}>{request.correlationId || 'N/A'}</div>
-                  </div>
-                  <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>HTTP Method</div>
-                    <div className="text-sm font-medium" style={{ color: colors.text }}>{request.httpMethod || 'N/A'}</div>
-                  </div>
-                  <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>URL</div>
-                    <div className="text-xs font-mono break-all" style={{ color: colors.text }}>{request.url || 'N/A'}</div>
-                  </div>
-                </div>
-              </div>
-
-              {rawRequestBody && (
+            <div className="space-y-6">
+              {/* Path Parameters */}
+              {request.pathParameters && Object.keys(request.pathParameters).length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Request Body</h3>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs px-2 py-1 rounded" style={{ 
-                        backgroundColor: requestContentType === 'xml' ? colors.info : 
-                                        requestContentType === 'graphql' ? colors.warning : 
-                                        colors.success,
-                        color: 'white'
-                      }}>
-                        {requestContentType === 'xml' ? 'XML/SOAP' : 
-                        requestContentType === 'graphql' ? 'GraphQL' : 'JSON'}
-                      </span>
-                      <button
-                        onClick={() => copyToClipboard(rawRequestBody, requestContentType.toUpperCase())}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Copy size={12} style={{ color: colors.textSecondary }} />
-                      </button>
-                    </div>
+                    <h3 className="text-sm font-medium" style={{ color: colors.text }}>Path Parameters</h3>
+                    <button onClick={() => copyToClipboard(JSON.stringify(request.pathParameters, null, 2), 'path parameters')} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>Copy all</button>
                   </div>
-                  <div className="p-3 rounded max-h-60 overflow-auto" style={{ backgroundColor: colors.codeBg }}>
-                    <SyntaxHighlighter 
-                      language={requestContentType === 'xml' ? 'xml' : 
-                                requestContentType === 'graphql' ? 'graphql' : 'json'}
-                      code={getFormattedBody(rawRequestBody, requestContentType)}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'response' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Status Code</div>
-                  <div className="text-sm font-medium" style={{ color: colors.text }}>{request.responseStatusCode || 'N/A'}</div>
-                </div>
-                <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Status Message</div>
-                  <div className="text-sm" style={{ color: colors.text }}>{request.responseStatusMessage || 'N/A'}</div>
-                </div>
-                <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Response Size</div>
-                  <div className="text-sm" style={{ color: colors.text }}>
-                    {request.responseSizeBytes ? `${(request.responseSizeBytes / 1024).toFixed(2)} KB` : 'N/A'}
-                  </div>
-                </div>
-              </div>
-
-              {rawResponseBody && (
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Response Body</h3>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs px-2 py-1 rounded" style={{ 
-                        backgroundColor: responseContentType === 'xml' ? colors.info : 
-                                        responseContentType === 'graphql' ? colors.warning : 
-                                        colors.success,
-                        color: 'white'
-                      }}>
-                        {responseContentType === 'xml' ? 'XML/SOAP' : 
-                        responseContentType === 'graphql' ? 'GraphQL' : 'JSON'}
-                      </span>
-                      <button
-                        onClick={() => copyToClipboard(rawResponseBody, responseContentType.toUpperCase())}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Copy size={12} style={{ color: colors.textSecondary }} />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="p-3 rounded max-h-96 overflow-auto" style={{ backgroundColor: colors.codeBg }}>
-                    <SyntaxHighlighter 
-                      language={responseContentType === 'xml' ? 'xml' : 
-                                responseContentType === 'graphql' ? 'graphql' : 'json'}
-                      code={getFormattedBody(rawResponseBody, responseContentType)}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'headers' && (
-            <div className="space-y-4">
-              {request.headers && Object.keys(request.headers).length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Request Headers</h3>
-                  <div className="space-y-2 max-h-60 overflow-auto">
-                    {Object.entries(request.headers).map(([key, value]) => (
-                      <div key={key} className="flex items-start gap-2 p-2 rounded" style={{ backgroundColor: colors.hover }}>
-                        <span className="text-xs font-medium min-w-[150px]" style={{ color: colors.textSecondary }}>{key}:</span>
-                        <span className="text-xs font-mono break-all" style={{ color: colors.text }}>{String(value)}</span>
+                  <div className="space-y-2">
+                    {Object.entries(request.pathParameters).map(([key, value]) => (
+                      <div key={key} className="flex items-center justify-between p-3 rounded-md" style={{ backgroundColor: colors.hover }}>
+                        <code className="text-sm font-mono font-medium" style={{ color: colors.primary }}>{key}</code>
+                        <div className="flex items-center gap-3">
+                          <code className="text-sm font-mono" style={{ color: colors.text }}>{String(value)}</code>
+                          <button onClick={() => copyToClipboard(value, key)} className="text-xs opacity-0 hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }}>Copy</button>
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-            </div>
-          )}
 
-          {activeTab === 'timeline' && (
-            <div className="space-y-4">
-              <div className="relative pl-8 space-y-6">
-                <div className="relative">
-                  <div className="absolute left-[-24px] top-0 w-3 h-3 rounded-full" style={{ backgroundColor: colors.info }} />
-                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Request Created</div>
-                  <div className="text-sm" style={{ color: colors.text }}>{formatRequestTimestampHelper(request.createdAt)}</div>
+              {/* Query Parameters */}
+              {request.queryParameters && Object.keys(request.queryParameters).length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium" style={{ color: colors.text }}>Query Parameters</h3>
+                    <button onClick={() => copyToClipboard(JSON.stringify(request.queryParameters, null, 2), 'query parameters')} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>Copy all</button>
+                  </div>
+                  <div className="space-y-2">
+                    {Object.entries(request.queryParameters).map(([key, value]) => (
+                      <div key={key} className="flex items-center justify-between p-3 rounded-md" style={{ backgroundColor: colors.hover }}>
+                        <code className="text-sm font-mono font-medium" style={{ color: colors.info }}>{key}</code>
+                        <div className="flex items-center gap-3">
+                          <code className="text-sm font-mono break-all text-right" style={{ color: colors.text }}>{String(value)}</code>
+                          <button onClick={() => copyToClipboard(value, key)} className="text-xs opacity-0 hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }}>Copy</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              )}
 
-                {request.requestTimestamp && (
-                  <div className="relative">
-                    <div className="absolute left-[-24px] top-0 w-3 h-3 rounded-full" style={{ backgroundColor: colors.primary }} />
-                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Request Sent</div>
-                    <div className="text-sm" style={{ color: colors.text }}>{formatRequestTimestampHelper(request.requestTimestamp)}</div>
+              {/* Request Body */}
+              {rawRequestBody && (request.httpMethod === 'POST' || request.httpMethod === 'PUT' || request.httpMethod === 'PATCH') && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium" style={{ color: colors.text }}>Request Body</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs px-2 py-1 rounded font-mono" style={{ backgroundColor: requestContentType === 'xml' ? colors.info : requestContentType === 'graphql' ? colors.warning : colors.success, color: '#fff' }}>
+                        {requestContentType.toUpperCase()}
+                      </span>
+                      <button onClick={() => copyToClipboard(rawRequestBody, 'request body')} className="text-xs px-3 py-1 rounded" style={{ backgroundColor: colors.hover, color: colors.text }}>Copy</button>
+                    </div>
                   </div>
-                )}
+                  <div className="p-4 rounded-md font-mono text-sm overflow-auto" style={{ backgroundColor: colors.codeBg, maxHeight: '500px', color: colors.text }}>
+                    <pre className="whitespace-pre-wrap break-words">{getFormattedBody(rawRequestBody, requestContentType)}</pre>
+                  </div>
+                </div>
+              )}
 
-                {request.responseTimestamp && (
-                  <div className="relative">
-                    <div className="absolute left-[-24px] top-0 w-3 h-3 rounded-full" style={{ 
-                      backgroundColor: isRequestSuccessfulHelper(request) ? colors.success : colors.error 
-                    }} />
-                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Response Received</div>
-                    <div className="text-sm" style={{ color: colors.text }}>{formatRequestTimestampHelper(request.responseTimestamp)}</div>
-                  </div>
-                )}
-              </div>
-
-              {request.executionDurationMs && (
-                <div className="p-4 rounded" style={{ backgroundColor: colors.hover }}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm" style={{ color: colors.textSecondary }}>Total Duration:</span>
-                    <span className="text-xl font-semibold" style={{ color: colors.text }}>
-                      {formatExecutionTimeHelper(request.executionDurationMs)}
-                    </span>
-                  </div>
+              {!rawRequestBody && (
+                <div className="text-center py-12" style={{ color: colors.textSecondary }}>
+                  No request body content
                 </div>
               )}
             </div>
           )}
 
-          {activeTab === 'summary' && request.summary && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>API Summary Statistics</h3>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded" style={{ backgroundColor: colors.hover }}>
-                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Requests (API)</div>
-                  <div className="text-2xl font-semibold" style={{ color: colors.text }}>{request.summary.totalRequestsForApi || 0}</div>
+          {/* RESPONSE TAB */}
+          {activeTab === 'response' && (
+            <div className="space-y-6">
+              {/* Response Metadata */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: colors.textSecondary }}>Status Code</div>
+                  <div className="text-2xl font-semibold" style={{ color: getResponseColor() }}>{request.responseStatusCode || '—'}</div>
                 </div>
-                <div className="p-4 rounded" style={{ backgroundColor: colors.hover }}>
-                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Successful</div>
-                  <div className="text-2xl font-semibold" style={{ color: colors.success }}>{request.summary.successfulRequests || 0}</div>
+                <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: colors.textSecondary }}>Status Message</div>
+                  <div className="text-sm" style={{ color: colors.text }}>{request.responseStatusMessage || '—'}</div>
                 </div>
-                <div className="p-4 rounded" style={{ backgroundColor: colors.hover }}>
-                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Failed</div>
-                  <div className="text-2xl font-semibold" style={{ color: colors.error }}>{request.summary.failedRequests || 0}</div>
-                </div>
-                <div className="p-4 rounded" style={{ backgroundColor: colors.hover }}>
-                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Response Time</div>
-                  <div className="text-2xl font-semibold" style={{ color: colors.text }}>
-                    {formatExecutionTimeHelper(request.summary.averageResponseTime || 0)}
-                  </div>
+                <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: colors.textSecondary }}>Response Size</div>
+                  <div className="text-sm font-mono" style={{ color: colors.text }}>{request.responseSizeBytes ? `${(request.responseSizeBytes / 1024).toFixed(2)} KB` : '—'}</div>
                 </div>
               </div>
+
+              {/* Response Body */}
+              {rawResponseBody && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium" style={{ color: colors.text }}>Response Body</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs px-2 py-1 rounded font-mono" style={{ backgroundColor: responseContentType === 'xml' ? colors.info : responseContentType === 'graphql' ? colors.warning : colors.success, color: '#fff' }}>
+                        {responseContentType.toUpperCase()}
+                      </span>
+                      <button onClick={() => copyToClipboard(rawResponseBody, 'response body')} className="text-xs px-3 py-1 rounded" style={{ backgroundColor: colors.hover, color: colors.text }}>Copy</button>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-md font-mono text-sm overflow-auto" style={{ backgroundColor: colors.codeBg, maxHeight: '500px', color: colors.text }}>
+                    <pre className="whitespace-pre-wrap break-words">{getFormattedBody(rawResponseBody, responseContentType)}</pre>
+                  </div>
+                </div>
+              )}
+
+              {!rawResponseBody && (
+                <div className="text-center py-12" style={{ color: colors.textSecondary }}>
+                  No response body content
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* HEADERS TAB */}
+          {activeTab === 'headers' && request.headers && (
+            <div>
+              <div className="flex justify-end mb-4">
+                <button onClick={() => copyToClipboard(JSON.stringify(request.headers, null, 2), 'all headers')} className="text-xs px-3 py-1.5 rounded" style={{ backgroundColor: colors.hover, color: colors.text }}>Copy all headers</button>
+              </div>
+              <div className="space-y-1">
+                {Object.entries(request.headers).map(([key, value]) => (
+                  <div key={key} className="group flex items-start gap-4 p-3 rounded-md hover:bg-opacity-50 transition-colors" style={{ backgroundColor: colors.hover }}>
+                    <div className="w-48 flex-shrink-0">
+                      <code className="text-sm font-mono font-medium" style={{ color: colors.primary }}>{key}</code>
+                    </div>
+                    <div className="flex-1">
+                      <code className="text-sm font-mono break-all" style={{ color: colors.text }}>{String(value)}</code>
+                    </div>
+                    <button onClick={() => copyToClipboard(value, key)} className="flex-shrink-0 text-xs opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }}>Copy</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TIMELINE TAB */}
+          {activeTab === 'timeline' && (
+            <div className="space-y-6">
+              <div className="relative">
+                <div className="absolute left-4 top-0 bottom-0 w-px" style={{ backgroundColor: colors.border }} />
+                
+                <div className="relative flex items-start gap-4 pb-8">
+                  <div className="relative z-10 w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${colors.info}20` }}>
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.info }} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: colors.textSecondary }}>Request Created</div>
+                    <div className="text-sm" style={{ color: colors.text }}>{formatTimestamp(request.createdAt)}</div>
+                  </div>
+                </div>
+
+                {request.requestTimestamp && (
+                  <div className="relative flex items-start gap-4 pb-8">
+                    <div className="relative z-10 w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${colors.primary}20` }}>
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.primary }} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: colors.textSecondary }}>Request Sent</div>
+                      <div className="text-sm" style={{ color: colors.text }}>{formatTimestamp(request.requestTimestamp)}</div>
+                    </div>
+                  </div>
+                )}
+
+                {request.responseTimestamp && (
+                  <div className="relative flex items-start gap-4">
+                    <div className="relative z-10 w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${getResponseColor()}20` }}>
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getResponseColor() }} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: colors.textSecondary }}>Response Received</div>
+                      <div className="text-sm" style={{ color: colors.text }}>{formatTimestamp(request.responseTimestamp)}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {request.executionDurationMs && (
+                <div className="mt-6 p-4 rounded-md text-center" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: colors.textSecondary }}>Total Duration</div>
+                  <div className="text-2xl font-semibold" style={{ color: colors.primary }}>{formatDuration(request.executionDurationMs)}</div>
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-6 py-3 border-t" style={{ borderColor: colors.border }}>
-          {activeTab === 'request' && rawRequestBody && (
-            <>
-              <button
-                onClick={() => copyToClipboard(getFullJsonData(), 'JSON')}
-                className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
-                style={{ backgroundColor: colors.hover, color: colors.text }}
-              >
-                <Copy size={12} />
-                Copy JSON
-              </button>
-              <button
-                onClick={() => copyToClipboard(rawRequestBody, isRequestXml ? 'XML' : 'JSON')}
-                className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
-                style={{ backgroundColor: colors.info, color: 'white' }}
-              >
-                <Copy size={12} />
-                Copy {isRequestXml ? 'XML' : 'JSON'}
-              </button>
-            </>
-          )}
-          
-          {activeTab === 'response' && rawResponseBody && (
-            <>
-              <button
-                onClick={() => copyToClipboard(getFullJsonData(), 'JSON')}
-                className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
-                style={{ backgroundColor: colors.hover, color: colors.text }}
-              >
-                <Copy size={12} />
-                Copy JSON
-              </button>
-              <button
-                onClick={() => copyToClipboard(rawResponseBody, isResponseXml ? 'XML' : 'JSON')}
-                className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
-                style={{ backgroundColor: getResponseButtonColor(), color: 'white' }}
-              >
-                <Copy size={12} />
-                Copy {isResponseXml ? 'XML' : 'JSON'}
-              </button>
-            </>
-          )}
-          
-          {activeTab !== 'request' && activeTab !== 'response' && (
-            <button
-              onClick={() => copyToClipboard(getFullJsonData(), 'JSON')}
-              className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
-            >
-              <Copy size={12} />
-              Copy JSON
-            </button>
-          )}
-          
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-3 border-t flex-shrink-0" style={{ borderColor: colors.border, backgroundColor: `${colors.hover}20` }}>
+          <button
+            onClick={() => copyToClipboard(JSON.stringify(request, null, 2), 'full request')}
+            className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
+            style={{ backgroundColor: colors.hover, color: colors.text }}
+          >
+            Export JSON
+          </button>
           <button
             onClick={onClose}
-            className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
-            style={{ backgroundColor: colors.primaryDark, color: 'white' }}
+            className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
+            style={{ backgroundColor: colors.primaryDark, color: '#fff' }}
           >
             Close
           </button>
         </div>
       </div>
 
-      {/* Toast notification */}
+      {/* Toast */}
       {toast && (
-        <div className="fixed bottom-4 right-4 px-4 py-2 rounded text-sm font-medium z-[60] animate-fade-in-up"
+        <div 
+          className="fixed bottom-6 right-6 px-4 py-2 rounded-md shadow-lg z-50"
           style={{ 
-            backgroundColor: toast.type === 'error' ? colors.error : 
-                          toast.type === 'success' ? colors.success : 
-                          toast.type === 'warning' ? colors.warning : 
-                          colors.info,
-            color: 'white'
-          }}>
+            backgroundColor: toast.type === 'error' ? colors.error : toast.type === 'success' ? colors.success : colors.info,
+            color: '#fff',
+            fontSize: '13px',
+            fontWeight: 500
+          }}
+        >
           {toast.message}
         </div>
       )}
@@ -1351,7 +1346,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [toast, setToast] = useState(null);
   const [pagination, setPagination] = useState({
     page: 0,
-    size: 12,
+    size: 9,
     totalElements: 0,
     totalPages: 0
   });
@@ -1448,7 +1443,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
       OPTIONS: '#8b5cf6'
     }
   };
-
 
   // Helper functions
   const showToast = (message, type = 'info') => {
@@ -1729,186 +1723,202 @@ const getStatusText = (statusCode) => {
     }
   }, [authToken, dateRange.fromDate, dateRange.toDate]);
 
-  // ============ FIX: Updated loadRequests with abort signal support ============
-  const loadRequests = useCallback(async (isRefresh = false) => {
-    if (!authToken) {
-      showToast('Authentication required', 'error');
+ // ============ UPDATED loadRequests with path parameters fetching ============
+const loadRequests = useCallback(async (isRefresh = false) => {
+  if (!authToken) {
+    showToast('Authentication required', 'error');
+    return;
+  }
+
+  // Cancel any ongoing request
+  cancelOngoingRequest();
+  
+  // Set loading flag to prevent multiple simultaneous requests
+  isPaginationLoadingRef.current = true;
+  
+  // Create new abort controller
+  abortControllerRef.current = new AbortController();
+
+  if (isRefresh) {
+    setLoading(prev => ({ ...prev, refresh: true }));
+  }
+
+  try {
+    const filter = {
+      page: pagination.page,
+      size: pagination.size,
+      ...(selectedApiId && { apiId: selectedApiId }),
+      ...(filters.requestStatus && { requestStatus: filters.requestStatus }),
+      ...(filters.httpMethod && { httpMethod: filters.httpMethod }),
+      ...(filters.responseStatusCode && { responseStatusCode: filters.responseStatusCode }),
+      ...(filters.hasError && { hasError: filters.hasError }),
+      sort: 'createdAt,desc',
+      sortBy: 'createdAt',
+      sortDirection: 'DESC'
+    };
+
+    if (dateRange.fromDate) {
+      try {
+        const fromDateObj = new Date(dateRange.fromDate);
+        if (!isNaN(fromDateObj.getTime())) {
+          filter.fromDate = fromDateObj.toISOString();
+        }
+      } catch (e) {
+        console.error('Invalid fromDate:', dateRange.fromDate);
+      }
+    }
+    
+    if (dateRange.toDate) {
+      try {
+        const toDateObj = new Date(dateRange.toDate);
+        if (!isNaN(toDateObj.getTime())) {
+          toDateObj.setHours(23, 59, 59, 999);
+          filter.toDate = toDateObj.toISOString();
+        }
+      } catch (e) {
+        console.error('Invalid toDate:', dateRange.toDate);
+      }
+    }
+
+    if (searchQuery && searchQuery.trim()) {
+      filter.search = searchQuery.trim();
+    }
+
+    Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
+
+    console.log('Loading requests with params:', filter);
+
+    const response = await searchRequests(authToken, filter);
+    
+    if (abortControllerRef.current?.signal.aborted) {
+      console.log('Request was aborted, ignoring response');
       return;
     }
-
-    // Cancel any ongoing request
-    cancelOngoingRequest();
     
-    // Set loading flag to prevent multiple simultaneous requests
-    isPaginationLoadingRef.current = true;
-    
-    // Create new abort controller
-    abortControllerRef.current = new AbortController();
-
-    if (isRefresh) {
-      setLoading(prev => ({ ...prev, refresh: true }));
-    }
-
-    try {
-      const filter = {
-        page: pagination.page,
-        size: pagination.size,
-        ...(selectedApiId && { apiId: selectedApiId }),
-        ...(filters.requestStatus && { requestStatus: filters.requestStatus }),
-        ...(filters.httpMethod && { httpMethod: filters.httpMethod }),
-        ...(filters.responseStatusCode && { responseStatusCode: filters.responseStatusCode }),
-        ...(filters.hasError && { hasError: filters.hasError }),
-        sort: 'createdAt,desc',
-        sortBy: 'createdAt',
-        sortDirection: 'DESC'
-      };
-
-      if (dateRange.fromDate) {
-        try {
-          const fromDateObj = new Date(dateRange.fromDate);
-          if (!isNaN(fromDateObj.getTime())) {
-            filter.fromDate = fromDateObj.toISOString();
+    if (response?.responseCode === 200) {
+      const responseData = response.data;
+      
+      let requestsArray = [];
+      let totalElements = 0;
+      let currentPage = 0;
+      let totalPages = 0;
+      let apiSummariesArray = [];
+      
+      if (responseData.content && Array.isArray(responseData.content)) {
+        requestsArray = responseData.content;
+        totalElements = responseData.totalElements || 0;
+        currentPage = responseData.currentPage || 0;
+        totalPages = responseData.totalPages || 0;
+        apiSummariesArray = responseData.apiSummaries || [];
+      } else if (responseData.requests && Array.isArray(responseData.requests)) {
+        requestsArray = responseData.requests;
+        totalElements = responseData.total || 0;
+        currentPage = responseData.page || 0;
+        totalPages = responseData.pages || 0;
+        apiSummariesArray = responseData.apiSummaries || [];
+      } else if (Array.isArray(responseData)) {
+        requestsArray = responseData;
+        totalElements = requestsArray.length;
+        currentPage = 0;
+        totalPages = 1;
+      } else if (responseData.data && Array.isArray(responseData.data)) {
+        requestsArray = responseData.data;
+        totalElements = responseData.total || requestsArray.length;
+        currentPage = responseData.page || 0;
+        totalPages = responseData.pages || 1;
+      } else {
+        console.error('Unknown response structure:', Object.keys(responseData));
+      }
+      
+      // ============ FIX: Fetch details for each request to get path parameters ============
+      const requestsWithDetails = await Promise.all(
+        requestsArray.map(async (req) => {
+          try {
+            // Only fetch details if we don't have path parameters and the URL contains placeholders
+            const hasPlaceholders = req.url && (req.url.includes('{') || req.url.includes(':'));
+            if (!req.pathParameters && hasPlaceholders && req.id) {
+              const detailsResponse = await getRequestById(authToken, req.id);
+              if (detailsResponse?.responseCode === 200 && detailsResponse.data) {
+                return { ...req, ...detailsResponse.data };
+              }
+            }
+            return req;
+          } catch (err) {
+            console.error(`Failed to fetch details for request ${req.id}:`, err);
+            return req;
           }
-        } catch (e) {
-          console.error('Invalid fromDate:', dateRange.fromDate);
-        }
-      }
+        })
+      );
       
-      if (dateRange.toDate) {
-        try {
-          const toDateObj = new Date(dateRange.toDate);
-          if (!isNaN(toDateObj.getTime())) {
-            toDateObj.setHours(23, 59, 59, 999);
-            filter.toDate = toDateObj.toISOString();
-          }
-        } catch (e) {
-          console.error('Invalid toDate:', dateRange.toDate);
-        }
-      }
-
-      if (searchQuery && searchQuery.trim()) {
-        filter.search = searchQuery.trim();
-      }
-
-      Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
-
-      console.log('Loading requests with params:', filter);
-
-      // Pass abort signal to the API call if your API function supports it
-      const response = await searchRequests(authToken, filter);
+      const sortedRequests = [...requestsWithDetails].sort((a, b) => {
+        const timeA = new Date(a.requestTimestamp || a.createdAt || 0).getTime();
+        const timeB = new Date(b.requestTimestamp || b.createdAt || 0).getTime();
+        return timeB - timeA;
+      });
       
-      // Check if this request was aborted
-      if (abortControllerRef.current?.signal.aborted) {
-        console.log('Request was aborted, ignoring response');
-        return;
-      }
+      console.log('Extracted requests with path params:', sortedRequests.length, 'requests');
       
-      if (response?.responseCode === 200) {
-        const responseData = response.data;
-        
-        let requestsArray = [];
-        let totalElements = 0;
-        let currentPage = 0;
-        let totalPages = 0;
-        let apiSummariesArray = [];
-        
-        if (responseData.content && Array.isArray(responseData.content)) {
-          requestsArray = responseData.content;
-          totalElements = responseData.totalElements || 0;
-          currentPage = responseData.currentPage || 0;
-          totalPages = responseData.totalPages || 0;
-          apiSummariesArray = responseData.apiSummaries || [];
-        } else if (responseData.requests && Array.isArray(responseData.requests)) {
-          requestsArray = responseData.requests;
-          totalElements = responseData.total || 0;
-          currentPage = responseData.page || 0;
-          totalPages = responseData.pages || 0;
-          apiSummariesArray = responseData.apiSummaries || [];
-        } else if (Array.isArray(responseData)) {
-          requestsArray = responseData;
-          totalElements = requestsArray.length;
-          currentPage = 0;
-          totalPages = 1;
-        } else if (responseData.data && Array.isArray(responseData.data)) {
-          requestsArray = responseData.data;
-          totalElements = responseData.total || requestsArray.length;
-          currentPage = responseData.page || 0;
-          totalPages = responseData.pages || 1;
-        } else {
-          console.error('Unknown response structure:', Object.keys(responseData));
-        }
-        
-        const sortedRequests = [...requestsArray].sort((a, b) => {
-          const timeA = new Date(a.requestTimestamp || a.createdAt || 0).getTime();
-          const timeB = new Date(b.requestTimestamp || b.createdAt || 0).getTime();
+      setRequests(sortedRequests);
+      
+      if (apiSummariesArray.length > 0) {
+        const sortedApiSummaries = [...apiSummariesArray].sort((a, b) => {
+          const timeA = a.lastRequestTime ? new Date(a.lastRequestTime).getTime() : 0;
+          const timeB = b.lastRequestTime ? new Date(b.lastRequestTime).getTime() : 0;
           return timeB - timeA;
         });
-        
-        console.log('Extracted requests:', sortedRequests.length, 'requests');
-        
-        setRequests(sortedRequests);
-        
-        if (apiSummariesArray.length > 0) {
-          const sortedApiSummaries = [...apiSummariesArray].sort((a, b) => {
-            const timeA = a.lastRequestTime ? new Date(a.lastRequestTime).getTime() : 0;
-            const timeB = b.lastRequestTime ? new Date(b.lastRequestTime).getTime() : 0;
-            return timeB - timeA;
-          });
-          setFilteredApiSummaries(sortedApiSummaries);
-          if (!searchQuery && !selectedApiId && Object.keys(filters).length === 0) {
-            setApiSummaries(sortedApiSummaries);
-            setSidebarTotalItems(sortedApiSummaries.length);
-          }
+        setFilteredApiSummaries(sortedApiSummaries);
+        if (!searchQuery && !selectedApiId && Object.keys(filters).length === 0) {
+          setApiSummaries(sortedApiSummaries);
+          setSidebarTotalItems(sortedApiSummaries.length);
         }
-        
-        setPagination(prev => ({
-          ...prev,
-          page: currentPage,
-          totalElements: totalElements,
-          totalPages: totalPages
-        }));
+      }
+      
+      setPagination(prev => ({
+        ...prev,
+        page: currentPage,
+        totalElements: totalElements,
+        totalPages: totalPages
+      }));
 
-        if (sortedRequests.length === 0) {
-          if (searchQuery && searchQuery.trim()) {
-            showToast(`No requests found matching "${searchQuery}"`, 'info');
-          } else if (selectedApiId) {
-            const selectedApi = apiSummaries.find(api => api.apiId === selectedApiId);
-            if (selectedApi && selectedApi.totalRequests > 0) {
-              showToast(`No requests found for ${selectedApi.apiName} in the selected date range. Try expanding the date range.`, 'info');
-            }
-          } else if (Object.keys(filters).length > 0) {
-            showToast('No requests match the selected filters', 'info');
-          } else {
-            showToast(`No requests found in the selected date range`, 'info');
+      if (sortedRequests.length === 0) {
+        if (searchQuery && searchQuery.trim()) {
+          showToast(`No requests found matching "${searchQuery}"`, 'info');
+        } else if (selectedApiId) {
+          const selectedApi = apiSummaries.find(api => api.apiId === selectedApiId);
+          if (selectedApi && selectedApi.totalRequests > 0) {
+            showToast(`No requests found for ${selectedApi.apiName} in the selected date range. Try expanding the date range.`, 'info');
           }
+        } else if (Object.keys(filters).length > 0) {
+          showToast('No requests match the selected filters', 'info');
         } else {
-          if (searchQuery && searchQuery.trim()) {
-            showToast(`Found ${sortedRequests.length} requests matching "${searchQuery}"`, 'success');
-          }
+          showToast(`No requests found in the selected date range`, 'info');
         }
       } else {
-        console.error('Failed to load requests:', response?.message);
-        showToast(response?.message || 'Failed to load requests', 'error');
+        if (searchQuery && searchQuery.trim()) {
+          showToast(`Found ${sortedRequests.length} requests matching "${searchQuery}"`, 'success');
+        }
       }
-    } catch (error) {
-      // Don't show error for aborted requests
-      if (error.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
-        console.log('Request was aborted');
-        return;
-      }
-      console.error('Error loading requests:', error);
-      showToast(error.message || 'Failed to load requests', 'error');
-    } finally {
-      isPaginationLoadingRef.current = false;
-      if (isRefresh) {
-        setLoading(prev => ({ ...prev, refresh: false }));
-      }
-      // Clear abort controller
-      if (abortControllerRef.current?.signal.aborted === false) {
-        abortControllerRef.current = null;
-      }
+    } else {
+      console.error('Failed to load requests:', response?.message);
+      showToast(response?.message || 'Failed to load requests', 'error');
     }
-  }, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, apiSummaries, cancelOngoingRequest]);
+  } catch (error) {
+    if (error.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
+      console.log('Request was aborted');
+      return;
+    }
+    console.error('Error loading requests:', error);
+    showToast(error.message || 'Failed to load requests', 'error');
+  } finally {
+    isPaginationLoadingRef.current = false;
+    if (isRefresh) {
+      setLoading(prev => ({ ...prev, refresh: false }));
+    }
+    if (abortControllerRef.current?.signal.aborted === false) {
+      abortControllerRef.current = null;
+    }
+  }
+}, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, apiSummaries, cancelOngoingRequest]);
 
   const handleFilterApply = (newFilters) => {
     setFilters(newFilters);
@@ -2392,8 +2402,7 @@ const getStatusText = (statusCode) => {
     console.log('First request:', requests[0]);
   }, [requests]);
 
-  // Render requests table - FIXED VERSION with consistent colors
-const renderRequestsTable = () => {
+  const renderRequestsTable = () => {
   console.log('Rendering table with requests:', requests.length, 'requests');
   console.log('Loading states:', loading);
   
@@ -2407,21 +2416,21 @@ const renderRequestsTable = () => {
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Method</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Request Name</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>API</th>
+              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>API / URL</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status Code</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Duration</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
-            </tr>
+             </tr>
           </thead>
           <tbody>
             {requests.map((request, index) => {
               const sequentialNumber = (pagination.page * pagination.size) + index + 1;
               const statusCode = request.responseStatusCode;
-              // Use the same color function for both
               const statusColor = getStatusCodeColorHelper(statusCode);
               const statusText = getStatusText(statusCode);
+              const resolvedUrl = resolveUrlWithPathParams(request.url, request);
               
               return (
                 <tr 
@@ -2434,7 +2443,7 @@ const renderRequestsTable = () => {
                     <span className="text-sm font-mono" style={{ color: colors.textSecondary }}>
                       {sequentialNumber}
                     </span>
-                  </td>
+                   </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
@@ -2448,7 +2457,7 @@ const renderRequestsTable = () => {
                         {statusText}
                       </span>
                     </div>
-                  </td>
+                   </td>
                   <td className="py-3 px-4">
                     <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
                       backgroundColor: getMethodColor(request.httpMethod),
@@ -2456,33 +2465,38 @@ const renderRequestsTable = () => {
                     }}>
                       {request.httpMethod}
                     </span>
-                  </td>
+                   </td>
                   <td className="py-3 px-4">
                     <span className="text-sm" style={{ color: colors.text }}>{request.requestName || 'N/A'}</span>
-                  </td>
+                   </td>
                   <td className="py-3 px-4">
-                    <span className="text-xs" style={{ color: colors.textSecondary }}>{request.apiCode || request.apiName || 'N/A'}</span>
-                  </td>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-medium" style={{ color: colors.textSecondary }}>{request.apiCode || request.apiName || 'N/A'}</span>
+                      <span className="text-xs font-mono mt-1 truncate max-w-xs" style={{ color: colors.textTertiary }} title={resolvedUrl}>
+                        {resolvedUrl}
+                      </span>
+                    </div>
+                   </td>
                   <td className="py-3 px-4">
                     <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(request.responseStatusCode) }}>
                       {request.responseStatusCode || '-'}
                     </span>
-                  </td>
+                   </td>
                   <td className="py-3 px-4">
                     <span className="text-sm" style={{ color: colors.text }}>
                       {formatExecutionTimeHelper(request.executionDurationMs)}
                     </span>
-                  </td>
+                   </td>
                   <td className="py-3 px-4">
                     <span className="text-xs" style={{ color: colors.textSecondary }}>
                       {formatTimestamp(request.requestTimestamp || request.createdAt)}
                     </span>
-                  </td>
+                   </td>
                   <td className="py-3 px-4">
                     <span className="text-xs font-mono" style={{ color: colors.textSecondary }}>
                       {request.correlationId?.substring(0, 8) || 'N/A'}...
                     </span>
-                  </td>
+                   </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
                       <button
@@ -2498,7 +2512,9 @@ const renderRequestsTable = () => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          copyToClipboard(getFullJsonData(), 'JSON');
+                          const jsonData = JSON.stringify(request, null, 2);
+                          copyToClipboard(jsonData);
+                          showToast('Request data copied to clipboard!', 'success');
                         }}
                         className="p-1 rounded hover:bg-opacity-50 transition-colors"
                         style={{ backgroundColor: colors.hover }}
@@ -2508,7 +2524,9 @@ const renderRequestsTable = () => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteRequest(request.id);
+                          if (window.confirm('Are you sure you want to delete this request?')) {
+                            handleDeleteRequest(request.id);
+                          }
                         }}
                         className="p-1 rounded hover:bg-opacity-50 transition-colors"
                         style={{ backgroundColor: colors.hover }}
@@ -2516,8 +2534,8 @@ const renderRequestsTable = () => {
                         <Trash2 size={12} style={{ color: colors.error }} />
                       </button>
                     </div>
-                  </td>
-                </tr>
+                   </td>
+                 </tr>
               );
             })}
             
@@ -2530,7 +2548,7 @@ const renderRequestsTable = () => {
                   <p className="text-sm" style={{ color: colors.textSecondary }}>
                     {searchQuery ? `No requests matching "${searchQuery}"` : 'Try adjusting your filters or date range'}
                   </p>
-                </td>
+                 </td>
               </tr>
             )}
 
@@ -2540,13 +2558,13 @@ const renderRequestsTable = () => {
                 <td colSpan="10" className="text-center py-12">
                   <RefreshCw size={32} className="animate-spin mx-auto mb-4" style={{ color: colors.textSecondary }} />
                   <p className="text-sm" style={{ color: colors.textSecondary }}>Loading requests...</p>
-                </td>
+                 </td>
               </tr>
             )}
           </tbody>
         </table>
 
-        {/* Pagination - Always show if there are requests or totalElements > 0 */}
+        {/* Pagination */}
         {pagination.totalPages > 0 && (
           <div className="flex items-center justify-between mt-4 py-3 px-4" style={{ backgroundColor: colors.card, borderTop: `1px solid ${colors.border}` }}>
             <div className="text-sm" style={{ color: colors.textSecondary }}>
@@ -2715,7 +2733,7 @@ const renderRequestsTable = () => {
               <Search size={14} className="absolute left-2 top-1/2 transform -translate-y-1/2" style={{ color: colors.textSecondary }} />
               <input
                 type="text"
-                placeholder="Search by request name, correlation ID, or URL..."
+                placeholder="Search api request here..."
                 value={searchQuery}
                 onChange={handleSearchChange}
                 onKeyPress={(e) => {
