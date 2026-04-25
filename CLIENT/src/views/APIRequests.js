@@ -2467,7 +2467,11 @@ const loadRequests = useCallback(async (isRefresh = false) => {
                     </span>
                    </td>
                   <td className="py-3 px-4">
-                    <span className="text-sm" style={{ color: colors.text }}>{request.requestName || 'N/A'}</span>
+                    <span className="text-sm" style={{ color: colors.text }}>
+                      {request.requestName 
+                        ? request.requestName.replace('Execution: ', '') 
+                        : 'N/A'}
+                    </span>
                    </td>
                   <td className="py-3 px-4">
                     <div className="flex flex-col">

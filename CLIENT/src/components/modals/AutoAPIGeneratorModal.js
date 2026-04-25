@@ -3622,6 +3622,8 @@ const handlePreviewConfirm = async () => {
             // Basic API Info
             apiName: apiDetails.apiName,
             apiCode: apiDetails.apiCode,
+            apiName: (apiDetails.apiName || '').toUpperCase(),
+            apiCode: (apiDetails.apiCode || '').toUpperCase().replace(/\s+/g, '_'),
             description: apiDetails.description,
             databaseType: actualDatabaseType, // Use the correctly determined database type
             version: apiDetails.version,
@@ -5984,7 +5986,17 @@ const getDefaultSoapActionForProtocol = useCallback(() => {
 
   // Update the handleApiDetailChange function (around line 1535)
 const handleApiDetailChange = (field, value) => {
-  setApiDetails(prev => ({ ...prev, [field]: value }));
+  let processedValue = value;
+    
+    if (field === 'apiName') {
+      // Convert to uppercase only
+      processedValue = value.toUpperCase();
+    } else if (field === 'apiCode') {
+      // Convert to uppercase AND replace spaces with underscores
+      processedValue = value.toUpperCase().replace(/\s+/g, '_');
+    }
+    
+    setApiDetails(prev => ({ ...prev, [field]: processedValue }));
   
   // Clear validation error for this field
   setValidationErrors(prev => ({ ...prev, [field]: null }));
@@ -7352,8 +7364,8 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     
     // ============ SET API DETAILS ============
     setApiDetails({
-        apiName: sourceData.apiName || '',
-        apiCode: sourceData.apiCode || '',
+        apiName: (sourceData.apiName || '').toUpperCase(),
+        apiCode: (sourceData.apiCode || '').toUpperCase().replace(/\s+/g, '_'),
         description: sourceData.description || '',
         version: sourceData.version || '1.0.0',
         status: sourceData.status || 'ACTIVE',
@@ -11126,7 +11138,7 @@ COMMIT;
                 'apiName',
                 'API Name',
                 apiDetails.apiName,
-                (field, value) => handleApiDetailChange(field, value),
+                handleApiDetailChange,
                 'Users API'
               )}
 
@@ -11134,15 +11146,10 @@ COMMIT;
                 'apiCode',
                 'API Code',
                 apiDetails.apiCode,
-                (field, value) => {
-                  // Transform the value: uppercase and replace spaces with underscores
-                  let transformedValue = value.toUpperCase();
-                  transformedValue = transformedValue.replace(/\s+/g, '_');
-                  handleApiDetailChange(field, transformedValue);
-                },
+                handleApiDetailChange,
                 'GET_USERS',
                 'text',
-                isEditing // Disable code editing when editing
+                isEditing
               )}
 
               {/* Only show HTTP Method for REST protocol */}
