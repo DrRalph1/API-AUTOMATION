@@ -438,18 +438,120 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
     return `${(time / 60000).toFixed(2)}m`;
   };
 
-  const copyToClipboard = async (text, field) => {
-    if (!text) {
-      showToast('No content to copy', 'warning');
+  // Helper function to parse and format JSON body properly
+  const getCleanBodyContent = (body) => {
+    if (!body) return null;
+    
+    // If it's already an object, return it as formatted JSON
+    if (typeof body === 'object') {
+      return JSON.stringify(body, null, 2);
+    }
+    
+    // If it's a string, try to parse it as JSON
+    if (typeof body === 'string') {
+      try {
+        const parsed = JSON.parse(body);
+        return JSON.stringify(parsed, null, 2);
+      } catch (e) {
+        // If it's not valid JSON, return as is
+        return body;
+      }
+    }
+    
+    return String(body);
+  };
+
+  // Get color based on HTTP method for request button
+  const getMethodButtonColor = () => {
+    const method = request.httpMethod;
+    const methodColors = {
+      GET: colors.success,
+      POST: colors.primary,
+      PUT: colors.warning,
+      DELETE: colors.error,
+      PATCH: '#8b5cf6',
+      HEAD: colors.textSecondary,
+      OPTIONS: '#8b5cf6'
+    };
+    return methodColors[method] || colors.primary;
+  };
+
+  // Get color based on status code for response button
+  const getStatusButtonColor = () => {
+    const statusCode = request.responseStatusCode;
+    if (!statusCode) return colors.textSecondary;
+    if (statusCode >= 200 && statusCode < 300) return colors.success;
+    if (statusCode >= 300 && statusCode < 400) return colors.info;
+    if (statusCode >= 400 && statusCode < 500) return colors.warning;
+    if (statusCode >= 500) return colors.error;
+    return colors.textSecondary;
+  };
+
+  // Copy function for REQUEST tab - copies ONLY the request body
+  const copyRequestBodyOnly = async () => {
+    if (!rawRequestBody) {
+      showToast('No request body to copy', 'warning');
       return;
     }
     
-    const contentToCopy = typeof text === 'string' ? text : JSON.stringify(text, null, 2);
+    const cleanBody = getCleanBodyContent(rawRequestBody);
+    try {
+      await navigator.clipboard.writeText(cleanBody);
+      setCopiedField('request_body');
+      showToast('Request body copied to clipboard!', 'success');
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (err) {
+      const textarea = document.createElement('textarea');
+      textarea.value = cleanBody;
+      textarea.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        showToast('Request body copied to clipboard!', 'success');
+      } catch {
+        showToast('Failed to copy', 'error');
+      }
+      document.body.removeChild(textarea);
+    }
+  };
+
+  // Copy function for RESPONSE tab - copies ONLY the response body
+  const copyResponseBodyOnly = async () => {
+    if (!rawResponseBody) {
+      showToast('No response body to copy', 'warning');
+      return;
+    }
     
+    const cleanBody = getCleanBodyContent(rawResponseBody);
+    try {
+      await navigator.clipboard.writeText(cleanBody);
+      setCopiedField('response_body');
+      showToast('Response body copied to clipboard!', 'success');
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (err) {
+      const textarea = document.createElement('textarea');
+      textarea.value = cleanBody;
+      textarea.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        showToast('Response body copied to clipboard!', 'success');
+      } catch {
+        showToast('Failed to copy', 'error');
+      }
+      document.body.removeChild(textarea);
+    }
+  };
+
+  // Copy function for OVERVIEW tab - copies the full request JSON
+  const copyFullRequestJSON = async () => {
+    const contentToCopy = JSON.stringify(request, null, 2);
     try {
       await navigator.clipboard.writeText(contentToCopy);
-      setCopiedField(field);
-      showToast(`Copied to clipboard`, 'success');
+      setCopiedField('full_request');
+      showToast('Full request JSON copied to clipboard!', 'success');
       setTimeout(() => setCopiedField(null), 2000);
     } catch (err) {
       const textarea = document.createElement('textarea');
@@ -457,12 +559,11 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
       textarea.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
       document.body.appendChild(textarea);
       textarea.select();
-      
       try {
         document.execCommand('copy');
-        showToast(`Copied to clipboard`, 'success');
+        showToast('Full request JSON copied to clipboard!', 'success');
       } catch {
-        showToast(`Failed to copy`, 'error');
+        showToast('Failed to copy', 'error');
       }
       document.body.removeChild(textarea);
     }
@@ -485,6 +586,10 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
     { id: 'headers', label: 'Headers' },
     { id: 'timeline', label: 'Timeline' }
   ];
+
+  // Helper to check if request/response body exists
+  const hasRequestBody = rawRequestBody && (request.httpMethod === 'POST' || request.httpMethod === 'PUT' || request.httpMethod === 'PATCH');
+  const hasResponseBody = rawResponseBody;
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50" style={{ padding: '2rem' }}>
@@ -533,6 +638,8 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
               </div>
             </div>
           </div>
+          
+          {/* Close button in header */}
           <button
             onClick={onClose}
             className="w-8 h-8 rounded-md flex items-center justify-center transition-colors hover:bg-opacity-80"
@@ -671,7 +778,11 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-medium" style={{ color: colors.text }}>Path Parameters</h3>
-                    <button onClick={() => copyToClipboard(JSON.stringify(request.pathParameters, null, 2), 'path parameters')} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>Copy all</button>
+                    <button onClick={() => {
+                      const content = JSON.stringify(request.pathParameters, null, 2);
+                      navigator.clipboard.writeText(content);
+                      showToast('Path parameters copied!', 'success');
+                    }} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>Copy all</button>
                   </div>
                   <div className="space-y-2">
                     {Object.entries(request.pathParameters).map(([key, value]) => (
@@ -679,7 +790,10 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                         <code className="text-sm font-mono font-medium" style={{ color: colors.primary }}>{key}</code>
                         <div className="flex items-center gap-3">
                           <code className="text-sm font-mono" style={{ color: colors.text }}>{String(value)}</code>
-                          <button onClick={() => copyToClipboard(value, key)} className="text-xs opacity-0 hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }}>Copy</button>
+                          <button onClick={() => {
+                            navigator.clipboard.writeText(String(value));
+                            showToast(`Copied ${key}!`, 'success');
+                          }} className="text-xs opacity-0 hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }}>Copy</button>
                         </div>
                       </div>
                     ))}
@@ -692,7 +806,11 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-medium" style={{ color: colors.text }}>Query Parameters</h3>
-                    <button onClick={() => copyToClipboard(JSON.stringify(request.queryParameters, null, 2), 'query parameters')} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>Copy all</button>
+                    <button onClick={() => {
+                      const content = JSON.stringify(request.queryParameters, null, 2);
+                      navigator.clipboard.writeText(content);
+                      showToast('Query parameters copied!', 'success');
+                    }} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>Copy all</button>
                   </div>
                   <div className="space-y-2">
                     {Object.entries(request.queryParameters).map(([key, value]) => (
@@ -700,7 +818,10 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                         <code className="text-sm font-mono font-medium" style={{ color: colors.info }}>{key}</code>
                         <div className="flex items-center gap-3">
                           <code className="text-sm font-mono break-all text-right" style={{ color: colors.text }}>{String(value)}</code>
-                          <button onClick={() => copyToClipboard(value, key)} className="text-xs opacity-0 hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }}>Copy</button>
+                          <button onClick={() => {
+                            navigator.clipboard.writeText(String(value));
+                            showToast(`Copied ${key}!`, 'success');
+                          }} className="text-xs opacity-0 hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }}>Copy</button>
                         </div>
                       </div>
                     ))}
@@ -709,7 +830,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
               )}
 
               {/* Request Body */}
-              {rawRequestBody && (request.httpMethod === 'POST' || request.httpMethod === 'PUT' || request.httpMethod === 'PATCH') && (
+              {hasRequestBody && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-medium" style={{ color: colors.text }}>Request Body</h3>
@@ -717,7 +838,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                       <span className="text-xs px-2 py-1 rounded font-mono" style={{ backgroundColor: requestContentType === 'xml' ? colors.info : requestContentType === 'graphql' ? colors.warning : colors.success, color: '#fff' }}>
                         {requestContentType.toUpperCase()}
                       </span>
-                      <button onClick={() => copyToClipboard(rawRequestBody, 'request body')} className="text-xs px-3 py-1 rounded" style={{ backgroundColor: colors.hover, color: colors.text }}>Copy</button>
                     </div>
                   </div>
                   <div className="p-4 rounded-md font-mono text-sm overflow-auto" style={{ backgroundColor: colors.codeBg, maxHeight: '500px', color: colors.text }}>
@@ -726,7 +846,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 </div>
               )}
 
-              {!rawRequestBody && (
+              {!hasRequestBody && (
                 <div className="text-center py-12" style={{ color: colors.textSecondary }}>
                   No request body content
                 </div>
@@ -754,7 +874,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
               </div>
 
               {/* Response Body */}
-              {rawResponseBody && (
+              {hasResponseBody && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-medium" style={{ color: colors.text }}>Response Body</h3>
@@ -762,7 +882,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                       <span className="text-xs px-2 py-1 rounded font-mono" style={{ backgroundColor: responseContentType === 'xml' ? colors.info : responseContentType === 'graphql' ? colors.warning : colors.success, color: '#fff' }}>
                         {responseContentType.toUpperCase()}
                       </span>
-                      <button onClick={() => copyToClipboard(rawResponseBody, 'response body')} className="text-xs px-3 py-1 rounded" style={{ backgroundColor: colors.hover, color: colors.text }}>Copy</button>
                     </div>
                   </div>
                   <div className="p-4 rounded-md font-mono text-sm overflow-auto" style={{ backgroundColor: colors.codeBg, maxHeight: '500px', color: colors.text }}>
@@ -771,7 +890,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 </div>
               )}
 
-              {!rawResponseBody && (
+              {!hasResponseBody && (
                 <div className="text-center py-12" style={{ color: colors.textSecondary }}>
                   No response body content
                 </div>
@@ -783,7 +902,11 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
           {activeTab === 'headers' && request.headers && (
             <div>
               <div className="flex justify-end mb-4">
-                <button onClick={() => copyToClipboard(JSON.stringify(request.headers, null, 2), 'all headers')} className="text-xs px-3 py-1.5 rounded" style={{ backgroundColor: colors.hover, color: colors.text }}>Copy all headers</button>
+                <button onClick={() => {
+                  const content = JSON.stringify(request.headers, null, 2);
+                  navigator.clipboard.writeText(content);
+                  showToast('All headers copied!', 'success');
+                }} className="text-xs px-3 py-1.5 rounded" style={{ backgroundColor: colors.hover, color: colors.text }}>Copy all headers</button>
               </div>
               <div className="space-y-1">
                 {Object.entries(request.headers).map(([key, value]) => (
@@ -794,7 +917,10 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                     <div className="flex-1">
                       <code className="text-sm font-mono break-all" style={{ color: colors.text }}>{String(value)}</code>
                     </div>
-                    <button onClick={() => copyToClipboard(value, key)} className="flex-shrink-0 text-xs opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }}>Copy</button>
+                    <button onClick={() => {
+                      navigator.clipboard.writeText(String(value));
+                      showToast(`Copied ${key}!`, 'success');
+                    }} className="flex-shrink-0 text-xs opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }}>Copy</button>
                   </div>
                 ))}
               </div>
@@ -852,15 +978,45 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer with Copy and Close buttons */}
         <div className="flex items-center justify-end gap-3 px-6 py-3 border-t flex-shrink-0" style={{ borderColor: colors.border, backgroundColor: `${colors.hover}20` }}>
-          <button
-            onClick={() => copyToClipboard(JSON.stringify(request, null, 2), 'full request')}
-            className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
-            style={{ backgroundColor: colors.hover, color: colors.text }}
-          >
-            Export JSON
-          </button>
+          {/* Overview Tab Footer Copy Button */}
+          {activeTab === 'overview' && (
+            <button
+              onClick={copyFullRequestJSON}
+              className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2"
+              style={{ backgroundColor: colors.primary, color: '#fff' }}
+            >
+              <Copy size={14} />
+              Copy JSON
+            </button>
+          )}
+          
+          {/* Request Tab Footer Copy Button */}
+          {activeTab === 'request' && hasRequestBody && (
+            <button
+              onClick={copyRequestBodyOnly}
+              className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2"
+              style={{ backgroundColor: getMethodButtonColor(), color: '#fff' }}
+            >
+              <Copy size={14} />
+              Copy Request
+            </button>
+          )}
+          
+          {/* Response Tab Footer Copy Button */}
+          {activeTab === 'response' && hasResponseBody && (
+            <button
+              onClick={copyResponseBodyOnly}
+              className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2"
+              style={{ backgroundColor: getStatusButtonColor(), color: '#fff' }}
+            >
+              <Copy size={14} />
+              Copy Response
+            </button>
+          )}
+          
+          {/* Close Button */}
           <button
             onClick={onClose}
             className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"

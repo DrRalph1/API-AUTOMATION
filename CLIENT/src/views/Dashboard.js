@@ -166,7 +166,7 @@ const StatCard = React.memo(({ title, value, icon: Icon, change, color, onClick,
   ) : (
     <Minus size={12} className="mr-0.5" />
   )}
-  {Math.abs(change)}%
+  {Math.abs(change)}
 </div>
         </div>
       </div>
