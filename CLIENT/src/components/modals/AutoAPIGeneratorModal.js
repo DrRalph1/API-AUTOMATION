@@ -2579,6 +2579,9 @@ export default function AutoAPIGeneratorModal({
   const [isEditingCustomQuery, setIsEditingCustomQuery] = useState(false);
   const [originalCustomQuery, setOriginalCustomQuery] = useState('');
 
+  const [responseSchemaVersion, setResponseSchemaVersion] = useState(0);
+  const [errorSchemaVersion, setErrorSchemaVersion] = useState(0);
+
   // ============ NEW: Protocol Selection State ============
   const [protocolType, setProtocolType] = useState('rest'); // 'rest', 'soap', 'graphql'
   
@@ -5065,110 +5068,22 @@ useEffect(() => {
 }, [isOpen, customQueryText, extractedParams, databaseType]);
 
 
-  // Auto-generate sample response JSON when response mappings change
+
+// Single useEffect for response schema regeneration
 useEffect(() => {
   // Only auto-generate for REST and GraphQL protocols
   if (protocolType === 'rest' || protocolType === 'graphql') {
-    // Don't auto-generate if there are no response mappings
-    if (getOutMappings().length === 0) return;
+    const outMappings = getOutMappings();
+    if (outMappings.length === 0) return;
     
-    // Check if the current success schema is the default/empty one
-    const currentSchema = responseBody.successSchema;
-    const isDefaultOrEmpty = !currentSchema || 
-      currentSchema === '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}' ||
-      currentSchema === '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully",\n  "metadata": {\n    "timestamp": "{{timestamp}}",\n    "apiVersion": "1.0.0",\n    "requestId": "{{requestId}}"\n  }\n}' ||
-      currentSchema === '';
+    console.log('🔄 Response mappings changed, regenerating schema...');
+    console.log('📊 Mappings count:', outMappings.length);
+    console.log('📊 Mapping types:', outMappings.map(m => ({ field: m.apiField, type: m.apiType })));
     
-    // Only auto-generate if it's the default schema (not user-modified)
-    if (isDefaultOrEmpty) {
-      console.log('🔄 Auto-generating sample response from mappings...');
-      
-      if (protocolType === 'graphql') {
-        // GraphQL response generation
-        const operationName = graphqlConfig.operationName || 'operation';
-        const responseData = {};
-        getOutMappings().slice(0, 50).forEach(mapping => {
-          if (mapping.apiType === 'integer') {
-            responseData[mapping.apiField] = 123;
-          } else if (mapping.apiType === 'boolean') {
-            responseData[mapping.apiField] = true;
-          } else if (mapping.format === 'date-time') {
-            responseData[mapping.apiField] = '2024-01-01T00:00:00Z';
-          } else {
-            responseData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
-          }
-        });
-        
-        const graphqlSuccess = JSON.stringify({
-          data: { [operationName]: responseData }
-        }, null, 2);
-        
-        handleResponseBodyChange('successSchema', graphqlSuccess);
-        
-        const graphqlError = JSON.stringify({
-          errors: [{
-            message: 'Error description',
-            locations: [{ line: 1, column: 1 }],
-            path: [operationName],
-            extensions: { code: 'ERROR_CODE' }
-          }]
-        }, null, 2);
-        
-        handleResponseBodyChange('errorSchema', graphqlError);
-        
-      } else {
-        // REST response generation
-        const sampleData = {};
-        getOutMappings().slice(0, 50).forEach(mapping => {
-          if (mapping.apiType === 'integer') {
-            sampleData[mapping.apiField] = 123;
-          } else if (mapping.apiType === 'boolean') {
-            sampleData[mapping.apiField] = true;
-          } else if (mapping.format === 'date-time') {
-            sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
-          } else if (mapping.apiType === 'array') {
-            sampleData[mapping.apiField] = [];
-          } else if (mapping.apiType === 'object') {
-            sampleData[mapping.apiField] = {};
-          } else {
-            sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
-          }
-        });
-        
-        const restSuccess = JSON.stringify({
-          success: true,
-          data: sampleData,
-          message: 'Request processed successfully',
-          metadata: {
-            timestamp: '{{timestamp}}',
-            apiVersion: apiDetails.version,
-            requestId: '{{requestId}}'
-          }
-        }, null, 2);
-        
-        handleResponseBodyChange('successSchema', restSuccess);
-        
-        const restError = JSON.stringify({
-          success: false,
-          error: {
-            code: 'ERROR_CODE',
-            message: 'Error description',
-            details: {}
-          }
-        }, null, 2);
-        
-        // Only update error schema if it's the default
-        const currentErrorSchema = responseBody.errorSchema;
-        const isDefaultError = !currentErrorSchema || 
-          currentErrorSchema === '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}';
-        
-        if (isDefaultError) {
-          handleResponseBodyChange('errorSchema', restError);
-        }
-      }
-    }
+    // Call the regenerateResponseSchema function
+    regenerateResponseSchema();
   }
-}, [responseMappings, parameters, protocolType, graphqlConfig.operationName, apiDetails.version]);
+}, [responseMappings, protocolType, graphqlConfig.operationName, apiDetails.version]);
 
 
 // Force SOAP request body to update when parameters change
@@ -5416,6 +5331,13 @@ useEffect(() => {
             requestId: '{{requestId}}'
           }
         }, null, 2);
+        
+        console.log('📊 Setting success schema to:', restSuccess);
+        console.log('📊 Current success schema is:', responseBody.successSchema);
+        console.log('📊 Are they different?', restSuccess !== responseBody.successSchema);
+
+        setResponseBody(prev => ({ ...prev, successSchema: restSuccess }));
+        setResponseSchemaVersion(prev => prev + 1);
         
         handleResponseBodyChange('successSchema', restSuccess);
       }
@@ -6121,29 +6043,38 @@ const handleApiDetailChange = (field, value) => {
     }
   }, [apiDetails.endpointPath, setApiDetails, protocolType]);
 
-  // Update the handleParameterChange function to also update request body sample
+  
+  
+  // Update the handleParameterChange function to properly create new objects
 const handleParameterChange = (id, field, value) => {
   setParameters(prevParams => {
     // First, find the current parameter to check its type
     const currentParam = prevParams.find(p => p.id === id);
     
-    // Update the parameter
-    let updatedParams = prevParams.map(param => 
-      param.id === id ? { ...param, [field]: value } : param
-    );
+    // IMPORTANT: Create a new array with all parameters
+    let updatedParams = prevParams.map(param => {
+      // Only update the specific parameter
+      if (param.id !== id) {
+        return param; // Return unchanged parameter (keep reference)
+      }
+      
+      // Return a NEW object for the changed parameter
+      return { ...param, [field]: value };
+    });
     
     // If changing oracleType to AUTOGENERATE
     if (field === 'oracleType' && value === 'AUTOGENERATE') {
       const timestamp = getCurrentTimestamp();
-      updatedParams = updatedParams.map(param => 
-        param.id === id ? { 
+      updatedParams = updatedParams.map(param => {
+        if (param.id !== id) return param;
+        return { 
           ...param, 
           required: false,
           example: timestamp,
           defaultValue: timestamp,
           description: param.description || 'Auto-generated timestamp field'
-        } : param
-      );
+        };
+      });
     }
     
     // If changing oracleType FROM AUTOGENERATE to something else
@@ -6167,42 +6098,45 @@ const handleParameterChange = (id, field, value) => {
         defaultExample = 'binary_data';
       }
       
-      updatedParams = updatedParams.map(param => 
-        param.id === id ? { 
+      updatedParams = updatedParams.map(param => {
+        if (param.id !== id) return param;
+        return { 
           ...param, 
           required: true,
           example: defaultExample,
           defaultValue: '',
           description: defaultDescription.trim() || `${param.key || 'Parameter'} field`,
           _autoGenerated: false
-        } : param
-      );
+        };
+      });
     }
     
-    // If changing location to 'path', automatically set required to true and disable it
+    // If changing location to 'path', automatically set required to true
     if (field === 'parameterLocation') {
-      updatedParams = updatedParams.map(param => 
-        param.id === id ? { 
+      updatedParams = updatedParams.map(param => {
+        if (param.id !== id) return param;
+        return { 
           ...param,
           inBody: value === 'body',
           required: value === 'path' ? true : param.required,
           _isPathParam: value === 'path'
-        } : param
-      );
+        };
+      });
     }
     
-    // If changing location from 'path' to something else, don't force required
+    // If changing location from 'path' to something else
     if (field === 'parameterLocation' && currentParam?.parameterLocation === 'path' && value !== 'path') {
-      updatedParams = updatedParams.map(param => 
-        param.id === id ? { 
+      updatedParams = updatedParams.map(param => {
+        if (param.id !== id) return param;
+        return { 
           ...param, 
           required: param.required,
           _isPathParam: false
-        } : param
-      );
+        };
+      });
     }
     
-    // IMPORTANT: When parameter location changes, update the URL endpoint path
+    // When parameter location changes, update the URL endpoint path
     if (field === 'parameterLocation') {
       setTimeout(() => {
         updateEndpointPathFromParameters(updatedParams);
@@ -6917,44 +6851,193 @@ useEffect(() => {
     setResponseMappings([...responseMappings, newMapping]);
   };
 
-  const handleResponseMappingChange = (id, field, value) => {
-    setResponseMappings(responseMappings.map(mapping => {
-      // Find the current mapping
-      const currentMapping = responseMappings.find(m => m.id === id);
+const handleResponseMappingChange = (id, field, value) => {
+  console.log(`📝 Changing mapping ${id} field ${field} to ${value}`);
+  
+  setResponseMappings(prevMappings => {
+    const updatedMappings = prevMappings.map(mapping => {
+      if (mapping.id !== id) return mapping;
+      
       const updated = { ...mapping, [field]: value };
       
-      // If changing oracleType to AUTOGENERATE
+      console.log(`🔄 Updated mapping ${id}:`, { 
+        oldType: mapping.apiType, 
+        newType: value,
+        field: field
+      });
+      
+      if (field === 'apiType') {
+        console.log(`Setting apiType to: ${value}, type: ${typeof value}`);
+        if (value === 'ARRAY') {
+          updated.example = '[]';
+        } else if (value === 'OBJECT') {
+          updated.example = '{}';
+        } else if (value === 'INTEGER') {
+          updated.example = '123';
+        } else if (value === 'NUMBER') {
+          updated.example = '123.45';
+        } else if (value === 'BOOLEAN') {
+          updated.example = 'true';
+        } else {
+          updated.example = 'sample';
+        }
+      }
+      
       if (field === 'oracleType' && value === 'AUTOGENERATE') {
         updated.nullable = false;
-        if (updated.example !== undefined) {
-          updated.example = getCurrentTimestamp();
-        }
+        updated.example = getCurrentTimestamp();
         updated.description = updated.description || 'Auto-generated timestamp field';
       }
       
-      // If changing oracleType FROM AUTOGENERATE to something else
-      if (field === 'oracleType' && currentMapping?.oracleType === 'AUTOGENERATE' && value !== 'AUTOGENERATE') {
+      if (field === 'oracleType' && mapping.oracleType === 'AUTOGENERATE' && value !== 'AUTOGENERATE') {
         updated.nullable = true;
         updated.description = updated.description?.replace('Auto-generated timestamp field', '') || '';
-        
-        // Reset example if it exists
-        if (updated.example !== undefined) {
-          // Set example based on the new data type
-          if (value === 'NUMBER') {
-            updated.example = '123';
-          } else if (value === 'DATE') {
-            updated.example = '2024-01-01';
-          } else if (value === 'TIMESTAMP') {
-            updated.example = '2024-01-01T12:00:00Z';
-          } else {
-            updated.example = 'sample';
-          }
-        }
       }
       
       return updated;
-    }));
-  };
+    });
+    
+    // CRITICAL FIX: Use setTimeout to ensure state is updated before regenerating
+    // This gives React time to actually update the responseMappings state
+    setTimeout(() => {
+      // Get the OUT mappings from the updated mappings
+      const outMappings = updatedMappings.filter(m => 
+        (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
+      );
+      console.log('🔄 Regenerating response schema after mapping change, mappings count:', outMappings.length);
+      console.log('📊 Mapping details:', outMappings.map(m => ({ field: m.apiField, type: m.apiType })));
+      
+      // Call regenerate with the updated mappings
+      regenerateResponseSchema(updatedMappings);
+    }, 0);
+    
+    return updatedMappings;
+  });
+};
+
+// Add this function before the useEffect
+const regenerateResponseSchema = useCallback((mappings = null) => {
+  let outMappings = mappings;
+  
+  if (!outMappings || outMappings.length === 0) {
+    outMappings = responseMappings.filter(m => 
+      (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
+    );
+    console.log('⚠️ Using fallback mappings from responseMappings state:', outMappings.length);
+  }
+  
+  console.log('🔄 Manually regenerating response schema with mappings length:', outMappings?.length);
+  console.log('📊 Mapping details:', outMappings?.map(m => ({ 
+    field: m.apiField, 
+    type: m.apiType,
+    example: m.example
+  })));
+  
+  if (!outMappings || outMappings.length === 0) {
+    console.log('⚠️ No mappings found, skipping regeneration');
+    return;
+  }
+  
+  if (protocolType === 'graphql') {
+    const operationName = graphqlConfig.operationName || 'operation';
+    const responseData = {};
+    
+    outMappings.forEach(mapping => {
+      const apiType = mapping.apiType?.toUpperCase();
+      
+      switch(apiType) {
+        case 'INTEGER':
+          responseData[mapping.apiField] = 123;
+          break;
+        case 'NUMBER':
+          responseData[mapping.apiField] = 123.45;
+          break;
+        case 'BOOLEAN':
+          responseData[mapping.apiField] = true;
+          break;
+        case 'ARRAY':
+          responseData[mapping.apiField] = [];
+          break;
+        case 'OBJECT':
+          responseData[mapping.apiField] = {};
+          break;
+        case 'STRING':
+        default:
+          if (mapping.format === 'date-time') {
+            responseData[mapping.apiField] = '2024-01-01T00:00:00Z';
+          } else if (mapping.apiField === 'id') {
+            responseData[mapping.apiField] = 1;
+          } else {
+            responseData[mapping.apiField] = 'sample';
+          }
+          break;
+      }
+    });
+    
+    const graphqlSuccess = JSON.stringify({
+      data: { [operationName]: responseData }
+    }, null, 2);
+    
+    setResponseBody(prev => ({ ...prev, successSchema: graphqlSuccess }));
+    setResponseSchemaVersion(prev => prev + 1);
+    
+  } else {
+    // REST response generation
+    const sampleData = {};
+    
+    outMappings.forEach(mapping => {
+      const apiType = mapping.apiType?.toUpperCase();
+      
+      console.log(`📊 Processing field ${mapping.apiField} with type ${apiType}`);
+      
+      switch(apiType) {
+        case 'INTEGER':
+          sampleData[mapping.apiField] = 123;
+          break;
+        case 'NUMBER':
+          sampleData[mapping.apiField] = 123.45;
+          break;
+        case 'BOOLEAN':
+          sampleData[mapping.apiField] = true;
+          break;
+        case 'ARRAY':
+          sampleData[mapping.apiField] = [];
+          break;
+        case 'OBJECT':
+          sampleData[mapping.apiField] = {};
+          break;
+        case 'STRING':
+        default:
+          if (mapping.format === 'date-time') {
+            sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+          } else if (mapping.apiField === 'id') {
+            sampleData[mapping.apiField] = 1;
+          } else {
+            sampleData[mapping.apiField] = 'sample';
+          }
+          break;
+      }
+    });
+    
+    console.log('📊 Generated sample data with types:', sampleData);
+    
+    const restSuccess = JSON.stringify({
+      success: true,
+      data: sampleData,
+      message: 'Request processed successfully',
+      metadata: {
+        timestamp: '{{timestamp}}',
+        apiVersion: apiDetails.version,
+        requestId: '{{requestId}}'
+      }
+    }, null, 2);
+    
+    console.log('📊 Setting success schema to:', restSuccess.substring(0, 200));
+    setResponseBody(prev => ({ ...prev, successSchema: restSuccess }));
+    setResponseSchemaVersion(prev => prev + 1);
+  }
+}, [protocolType, graphqlConfig.operationName, apiDetails.version, responseMappings]);
+
 
   const handleRemoveResponseMapping = (id) => {
     setResponseMappings(responseMappings.filter(mapping => mapping.id !== id));
@@ -7672,7 +7755,6 @@ const populateFormFromApiData = useCallback(async (apiData) => {
 }, [collections, databaseType, currentDatabaseType]);
 
 
-
   // Function to populate form from selected object - FIXED VERSION WITH PROPER MODE FILTERING
   const populateFormFromObject = useCallback((object, preserveExistingApiDetails = false) => {
     console.log('📝 populateFormFromObject called with object:', object);
@@ -8249,6 +8331,78 @@ if (protocolType === 'soap') {
     console.log(`📊 Database type: ${object.databaseType}`);
   }, [apiDetails.version, apiDetails.httpMethod, setApiDetails, setSchemaConfig, setParameters, setResponseMappings, setRequestBody, setResponseBody]);
 
+
+
+  // Force regenerate response schema with proper type mapping after form is populated
+useEffect(() => {
+  // Wait a bit for the form to fully populate
+  const timer = setTimeout(() => {
+    if (responseMappings.length > 0 && protocolType === 'rest') {
+      console.log('🔄 Forcing response schema regeneration after form load...');
+      
+      // Get the OUT mappings
+      const outMappings = responseMappings.filter(m => 
+        (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
+      );
+      
+      console.log('📊 OUT mappings for initial generation:', outMappings.map(m => ({ field: m.apiField, type: m.apiType })));
+      
+      // Generate the sample data based on apiType
+      const sampleData = {};
+      outMappings.forEach(mapping => {
+        const apiType = mapping.apiType?.toUpperCase();
+        
+        switch(apiType) {
+          case 'INTEGER':
+            sampleData[mapping.apiField] = 123;
+            break;
+          case 'NUMBER':
+            sampleData[mapping.apiField] = 123.45;
+            break;
+          case 'BOOLEAN':
+            sampleData[mapping.apiField] = true;
+            break;
+          case 'ARRAY':
+            sampleData[mapping.apiField] = [];
+            break;
+          case 'OBJECT':
+            sampleData[mapping.apiField] = {};
+            break;
+          case 'STRING':
+          default:
+            if (mapping.format === 'date-time') {
+              sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+            } else if (mapping.apiField === 'id') {
+              sampleData[mapping.apiField] = 1;
+            } else {
+              sampleData[mapping.apiField] = 'sample';
+            }
+            break;
+        }
+      });
+      
+      console.log('📊 Generated sample data with proper types:', sampleData);
+      
+      const restSuccess = JSON.stringify({
+        success: true,
+        data: sampleData,
+        message: 'Request processed successfully',
+        metadata: {
+          timestamp: '{{timestamp}}',
+          apiVersion: apiDetails.version,
+          requestId: '{{requestId}}'
+        }
+      }, null, 2);
+      
+      setResponseBody(prev => ({ ...prev, successSchema: restSuccess }));
+      setResponseSchemaVersion(prev => prev + 1);
+    }
+  }, 500); // Give time for the form to populate
+  
+  return () => clearTimeout(timer);
+}, [responseMappings.length, protocolType]); // Run when responseMappings are loaded
+
+
   // ==================== VALIDATION FUNCTIONS ====================
 
   // Helper function to check if a field is required
@@ -8279,10 +8433,22 @@ if (protocolType === 'soap') {
 
   // Helper function to filter response mappings to only show OUT parameters and other mappings
   const getOutMappings = useCallback(() => {
-    const filtered = responseMappings.filter(m => 
-      (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
-    );
-    console.log('📊 getOutMappings - Total mappings:', responseMappings.length, 'Filtered OUT:', filtered.length, filtered.map(m => ({ apiField: m.apiField, paramMode: m.paramMode })));
+    // Don't filter - include ALL response mappings for the Response tab
+    // The paramMode filtering should only apply to procedure/function parameters
+    // For custom queries and tables, all response fields should be shown
+    const filtered = responseMappings.filter(m => {
+      // If paramMode is explicitly set to 'OUT' or 'IN/OUT', include it
+      if (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT') {
+        return true;
+      }
+      // If paramMode is not set or is null, also include it (for custom queries and tables)
+      if (!m.paramMode || m.paramMode === 'null' || m.paramMode === 'undefined') {
+        return true;
+      }
+      // Default to including (don't exclude anything)
+      return true;
+    });
+    console.log('📊 getOutMappings - Total mappings:', responseMappings.length, 'Filtered OUT:', filtered.length);
     return filtered;
   }, [responseMappings]);
 
@@ -9404,6 +9570,7 @@ useEffect(() => {
         }
       }, null, 2);
       handleResponseBodyChange('errorSchema', restError);
+      setErrorSchemaVersion(prev => prev + 1);
     }
   }
 }, [protocolType, soapConfig.version, soapConfig.namespace, soapConfig.soapAction, graphqlConfig.operationName, graphqlConfig.operationType, apiDetails.version, requestBody.bodyType, responseMappings]); // Added responseMappings as dependency
@@ -14835,14 +15002,15 @@ COMMIT;
               )}
             </div>
             <textarea
-              value={responseBody.successSchema}
-              onChange={(e) => handleResponseBodyChange('successSchema', e.target.value)}
-              className="w-full h-40 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
-              style={{
-                backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
-                color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
-              }}
-              placeholder={
+                key={`success-schema-${responseSchemaVersion}`}
+                value={responseBody.successSchema}
+                onChange={(e) => handleResponseBodyChange('successSchema', e.target.value)}
+                className="w-full h-40 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
+                style={{
+                  backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                  color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                }}
+                placeholder={
                 protocolType === 'soap'
                   ? `<?xml version="1.0" encoding="UTF-8"?>\n<soap:Envelope ...>\n  <soap:Body>\n    <OperationResponse>\n      <success>true</success>\n    </OperationResponse>\n  </soap:Body>\n</soap:Envelope>`
                   : protocolType === 'graphql'
@@ -14894,14 +15062,15 @@ COMMIT;
               </span>
             </div>
             <textarea
-              value={responseBody.errorSchema}
-              onChange={(e) => handleResponseBodyChange('errorSchema', e.target.value)}
-              className="w-full h-40 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
-              style={{
-                backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
-                color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
-              }}
-              placeholder={
+                key={`error-schema-${errorSchemaVersion}`}
+                value={responseBody.errorSchema}
+                onChange={(e) => handleResponseBodyChange('errorSchema', e.target.value)}
+                className="w-full h-40 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
+                style={{
+                  backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                  color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                }}
+                placeholder={
                 protocolType === 'soap'
                   ? `<?xml version="1.0" encoding="UTF-8"?>\n<soap:Envelope ...>\n  <soap:Body>\n    <soap:Fault>\n      <faultcode>Server</faultcode>\n      <faultstring>Error description</faultstring>\n    </soap:Fault>\n  </soap:Body>\n</soap:Envelope>`
                   : protocolType === 'graphql'
@@ -15027,22 +15196,23 @@ COMMIT;
           } else {
             // REST
             const sampleData = {};
-            getOutMappings().slice(0, 50).forEach(mapping => {
-              if (mapping.apiType === 'integer') sampleData[mapping.apiField] = 123;
-              else if (mapping.apiType === 'boolean') sampleData[mapping.apiField] = true;
-              else if (mapping.format === 'date-time') sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
-              else sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
-            });
-            handleResponseBodyChange('successSchema', JSON.stringify({
-              success: true,
-              data: sampleData,
-              message: 'Request processed successfully',
-              metadata: {
-                timestamp: '{{timestamp}}',
-                apiVersion: apiDetails.version,
-                requestId: '{{requestId}}'
-              }
-            }, null, 2));
+          getOutMappings().slice(0, 50).forEach(mapping => {
+            if (mapping.apiType === 'integer') sampleData[mapping.apiField] = 123;
+            else if (mapping.apiType === 'boolean') sampleData[mapping.apiField] = true;
+            else if (mapping.format === 'date-time') sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+            else sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
+          });
+          handleResponseBodyChange('successSchema', JSON.stringify({
+            success: true,
+            data: sampleData,
+            message: 'Request processed successfully',
+            metadata: {
+              timestamp: '{{timestamp}}',
+              apiVersion: apiDetails.version,
+              requestId: '{{requestId}}'
+            }
+          }, null, 2));
+          setResponseSchemaVersion(prev => prev + 1); // Add this line
           }
         }}
         className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs transition-colors hover-lift"

@@ -461,6 +461,33 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
     return String(body);
   };
 
+  // Universal copy function
+  const copyToClipboard = async (text, successMessage) => {
+    if (!text) {
+      showToast('No content to copy', 'warning');
+      return;
+    }
+    
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(successMessage || 'Copied to clipboard!', 'success');
+    } catch (err) {
+      // Fallback method
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        showToast(successMessage || 'Copied to clipboard!', 'success');
+      } catch {
+        showToast('Failed to copy', 'error');
+      }
+      document.body.removeChild(textarea);
+    }
+  };
+
   // Get color based on HTTP method for request button
   const getMethodButtonColor = () => {
     const method = request.httpMethod;
@@ -485,88 +512,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
     if (statusCode >= 400 && statusCode < 500) return colors.warning;
     if (statusCode >= 500) return colors.error;
     return colors.textSecondary;
-  };
-
-  // Copy function for REQUEST tab - copies ONLY the request body
-  const copyRequestBodyOnly = async () => {
-    if (!rawRequestBody) {
-      showToast('No request body to copy', 'warning');
-      return;
-    }
-    
-    const cleanBody = getCleanBodyContent(rawRequestBody);
-    try {
-      await navigator.clipboard.writeText(cleanBody);
-      setCopiedField('request_body');
-      showToast('Request body copied to clipboard!', 'success');
-      setTimeout(() => setCopiedField(null), 2000);
-    } catch (err) {
-      const textarea = document.createElement('textarea');
-      textarea.value = cleanBody;
-      textarea.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
-      document.body.appendChild(textarea);
-      textarea.select();
-      try {
-        document.execCommand('copy');
-        showToast('Request body copied to clipboard!', 'success');
-      } catch {
-        showToast('Failed to copy', 'error');
-      }
-      document.body.removeChild(textarea);
-    }
-  };
-
-  // Copy function for RESPONSE tab - copies ONLY the response body
-  const copyResponseBodyOnly = async () => {
-    if (!rawResponseBody) {
-      showToast('No response body to copy', 'warning');
-      return;
-    }
-    
-    const cleanBody = getCleanBodyContent(rawResponseBody);
-    try {
-      await navigator.clipboard.writeText(cleanBody);
-      setCopiedField('response_body');
-      showToast('Response body copied to clipboard!', 'success');
-      setTimeout(() => setCopiedField(null), 2000);
-    } catch (err) {
-      const textarea = document.createElement('textarea');
-      textarea.value = cleanBody;
-      textarea.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
-      document.body.appendChild(textarea);
-      textarea.select();
-      try {
-        document.execCommand('copy');
-        showToast('Response body copied to clipboard!', 'success');
-      } catch {
-        showToast('Failed to copy', 'error');
-      }
-      document.body.removeChild(textarea);
-    }
-  };
-
-  // Copy function for OVERVIEW tab - copies the full request JSON
-  const copyFullRequestJSON = async () => {
-    const contentToCopy = JSON.stringify(request, null, 2);
-    try {
-      await navigator.clipboard.writeText(contentToCopy);
-      setCopiedField('full_request');
-      showToast('Full request JSON copied to clipboard!', 'success');
-      setTimeout(() => setCopiedField(null), 2000);
-    } catch (err) {
-      const textarea = document.createElement('textarea');
-      textarea.value = contentToCopy;
-      textarea.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
-      document.body.appendChild(textarea);
-      textarea.select();
-      try {
-        document.execCommand('copy');
-        showToast('Full request JSON copied to clipboard!', 'success');
-      } catch {
-        showToast('Failed to copy', 'error');
-      }
-      document.body.removeChild(textarea);
-    }
   };
 
   const getResponseColor = () => {
@@ -778,11 +723,13 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-medium" style={{ color: colors.text }}>Path Parameters</h3>
-                    <button onClick={() => {
-                      const content = JSON.stringify(request.pathParameters, null, 2);
-                      navigator.clipboard.writeText(content);
-                      showToast('Path parameters copied!', 'success');
-                    }} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>Copy all</button>
+                    <button 
+                      onClick={() => copyToClipboard(JSON.stringify(request.pathParameters, null, 2), 'Path parameters copied!')}
+                      className="text-xs px-2 py-1 rounded" 
+                      style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+                    >
+                      Copy all
+                    </button>
                   </div>
                   <div className="space-y-2">
                     {Object.entries(request.pathParameters).map(([key, value]) => (
@@ -790,10 +737,13 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                         <code className="text-sm font-mono font-medium" style={{ color: colors.primary }}>{key}</code>
                         <div className="flex items-center gap-3">
                           <code className="text-sm font-mono" style={{ color: colors.text }}>{String(value)}</code>
-                          <button onClick={() => {
-                            navigator.clipboard.writeText(String(value));
-                            showToast(`Copied ${key}!`, 'success');
-                          }} className="text-xs opacity-0 hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }}>Copy</button>
+                          <button 
+                            onClick={() => copyToClipboard(String(value), `Copied ${key}!`)} 
+                            className="text-xs opacity-0 hover:opacity-100 transition-opacity" 
+                            style={{ color: colors.textSecondary }}
+                          >
+                            Copy
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -806,11 +756,13 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-medium" style={{ color: colors.text }}>Query Parameters</h3>
-                    <button onClick={() => {
-                      const content = JSON.stringify(request.queryParameters, null, 2);
-                      navigator.clipboard.writeText(content);
-                      showToast('Query parameters copied!', 'success');
-                    }} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>Copy all</button>
+                    <button 
+                      onClick={() => copyToClipboard(JSON.stringify(request.queryParameters, null, 2), 'Query parameters copied!')}
+                      className="text-xs px-2 py-1 rounded" 
+                      style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+                    >
+                      Copy all
+                    </button>
                   </div>
                   <div className="space-y-2">
                     {Object.entries(request.queryParameters).map(([key, value]) => (
@@ -818,10 +770,13 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                         <code className="text-sm font-mono font-medium" style={{ color: colors.info }}>{key}</code>
                         <div className="flex items-center gap-3">
                           <code className="text-sm font-mono break-all text-right" style={{ color: colors.text }}>{String(value)}</code>
-                          <button onClick={() => {
-                            navigator.clipboard.writeText(String(value));
-                            showToast(`Copied ${key}!`, 'success');
-                          }} className="text-xs opacity-0 hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }}>Copy</button>
+                          <button 
+                            onClick={() => copyToClipboard(String(value), `Copied ${key}!`)} 
+                            className="text-xs opacity-0 hover:opacity-100 transition-opacity" 
+                            style={{ color: colors.textSecondary }}
+                          >
+                            Copy
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -902,11 +857,13 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
           {activeTab === 'headers' && request.headers && (
             <div>
               <div className="flex justify-end mb-4">
-                <button onClick={() => {
-                  const content = JSON.stringify(request.headers, null, 2);
-                  navigator.clipboard.writeText(content);
-                  showToast('All headers copied!', 'success');
-                }} className="text-xs px-3 py-1.5 rounded" style={{ backgroundColor: colors.hover, color: colors.text }}>Copy all headers</button>
+                <button 
+                  onClick={() => copyToClipboard(JSON.stringify(request.headers, null, 2), 'All headers copied!')}
+                  className="text-xs px-3 py-1.5 rounded" 
+                  style={{ backgroundColor: colors.hover, color: colors.text }}
+                >
+                  Copy all headers
+                </button>
               </div>
               <div className="space-y-1">
                 {Object.entries(request.headers).map(([key, value]) => (
@@ -917,10 +874,13 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                     <div className="flex-1">
                       <code className="text-sm font-mono break-all" style={{ color: colors.text }}>{String(value)}</code>
                     </div>
-                    <button onClick={() => {
-                      navigator.clipboard.writeText(String(value));
-                      showToast(`Copied ${key}!`, 'success');
-                    }} className="flex-shrink-0 text-xs opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }}>Copy</button>
+                    <button 
+                      onClick={() => copyToClipboard(String(value), `Copied ${key}!`)} 
+                      className="flex-shrink-0 text-xs opacity-0 group-hover:opacity-100 transition-opacity" 
+                      style={{ color: colors.textSecondary }}
+                    >
+                      Copy
+                    </button>
                   </div>
                 ))}
               </div>
@@ -983,7 +943,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
           {/* Overview Tab Footer Copy Button */}
           {activeTab === 'overview' && (
             <button
-              onClick={copyFullRequestJSON}
+              onClick={() => copyToClipboard(JSON.stringify(request, null, 2), 'Full request JSON copied!')}
               className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2"
               style={{ backgroundColor: colors.primary, color: '#fff' }}
             >
@@ -995,7 +955,10 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
           {/* Request Tab Footer Copy Button */}
           {activeTab === 'request' && hasRequestBody && (
             <button
-              onClick={copyRequestBodyOnly}
+              onClick={() => {
+                const cleanBody = getCleanBodyContent(rawRequestBody);
+                copyToClipboard(cleanBody, 'Request body copied!');
+              }}
               className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2"
               style={{ backgroundColor: getMethodButtonColor(), color: '#fff' }}
             >
@@ -1007,7 +970,10 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
           {/* Response Tab Footer Copy Button */}
           {activeTab === 'response' && hasResponseBody && (
             <button
-              onClick={copyResponseBodyOnly}
+              onClick={() => {
+                const cleanBody = getCleanBodyContent(rawResponseBody);
+                copyToClipboard(cleanBody, 'Response body copied!');
+              }}
               className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2"
               style={{ backgroundColor: getStatusButtonColor(), color: '#fff' }}
             >
@@ -1030,7 +996,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
       {/* Toast */}
       {toast && (
         <div 
-          className="fixed bottom-6 right-6 px-4 py-2 rounded-md shadow-lg z-50"
+          className="fixed bottom-6 right-6 px-4 py-2 rounded-md shadow-lg z-50 animate-fade-in-up"
           style={{ 
             backgroundColor: toast.type === 'error' ? colors.error : toast.type === 'success' ? colors.success : colors.info,
             color: '#fff',
@@ -1409,7 +1375,7 @@ const StatsCards = ({ statistics, systemStats, colors, onRefresh, formatExecutio
           {formatExecutionTimeHelper(stats.averageResponseTime || 0)}
         </div>
         <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-          Average response time
+          Last 7 days
         </div>
       </div>
 
@@ -1425,7 +1391,7 @@ const StatsCards = ({ statistics, systemStats, colors, onRefresh, formatExecutio
           {stats.failedRequests?.toLocaleString() || 0}
         </div>
         <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-          Failed requests
+          Last 7 days
         </div>
       </div>
     </div>
