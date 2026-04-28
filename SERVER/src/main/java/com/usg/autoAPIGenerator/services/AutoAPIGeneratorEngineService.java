@@ -2129,11 +2129,33 @@ public class AutoAPIGeneratorEngineService {
                 executionTime = System.currentTimeMillis() - startTime;
                 log.error("Database execution failed for {}: ", databaseType, e);
 
-                String technicalError = extractDatabaseError(e, databaseType);
-                String userFriendlyMessage = "Unable to process your request at this time. Please try again later.";
+                // Extract error with status code
+                Map<String, Object> errorDetails = extractDatabaseErrorWithStatus(e, databaseType);
+                int statusCode = (int) errorDetails.get("statusCode");
+                String errorMessage = (String) errorDetails.get("message");
+                String technicalError = (String) errorDetails.get("technicalMessage");
+
+                // Use the extracted error message for user-friendly response
+                String userFriendlyMessage = errorMessage;
+
+                // Determine error code
+                String errorCode;
+                if (statusCode == 409) {
+                    errorCode = "CONFLICT";
+                } else if (statusCode == 400) {
+                    errorCode = "BAD_REQUEST";
+                } else if (statusCode == 404) {
+                    errorCode = "NOT_FOUND";
+                } else {
+                    errorCode = "DATABASE_EXECUTION_ERROR";
+                    // For unknown errors, use generic message
+                    if (statusCode == 500) {
+                        userFriendlyMessage = "Unable to process your request at this time. Please try again later.";
+                    }
+                }
 
                 Map<String, Object> errorMap = new HashMap<>();
-                errorMap.put("code", "DATABASE_EXECUTION_ERROR");
+                errorMap.put("code", errorCode);
                 errorMap.put("technicalMessage", technicalError);
                 errorMap.put("databaseType", databaseType);
                 errorMap.put("apiId", apiId);
@@ -2141,13 +2163,13 @@ public class AutoAPIGeneratorEngineService {
                 errorMap.put("executionTimeMs", executionTime);
                 errorMap.put("timestamp", LocalDateTime.now().toString());
 
-                finalResponse = buildProtocolSpecificErrorResponse(protocolType, 500, userFriendlyMessage, errorMap, api);
+                finalResponse = buildProtocolSpecificErrorResponse(protocolType, statusCode, userFriendlyMessage, errorMap, api);
                 rawResponseBody = getRawErrorResponseBody(finalResponse, protocolType);
 
                 if (capturedRequestId != null) {
                     try {
                         apiRequestService.updateRequestWithRawResponse(
-                                requestId, capturedRequestId, 500,
+                                requestId, capturedRequestId, statusCode,
                                 userFriendlyMessage, executionTime, rawResponseBody);
                     } catch (Exception updateError) {
                         log.error("Failed to update captured request: {}", updateError.getMessage());
@@ -2157,7 +2179,7 @@ public class AutoAPIGeneratorEngineService {
                 try {
                     String logErrorMessage = truncateErrorMessage(technicalError, 1000);
                     executionHelper.logExecution(executionLogRepository, api, validatedRequest,
-                            null, 500, executionTime, performedBy, actualClientIp, userAgent,
+                            null, statusCode, executionTime, performedBy, actualClientIp, userAgent,
                             logErrorMessage, objectMapper);
                 } catch (Exception logError) {
                     log.error("Failed to log execution error: {}", logError.getMessage());
@@ -5017,6 +5039,127 @@ public class AutoAPIGeneratorEngineService {
             return 0;
         }
     }
+
+
+    /**
+     * Extracts the actual database error and HTTP status code from the exception
+     * Returns a map with "statusCode" and "message" keys
+     */
+    private Map<String, Object> extractDatabaseErrorWithStatus(Exception e, String databaseType) {
+        Map<String, Object> result = new HashMap<>();
+        String errorMessage = e.getMessage();
+        int statusCode = 500;
+
+        // ADD THIS DEBUG LOG
+        log.info("=== extractDatabaseErrorWithStatus called with exception: {}", errorMessage);
+        log.info("Exception class: {}", e.getClass().getName());
+
+        // Look for our custom format "XXX|message" in the exception message
+        if (errorMessage != null && errorMessage.contains("|")) {
+            log.info("Found pipe character in error message");
+            Pattern statusPattern = Pattern.compile("^(\\d{3})\\|(.+)$");
+            Matcher matcher = statusPattern.matcher(errorMessage);
+
+            if (matcher.find()) {
+                statusCode = Integer.parseInt(matcher.group(1));
+                String cleanMessage = matcher.group(2).trim();
+
+                log.info("✅ Extracted custom error from exception: status={}, message={}", statusCode, cleanMessage);
+
+                result.put("statusCode", statusCode);
+                result.put("message", cleanMessage);
+                result.put("technicalMessage", errorMessage);
+                return result;
+            }
+        }
+
+        // If not found in top-level message, check the cause chain
+        Throwable cause = e.getCause();
+        while (cause != null) {
+            String causeMessage = cause.getMessage();
+            if (causeMessage != null && causeMessage.contains("|")) {
+                Pattern statusPattern = Pattern.compile("^(\\d{3})\\|(.+)$");
+                Matcher matcher = statusPattern.matcher(causeMessage);
+
+                if (matcher.find()) {
+                    statusCode = Integer.parseInt(matcher.group(1));
+                    String cleanMessage = matcher.group(2).trim();
+
+                    log.info("✅ Extracted custom error from cause: status={}, message={}", statusCode, cleanMessage);
+
+                    result.put("statusCode", statusCode);
+                    result.put("message", cleanMessage);
+                    result.put("technicalMessage", causeMessage);
+                    return result;
+                }
+            }
+            cause = cause.getCause();
+        }
+
+        // Fallback to existing error extraction logic
+        Throwable originalCause = e;
+        while (originalCause != null) {
+            String message = originalCause.getMessage();
+            if (message != null) {
+                // PostgreSQL-specific errors
+                if (databaseType.equalsIgnoreCase("postgresql") || databaseType.equalsIgnoreCase("postgres")) {
+                    if (message.contains("ERROR:")) {
+                        Pattern errorPattern = Pattern.compile("ERROR:\\s*([^\\n]+)");
+                        Matcher errorMatcher = errorPattern.matcher(message);
+                        if (errorMatcher.find()) {
+                            errorMessage = errorMatcher.group(1).trim();
+
+                            // Map PostgreSQL error codes to HTTP status codes
+                            if (message.contains("23505")) { // Unique violation
+                                statusCode = 409;
+                            } else if (message.contains("23503")) { // Foreign key violation
+                                statusCode = 409;
+                            } else if (message.contains("22023")) { // Invalid parameter
+                                statusCode = 400;
+                            }
+
+                            result.put("statusCode", statusCode);
+                            result.put("message", errorMessage);
+                            result.put("technicalMessage", message);
+                            return result;
+                        }
+                    }
+                }
+
+                // Oracle-specific errors
+                if (databaseType.equalsIgnoreCase("oracle") && message.contains("ORA-")) {
+                    Pattern oraclePattern = Pattern.compile("ORA-[0-9]{5}:(.+)$");
+                    Matcher oracleMatcher = oraclePattern.matcher(message);
+                    if (oracleMatcher.find()) {
+                        String oracleMessage = oracleMatcher.group(1).trim();
+
+                        if (message.contains("ORA-00001")) { // Unique constraint violated
+                            statusCode = 409;
+                            errorMessage = oracleMessage;
+                        } else if (message.contains("ORA-02291")) { // Integrity constraint violated
+                            statusCode = 409;
+                            errorMessage = oracleMessage;
+                        }
+
+                        result.put("statusCode", statusCode);
+                        result.put("message", errorMessage);
+                        result.put("technicalMessage", message);
+                        return result;
+                    }
+                }
+            }
+            originalCause = originalCause.getCause();
+        }
+
+        // Default fallback
+        result.put("statusCode", statusCode);
+        result.put("message", errorMessage != null ? errorMessage : "Unknown database error");
+        result.put("technicalMessage", errorMessage != null ? errorMessage : "Unknown database error");
+        return result;
+    }
+
+
+
 
     /**
      * Get the actual client IP address from HttpServletRequest

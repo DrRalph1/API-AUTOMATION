@@ -391,18 +391,66 @@ public class PostgreSQLProcedureExecutorUtil {
             log.error("Error executing procedure {}.{}: {}", pgSchema, pgProcedureName, e.getMessage(), e);
             String errorMessage = e.getMessage();
 
-            if (errorMessage != null && errorMessage.contains("Result: ")) {
-                String jsonPart = extractJsonFromNotice(errorMessage);
-                if (jsonPart != null) {
-                    try {
-                        return objectMapper.readValue(jsonPart, new TypeReference<Map<String, Object>>() {});
-                    } catch (Exception parseEx) {
-                        log.warn("Failed to parse JSON from exception: {}", jsonPart);
+            // FIRST: Check for custom format from PostgreSQL RAISE with detail
+            if (errorMessage != null) {
+                // Look for pattern: "Detail: 409" or "Detail: 400" etc.
+                Pattern detailPattern = Pattern.compile("Detail:\\s*(\\d{3})", Pattern.MULTILINE);
+                Matcher detailMatcher = detailPattern.matcher(errorMessage);
+                if (detailMatcher.find()) {
+                    String statusCode = detailMatcher.group(1);
+                    // Extract the actual error message (remove PostgreSQL formatting)
+                    String cleanMessage = errorMessage;
+
+                    // Remove the PostgreSQL prefix and detail line
+                    if (cleanMessage.contains("ERROR:")) {
+                        cleanMessage = cleanMessage.substring(cleanMessage.indexOf("ERROR:") + 6).trim();
+                        // Remove the Detail line
+                        int detailIndex = cleanMessage.indexOf("\n  Detail:");
+                        if (detailIndex > 0) {
+                            cleanMessage = cleanMessage.substring(0, detailIndex).trim();
+                        }
+                        // Remove the Where line if present
+                        int whereIndex = cleanMessage.indexOf("\n  Where:");
+                        if (whereIndex > 0) {
+                            cleanMessage = cleanMessage.substring(0, whereIndex).trim();
+                        }
+                    }
+
+                    // Create formatted exception with status code
+                    String formattedMessage = statusCode + "|" + cleanMessage;
+                    log.info("✅ Extracted custom error: status={}, message={}", statusCode, cleanMessage);
+                    throw new RuntimeException(formattedMessage, e);
+                }
+
+                // Check for SQLSTATE unique violation (23505)
+                if (errorMessage.contains("SQLSTATE=23505") || errorMessage.contains("duplicate key")) {
+                    String cleanMessage = "Duplicate record already exists";
+                    if (errorMessage.contains("Key")) {
+                        Pattern keyPattern = Pattern.compile("Key \\((.*?)\\)=(.*?)\\)");
+                        Matcher keyMatcher = keyPattern.matcher(errorMessage);
+                        if (keyMatcher.find()) {
+                            cleanMessage = "Record with " + keyMatcher.group(1) + " already exists";
+                        }
+                    }
+                    log.info("✅ PostgreSQL unique violation (23505) mapped to 409: {}", cleanMessage);
+                    throw new RuntimeException("409|" + cleanMessage, e);
+                }
+
+                // Check for Result: JSON pattern (existing logic)
+                if (errorMessage.contains("Result: ")) {
+                    String jsonPart = extractJsonFromNotice(errorMessage);
+                    if (jsonPart != null) {
+                        try {
+                            return objectMapper.readValue(jsonPart, new TypeReference<Map<String, Object>>() {});
+                        } catch (Exception parseEx) {
+                            log.warn("Failed to parse JSON from exception: {}", jsonPart);
+                        }
                     }
                 }
             }
 
-            throw new RuntimeException("Failed to execute the requested operation: " + extractPostgreSQLError(errorMessage), e);
+            // Fallback: wrap in generic error
+            throw new RuntimeException("500|" + extractPostgreSQLError(errorMessage), e);
         }
     }
 
@@ -662,13 +710,22 @@ public class PostgreSQLProcedureExecutorUtil {
     private String extractPostgreSQLError(String errorMessage) {
         if (errorMessage == null) return "Unknown error";
 
-        Pattern pattern = Pattern.compile("ERROR:[^\\n]*");
-        Matcher matcher = pattern.matcher(errorMessage);
-        if (matcher.find()) {
-            return matcher.group();
+        // First, try to extract just the ERROR: line without the detail
+        Pattern errorPattern = Pattern.compile("ERROR:\\s*([^\\n]+)");
+        Matcher errorMatcher = errorPattern.matcher(errorMessage);
+        if (errorMatcher.find()) {
+            String errorLine = errorMatcher.group(1).trim();
+            // Remove any trailing Detail or Where references
+            int detailIndex = errorLine.indexOf("Detail:");
+            if (detailIndex > 0) {
+                errorLine = errorLine.substring(0, detailIndex).trim();
+            }
+            return errorLine;
         }
 
-        return errorMessage.length() > 200 ? errorMessage.substring(0, 200) + "..." : errorMessage;
+        // If no ERROR: pattern, return first line or truncated message
+        String firstLine = errorMessage.split("\n")[0];
+        return firstLine.length() > 200 ? firstLine.substring(0, 200) + "..." : firstLine;
     }
 
     private int mapToSqlType(String pgType) {

@@ -781,7 +781,7 @@ ${inParameters.map(p => `        <${p.key}>${p.example || ''}</${p.key}>`).join(
 </soap:Envelope>`;
   };
 
-  // Generate SOAP Response Envelope - MODIFIED TO SHOW ALL MAPPINGS
+// Generate SOAP Response Envelope - FIXED WITH PROPER ARRAY/OBJECT HANDLING
 const generateSoapResponseEnvelope = () => {
   const soapConfig = apiData.soapConfig || {};
   const operationName = soapConfig.soapAction || apiData.apiCode || 'ProcessRequest';
@@ -792,23 +792,96 @@ const generateSoapResponseEnvelope = () => {
   const allMappings = outMappings;
   
   console.log('📊 SOAP Response - Total mappings:', allMappings.length);
+  console.log('📊 SOAP Response mapping types:', allMappings.map(m => ({ field: m.apiField, type: m.apiType, example: m.example })));
+  
+  const buildMappingXml = (m) => {
+    // Determine the value based on apiType
+    let sampleValue = m.example;
+    const apiType = m.apiType?.toLowerCase();
+    
+    if (!sampleValue || sampleValue === '') {
+      // Fallback based on apiType
+      switch(apiType) {
+        case 'integer':
+          sampleValue = '123';
+          break;
+        case 'number':
+          sampleValue = '123.45';
+          break;
+        case 'boolean':
+          sampleValue = 'true';
+          break;
+        case 'array':
+          sampleValue = '';  // Empty array in XML - no content between tags
+          break;
+        case 'object':
+          sampleValue = '';  // Empty object in XML - no content between tags
+          break;
+        default:
+          sampleValue = 'value';
+      }
+    } else if (apiType === 'boolean') {
+      // Ensure boolean values are 'true' or 'false' strings for XML
+      sampleValue = (sampleValue === 'true' || sampleValue === true) ? 'true' : 'false';
+    } else if (apiType === 'array') {
+      // For arrays in SOAP, if it's empty, use empty tag; otherwise try to format
+      if (sampleValue === '[]' || sampleValue === '') {
+        sampleValue = '';
+      } else {
+        // If it looks like a JSON array, extract the first item or use as is
+        try {
+          const parsed = JSON.parse(sampleValue);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            sampleValue = String(parsed[0]);
+          } else {
+            sampleValue = '';
+          }
+        } catch {
+          sampleValue = sampleValue;
+        }
+      }
+    } else if (apiType === 'object') {
+      // For objects in SOAP, use empty tag
+      if (sampleValue === '{}' || sampleValue === '') {
+        sampleValue = '';
+      }
+    }
+    
+    // If sampleValue is empty string, return self-closing tag
+    if (sampleValue === '') {
+      return `<${m.apiField}/>`;
+    }
+    return `<${m.apiField}>${sampleValue}</${m.apiField}>`;
+  };
   
   let responseContent = '';
   
   if (bindingStyle === 'rpc') {
     responseContent = `<${operationName}Response>
-${allMappings.map(m => `        <${m.apiField}>${m.example || (m.apiType === 'integer' ? '123' : 'value')}</${m.apiField}>`).join('\n')}
-      </${operationName}Response>`;
+      <success>true</success>
+      <message>Request processed successfully</message>
+      ${allMappings.map(m => `        ${buildMappingXml(m)}`).join('\n')}
+    </${operationName}Response>`;
   } else {
     responseContent = `<${operationName}Response xmlns="${namespace}">
-${allMappings.map(m => `        <${m.apiField}>${m.example || (m.apiType === 'integer' ? '123' : 'value')}</${m.apiField}>`).join('\n')}
-      </${operationName}Response>`;
+      <success>true</success>
+      <message>Request processed successfully</message>
+      ${allMappings.map(m => `        ${buildMappingXml(m)}`).join('\n')}
+    </${operationName}Response>`;
   }
   
-  return responseContent;
+  // Wrap in SOAP envelope
+  const soapVersion = soapConfig.version === '1.2' ? 'http://www.w3.org/2003/05/soap-envelope' : 'http://schemas.xmlsoap.org/soap/envelope/';
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="${soapVersion}">
+  <soap:Header/>
+  <soap:Body>
+    ${responseContent}
+  </soap:Body>
+</soap:Envelope>`;
 };
 
-// Generate GraphQL Response Example - MODIFIED TO SHOW ALL MAPPINGS
+// Generate GraphQL Response Example - FIXED WITH PROPER ARRAY/OBJECT HANDLING
 const generateGraphQLResponseExample = () => {
   const graphqlConfigData = apiData.graphqlConfig || {};
   const operationName = graphqlConfigData.operationName || 'query';
@@ -817,29 +890,75 @@ const generateGraphQLResponseExample = () => {
   const allMappings = outMappings;
   
   console.log('📊 GraphQL Response - Total mappings:', allMappings.length);
+  console.log('📊 GraphQL Response mapping types:', allMappings.map(m => ({ field: m.apiField, type: m.apiType, example: m.example })));
   
   const responseData = {};
   allMappings.forEach(mapping => {
-    if (mapping.apiType === 'integer') {
-      responseData[mapping.apiField] = 123;
-    } else if (mapping.apiType === 'string') {
-      if (mapping.format === 'date-time') {
-        responseData[mapping.apiField] = '2024-01-01T00:00:00Z';
-      } else if (mapping.apiField === 'id') {
-        responseData[mapping.apiField] = 1;
+    let exampleValue = mapping.example;
+    const apiType = mapping.apiType?.toLowerCase();
+    
+    // Use example if available, otherwise generate from apiType
+    if (exampleValue && exampleValue !== '') {
+      if (apiType === 'integer') {
+        const parsed = parseInt(exampleValue);
+        responseData[mapping.apiField] = isNaN(parsed) ? 123 : parsed;
+      } else if (apiType === 'number') {
+        const parsed = parseFloat(exampleValue);
+        responseData[mapping.apiField] = isNaN(parsed) ? 123.45 : parsed;
+      } else if (apiType === 'boolean') {
+        responseData[mapping.apiField] = exampleValue === 'true' || exampleValue === true;
+      } else if (apiType === 'array') {
+        // Handle array properly - parse JSON or use empty array
+        if (exampleValue === '[]' || exampleValue === '') {
+          responseData[mapping.apiField] = [];
+        } else {
+          try {
+            responseData[mapping.apiField] = JSON.parse(exampleValue);
+          } catch {
+            responseData[mapping.apiField] = [];
+          }
+        }
+      } else if (apiType === 'object') {
+        // Handle object properly - parse JSON or use empty object
+        if (exampleValue === '{}' || exampleValue === '') {
+          responseData[mapping.apiField] = {};
+        } else {
+          try {
+            responseData[mapping.apiField] = JSON.parse(exampleValue);
+          } catch {
+            responseData[mapping.apiField] = {};
+          }
+        }
       } else {
-        responseData[mapping.apiField] = 'sample';
+        responseData[mapping.apiField] = exampleValue;
       }
-    } else if (mapping.apiType === 'boolean') {
-      responseData[mapping.apiField] = true;
-    } else if (mapping.apiType === 'number') {
-      responseData[mapping.apiField] = 123.45;
-    } else if (mapping.apiType === 'array') {
-      responseData[mapping.apiField] = [];
-    } else if (mapping.apiType === 'object') {
-      responseData[mapping.apiField] = {};
     } else {
-      responseData[mapping.apiField] = 'value';
+      // Fallback based on apiType
+      switch(apiType) {
+        case 'integer':
+          responseData[mapping.apiField] = 123;
+          break;
+        case 'number':
+          responseData[mapping.apiField] = 123.45;
+          break;
+        case 'boolean':
+          responseData[mapping.apiField] = true;
+          break;
+        case 'array':
+          responseData[mapping.apiField] = [];
+          break;
+        case 'object':
+          responseData[mapping.apiField] = {};
+          break;
+        default:
+          if (mapping.format === 'date-time') {
+            responseData[mapping.apiField] = '2024-01-01T00:00:00Z';
+          } else if (mapping.apiField === 'id') {
+            responseData[mapping.apiField] = 1;
+          } else {
+            responseData[mapping.apiField] = 'sample';
+          }
+      }
     }
   });
   
@@ -851,42 +970,85 @@ const generateGraphQLResponseExample = () => {
 };
 
 
-  // Generate REST JSON Response Example
-  const generateRestResponseExample = () => {
-    const responseData = {};
-    outMappings.slice(0, 50).forEach(mapping => {
-      if (mapping.apiType === 'integer') {
-        responseData[mapping.apiField] = 123;
-      } else if (mapping.apiType === 'string') {
-        if (mapping.format === 'date-time') {
-          responseData[mapping.apiField] = '2024-01-01T00:00:00Z';
-        } else if (mapping.apiField === 'id') {
-          responseData[mapping.apiField] = 1;
-        } else {
-          responseData[mapping.apiField] = 'sample';
-        }
-      } else if (mapping.apiType === 'boolean') {
-        responseData[mapping.apiField] = true;
-      } else if (mapping.apiType === 'array') {
-        responseData[mapping.apiField] = [];
-      } else if (mapping.apiType === 'object') {
-        responseData[mapping.apiField] = {};
-      } else {
-        responseData[mapping.apiField] = 'value';
-      }
-    });
+// Generate REST JSON Response Example - FIXED WITH PROPER ARRAY/OBJECT HANDLING
+const generateRestResponseExample = () => {
+  const responseData = {};
+  outMappings.forEach(mapping => {
+    let exampleValue = mapping.example;
+    const apiType = mapping.apiType?.toLowerCase();
     
-    return JSON.stringify({
-      success: true,
-      data: responseData,
-      message: 'Request processed successfully',
-      metadata: {
-        timestamp: '{{timestamp}}',
-        apiVersion: apiData.version || '1.0.0',
-        requestId: '{{requestId}}'
+    // Use example if available, otherwise generate from apiType
+    if (exampleValue && exampleValue !== '') {
+      if (apiType === 'integer') {
+        const parsed = parseInt(exampleValue);
+        responseData[mapping.apiField] = isNaN(parsed) ? 123 : parsed;
+      } else if (apiType === 'number') {
+        const parsed = parseFloat(exampleValue);
+        responseData[mapping.apiField] = isNaN(parsed) ? 123.45 : parsed;
+      } else if (apiType === 'boolean') {
+        responseData[mapping.apiField] = exampleValue === 'true' || exampleValue === true;
+      } else if (apiType === 'array') {
+        // Handle array properly - parse JSON or use empty array
+        if (exampleValue === '[]' || exampleValue === '') {
+          responseData[mapping.apiField] = [];
+        } else {
+          try {
+            responseData[mapping.apiField] = JSON.parse(exampleValue);
+          } catch {
+            responseData[mapping.apiField] = [];
+          }
+        }
+      } else if (apiType === 'object') {
+        // Handle object properly - parse JSON or use empty object
+        if (exampleValue === '{}' || exampleValue === '') {
+          responseData[mapping.apiField] = {};
+        } else {
+          try {
+            responseData[mapping.apiField] = JSON.parse(exampleValue);
+          } catch {
+            responseData[mapping.apiField] = {};
+          }
+        }
+      } else {
+        responseData[mapping.apiField] = exampleValue;
       }
-    }, null, 2);
-  };
+    } else {
+      // Fallback based on apiType
+      switch(apiType) {
+        case 'integer':
+          responseData[mapping.apiField] = 123;
+          break;
+        case 'number':
+          responseData[mapping.apiField] = 123.45;
+          break;
+        case 'boolean':
+          responseData[mapping.apiField] = true;
+          break;
+        case 'array':
+          responseData[mapping.apiField] = [];
+          break;
+        case 'object':
+          responseData[mapping.apiField] = {};
+          break;
+        default:
+          if (mapping.format === 'date-time') {
+            responseData[mapping.apiField] = '2024-01-01T00:00:00Z';
+          } else if (mapping.apiField === 'id') {
+            responseData[mapping.apiField] = 1;
+          } else {
+            responseData[mapping.apiField] = 'sample';
+          }
+      }
+    }
+  });
+  
+  return JSON.stringify({
+    success: true,
+    data: responseData,
+    message: "Success"
+  }, null, 2);
+};
+
 
 // Generate GraphQL Query Example - MODIFIED TO SHOW ALL MAPPINGS IN RESPONSE
 const generateGraphQLQueryExample = () => {
@@ -2584,6 +2746,9 @@ export default function AutoAPIGeneratorModal({
 
   // ============ NEW: Protocol Selection State ============
   const [protocolType, setProtocolType] = useState('rest'); // 'rest', 'soap', 'graphql'
+
+  const [requestBodyVersion, setRequestBodyVersion] = useState(0);
+  const [requestSchemaVersion, setRequestSchemaVersion] = useState(0);
   
   // SOAP Configuration State
   const [soapConfig, setSoapConfig] = useState({
@@ -2649,6 +2814,42 @@ const getGraphQLTypeForPreview = (oracleType, isNullable = false) => {
   
   return isNullable ? graphqlType : `${graphqlType}!`;
 };
+
+
+// Add this useEffect near your other sync effects
+useEffect(() => {
+  if (protocolType === 'soap') {
+    const soapAction = soapConfig.soapAction?.toUpperCase() || 'SELECT';
+    let operationForSchema = 'SELECT';
+    
+    switch(soapAction) {
+      case 'SELECT':
+        operationForSchema = 'SELECT';
+        break;
+      case 'INSERT':
+        operationForSchema = 'INSERT';
+        break;
+      case 'UPDATE':
+        operationForSchema = 'UPDATE';
+        break;
+      case 'DELETE':
+        operationForSchema = 'DELETE';
+        break;
+      case 'EXECUTE':
+        operationForSchema = 'EXECUTE';
+        break;
+      default:
+        operationForSchema = 'SELECT';
+    }
+    
+    setSchemaConfig(prev => ({
+      ...prev,
+      operation: operationForSchema
+    }));
+    
+    console.log('🔄 SOAP Action changed to:', soapAction, '- Setting operation to:', operationForSchema);
+  }
+}, [soapConfig.soapAction, protocolType]);
 
 
 // Protect body type when SOAP or GraphQL protocol is selected
@@ -3464,12 +3665,69 @@ const validateRequiredFields = () => {
       
       // Parameters - only IN parameters (including IN/OUT)
       parameters: getInParameters().map(p => ({
-        ...p,
-        id: p.id || `param-${Date.now()}-${Math.random()}`,
-        inBody: p.parameterLocation === 'body',
-        paramMode: p.paramMode || 'IN',
-        key: p.key, // Make sure key is preserved
-        dbColumn: p.dbColumn // Make sure dbColumn is preserved
+          ...p,
+          id: p.id || `param-${Date.now()}-${Math.random()}`,
+          inBody: p.parameterLocation === 'body',
+          paramMode: p.paramMode || 'IN',
+          key: p.key,
+          dbColumn: p.dbColumn,
+          // ============ CRITICAL FIX: Normalize apiType before saving ============
+          apiType: (() => {
+              const type = (p.apiType || 'string').toLowerCase();
+              // Map to standard uppercase values for database storage
+              if (type === 'str' || type === 'text' || type === 'varchar' || type === 'varchar2' || type === 'string') return 'STRING';
+              if (type === 'int' || type === 'integer') return 'INTEGER';
+              if (type === 'number' || type === 'numeric' || type === 'decimal') return 'NUMBER';
+              if (type === 'float' || type === 'double') return 'NUMBER';
+              if (type === 'bool' || type === 'boolean') return 'BOOLEAN';
+              if (type === 'arr' || type === 'array') return 'ARRAY';
+              if (type === 'obj' || type === 'object') return 'OBJECT';
+              if (type === 'file') return 'FILE';
+              return type.toUpperCase();
+          })(),
+          // ============ CRITICAL FIX: Normalize example based on apiType ============
+          example: (() => {
+              const apiType = (p.apiType || 'string').toLowerCase();
+              const currentExample = p.example;
+              
+              // If example is empty, generate appropriate example
+              if (!currentExample || currentExample === '') {
+                  if (apiType === 'integer') return '123';
+                  if (apiType === 'number') return '123.45';
+                  if (apiType === 'boolean') return 'true';
+                  if (apiType === 'array') return '[]';
+                  if (apiType === 'object') return '{}';
+                  if (apiType === 'file') return 'Select a file...';
+                  return 'sample';
+              }
+              
+              // Validate and convert example to match type
+              if (apiType === 'integer') {
+                  const parsed = parseInt(currentExample, 10);
+                  return isNaN(parsed) ? '123' : parsed.toString();
+              }
+              if (apiType === 'number') {
+                  const parsed = parseFloat(currentExample);
+                  return isNaN(parsed) ? '123.45' : parsed.toString();
+              }
+              if (apiType === 'boolean') {
+                  const isTrue = currentExample === 'true' || currentExample === '1' || currentExample === 'yes';
+                  const isFalse = currentExample === 'false' || currentExample === '0' || currentExample === 'no';
+                  if (isTrue) return 'true';
+                  if (isFalse) return 'false';
+                  return 'true';
+              }
+              if (apiType === 'array') {
+                  if (currentExample === '[]' || currentExample.startsWith('[')) return currentExample;
+                  return '[]';
+              }
+              if (apiType === 'object') {
+                  if (currentExample === '{}' || currentExample.startsWith('{')) return currentExample;
+                  return '{}';
+              }
+              
+              return currentExample;
+          })()
       })),
       
       // Response mappings - OUT parameters and response fields
@@ -4378,341 +4636,6 @@ useEffect(() => {
 }, [parameters, requestBody.bodyType, protocolType, graphqlConfig.operationName, graphqlConfig.operationType, getInParameters, getOutMappings]);
 
 
-
-// Regenerate request body when parameter apiType or example changes - ALL PROTOCOLS
-useEffect(() => {
-  // ============ GRAPHQL PROTOCOL ============
-  if (protocolType === 'graphql') {
-    console.log('🔄 GraphQL: Regenerating request body due to parameter changes...');
-    const operationName = graphqlConfig.operationName || 'query';
-    const operationType = graphqlConfig.operationType || 'query';
-    const inParams = getInParameters();
-    const outMappingsForQuery = getOutMappings();
-    
-    let variableDefinitions = '';
-    let variableUsages = '';
-    let variablesObject = {};
-    
-    if (inParams.length > 0) {
-      // Build variable definitions with proper GraphQL types based on apiType
-      variableDefinitions = '(' + inParams.map(p => {
-        let graphqlType = 'String';
-        switch(p.apiType?.toLowerCase()) {
-          case 'integer':
-            graphqlType = 'Int';
-            break;
-          case 'number':
-            graphqlType = 'Float';
-            break;
-          case 'boolean':
-            graphqlType = 'Boolean';
-            break;
-          default:
-            graphqlType = 'String';
-        }
-        if (p.required) {
-          graphqlType = `${graphqlType}!`;
-        }
-        return `$${p.key}: ${graphqlType}`;
-      }).join(', ') + ')';
-      
-      // Use variables in query
-      variableUsages = '(' + inParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
-      
-      // Build variables object with properly typed values based on apiType
-      inParams.forEach(p => {
-        let val = p.example;
-        
-        // Generate default value if example is empty
-        if (!val || val === '') {
-          switch(p.apiType?.toLowerCase()) {
-            case 'integer':
-              val = 123;
-              break;
-            case 'number':
-              val = 123.45;
-              break;
-            case 'boolean':
-              val = true;
-              break;
-            default:
-              val = 'sample';
-          }
-        } else {
-          // Parse value based on apiType
-          switch(p.apiType?.toLowerCase()) {
-            case 'integer':
-              val = parseInt(val, 10);
-              if (isNaN(val)) val = 123;
-              break;
-            case 'number':
-              val = parseFloat(val);
-              if (isNaN(val)) val = 123.45;
-              break;
-            case 'boolean':
-              val = val === 'true' || val === '1' || val === 'yes';
-              break;
-            default:
-              // Keep as string
-          }
-        }
-        variablesObject[p.key] = val;
-      });
-    }
-    
-    // Build query string
-    let queryString = '';
-    if (operationType === 'query') {
-      if (inParams.length > 0) {
-        queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n`;
-        if (outMappingsForQuery.length > 0) {
-          queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
-          if (outMappingsForQuery.length > 20) {
-            queryString += `\n    # ... ${outMappingsForQuery.length - 20} more fields`;
-          }
-        } else {
-          queryString += `    id\n    createdAt\n    updatedAt`;
-        }
-        queryString += `\n  }\n}`;
-      } else {
-        queryString = `${operationType} {\n  ${operationName} {\n`;
-        if (outMappingsForQuery.length > 0) {
-          queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
-          if (outMappingsForQuery.length > 20) {
-            queryString += `\n    # ... ${outMappingsForQuery.length - 20} more fields`;
-          }
-        } else {
-          queryString += `    id\n    createdAt\n    updatedAt`;
-        }
-        queryString += `\n  }\n}`;
-      }
-    } else {
-      queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n    success\n    message\n    data {\n`;
-      if (outMappingsForQuery.length > 0) {
-        queryString += outMappingsForQuery.slice(0, 20).map(m => `      ${m.apiField}`).join('\n');
-        if (outMappingsForQuery.length > 20) {
-          queryString += `\n      # ... ${outMappingsForQuery.length - 20} more fields`;
-        }
-      } else {
-        queryString += `      id\n      createdAt`;
-      }
-      queryString += `\n    }\n  }\n}`;
-    }
-    
-    const graphqlRequest = JSON.stringify({
-      query: queryString,
-      variables: variablesObject
-    }, null, 2);
-    
-    if (requestBody.sample !== graphqlRequest) {
-      console.log('✅ Updating GraphQL request body');
-      handleRequestBodyChange('sample', graphqlRequest);
-    }
-    return;
-  }
-  
-  // ============ SOAP PROTOCOL ============
-  if (protocolType === 'soap') {
-    console.log('🔄 SOAP: Regenerating request body due to parameter changes...');
-    const soapVersion = soapConfig.version === '1.2' ? 'http://www.w3.org/2003/05/soap-envelope' : 'http://schemas.xmlsoap.org/soap/envelope/';
-    const operationName = soapConfig.soapAction || apiDetails.apiCode || 'ProcessRequest';
-    const inParams = getInParameters();
-    
-    let bodyContent = '';
-    
-    if (soapConfig.bindingStyle === 'rpc') {
-      if (inParams.length > 0) {
-        bodyContent = `<${operationName}>\n${inParams.map(p => {
-          let value = p.example;
-          if (!value || value === '') {
-            // Generate default based on apiType
-            switch(p.apiType?.toLowerCase()) {
-              case 'integer':
-                value = '123';
-                break;
-              case 'number':
-                value = '123.45';
-                break;
-              case 'boolean':
-                value = 'true';
-                break;
-              default:
-                value = 'sample';
-            }
-          }
-          return `        <${p.key}>${value}</${p.key}>`;
-        }).join('\n')}\n      </${operationName}>`;
-      } else {
-        bodyContent = `<${operationName}/>`;
-      }
-    } else {
-      if (inParams.length > 0) {
-        bodyContent = `<${operationName} xmlns="${soapConfig.namespace}">\n${inParams.map(p => {
-          let value = p.example;
-          if (!value || value === '') {
-            switch(p.apiType?.toLowerCase()) {
-              case 'integer':
-                value = '123';
-                break;
-              case 'number':
-                value = '123.45';
-                break;
-              case 'boolean':
-                value = 'true';
-                break;
-              default:
-                value = 'sample';
-            }
-          }
-          return `        <${p.key}>${value}</${p.key}>`;
-        }).join('\n')}\n      </${operationName}>`;
-      } else {
-        bodyContent = `<${operationName} xmlns="${soapConfig.namespace}"/>`;
-      }
-    }
-    
-    const soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="${soapVersion}"${soapConfig.version === '1.2' ? '' : ' xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/"'}>
-  <soap:Header>
-    <!-- Optional SOAP headers -->
-  </soap:Header>
-  <soap:Body>
-    ${bodyContent}
-  </soap:Body>
-</soap:Envelope>`;
-    
-    if (requestBody.sample !== soapEnvelope) {
-      console.log('✅ Updating SOAP request body');
-      handleRequestBodyChange('sample', soapEnvelope);
-    }
-    return;
-  }
-  
-  // ============ REST PROTOCOL ============
-  if (protocolType === 'rest') {
-    // Skip for body types that don't need sample generation
-    if (requestBody.bodyType === 'none' || requestBody.bodyType === 'binary') {
-      return;
-    }
-    
-    // Get body parameters
-    const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
-    
-    if (bodyParams.length === 0) {
-      // No body parameters, set empty sample
-      if (requestBody.bodyType === 'json') {
-        if (requestBody.sample !== '{}') {
-          console.log('✅ Setting empty JSON request body');
-          handleRequestBodyChange('sample', '{}');
-        }
-      } else if (requestBody.bodyType === 'xml') {
-        if (requestBody.sample !== '<request/>') {
-          console.log('✅ Setting empty XML request body');
-          handleRequestBodyChange('sample', '<request/>');
-        }
-      }
-      return;
-    }
-    
-    console.log('🔄 REST: Regenerating request body due to parameter changes...');
-    
-    // Handle JSON body type
-    if (requestBody.bodyType === 'json') {
-      const requestBodyObj = {};
-      bodyParams.forEach(p => {
-        let value;
-        
-        if (p.example && p.example !== '') {
-          // Parse based on apiType
-          switch(p.apiType?.toLowerCase()) {
-            case 'integer':
-              value = parseInt(p.example, 10);
-              if (isNaN(value)) value = 123;
-              break;
-            case 'number':
-              value = parseFloat(p.example);
-              if (isNaN(value)) value = 123.45;
-              break;
-            case 'boolean':
-              value = p.example === 'true' || p.example === '1' || p.example === 'yes';
-              break;
-            case 'array':
-              value = [];
-              break;
-            case 'object':
-              value = {};
-              break;
-            default:
-              value = p.example;
-          }
-        } else {
-          // Generate default based on apiType
-          switch(p.apiType?.toLowerCase()) {
-            case 'integer':
-              value = 123;
-              break;
-            case 'number':
-              value = 123.45;
-              break;
-            case 'boolean':
-              value = true;
-              break;
-            case 'array':
-              value = [];
-              break;
-            case 'object':
-              value = {};
-              break;
-            default:
-              value = `sample_${p.key}`;
-          }
-        }
-        requestBodyObj[p.key] = value;
-      });
-      
-      const jsonSample = JSON.stringify(requestBodyObj, null, 2);
-      if (requestBody.sample !== jsonSample) {
-        console.log('✅ Updating REST JSON request body');
-        handleRequestBodyChange('sample', jsonSample);
-      }
-    }
-    // Handle XML body type
-    else if (requestBody.bodyType === 'xml') {
-      let xmlSample = `<?xml version="1.0" encoding="UTF-8"?>\n<request>\n`;
-      bodyParams.forEach(p => {
-        let value = p.example;
-        if (!value || value === '') {
-          switch(p.apiType?.toLowerCase()) {
-            case 'integer':
-              value = '123';
-              break;
-            case 'number':
-              value = '123.45';
-              break;
-            case 'boolean':
-              value = 'true';
-              break;
-            default:
-              value = `sample_${p.key}`;
-          }
-        }
-        xmlSample += `  <${p.key}>${value}</${p.key}>\n`;
-      });
-      xmlSample += `</request>`;
-      
-      if (requestBody.sample !== xmlSample) {
-        console.log('✅ Updating REST XML request body');
-        handleRequestBodyChange('sample', xmlSample);
-      }
-    }
-    // For form-data and urlencoded, we don't need to update the sample textarea
-    else if (requestBody.bodyType === 'form-data' || requestBody.bodyType === 'urlencoded') {
-      console.log('ℹ️ Form-data/urlencoded body type - parameters visible in UI, no sample needed');
-    }
-  }
-}, [parameters, requestBody.bodyType, protocolType, graphqlConfig.operationName, graphqlConfig.operationType, graphqlConfig.operationType, soapConfig.version, soapConfig.bindingStyle, soapConfig.namespace, soapConfig.soapAction, apiDetails.apiCode]);
-
-
 // Also auto-generate when switching to Request tab for the first time
 const requestTabRef = useRef(false);
 
@@ -5086,6 +5009,89 @@ useEffect(() => {
 }, [responseMappings, protocolType, graphqlConfig.operationName, apiDetails.version]);
 
 
+// Add a ref for request tab
+const requestTabInitializedRef = useRef(false);
+
+// Force refresh when switching to Request tab (similar to Response tab)
+useEffect(() => {
+  if (activeTab === 'request' && !requestTabInitializedRef.current) {
+    requestTabInitializedRef.current = true;
+    
+    console.log('🔄 Request tab activated - forcing request body refresh');
+    
+    if (protocolType === 'rest') {
+      const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
+      if (bodyParams.length > 0 && requestBody.bodyType !== 'none' && requestBody.bodyType !== 'binary') {
+        if (requestBody.bodyType === 'json') {
+          const requestBodyObj = {};
+          bodyParams.forEach(param => {
+            let val = param.example;
+            if (!val || val === '') {
+              switch(param.apiType?.toLowerCase()) {
+                case 'integer': val = 123; break;
+                case 'boolean': val = true; break;
+                default: val = `sample_${param.key}`;
+              }
+            }
+            requestBodyObj[param.key] = val;
+          });
+          const freshJson = JSON.stringify(requestBodyObj, null, 2);
+          if (requestBody.sample !== freshJson) {
+            handleRequestBodyChange('sample', freshJson);
+            setRequestSchemaVersion(prev => prev + 1); // ADD THIS LINE
+          }
+        }
+      }
+    }
+  }
+}, [activeTab, protocolType, parameters, getInParameters, requestBody.bodyType]);
+
+
+// Reset request tab ref when modal closes
+useEffect(() => {
+  if (!isOpen) {
+    requestTabInitializedRef.current = false;
+  }
+}, [isOpen]);
+
+
+
+// Track if parameters have been auto-extracted
+const parametersExtractedRef = useRef(false);
+
+// Auto-extract parameters when parameters tab is first activated and we have a database object
+useEffect(() => {
+  if (activeTab === 'parameters' && !parametersExtractedRef.current && selectedDbObject) {
+    parametersExtractedRef.current = true;
+    
+    console.log('🔄 Parameters tab activated - ensuring parameters are extracted from object');
+    
+    // If parameters are empty or very few compared to expected, re-extract
+    const expectedParamCount = selectedDbObject.parameters?.length || selectedDbObject.columns?.length || 0;
+    
+    if (parameters.length === 0 && expectedParamCount > 0) {
+      console.log('📊 Parameters missing, extracting from object...');
+      // Force parameters extraction from the selected object
+      populateFormFromObject(selectedDbObject, true);
+    }
+    
+    // Also extract response mappings if they're missing
+    if (responseMappings.length === 0 && (selectedDbObject.columns?.length > 0 || selectedDbObject.parameters?.length > 0)) {
+      console.log('📊 Response mappings missing, extracting from object...');
+      populateFormFromObject(selectedDbObject, true);
+    }
+  }
+}, [activeTab, selectedDbObject, parameters.length, responseMappings.length]);
+
+// Reset parameters extraction ref when modal closes or object changes
+useEffect(() => {
+  if (!isOpen || selectedDbObject) {
+    // Only reset if we're not opening with the same object
+    parametersExtractedRef.current = false;
+  }
+}, [isOpen, selectedDbObject?.id]);
+
+
 // Force SOAP request body to update when parameters change
 useEffect(() => {
   if (protocolType === 'soap' && parameters.length > 0) {
@@ -5109,52 +5115,116 @@ useEffect(() => {
       return;
     }
     
-    // Get body parameters
-    const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
+    // Determine which parameters to use
+    let paramsToUse;
     
-    // Only regenerate if there are body parameters
-    if (bodyParams.length > 0) {
+    // For custom queries (or when body type is not 'none'), use ALL parameters
+    // This ensures query parameters are included in the request body for custom queries
+    const isCustomQueryMode = sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery;
+    
+    if (isCustomQueryMode || requestBody.bodyType === 'json' || requestBody.bodyType === 'xml') {
+      // For custom queries, use ALL parameters since they'll be sent in the request body
+      paramsToUse = getInParameters();
+      console.log('📊 Using ALL parameters for custom query request body:', paramsToUse.length);
+    } else {
+      // For regular APIs, only use body parameters
+      paramsToUse = getInParameters().filter(p => p.parameterLocation === 'body');
+    }
+    
+    // Only regenerate if there are parameters
+    if (paramsToUse.length > 0) {
       let freshRequestBody = '';
       
       if (requestBody.bodyType === 'json') {
         const requestBodyObj = {};
-        bodyParams.forEach(param => {
-          if (param.apiType === 'integer') {
-            requestBodyObj[param.key] = parseInt(param.example) || 123;
-          } else if (param.apiType === 'boolean') {
-            requestBodyObj[param.key] = param.example === 'true' || false;
-          } else if (param.apiType === 'array') {
-            requestBodyObj[param.key] = [];
-          } else if (param.apiType === 'object') {
-            requestBodyObj[param.key] = {};
+        paramsToUse.forEach(param => {
+          let value;
+          const example = param.example;
+          
+          if (example && example !== '') {
+            // Parse based on apiType
+            switch(param.apiType?.toLowerCase()) {
+              case 'integer':
+                value = parseInt(example, 10);
+                if (isNaN(value)) value = 123;
+                break;
+              case 'number':
+                value = parseFloat(example);
+                if (isNaN(value)) value = 123.45;
+                break;
+              case 'boolean':
+                value = example === 'true' || example === '1' || example === 'yes';
+                break;
+              case 'array':
+                try {
+                  const parsed = JSON.parse(example);
+                  value = Array.isArray(parsed) ? parsed : [];
+                } catch {
+                  value = [];
+                }
+                break;
+              case 'object':
+                try {
+                  const parsed = JSON.parse(example);
+                  value = typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+                } catch {
+                  value = {};
+                }
+                break;
+              default:
+                value = example;
+            }
           } else {
-            requestBodyObj[param.key] = param.example || `sample_${param.key}`;
+            // Generate default based on apiType
+            switch(param.apiType?.toLowerCase()) {
+              case 'integer':
+                value = 123;
+                break;
+              case 'number':
+                value = 123.45;
+                break;
+              case 'boolean':
+                value = true;
+                break;
+              case 'array':
+                value = [];
+                break;
+              case 'object':
+                value = {};
+                break;
+              default:
+                value = `sample_${param.key}`;
+            }
           }
+          requestBodyObj[param.key] = value;
         });
         freshRequestBody = JSON.stringify(requestBodyObj, null, 2);
       } else if (requestBody.bodyType === 'xml') {
         let xmlSample = `<?xml version="1.0" encoding="UTF-8"?>\n<request>\n`;
-        bodyParams.forEach(param => {
-          xmlSample += `  <${param.key}>${param.example || `sample_${param.key}`}</${param.key}>\n`;
+        paramsToUse.forEach(param => {
+          let value = param.example || `sample_${param.key}`;
+          if (param.apiType === 'array' || param.apiType === 'object') {
+            value = '';
+          }
+          xmlSample += `  <${param.key}>${value}</${param.key}>\n`;
         });
         xmlSample += `</request>`;
         freshRequestBody = xmlSample;
-      } else if (requestBody.bodyType === 'form-data' || requestBody.bodyType === 'urlencoded') {
-        // For form-data and urlencoded, we don't update the sample textarea
-        // The UI already shows the fields dynamically
-        return;
       }
       
       // Update the request body sample
       if (freshRequestBody && requestBody.sample !== freshRequestBody) {
-        console.log('🔄 Updating REST request body due to parameter changes', {
+        console.log('🔄 Updating REST request body due to parameter API type/example change', {
           bodyType: requestBody.bodyType,
-          paramsCount: bodyParams.length
+          paramsCount: paramsToUse.length,
+          sample: freshRequestBody.substring(0, 100)
         });
         handleRequestBodyChange('sample', freshRequestBody);
+        // YOU NEED TO ADD THIS LINE:
+        setRequestSchemaVersion(prev => prev + 1);
       }
-    } else if (bodyParams.length === 0 && requestBody.bodyType !== 'none' && requestBody.bodyType !== 'binary') {
-      // No body parameters, set empty sample
+    } else if (paramsToUse.length === 0 && requestBody.bodyType !== 'none' && requestBody.bodyType !== 'binary') {
+      // No parameters, set empty sample
       let emptySample = '';
       if (requestBody.bodyType === 'json') {
         emptySample = '{}';
@@ -5168,7 +5238,7 @@ useEffect(() => {
       }
     }
   }
-}, [parameters, getInParameters, protocolType, requestBody.bodyType]);
+}, [parameters, getInParameters, protocolType, requestBody.bodyType, sourceType, isCustomQuery, isEditingCustomQuery]);
 
 
 
@@ -5627,7 +5697,7 @@ const handleProtocolChange = (protocol) => {
         graphqlSchema: null 
       }));
       
-      return prev; // No change to protocolConfigs
+      return prev;
     });
   };
   
@@ -5638,149 +5708,69 @@ const handleProtocolChange = (protocol) => {
   // Step 4: Immediately switch to Definition tab
   setActiveTab('definition');
   
-  // Step 5: If switching to SOAP protocol, auto-populate the service name (even in edit mode)
+  // Step 5: If switching to SOAP protocol, set default SELECT operation
   if (protocol === 'soap') {
-    let generatedServiceName = '';
+    // CRITICAL FIX: Set schemaConfig operation to SELECT for SOAP
+    setSchemaConfig(prev => ({
+      ...prev,
+      operation: 'SELECT'  // Force SELECT for SOAP
+    }));
     
-    // Case 1: Database object exists
-    if (selectedDbObject?.name) {
-      generatedServiceName = selectedDbObject.name.charAt(0).toUpperCase() + 
-                             selectedDbObject.name.slice(1).toLowerCase();
-      generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-      generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
-      if (!generatedServiceName.toLowerCase().endsWith('service')) {
-        generatedServiceName = generatedServiceName + 'Service';
-      }
-    } 
-    // Case 2: Custom query mode
-    else if (sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) {
-      if (customQuery && customQuery.trim()) {
-        const fromMatch = customQuery.match(/FROM\s+([^\s,;]+)/i);
-        if (fromMatch && fromMatch[1]) {
-          let tableName = fromMatch[1];
-          if (tableName.includes('.')) {
-            tableName = tableName.split('.').pop();
-          }
-          generatedServiceName = tableName.charAt(0).toUpperCase() + tableName.slice(1).toLowerCase();
-          generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-          generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
-        } else {
-          generatedServiceName = 'CustomQuery';
-        }
-      } else {
-        generatedServiceName = 'CustomQuery';
-      }
-      if (!generatedServiceName.toLowerCase().endsWith('service')) {
-        generatedServiceName = generatedServiceName + 'Service';
-      }
-    }
-    // Case 3: Schema config object name exists
-    else if (schemaConfig.objectName) {
-      generatedServiceName = schemaConfig.objectName.charAt(0).toUpperCase() + 
-                             schemaConfig.objectName.slice(1).toLowerCase();
-      generatedServiceName = generatedServiceName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-      generatedServiceName = generatedServiceName.replace(/[^a-zA-Z0-9]/g, '');
-      if (!generatedServiceName.toLowerCase().endsWith('service')) {
-        generatedServiceName = generatedServiceName + 'Service';
-      }
-    }
-    // Case 4: API name exists
-    else if (apiDetails.apiName) {
-      generatedServiceName = apiDetails.apiName.replace(/\s+/g, '');
-      if (!generatedServiceName.toLowerCase().endsWith('service')) {
-        generatedServiceName = generatedServiceName + 'Service';
-      }
-    }
-    // Case 5: Ultimate fallback
-    else {
-      generatedServiceName = 'APIService';
-    }
+    // Set SOAP Action to SELECT by default
+    setSoapConfig(prev => ({ 
+      ...prev, 
+      soapAction: 'SELECT',
+      serviceName: generateServiceNameFromSource()
+    }));
     
-    // Update the service name (allow update even in edit mode)
-    if (generatedServiceName) {
-      console.log('🔧 Auto-populating SOAP service name on protocol switch:', generatedServiceName);
-      setSoapConfig(prev => ({ 
-        ...prev, 
-        serviceName: generatedServiceName,
-        // Also set default soapAction based on object type if empty
-        soapAction: prev.soapAction || getDefaultSoapAction()
-      }));
-    }
+    console.log('🔧 SOAP protocol - operation set to SELECT, not derived from HTTP method');
   }
-
-  // Step 6: If switching to GraphQL protocol, auto-populate operation name and schema (even in edit mode)
+  
+  // Step 6: If switching to GraphQL protocol, set appropriate operation
   if (protocol === 'graphql') {
-    let generatedOperationName = '';
-    let generatedSchema = '';
-    
-    // Get the source object name from multiple possible sources
-    const sourceObjectName = selectedDbObject?.name || 
-                             schemaConfig.objectName || 
-                             apiDetails.apiName?.replace(/\s+/g, '') ||
-                             'Data';
-    
-    // Case 1: Database object exists or we have schema config
-    if (sourceObjectName && sourceObjectName !== 'Data') {
-      const objectName = sourceObjectName;
-      const objectType = selectedDbObject?.type || schemaConfig.objectType || 'TABLE';
-      
-      if (graphqlConfig.operationType === 'query') {
-        generatedOperationName = `get${objectName.charAt(0).toUpperCase() + objectName.slice(1)}${objectType === 'TABLE' ? 's' : ''}`;
-      } else if (graphqlConfig.operationType === 'mutation') {
-        const mutationType = apiDetails.httpMethod === 'POST' ? 'create' :
-                            apiDetails.httpMethod === 'PUT' ? 'update' :
-                            apiDetails.httpMethod === 'DELETE' ? 'delete' : 'create';
-        generatedOperationName = `${mutationType}${objectName.charAt(0).toUpperCase() + objectName.slice(1)}`;
-      } else {
-        generatedOperationName = `${objectName.charAt(0).toUpperCase() + objectName.slice(1)}Changed`;
-      }
-      
-      generatedOperationName = generatedOperationName.replace(/[^a-zA-Z0-9]/g, '');
-      generatedOperationName = generatedOperationName.charAt(0).toLowerCase() + generatedOperationName.slice(1);
-      
-      // Generate schema from the object
-      generatedSchema = generateGraphQLSchemaFromObject();
-    } 
-    // Case 2: Custom query mode
-    else if (sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery) {
-      if (customQuery && customQuery.trim()) {
-        const fromMatch = customQuery.match(/FROM\s+([^\s,;]+)/i);
-        if (fromMatch && fromMatch[1]) {
-          let tableName = fromMatch[1];
-          if (tableName.includes('.')) {
-            tableName = tableName.split('.').pop();
-          }
-          generatedOperationName = graphqlConfig.operationType === 'query' 
-            ? `get${tableName.charAt(0).toUpperCase() + tableName.slice(1)}Data`
-            : `execute${tableName.charAt(0).toUpperCase() + tableName.slice(1)}`;
-        } else {
-          generatedOperationName = graphqlConfig.operationType === 'query' ? 'getData' : 'executeQuery';
-        }
-      } else {
-        generatedOperationName = graphqlConfig.operationType === 'query' ? 'getData' : 'executeQuery';
-      }
-      
-      generatedSchema = generateGraphQLSchemaFromCustomQuery();
-    }
-    // Case 3: Fallback
-    else {
-      generatedOperationName = graphqlConfig.operationType === 'query' ? 'getData' : 'executeMutation';
+    // For GraphQL, operation is determined by operation type, not HTTP method
+    const graphqlOpType = graphqlConfig.operationType || 'query';
+    let operation = 'SELECT';
+    if (graphqlOpType === 'query') {
+      operation = 'SELECT';
+    } else if (graphqlOpType === 'mutation') {
+      operation = 'EXECUTE';
     }
     
-    // Update operation name (allow update even in edit mode)
-    if (generatedOperationName) {
-      console.log('🔧 Auto-populating GraphQL operation name on protocol switch:', generatedOperationName);
-      setGraphqlConfig(prev => ({ ...prev, operationName: generatedOperationName }));
-    }
+    setSchemaConfig(prev => ({
+      ...prev,
+      operation: operation
+    }));
     
-    // Update schema if empty or if we're in edit mode and schema is from the API
-    if (generatedSchema) {
-      console.log('🔧 Auto-populating GraphQL schema on protocol switch');
-      setGraphqlConfig(prev => ({ ...prev, schema: generatedSchema }));
-    }
+    console.log('🔧 GraphQL protocol - operation set based on operation type:', operation);
   }
   
   console.log('🔄 Protocol changed to:', protocol, '- Switched to Definition tab');
+};
+
+// Helper function to generate service name
+const generateServiceNameFromSource = () => {
+  if (selectedDbObject?.name) {
+    let name = selectedDbObject.name.charAt(0).toUpperCase() + 
+               selectedDbObject.name.slice(1).toLowerCase();
+    name = name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    name = name.replace(/[^a-zA-Z0-9]/g, '');
+    if (!name.toLowerCase().endsWith('service')) {
+      name = name + 'Service';
+    }
+    return name;
+  }
+  if (schemaConfig.objectName) {
+    let name = schemaConfig.objectName.charAt(0).toUpperCase() + 
+               schemaConfig.objectName.slice(1).toLowerCase();
+    name = name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    name = name.replace(/[^a-zA-Z0-9]/g, '');
+    if (!name.toLowerCase().endsWith('service')) {
+      name = name + 'Service';
+    }
+    return name;
+  }
+  return 'APIService';
 };
 
 
@@ -6043,26 +6033,429 @@ const handleApiDetailChange = (field, value) => {
     }
   }, [apiDetails.endpointPath, setApiDetails, protocolType]);
 
+
+
+// Force GraphQL request body to update when parameter API types or examples change
+useEffect(() => {
+  if (protocolType === 'graphql') {
+    const inParams = getInParameters();
+    const outMappings = getOutMappings();
+    const operationName = graphqlConfig.operationName || 'query';
+    const operationType = graphqlConfig.operationType || 'query';
+    
+    let variableDefinitions = '';
+    let variableUsages = '';
+    let variablesObject = {};
+    
+    if (inParams.length > 0) {
+      // Build variable definitions with proper types
+      variableDefinitions = '(' + inParams.map(p => {
+        let graphqlType = 'String';
+        switch(p.apiType?.toLowerCase()) {
+          case 'integer':
+            graphqlType = 'Int';
+            break;
+          case 'number':
+            graphqlType = 'Float';
+            break;
+          case 'boolean':
+            graphqlType = 'Boolean';
+            break;
+          default:
+            graphqlType = 'String';
+        }
+        if (p.required) graphqlType = `${graphqlType}!`;
+        return `$${p.key}: ${graphqlType}`;
+      }).join(', ') + ')';
+      
+      variableUsages = '(' + inParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
+      
+      // Build variables with proper type conversion
+      inParams.forEach(p => {
+        let val = p.example;
+        if (!val || val === '') {
+          if (p.apiType === 'integer') val = 123;
+          else if (p.apiType === 'number') val = 123.45;
+          else if (p.apiType === 'boolean') val = true;
+          else if (p.apiType === 'array') val = [];
+          else if (p.apiType === 'object') val = {};
+          else val = 'sample';
+        } else {
+          if (p.apiType === 'integer') {
+            val = parseInt(val, 10);
+            if (isNaN(val)) val = 123;
+          } else if (p.apiType === 'number') {
+            val = parseFloat(val);
+            if (isNaN(val)) val = 123.45;
+          } else if (p.apiType === 'boolean') {
+            val = val === 'true' || val === '1' || val === 'yes';
+          } else if (p.apiType === 'array') {
+            try { val = JSON.parse(val); } catch { val = []; }
+          } else if (p.apiType === 'object') {
+            try { val = JSON.parse(val); } catch { val = {}; }
+          }
+        }
+        variablesObject[p.key] = val;
+      });
+    }
+    
+    // Build query string
+    let queryString = '';
+    if (operationType === 'query') {
+      if (inParams.length > 0) {
+        queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n`;
+        if (outMappings.length > 0) {
+          queryString += outMappings.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
+        } else {
+          queryString += `    id\n    createdAt\n    updatedAt`;
+        }
+        queryString += `\n  }\n}`;
+      } else {
+        queryString = `${operationType} {\n  ${operationName} {\n`;
+        if (outMappings.length > 0) {
+          queryString += outMappings.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
+        } else {
+          queryString += `    id\n    createdAt\n    updatedAt`;
+        }
+        queryString += `\n  }\n}`;
+      }
+    }
+    
+    const graphqlRequest = JSON.stringify({
+      query: queryString,
+      variables: variablesObject
+    }, null, 2);
+    
+    if (requestBody.sample !== graphqlRequest) {
+      handleRequestBodyChange('sample', graphqlRequest);
+    }
+  }
+}, [parameters, responseMappings, protocolType, graphqlConfig.operationName, graphqlConfig.operationType, getInParameters, getOutMappings]);
+
+
+
+// Update the useEffect that regenerates request body when parameters change
+useEffect(() => {
+    if (parameters.length === 0) return;
+    
+    if (protocolType === 'rest' && requestBody.bodyType === 'json') {
+        const isCustomQueryMode = sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery;
+        const paramsToUse = isCustomQueryMode ? getInParameters() : getInParameters().filter(p => p.parameterLocation === 'body');
+        
+        if (paramsToUse.length > 0) {
+            // Check if current sample is the default/empty one
+            const currentSample = requestBody.sample;
+            const isDefaultOrEmpty = !currentSample || 
+                currentSample === '' ||
+                currentSample === '{}' ||
+                currentSample === '{\n  "key": "value"\n}';
+            
+            // Only auto-regenerate if the sample is empty/default (not user-modified)
+            if (isDefaultOrEmpty) {
+                const requestBodyObj = {};
+                paramsToUse.forEach(param => {
+                    requestBodyObj[param.key] = parseValueByType(param.example, param.apiType);
+                });
+                
+                const jsonSample = JSON.stringify(requestBodyObj, null, 2);
+                if (requestBody.sample !== jsonSample) {
+                    console.log('✅ Auto-updating JSON request body with proper types');
+                    handleRequestBodyChange('sample', jsonSample);
+                    setRequestSchemaVersion(prev => prev + 1);
+                }
+            }
+        }
+    }
+}, [parameters.map(p => `${p.id}-${p.apiType}`).join(','), protocolType, requestBody.bodyType]);
+
+
+// Force regenerate request body after parameters are loaded with correct types
+useEffect(() => {
+  // Wait for parameters to be loaded and have correct types
+  if (parameters.length > 0 && protocolType === 'rest' && requestBody.bodyType === 'json') {
+    const timer = setTimeout(() => {
+      console.log('🔄 Force regenerating request body after parameter load...');
+      
+      const isCustomQueryMode = sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery;
+      const paramsToUse = isCustomQueryMode ? getInParameters() : getInParameters().filter(p => p.parameterLocation === 'body');
+      
+      if (paramsToUse.length > 0) {
+        const requestBodyObj = {};
+        paramsToUse.forEach(param => {
+          const apiType = (param.apiType || 'string').toLowerCase();
+          let val = param.example;
+          
+          switch(apiType) {
+            case 'integer':
+              const intVal = parseInt(val, 10);
+              requestBodyObj[param.key] = isNaN(intVal) ? 123 : intVal;
+              break;
+            case 'number':
+              const floatVal = parseFloat(val);
+              requestBodyObj[param.key] = isNaN(floatVal) ? 123.45 : floatVal;
+              break;
+            case 'boolean':
+              if (val === 'true' || val === '1' || val === 'yes' || val === true) {
+                requestBodyObj[param.key] = true;
+              } else if (val === 'false' || val === '0' || val === 'no' || val === false) {
+                requestBodyObj[param.key] = false;
+              } else {
+                requestBodyObj[param.key] = true;
+              }
+              break;
+            case 'array':
+              try {
+                const parsed = JSON.parse(val);
+                requestBodyObj[param.key] = Array.isArray(parsed) ? parsed : [];
+              } catch {
+                requestBodyObj[param.key] = [];
+              }
+              break;
+            case 'object':
+              try {
+                const parsed = JSON.parse(val);
+                requestBodyObj[param.key] = (typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+              } catch {
+                requestBodyObj[param.key] = {};
+              }
+              break;
+            default:
+              requestBodyObj[param.key] = val || `sample_${param.key}`;
+          }
+        });
+        
+        const jsonSample = JSON.stringify(requestBodyObj, null, 2);
+        
+        console.log('✅ Force updating request body with proper types');
+        console.log('📝 New sample:', jsonSample);
+        
+        // Update both the requestBody.sample and increment the version to force re-render
+        setRequestBody(prev => ({ ...prev, sample: jsonSample }));
+        setRequestSchemaVersion(prev => prev + 1); // This is the key line!
+      }
+    }, 200);
+    
+    return () => clearTimeout(timer);
+  }
+}, [parameters.length, parameters.map(p => `${p.id}-${p.apiType}`).join(',')]);
+
+// Force request body regeneration when parameter apiType or example changes
+useEffect(() => {
+  // Skip if we're in the middle of loading or if there are no parameters
+  if (parameters.length === 0) return;
   
+  if (protocolType === 'rest' && requestBody.bodyType === 'json') {
+    const isCustomQueryMode = sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery;
+    const paramsToUse = isCustomQueryMode ? getInParameters() : getInParameters().filter(p => p.parameterLocation === 'body');
+    
+    if (paramsToUse.length > 0) {
+      console.log('🔄 Regenerating request body due to parameter changes...');
+      const requestBodyObj = {};
+      
+      paramsToUse.forEach(param => {
+        const apiType = (param.apiType || 'string').toLowerCase();
+        let val = param.example;
+        
+        // CRITICAL: Parse the value correctly based on type
+        switch(apiType) {
+          case 'integer':
+            const intVal = parseInt(val, 10);
+            requestBodyObj[param.key] = isNaN(intVal) ? 123 : intVal;
+            break;
+          case 'number':
+            const floatVal = parseFloat(val);
+            requestBodyObj[param.key] = isNaN(floatVal) ? 123.45 : floatVal;
+            break;
+          case 'boolean':
+            if (val === 'true' || val === '1' || val === 'yes' || val === true) {
+              requestBodyObj[param.key] = true;
+            } else if (val === 'false' || val === '0' || val === 'no' || val === false) {
+              requestBodyObj[param.key] = false;
+            } else {
+              requestBodyObj[param.key] = true;
+            }
+            break;
+          case 'array':
+            try {
+              const parsed = JSON.parse(val);
+              requestBodyObj[param.key] = Array.isArray(parsed) ? parsed : [];
+            } catch {
+              requestBodyObj[param.key] = [];
+            }
+            break;
+          case 'object':
+            try {
+              const parsed = JSON.parse(val);
+              requestBodyObj[param.key] = (typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+            } catch {
+              requestBodyObj[param.key] = {};
+            }
+            break;
+          default:
+            // string - keep as string
+            requestBodyObj[param.key] = val || `sample_${param.key}`;
+        }
+      });
+      
+      const jsonSample = JSON.stringify(requestBodyObj, null, 2);
+      // Only update if the sample has actually changed
+      if (requestBody.sample !== jsonSample) {
+        console.log('✅ Updating JSON request body sample with proper types');
+        handleRequestBodyChange('sample', jsonSample);
+        setRequestSchemaVersion(prev => prev + 1);
+      }
+    }
+  }
+}, [parameters.map(p => `${p.id}-${p.apiType}`).join(','), protocolType, requestBody.bodyType]); // Remove example from dependency to prevent loops
+
+
+
+// Add this helper function near your other helper functions (around line 2000)
+const parseValueByType = (value, apiType) => {
+  const type = (apiType || 'string').toLowerCase();
   
-  // Update the handleParameterChange function to properly create new objects
-const handleParameterChange = (id, field, value) => {
+  // Handle null/undefined/empty values
+  if (value === null || value === undefined || value === '') {
+    switch(type) {
+      case 'integer': return 123;
+      case 'number': return 123.45;
+      case 'boolean': return true;
+      case 'array': return [];
+      case 'object': return {};
+      default: return 'sample';
+    }
+  }
+  
+  // Parse based on type
+  switch(type) {
+    case 'integer':
+      const intVal = parseInt(value, 10);
+      return isNaN(intVal) ? 123 : intVal;
+      
+    case 'number':
+      const floatVal = parseFloat(value);
+      return isNaN(floatVal) ? 123.45 : floatVal;
+      
+    case 'boolean':
+      if (value === true || value === false) return value;
+      const strVal = String(value).toLowerCase();
+      if (strVal === 'true' || strVal === '1' || strVal === 'yes') return true;
+      if (strVal === 'false' || strVal === '0' || strVal === 'no') return false;
+      return true;
+      
+    case 'array':
+      // If it's already an array, return it
+      if (Array.isArray(value)) return value;
+      // Try to parse JSON array
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+      return [];
+      
+    case 'object':
+      // If it's already an object, return it
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) return value;
+      // Try to parse JSON object
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          return (typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+        } catch {
+          return {};
+        }
+      }
+      return {};
+      
+    default: // string
+      return String(value);
+  }
+};
+
+
+// Update the regenerateRequestBody function
+const regenerateRequestBody = useCallback(() => {
+    if (protocolType === 'rest' && requestBody.bodyType === 'json') {
+        const isCustomQueryMode = sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery;
+        const paramsToUse = isCustomQueryMode ? getInParameters() : getInParameters().filter(p => p.parameterLocation === 'body');
+        
+        if (paramsToUse.length > 0) {
+            const requestBodyObj = {};
+            paramsToUse.forEach(param => {
+                // Use the helper function to parse the value properly
+                requestBodyObj[param.key] = parseValueByType(param.example, param.apiType);
+            });
+            
+            const updatedSample = JSON.stringify(requestBodyObj, null, 2);
+            if (requestBody.sample !== updatedSample) {
+                console.log('✅ Regenerating request body with proper types');
+                handleRequestBodyChange('sample', updatedSample);
+                setRequestSchemaVersion(prev => prev + 1);
+            }
+        }
+    }
+}, [protocolType, requestBody.bodyType, sourceType, isCustomQuery, isEditingCustomQuery, getInParameters, requestBody.sample]);
+
+
+  const handleParameterChange = (id, field, value) => {
+  // Handle API Type change specially - update both type and example
+  if (field === 'apiType') {
+    const normalizedType = value.toLowerCase();
+    
+    // Use the helper to get appropriate example based on type
+    let newExample = '';
+    switch(normalizedType) {
+        case 'integer':
+            newExample = '123';
+            break;
+        case 'number':
+            newExample = '123.45';
+            break;
+        case 'boolean':
+            newExample = 'true';
+            break;
+        case 'array':
+            newExample = '[]';
+            break;
+        case 'object':
+            newExample = '{}';
+            break;
+        default:
+            newExample = 'sample';
+    }
+    
+    setParameters(prevParams => prevParams.map(param => {
+        if (param.id !== id) return param;
+        return { 
+            ...param, 
+            apiType: normalizedType,
+            example: newExample
+        };
+    }));
+    
+    // Regenerate request body after type change
+    setTimeout(() => {
+        if (protocolType === 'rest' && requestBody.bodyType === 'json') {
+            regenerateRequestBody();
+        }
+    }, 100);
+    return;
+}
+  
+  // Handle regular field changes (non-apiType)
   setParameters(prevParams => {
-    // First, find the current parameter to check its type
     const currentParam = prevParams.find(p => p.id === id);
     
-    // IMPORTANT: Create a new array with all parameters
     let updatedParams = prevParams.map(param => {
-      // Only update the specific parameter
-      if (param.id !== id) {
-        return param; // Return unchanged parameter (keep reference)
-      }
-      
-      // Return a NEW object for the changed parameter
+      if (param.id !== id) return param;
       return { ...param, [field]: value };
     });
     
-    // If changing oracleType to AUTOGENERATE
+    // Handle AUTOGENERATE special cases
     if (field === 'oracleType' && value === 'AUTOGENERATE') {
       const timestamp = getCurrentTimestamp();
       updatedParams = updatedParams.map(param => {
@@ -6072,31 +6465,16 @@ const handleParameterChange = (id, field, value) => {
           required: false,
           example: timestamp,
           defaultValue: timestamp,
-          description: param.description || 'Auto-generated timestamp field'
+          apiType: 'string'
         };
       });
     }
     
-    // If changing oracleType FROM AUTOGENERATE to something else
     if (field === 'oracleType' && currentParam?.oracleType === 'AUTOGENERATE' && value !== 'AUTOGENERATE') {
-      // Generate a default sample value based on the new data type
       let defaultExample = 'sample';
-      let defaultDescription = currentParam.description?.replace('Auto-generated timestamp field', '') || '';
-      
-      // Set example based on the new data type
-      if (value === 'NUMBER') {
-        defaultExample = '123';
-      } else if (value === 'DATE') {
-        defaultExample = '2024-01-01';
-      } else if (value === 'TIMESTAMP') {
-        defaultExample = '2024-01-01 12:00:00';
-      } else if (value === 'VARCHAR2') {
-        defaultExample = 'sample';
-      } else if (value === 'CLOB') {
-        defaultExample = 'Long text content...';
-      } else if (value === 'BLOB') {
-        defaultExample = 'binary_data';
-      }
+      if (value === 'NUMBER') defaultExample = '123';
+      else if (value === 'DATE') defaultExample = '2024-01-01';
+      else if (value === 'BOOLEAN') defaultExample = 'true';
       
       updatedParams = updatedParams.map(param => {
         if (param.id !== id) return param;
@@ -6105,13 +6483,12 @@ const handleParameterChange = (id, field, value) => {
           required: true,
           example: defaultExample,
           defaultValue: '',
-          description: defaultDescription.trim() || `${param.key || 'Parameter'} field`,
-          _autoGenerated: false
+          apiType: value === 'NUMBER' ? 'integer' : 'string'
         };
       });
     }
     
-    // If changing location to 'path', automatically set required to true
+    // Handle path parameter location
     if (field === 'parameterLocation') {
       updatedParams = updatedParams.map(param => {
         if (param.id !== id) return param;
@@ -6122,67 +6499,130 @@ const handleParameterChange = (id, field, value) => {
           _isPathParam: value === 'path'
         };
       });
+      setTimeout(() => updateEndpointPathFromParameters(updatedParams), 0);
     }
     
-    // If changing location from 'path' to something else
-    if (field === 'parameterLocation' && currentParam?.parameterLocation === 'path' && value !== 'path') {
-      updatedParams = updatedParams.map(param => {
-        if (param.id !== id) return param;
-        return { 
-          ...param, 
-          required: param.required,
-          _isPathParam: false
-        };
-      });
+    // Handle example change - ensure it's stored as a string but will be parsed later
+if (field === 'example' && currentParam) {
+  const apiType = (currentParam.apiType || 'string').toLowerCase();
+  let processedValue = value;
+  
+  // Store as string, but validate that it can be parsed correctly
+  if (apiType === 'integer') {
+    const parsed = parseInt(value, 10);
+    processedValue = isNaN(parsed) ? '123' : parsed.toString();
+  } else if (apiType === 'number') {
+    const parsed = parseFloat(value);
+    processedValue = isNaN(parsed) ? '123.45' : parsed.toString();
+  } else if (apiType === 'boolean') {
+    // Keep as string 'true' or 'false'
+    processedValue = value === 'true' || value === 'false' ? value : 'true';
+  } else if (apiType === 'array') {
+    // Try to validate it's valid JSON array
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        processedValue = value;
+      } else {
+        processedValue = '[]';
+      }
+    } catch {
+      processedValue = '[]';
     }
-    
-    // When parameter location changes, update the URL endpoint path
-    if (field === 'parameterLocation') {
-      setTimeout(() => {
-        updateEndpointPathFromParameters(updatedParams);
-      }, 0);
+  } else if (apiType === 'object') {
+    // Try to validate it's valid JSON object
+    try {
+      const parsed = JSON.parse(value);
+      if (typeof parsed === 'object' && !Array.isArray(parsed)) {
+        processedValue = value;
+      } else {
+        processedValue = '{}';
+      }
+    } catch {
+      processedValue = '{}';
     }
-    
-    // After updating parameters, trigger request body sample regeneration if this was a body parameter with changed example or key
-    if ((field === 'example' || field === 'key') && currentParam?.parameterLocation === 'body') {
-      setTimeout(() => {
-        // Re-run the auto-generation logic
-        const bodyParams = updatedParams.filter(p => p.parameterLocation === 'body');
-        if (bodyParams.length > 0 && (requestBody.bodyType === 'json' || requestBody.bodyType === 'xml')) {
-          const currentSample = requestBody.sample;
-          const isDefaultOrEmpty = !currentSample || 
-            currentSample === '' ||
-            currentSample === '{}' ||
-            currentSample === '<request/>';
-          
-          if (isDefaultOrEmpty && (protocolType === 'rest' || protocolType === 'graphql')) {
-            if (requestBody.bodyType === 'json') {
-              const requestBodyObj = {};
-              bodyParams.forEach(p => {
-                if (p.apiType === 'integer') {
-                  requestBodyObj[p.key] = parseInt(p.example) || 123;
-                } else if (p.apiType === 'boolean') {
-                  requestBodyObj[p.key] = p.example === 'true' || false;
-                } else {
-                  requestBodyObj[p.key] = p.example || `sample_${p.key}`;
-                }
-              });
-              handleRequestBodyChange('sample', JSON.stringify(requestBodyObj, null, 2));
-            } else if (requestBody.bodyType === 'xml') {
-              let xmlSample = `<?xml version="1.0" encoding="UTF-8"?>\n<request>\n`;
-              bodyParams.forEach(p => {
-                xmlSample += `  <${p.key}>${p.example || `sample_${p.key}`}</${p.key}>\n`;
-              });
-              xmlSample += `</request>`;
-              handleRequestBodyChange('sample', xmlSample);
-            }
-          }
-        }
-      }, 100);
-    }
+  }
+  
+  updatedParams = updatedParams.map(param => {
+    if (param.id !== id) return param;
+    return { ...param, example: processedValue };
+  });
+}
     
     return updatedParams;
   });
+  
+  // Force request body regeneration when example changes (but not for apiType since we already handled that)
+  if (field === 'example') {
+    setTimeout(() => {
+      if (protocolType === 'rest' && (requestBody.bodyType === 'json' || requestBody.bodyType === 'xml')) {
+        const isCustomQueryMode = sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery;
+        const paramsToUse = isCustomQueryMode ? getInParameters() : getInParameters().filter(p => p.parameterLocation === 'body');
+        
+        if (paramsToUse.length > 0 && requestBody.bodyType === 'json') {
+          const requestBodyObj = {};
+          paramsToUse.forEach(param => {
+            let val = param.example;
+            const apiType = (param.apiType || 'string').toLowerCase();
+            
+            switch(apiType) {
+              case 'integer':
+                val = val ? parseInt(val, 10) : 123;
+                if (isNaN(val)) val = 123;
+                break;
+              case 'number':
+                val = val ? parseFloat(val) : 123.45;
+                if (isNaN(val)) val = 123.45;
+                break;
+              case 'boolean':
+                val = val === 'true' || val === '1' || val === 'yes' || val === true;
+                break;
+              case 'array':
+                try {
+                  val = val && val !== '' ? JSON.parse(val) : [];
+                } catch {
+                  val = [];
+                }
+                break;
+              case 'object':
+                try {
+                  val = val && val !== '' ? JSON.parse(val) : {};
+                } catch {
+                  val = {};
+                }
+                break;
+              default:
+                val = val || `sample_${param.key}`;
+            }
+            requestBodyObj[param.key] = val;
+          });
+          
+          const jsonSample = JSON.stringify(requestBodyObj, null, 2);
+          if (requestBody.sample !== jsonSample) {
+            console.log('✅ Updating JSON request body due to example change');
+            handleRequestBodyChange('sample', jsonSample);
+            setRequestSchemaVersion(prev => prev + 1);
+          }
+        } else if (paramsToUse.length > 0 && requestBody.bodyType === 'xml') {
+          let xmlSample = `<?xml version="1.0" encoding="UTF-8"?>\n<request>\n`;
+          paramsToUse.forEach(param => {
+            let val = param.example || `sample_${param.key}`;
+            const apiType = (param.apiType || 'string').toLowerCase();
+            if (apiType === 'array' || apiType === 'object') {
+              val = '';
+            }
+            xmlSample += `  <${param.key}>${val}</${param.key}>\n`;
+          });
+          xmlSample += `</request>`;
+          if (requestBody.sample !== xmlSample) {
+            console.log('✅ Updating XML request body due to example change');
+            handleRequestBodyChange('sample', xmlSample);
+            setRequestSchemaVersion(prev => prev + 1);
+          }
+        }
+      }
+    }, 50);
+  }
 };
 
 
@@ -6851,8 +7291,9 @@ useEffect(() => {
     setResponseMappings([...responseMappings, newMapping]);
   };
 
+  
 const handleResponseMappingChange = (id, field, value) => {
-  console.log(`📝 Changing mapping ${id} field ${field} to ${value}`);
+  console.log(`📝 Changing mapping ${id} field ${field} to ${value} for protocol: ${protocolType}`);
   
   setResponseMappings(prevMappings => {
     const updatedMappings = prevMappings.map(mapping => {
@@ -6860,26 +7301,28 @@ const handleResponseMappingChange = (id, field, value) => {
       
       const updated = { ...mapping, [field]: value };
       
-      console.log(`🔄 Updated mapping ${id}:`, { 
-        oldType: mapping.apiType, 
-        newType: value,
-        field: field
-      });
-      
       if (field === 'apiType') {
-        console.log(`Setting apiType to: ${value}, type: ${typeof value}`);
-        if (value === 'ARRAY') {
-          updated.example = '[]';
-        } else if (value === 'OBJECT') {
-          updated.example = '{}';
-        } else if (value === 'INTEGER') {
-          updated.example = '123';
-        } else if (value === 'NUMBER') {
-          updated.example = '123.45';
-        } else if (value === 'BOOLEAN') {
-          updated.example = 'true';
-        } else {
-          updated.example = 'sample';
+        console.log(`Setting apiType to: ${value}`);
+        
+        // Update the example based on the new apiType
+        switch(value) {
+          case 'integer':
+            updated.example = '123';
+            break;
+          case 'number':
+            updated.example = '123.45';
+            break;
+          case 'boolean':
+            updated.example = 'true';
+            break;
+          case 'array':
+            updated.example = '[]';
+            break;
+          case 'object':
+            updated.example = '{}';
+            break;
+          default:
+            updated.example = 'sample';
         }
       }
       
@@ -6897,28 +7340,521 @@ const handleResponseMappingChange = (id, field, value) => {
       return updated;
     });
     
-    // CRITICAL FIX: Use setTimeout to ensure state is updated before regenerating
-    // This gives React time to actually update the responseMappings state
-    setTimeout(() => {
-      // Get the OUT mappings from the updated mappings
-      const outMappings = updatedMappings.filter(m => 
-        (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
-      );
-      console.log('🔄 Regenerating response schema after mapping change, mappings count:', outMappings.length);
-      console.log('📊 Mapping details:', outMappings.map(m => ({ field: m.apiField, type: m.apiType })));
-      
-      // Call regenerate with the updated mappings
-      regenerateResponseSchema(updatedMappings);
-    }, 0);
+    // Get OUT mappings with proper example values
+    const outMappings = updatedMappings.filter(m => 
+      (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
+    );
+    
+    // Generate response based on protocol type
+    if (protocolType === 'soap') {
+  const operationName = soapConfig.soapAction || apiDetails.apiCode || 'Operation';
+  const soapVersion = soapConfig.version === '1.2' ? 'http://www.w3.org/2003/05/soap-envelope' : 'http://schemas.xmlsoap.org/soap/envelope/';
+  
+  let bodyContent = '';
+  if (outMappings.length > 0) {
+    bodyContent = `<${operationName}Response xmlns="${soapConfig.namespace}">
+      <success>true</success>
+      <message>Request processed successfully</message>
+      ${outMappings.map(m => {
+        // Get the appropriate example value based on apiType
+        let sampleValue = m.example;
+        const apiType = m.apiType?.toLowerCase();
+        
+        if (!sampleValue || sampleValue === '') {
+          switch(apiType) {
+            case 'integer':
+              sampleValue = '123';
+              break;
+            case 'number':
+              sampleValue = '123.45';
+              break;
+            case 'boolean':
+              sampleValue = 'true';
+              break;
+            case 'array':
+              sampleValue = '';  // Empty array -> self-closing tag
+              break;
+            case 'object':
+              sampleValue = '';  // Empty object -> self-closing tag
+              break;
+            default:
+              sampleValue = 'value';
+          }
+        } else if (apiType === 'boolean') {
+          sampleValue = sampleValue === 'true' || sampleValue === true ? 'true' : 'false';
+        } else if (apiType === 'array') {
+          // For arrays, if example is '[]' or empty, use self-closing tag
+          if (sampleValue === '[]' || sampleValue === '') {
+            sampleValue = '';
+          }
+        } else if (apiType === 'object') {
+          // For objects, if example is '{}' or empty, use self-closing tag
+          if (sampleValue === '{}' || sampleValue === '') {
+            sampleValue = '';
+          }
+        }
+        
+        // Return self-closing tag if sampleValue is empty string
+        if (sampleValue === '') {
+          return `<${m.apiField}/>`;
+        }
+        return `<${m.apiField}>${sampleValue}</${m.apiField}>`;
+      }).join('\n      ')}
+    </${operationName}Response>`;
+  } else {
+    bodyContent = `<${operationName}Response xmlns="${soapConfig.namespace}">
+      <success>true</success>
+      <message>Request processed successfully</message>
+    </${operationName}Response>`;
+  }
+  
+  const soapSuccess = `<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="${soapVersion}">
+  <soap:Header/>
+  <soap:Body>
+    ${bodyContent}
+  </soap:Body>
+</soap:Envelope>`;
+  
+  setResponseBody(prev => ({ 
+    ...prev, 
+    successSchema: soapSuccess,
+    errorSchema: prev.errorSchema
+  }));
+  setResponseSchemaVersion(prev => prev + 1);
+} else if (protocolType === 'graphql') {
+  const operationName = graphqlConfig.operationName || 'operation';
+  const responseData = {};
+  
+  outMappings.forEach(mapping => {
+    let exampleValue = mapping.example;
+    const apiType = mapping.apiType?.toLowerCase();
+    
+    if (exampleValue && exampleValue !== '') {
+      if (apiType === 'integer') {
+        responseData[mapping.apiField] = parseInt(exampleValue) || 123;
+      } else if (apiType === 'number') {
+        responseData[mapping.apiField] = parseFloat(exampleValue) || 123.45;
+      } else if (apiType === 'boolean') {
+        responseData[mapping.apiField] = exampleValue === 'true' || exampleValue === true;
+      } else if (apiType === 'array') {
+        // Handle array properly - parse JSON or use empty array
+        if (exampleValue === '[]' || exampleValue === '') {
+          responseData[mapping.apiField] = [];
+        } else {
+          try {
+            const parsed = JSON.parse(exampleValue);
+            responseData[mapping.apiField] = Array.isArray(parsed) ? parsed : [];
+          } catch {
+            responseData[mapping.apiField] = [];
+          }
+        }
+      } else if (apiType === 'object') {
+        // Handle object properly - parse JSON or use empty object
+        if (exampleValue === '{}' || exampleValue === '') {
+          responseData[mapping.apiField] = {};
+        } else {
+          try {
+            const parsed = JSON.parse(exampleValue);
+            responseData[mapping.apiField] = typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+          } catch {
+            responseData[mapping.apiField] = {};
+          }
+        }
+      } else {
+        responseData[mapping.apiField] = exampleValue;
+      }
+    } else {
+      // Fallback to type-based default
+      switch(apiType) {
+        case 'integer':
+          responseData[mapping.apiField] = 123;
+          break;
+        case 'number':
+          responseData[mapping.apiField] = 123.45;
+          break;
+        case 'boolean':
+          responseData[mapping.apiField] = true;
+          break;
+        case 'array':
+          responseData[mapping.apiField] = [];
+          break;
+        case 'object':
+          responseData[mapping.apiField] = {};
+          break;
+        default:
+          responseData[mapping.apiField] = 'sample';
+      }
+    }
+  });
+  
+  const graphqlSuccess = JSON.stringify({
+    data: { [operationName]: responseData }
+  }, null, 2);
+  
+  setResponseBody(prev => ({ 
+    ...prev, 
+    successSchema: graphqlSuccess,
+    errorSchema: prev.errorSchema
+  }));
+  setResponseSchemaVersion(prev => prev + 1);
+} else {
+  // REST response generation - FIXED FOR ARRAY/OBJECT
+  const sampleData = {};
+  
+  outMappings.forEach(mapping => {
+    // Get the appropriate example value based on apiType
+    let exampleValue = mapping.example;
+    const apiType = mapping.apiType?.toLowerCase();
+    
+    if (exampleValue && exampleValue !== '') {
+      if (apiType === 'integer') {
+        const parsed = parseInt(exampleValue);
+        sampleData[mapping.apiField] = isNaN(parsed) ? 123 : parsed;
+      } else if (apiType === 'number') {
+        const parsed = parseFloat(exampleValue);
+        sampleData[mapping.apiField] = isNaN(parsed) ? 123.45 : parsed;
+      } else if (apiType === 'boolean') {
+        sampleData[mapping.apiField] = exampleValue === 'true' || exampleValue === true;
+      } else if (apiType === 'array') {
+        // Handle array properly - parse JSON or use empty array
+        if (exampleValue === '[]' || exampleValue === '') {
+          sampleData[mapping.apiField] = [];
+        } else {
+          try {
+            const parsed = JSON.parse(exampleValue);
+            sampleData[mapping.apiField] = Array.isArray(parsed) ? parsed : [];
+          } catch {
+            sampleData[mapping.apiField] = [];
+          }
+        }
+      } else if (apiType === 'object') {
+        // Handle object properly - parse JSON or use empty object
+        if (exampleValue === '{}' || exampleValue === '') {
+          sampleData[mapping.apiField] = {};
+        } else {
+          try {
+            const parsed = JSON.parse(exampleValue);
+            sampleData[mapping.apiField] = typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+          } catch {
+            sampleData[mapping.apiField] = {};
+          }
+        }
+      } else {
+        sampleData[mapping.apiField] = exampleValue;
+      }
+    } else {
+      // Fallback to type-based default
+      switch(apiType) {
+        case 'integer':
+          sampleData[mapping.apiField] = 123;
+          break;
+        case 'number':
+          sampleData[mapping.apiField] = 123.45;
+          break;
+        case 'boolean':
+          sampleData[mapping.apiField] = true;
+          break;
+        case 'array':
+          sampleData[mapping.apiField] = [];
+          break;
+        case 'object':
+          sampleData[mapping.apiField] = {};
+          break;
+        default:
+          if (mapping.format === 'date-time') {
+            sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+          } else if (mapping.apiField === 'id') {
+            sampleData[mapping.apiField] = 1;
+          } else {
+            sampleData[mapping.apiField] = 'sample';
+          }
+      }
+    }
+  });
+  
+  const restSuccess = JSON.stringify({
+    success: true,
+    data: sampleData,
+    message: "Success"
+  }, null, 2);
+  
+  setResponseBody(prev => ({ 
+    ...prev, 
+    successSchema: restSuccess,
+    errorSchema: prev.errorSchema
+  }));
+  setResponseSchemaVersion(prev => prev + 1);
+}
     
     return updatedMappings;
   });
 };
 
+
+useEffect(() => {
+  // Only regenerate when parameters change AND we have parameters
+  if (parameters.length === 0) return;
+  
+  console.log('🔄 Parameters changed, regenerating request body sample...');
+  
+  // For REST protocol with JSON/XML body
+  if (protocolType === 'rest') {
+    // Skip if body type is none or binary
+    if (requestBody.bodyType === 'none' || requestBody.bodyType === 'binary') {
+      return;
+    }
+    
+    // Get ALL parameters (not just body parameters)
+    const allParams = parameters;
+    
+    if (allParams.length > 0) {
+      if (requestBody.bodyType === 'json') {
+        const requestBodyObj = {};
+        allParams.forEach(p => {
+          let val = p.example;
+          
+          if (!val || val === '') {
+            switch(p.apiType?.toLowerCase()) {
+              case 'integer':
+                val = 123;
+                break;
+              case 'number':
+                val = 123.45;
+                break;
+              case 'boolean':
+                val = true;
+                break;
+              case 'array':
+                val = [];
+                break;
+              case 'object':
+                val = {};
+                break;
+              default:
+                val = `sample_${p.key}`;
+            }
+          } else {
+            switch(p.apiType?.toLowerCase()) {
+              case 'integer':
+                val = parseInt(val, 10);
+                if (isNaN(val)) val = 123;
+                break;
+              case 'number':
+                val = parseFloat(val);
+                if (isNaN(val)) val = 123.45;
+                break;
+              case 'boolean':
+                val = val === 'true' || val === '1' || val === 'yes';
+                break;
+              case 'array':
+                try {
+                  const parsed = JSON.parse(val);
+                  val = Array.isArray(parsed) ? parsed : [];
+                } catch {
+                  val = [];
+                }
+                break;
+              case 'object':
+                try {
+                  const parsed = JSON.parse(val);
+                  val = typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+                } catch {
+                  val = {};
+                }
+                break;
+              default:
+                val = val;
+            }
+          }
+          requestBodyObj[p.key] = val;
+        });
+        const jsonSample = JSON.stringify(requestBodyObj, null, 2);
+        if (requestBody.sample !== jsonSample) {
+          console.log('✅ Updating JSON request body sample from parameters useEffect');
+          handleRequestBodyChange('sample', jsonSample);
+        }
+        
+      } else if (requestBody.bodyType === 'xml') {
+        let xmlSample = `<?xml version="1.0" encoding="UTF-8"?>\n<request>\n`;
+        allParams.forEach(p => {
+          let val = p.example || `sample_${p.key}`;
+          if (p.apiType?.toLowerCase() === 'array' || p.apiType?.toLowerCase() === 'object') {
+            val = '';
+          }
+          xmlSample += `  <${p.key}>${val}</${p.key}>\n`;
+        });
+        xmlSample += `</request>`;
+        if (requestBody.sample !== xmlSample) {
+          console.log('✅ Updating XML request body sample from parameters useEffect');
+          handleRequestBodyChange('sample', xmlSample);
+        }
+      }
+    }
+  }
+  
+  // For GraphQL protocol
+  if (protocolType === 'graphql') {
+    const inParams = parameters.filter(p => !p.paramMode || p.paramMode === 'IN');
+    const outMappingsForQuery = responseMappings.filter(m => 
+      (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
+    );
+    const operationName = graphqlConfig.operationName || 'query';
+    const operationType = graphqlConfig.operationType || 'query';
+    
+    let variableDefinitions = '';
+    let variableUsages = '';
+    let variablesObject = {};
+    
+    if (inParams.length > 0) {
+      variableDefinitions = '(' + inParams.map(p => {
+        let graphqlType = 'String';
+        switch(p.apiType?.toLowerCase()) {
+          case 'integer':
+            graphqlType = 'Int';
+            break;
+          case 'number':
+            graphqlType = 'Float';
+            break;
+          case 'boolean':
+            graphqlType = 'Boolean';
+            break;
+          default:
+            graphqlType = 'String';
+        }
+        if (p.required) graphqlType = `${graphqlType}!`;
+        return `$${p.key}: ${graphqlType}`;
+      }).join(', ') + ')';
+      
+      variableUsages = '(' + inParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
+      
+      inParams.forEach(p => {
+        let val = p.example;
+        if (!val || val === '') {
+          switch(p.apiType?.toLowerCase()) {
+            case 'integer':
+              val = 123;
+              break;
+            case 'number':
+              val = 123.45;
+              break;
+            case 'boolean':
+              val = true;
+              break;
+            case 'array':
+              val = [];
+              break;
+            case 'object':
+              val = {};
+              break;
+            default:
+              val = 'sample';
+          }
+        } else {
+          switch(p.apiType?.toLowerCase()) {
+            case 'integer':
+              val = parseInt(val, 10);
+              if (isNaN(val)) val = 123;
+              break;
+            case 'number':
+              val = parseFloat(val);
+              if (isNaN(val)) val = 123.45;
+              break;
+            case 'boolean':
+              val = val === 'true' || val === '1' || val === 'yes';
+              break;
+            case 'array':
+              try { val = JSON.parse(val); } catch { val = []; }
+              break;
+            case 'object':
+              try { val = JSON.parse(val); } catch { val = {}; }
+              break;
+            default:
+              val = val;
+          }
+        }
+        variablesObject[p.key] = val;
+      });
+    }
+    
+    let queryString = '';
+    if (operationType === 'query') {
+      if (inParams.length > 0) {
+        queryString = `${operationType} ${operationName}${variableDefinitions} {\n  ${operationName}${variableUsages} {\n`;
+        if (outMappingsForQuery.length > 0) {
+          queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
+        } else {
+          queryString += `    id\n    createdAt\n    updatedAt`;
+        }
+        queryString += `\n  }\n}`;
+      } else {
+        queryString = `${operationType} {\n  ${operationName} {\n`;
+        if (outMappingsForQuery.length > 0) {
+          queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
+        } else {
+          queryString += `    id\n    createdAt\n    updatedAt`;
+        }
+        queryString += `\n  }\n}`;
+      }
+    }
+    
+    const graphqlRequest = JSON.stringify({
+      query: queryString,
+      variables: variablesObject
+    }, null, 2);
+    
+    if (requestBody.sample !== graphqlRequest) {
+      console.log('✅ Updating GraphQL request sample from parameters useEffect');
+      handleRequestBodyChange('sample', graphqlRequest);
+    }
+  }
+  
+// For SOAP protocol
+if (protocolType === 'soap') {
+    const freshSoapEnvelope = generateSOAPEnvelope();
+    if (requestBody.sample !== freshSoapEnvelope) {
+      console.log('✅ Updating SOAP request body sample from parameters useEffect');
+      handleRequestBodyChange('sample', freshSoapEnvelope);
+      setRequestSchemaVersion(prev => prev + 1);
+    }
+}
+}, [parameters, protocolType, requestBody.bodyType, graphqlConfig.operationName, graphqlConfig.operationType]);
+
+
+// Add this useEffect right after your parameters useEffect
+// This initializes the request body sample when parameters are first loaded
+useEffect(() => {
+  // Only run when parameters are first loaded and we have parameters
+  if (parameters.length > 0 && (!requestBody.sample || requestBody.sample === '' || requestBody.sample === '{}')) {
+    console.log('🔄 Initializing request body sample from parameters');
+    
+    if (protocolType === 'rest') {
+      if (requestBody.bodyType === 'json') {
+        const requestBodyObj = {};
+        parameters.forEach(p => {
+          let val = p.example;
+          if (!val || val === '') {
+            if (p.apiType === 'integer') val = 123;
+            else if (p.apiType === 'boolean') val = true;
+            else if (p.apiType === 'array') val = [];
+            else if (p.apiType === 'object') val = {};
+            else val = `sample_${p.key}`;
+          }
+          requestBodyObj[p.key] = val;
+        });
+        handleRequestBodyChange('sample', JSON.stringify(requestBodyObj, null, 2));
+      }
+    }
+  }
+}, [parameters.length]); // Only runs when parameters length changes, not on every parameters change
+
+
 // Add this function before the useEffect
 const regenerateResponseSchema = useCallback((mappings = null) => {
+  // ALWAYS use the passed mappings if provided
   let outMappings = mappings;
   
+  // If no mappings were passed, get from current state (FALLBACK only)
   if (!outMappings || outMappings.length === 0) {
     outMappings = responseMappings.filter(m => 
       (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
@@ -7039,7 +7975,7 @@ const regenerateResponseSchema = useCallback((mappings = null) => {
 }, [protocolType, graphqlConfig.operationName, apiDetails.version, responseMappings]);
 
 
-  const handleRemoveResponseMapping = (id) => {
+   const handleRemoveResponseMapping = (id) => {
     setResponseMappings(responseMappings.filter(mapping => mapping.id !== id));
   };
 
@@ -7073,10 +8009,25 @@ const regenerateResponseSchema = useCallback((mappings = null) => {
     setValidationErrors(prev => ({ ...prev, [field]: null }));
   };
 
+
+  // Force textarea to update when requestBody.sample changes
+useEffect(() => {
+  // This forces a re-render of the textarea by incrementing a counter
+  // when the sample changes in a way that React might not detect
+  if (requestBody.sample) {
+    setRequestSchemaVersion(prev => prev + 1);
+  }
+}, [requestBody.sample]);
+
+
   // Handle request body configuration
   const handleRequestBodyChange = (field, value) => {
-    setRequestBody(prev => ({ ...prev, [field]: value }));
-  };
+  setRequestBody(prev => ({ ...prev, [field]: value }));
+  if (field === 'sample') {
+    // Force a re-render by incrementing the version
+    setRequestSchemaVersion(prev => prev + 1);
+  }
+};
 
   // Handle response body configuration
   const handleResponseBodyChange = (field, value) => {
@@ -7537,64 +8488,148 @@ const populateFormFromApiData = useCallback(async (apiData) => {
         });
     }
 
-    // ============ SET PARAMETERS - CRITICAL FIX FOR GRAPHQL QUERIES ============
-    if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
-        const paramsWithIds = sourceData.parameters.map((p, idx) => {
-            const isPathParam = p.parameterLocation === 'path';
-            const isFileParam = p.oracleType === 'FILE' || p.oracleType === 'BLOB' || p.oracleType === 'BYTEA' || p.oracleType === 'MULTIPART_FILE';
-            
-            let location = p.parameterLocation;
-            
-            if (!location) {
-                if (p.inBody === true || p.inBody === 'true') {
-                    location = 'body';
-                } else if (p.paramMode === 'OUT' || p.paramMode === 'IN/OUT') {
-                    location = 'body';
-                } else {
-                    location = 'query';
-                }
-            }
-            
-            // ============ CRITICAL FIX FOR GRAPHQL QUERIES ============
-            // For GraphQL queries, all parameters MUST be in 'query' location
-            if (isGraphQLQuery && location === 'body') {
+    // ============ SET PARAMETERS - WITH IMMEDIATE TYPE NORMALIZATION ============
+if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
+    const paramsWithIds = sourceData.parameters.map((p, idx) => {
+        const isPathParam = p.parameterLocation === 'path';
+        const isFileParam = p.oracleType === 'FILE' || p.oracleType === 'BLOB' || p.oracleType === 'BYTEA' || p.oracleType === 'MULTIPART_FILE';
+        
+        let location = p.parameterLocation;
+        
+        if (!location) {
+            if (p.inBody === true || p.inBody === 'true') {
+                location = 'body';
+            } else if (p.paramMode === 'OUT' || p.paramMode === 'IN/OUT') {
+                location = 'body';
+            } else {
                 location = 'query';
-                console.log(`🔄 GraphQL Query: Converting parameter "${p.key || p.parameterName}" from 'body' to 'query' location`);
             }
-            
-            let inBodyValue = p.inBody;
-            if (inBodyValue === undefined) {
-                inBodyValue = location === 'body';
+        }
+        
+        // ============ CRITICAL FIX: Normalize API Type on Load ============
+        // Convert the stored type to a proper lowercase type
+        let normalizedApiType = (p.apiType || 'string').toLowerCase();
+        
+        // Map common type names from database to our standard types
+        const typeMap = {
+            'str': 'string',
+            'text': 'string', 
+            'varchar': 'string',
+            'varchar2': 'string',
+            'int': 'integer',
+            'integer': 'integer',
+            'number': 'integer',
+            'numeric': 'integer', 
+            'decimal': 'integer',
+            'float': 'number',
+            'double': 'number',
+            'bool': 'boolean',
+            'boolean': 'boolean',
+            'arr': 'array',
+            'array': 'array',
+            'obj': 'object',
+            'object': 'object',
+            'file': 'file',
+            'binary': 'file'
+        };
+        
+        // Apply the mapping - this fixes "BOOLEAN" -> "boolean", "INTEGER" -> "integer", etc.
+        if (typeMap[normalizedApiType]) {
+            normalizedApiType = typeMap[normalizedApiType];
+            console.log(`🔄 Normalized parameter "${p.key}" type from "${p.apiType}" to "${normalizedApiType}"`);
+        }
+        
+        // ============ FIX EXAMPLE BASED ON CORRECTED TYPE ============
+        let normalizedExample = p.example;
+        
+        // If example doesn't match the type, generate a correct one
+        if (normalizedApiType === 'integer') {
+            const parsed = parseInt(normalizedExample, 10);
+            if (isNaN(parsed)) {
+                normalizedExample = '123';
+                console.log(`🔄 Fixed example for "${p.key}" from "${p.example}" to "${normalizedExample}" (integer)`);
             }
-            
-            // Force inBody to false for GraphQL queries
-            if (isGraphQLQuery) {
-                inBodyValue = false;
+        } else if (normalizedApiType === 'number') {
+            const parsed = parseFloat(normalizedExample);
+            if (isNaN(parsed)) {
+                normalizedExample = '123.45';
+                console.log(`🔄 Fixed example for "${p.key}" from "${p.example}" to "${normalizedExample}" (number)`);
             }
-            
-            return {
-                ...p,
-                id: p.id || `param-${Date.now()}-${idx}`,
-                key: p.key || p.parameterName,
-                dbColumn: p.dbColumn || p.key,
-                oracleType: p.oracleType || p.dataType || 'VARCHAR2',
-                apiType: p.apiType || (isFileParam ? 'file' : 'string'),
-                parameterLocation: location,
-                required: isPathParam ? true : (p.required !== undefined ? p.required : true),
-                description: p.description || `Parameter: ${p.key || p.parameterName}`,
-                example: p.example || (isFileParam ? 'Select a file...' : ''),
-                validationPattern: p.validationPattern || '',
-                defaultValue: p.defaultValue || '',
-                inBody: inBodyValue,
-                isPrimaryKey: p.isPrimaryKey || false,
-                paramMode: p.paramMode || (isCustomQueryApi ? 'IN' : 'IN'),
-                _isPathParam: isPathParam
-            };
-        });
-        setParameters(paramsWithIds);
-        console.log('📦 Loaded parameters from API data:', paramsWithIds.length);
-        console.log('🔍 Parameter locations after load:', paramsWithIds.map(p => ({ key: p.key, location: p.parameterLocation, inBody: p.inBody })));
-    }
+        } else if (normalizedApiType === 'boolean') {
+            // Check if example is a valid boolean representation
+            const isValidBoolean = normalizedExample === 'true' || normalizedExample === 'false' || 
+                                   normalizedExample === '1' || normalizedExample === '0' ||
+                                   normalizedExample === 'yes' || normalizedExample === 'no';
+            if (!isValidBoolean) {
+                normalizedExample = 'true';
+                console.log(`🔄 Fixed example for "${p.key}" from "${p.example}" to "${normalizedExample}" (boolean)`);
+            } else {
+                // Normalize to 'true' or 'false'
+                normalizedExample = (normalizedExample === 'true' || normalizedExample === '1' || normalizedExample === 'yes') ? 'true' : 'false';
+            }
+        } else if (normalizedApiType === 'array') {
+            if (!normalizedExample || normalizedExample === '' || normalizedExample === 'null') {
+                normalizedExample = '[]';
+                console.log(`🔄 Fixed example for "${p.key}" to "[]" (array)`);
+            }
+        } else if (normalizedApiType === 'object') {
+            if (!normalizedExample || normalizedExample === '' || normalizedExample === 'null') {
+                normalizedExample = '{}';
+                console.log(`🔄 Fixed example for "${p.key}" to "{}" (object)`);
+            }
+        } else if (normalizedApiType === 'string') {
+            // For strings, ensure we have a valid string example
+            if (!normalizedExample || normalizedExample === '' || normalizedExample === 'null') {
+                normalizedExample = 'sample';
+                console.log(`🔄 Fixed example for "${p.key}" to "sample" (string)`);
+            }
+        }
+        
+        // For GraphQL queries, all parameters MUST be in 'query' location
+        if (isGraphQLQuery && location === 'body') {
+            location = 'query';
+            console.log(`🔄 GraphQL Query: Converting parameter "${p.key || p.parameterName}" from 'body' to 'query' location`);
+        }
+        
+        let inBodyValue = p.inBody;
+        if (inBodyValue === undefined) {
+            inBodyValue = location === 'body';
+        }
+        
+        // Force inBody to false for GraphQL queries
+        if (isGraphQLQuery) {
+            inBodyValue = false;
+        }
+        
+        return {
+            ...p,
+            id: p.id || `param-${Date.now()}-${idx}`,
+            key: p.key || p.parameterName,
+            dbColumn: p.dbColumn || p.key,
+            oracleType: p.oracleType || p.dataType || 'VARCHAR2',
+            apiType: normalizedApiType,  // Use the normalized type
+            parameterLocation: location,
+            required: isPathParam ? true : (p.required !== undefined ? p.required : true),
+            description: p.description || `Parameter: ${p.key || p.parameterName}`,
+            example: normalizedExample,  // Use the normalized example
+            validationPattern: p.validationPattern || '',
+            defaultValue: p.defaultValue || '',
+            inBody: inBodyValue,
+            isPrimaryKey: p.isPrimaryKey || false,
+            paramMode: p.paramMode || (isCustomQueryApi ? 'IN' : 'IN'),
+            _isPathParam: isPathParam
+        };
+    });
+    
+    setParameters(paramsWithIds);
+    console.log('📦 Loaded parameters from API data:', paramsWithIds.length);
+    console.log('🔍 Parameter details AFTER normalization:', paramsWithIds.map(p => ({ 
+        key: p.key, 
+        originalApiType: p.apiType, 
+        normalizedApiType: p.apiType,
+        example: p.example 
+    })));
+}
 
     // ============ SET RESPONSE MAPPINGS ============
     if (sourceData.responseMappings && Array.isArray(sourceData.responseMappings)) {
@@ -7755,94 +8790,139 @@ const populateFormFromApiData = useCallback(async (apiData) => {
 }, [collections, databaseType, currentDatabaseType]);
 
 
-  // Function to populate form from selected object - FIXED VERSION WITH PROPER MODE FILTERING
-  const populateFormFromObject = useCallback((object, preserveExistingApiDetails = false) => {
-    console.log('📝 populateFormFromObject called with object:', object);
-    console.log('📝 preserveExistingApiDetails:', preserveExistingApiDetails);
-    console.log('📝 Object database type:', object.databaseType);
-    console.log('📝 Object type:', object.type);
-    console.log('📝 Object name:', object.name);
-    
-    // Ensure source type is database_object
-    setSourceType('database_object');
-    setIsEditingCustomQuery(false);
-    
-    // Set the database type for radio buttons
-    const normalizedDbType = object.databaseType?.toLowerCase() === 'postgresql' ? 'postgresql' : 'oracle';
-    setCurrentDatabaseType(normalizedDbType);
-    console.log('🎯 Set currentDatabaseType to:', normalizedDbType);
-    
-    const objectType = object.type?.toUpperCase() || object.objectType?.toUpperCase();
-    const baseName = object.name?.toLowerCase() || object.objectName?.toLowerCase() || '';
-    const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
+// Function to populate form from selected object - FIXED FOR SOAP/GRAPHQL
+const populateFormFromObject = useCallback((object, preserveExistingApiDetails = false) => {
+  console.log('📝 populateFormFromObject called with object:', object);
+  console.log('📝 preserveExistingApiDetails:', preserveExistingApiDetails);
+  console.log('📝 Object database type:', object.databaseType);
+  console.log('📝 Object type:', object.type);
+  console.log('📝 Object name:', object.name);
+  
+  // Ensure source type is database_object
+  setSourceType('database_object');
+  setIsEditingCustomQuery(false);
+  
+  // Set the database type for radio buttons
+  const normalizedDbType = object.databaseType?.toLowerCase() === 'postgresql' ? 'postgresql' : 'oracle';
+  setCurrentDatabaseType(normalizedDbType);
+  console.log('🎯 Set currentDatabaseType to:', normalizedDbType);
+  
+  const objectType = object.type?.toUpperCase() || object.objectType?.toUpperCase();
+  const baseName = object.name?.toLowerCase() || object.objectName?.toLowerCase() || '';
+  const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
 
-    // Get HTTP method from existing state or default based on object type
-    let httpMethod = apiDetails.httpMethod;
-    
-    // For procedures/functions, force POST
-    if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
-      httpMethod = 'POST';
-    } else {
-      httpMethod = httpMethod || 'GET';
-    }
-
-    // Determine operation based on HTTP method and object type
-    let operation = 'SELECT';
-    
-    // For procedures/functions/packages, always use EXECUTE
-    if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
-      operation = 'EXECUTE';
-    } else {
-      // For tables/views, map HTTP method to operation
-      switch(httpMethod) {
-        case 'POST':
-          operation = 'INSERT';
-          break;
-        case 'PUT':
-        case 'PATCH':
-          operation = 'UPDATE';
-          break;
-        case 'DELETE':
-          operation = 'DELETE';
-          break;
-        case 'GET':
-        default:
-          operation = 'SELECT';
-          break;
+  // ============ FIX: Determine operation based on PROTOCOL TYPE ============
+  let operation = 'SELECT';
+  let httpMethod = apiDetails.httpMethod;
+  
+  // For SOAP protocol, ALWAYS use the SOAP Action to determine operation
+  // NEVER derive operation from HTTP method
+  if (protocolType === 'soap') {
+    // Use the SOAP Action to determine operation
+    if (soapConfig.soapAction) {
+      const soapAction = soapConfig.soapAction.toUpperCase();
+      if (soapAction === 'SELECT') {
+        operation = 'SELECT';
+      } else if (soapAction === 'INSERT') {
+        operation = 'INSERT';
+      } else if (soapAction === 'UPDATE') {
+        operation = 'UPDATE';
+      } else if (soapAction === 'DELETE') {
+        operation = 'DELETE';
+      } else if (soapAction === 'EXECUTE') {
+        operation = 'EXECUTE';
+      } else {
+        operation = 'SELECT';
       }
-    }
-
-    // ONLY update API details if NOT preserving existing values
-    if (!preserveExistingApiDetails) {
-      setApiDetails(prev => ({
-        ...prev,
-        apiName: object.name || object.objectName ? `${object.name || object.objectName} API` : 'New API',
-        apiCode: objectType ? `${objectType.slice(0, 3)}_${object.name || object.objectName || 'API'}` : 'API',
-        description: object.comment || (object.name || object.objectName ? `API for ${object.name || object.objectName}` : ''),
-        endpointPath: endpointPath,
-        owner: object.owner || 'HR',
-        httpMethod: httpMethod
-      }));
     } else {
-      // Only update the fields that should be updated from the object
-      setApiDetails(prev => ({
-        ...prev,
-        // Only update these if they are empty or if we specifically want to
-        endpointPath: prev.endpointPath || endpointPath,
-        owner: prev.owner || object.owner || 'HR',
-        httpMethod: prev.httpMethod || httpMethod
-      }));
+      // Default for SOAP is SELECT (not INSERT)
+      operation = 'SELECT';
     }
+    // SOAP always uses POST
+    httpMethod = 'POST';
+    console.log('🔧 SOAP protocol - operation determined by SOAP Action:', operation);
+  }
+  // For GraphQL protocol, operation type is determined by GraphQL config
+  else if (protocolType === 'graphql') {
+    // GraphQL operation type comes from graphqlConfig.operationType
+    const graphqlOpType = graphqlConfig.operationType || 'query';
+    if (graphqlOpType === 'query') {
+      operation = 'SELECT';
+    } else if (graphqlOpType === 'mutation') {
+      // Mutations could be INSERT, UPDATE, or DELETE based on naming
+      const opName = (graphqlConfig.operationName || '').toLowerCase();
+      if (opName.includes('create')) {
+        operation = 'INSERT';
+      } else if (opName.includes('update')) {
+        operation = 'UPDATE';
+      } else if (opName.includes('delete')) {
+        operation = 'DELETE';
+      } else {
+        operation = 'EXECUTE';
+      }
+    } else {
+      operation = 'SELECT';
+    }
+    // GraphQL always uses POST
+    httpMethod = 'POST';
+    console.log('🔧 GraphQL protocol - operation determined by GraphQL operation type:', operation);
+  }
+  // For procedures/functions/packages in REST, always use EXECUTE
+  else if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
+    operation = 'EXECUTE';
+    httpMethod = 'POST';
+  } 
+  // For REST API tables/views, map HTTP method to operation
+  else {
+    switch(httpMethod) {
+      case 'POST':
+        operation = 'INSERT';
+        break;
+      case 'PUT':
+      case 'PATCH':
+        operation = 'UPDATE';
+        break;
+      case 'DELETE':
+        operation = 'DELETE';
+        break;
+      case 'GET':
+      default:
+        operation = 'SELECT';
+        break;
+    }
+  }
 
-    // Set schema config with proper operation based on HTTP method
-    setSchemaConfig(prev => ({
+  // ONLY update API details if NOT preserving existing values
+  if (!preserveExistingApiDetails) {
+    setApiDetails(prev => ({
       ...prev,
-      schemaName: object.owner || 'HR',
-      objectType: objectType || 'TABLE',
-      objectName: object.name || object.objectName || '',
-      operation: operation,
-      primaryKeyColumn: ''
+      apiName: object.name || object.objectName ? `${object.name || object.objectName} API` : 'New API',
+      apiCode: objectType ? `${objectType.slice(0, 3)}_${object.name || object.objectName || 'API'}` : 'API',
+      description: object.comment || (object.name || object.objectName ? `API for ${object.name || object.objectName}` : ''),
+      endpointPath: endpointPath,
+      owner: object.owner || 'HR',
+      httpMethod: httpMethod
     }));
+  } else {
+    // Only update the fields that should be updated from the object
+    setApiDetails(prev => ({
+      ...prev,
+      endpointPath: prev.endpointPath || endpointPath,
+      owner: prev.owner || object.owner || 'HR',
+      httpMethod: prev.httpMethod || httpMethod
+    }));
+  }
+
+  // Set schema config with proper operation (not derived from HTTP method for SOAP/GraphQL)
+  setSchemaConfig(prev => ({
+    ...prev,
+    schemaName: object.owner || 'HR',
+    objectType: objectType || 'TABLE',
+    objectName: object.name || object.objectName || '',
+    operation: operation,
+    primaryKeyColumn: ''
+  }));
+
 
     // ============ AUTO-POPULATE SOAP SERVICE NAME ============
 // Generate service name from database object OR custom query when in SOAP mode
@@ -8332,75 +9412,72 @@ if (protocolType === 'soap') {
   }, [apiDetails.version, apiDetails.httpMethod, setApiDetails, setSchemaConfig, setParameters, setResponseMappings, setRequestBody, setResponseBody]);
 
 
-
-  // Force regenerate response schema with proper type mapping after form is populated
-useEffect(() => {
-  // Wait a bit for the form to fully populate
-  const timer = setTimeout(() => {
-    if (responseMappings.length > 0 && protocolType === 'rest') {
-      console.log('🔄 Forcing response schema regeneration after form load...');
-      
-      // Get the OUT mappings
-      const outMappings = responseMappings.filter(m => 
-        (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
-      );
-      
-      console.log('📊 OUT mappings for initial generation:', outMappings.map(m => ({ field: m.apiField, type: m.apiType })));
-      
-      // Generate the sample data based on apiType
-      const sampleData = {};
-      outMappings.forEach(mapping => {
-        const apiType = mapping.apiType?.toUpperCase();
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (responseMappings.length > 0) {
+        console.log(`🔄 Forcing ${protocolType} response schema regeneration after form load...`);
         
-        switch(apiType) {
-          case 'INTEGER':
-            sampleData[mapping.apiField] = 123;
-            break;
-          case 'NUMBER':
-            sampleData[mapping.apiField] = 123.45;
-            break;
-          case 'BOOLEAN':
-            sampleData[mapping.apiField] = true;
-            break;
-          case 'ARRAY':
-            sampleData[mapping.apiField] = [];
-            break;
-          case 'OBJECT':
-            sampleData[mapping.apiField] = {};
-            break;
-          case 'STRING':
-          default:
-            if (mapping.format === 'date-time') {
-              sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
-            } else if (mapping.apiField === 'id') {
-              sampleData[mapping.apiField] = 1;
-            } else {
-              sampleData[mapping.apiField] = 'sample';
-            }
-            break;
+        const outMappings = responseMappings.filter(m => 
+          (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || m.paramMode === 'IN_OUT' || !m.paramMode)
+        );
+        
+        if (protocolType === 'soap') {
+          const operationName = soapConfig.soapAction || apiDetails.apiCode || 'Operation';
+          const soapVersion = soapConfig.version === '1.2' ? 'http://www.w3.org/2003/05/soap-envelope' : 'http://schemas.xmlsoap.org/soap/envelope/';
+          
+          let bodyContent = outMappings.length > 0 ? `<${operationName}Response xmlns="${soapConfig.namespace}">
+        <success>true</success>
+        <message>Request processed successfully</message>
+        ${outMappings.map(m => {
+          const apiType = m.apiType?.toUpperCase();
+          let sampleValue = 'value';
+          if (apiType === 'INTEGER') sampleValue = '123';
+          else if (apiType === 'NUMBER') sampleValue = '123.45';
+          else if (apiType === 'BOOLEAN') sampleValue = 'true';
+          return `<${m.apiField}>${sampleValue}</${m.apiField}>`;
+        }).join('\n      ')}
+      </${operationName}Response>` : `<${operationName}Response xmlns="${soapConfig.namespace}">
+        <success>true</success>
+        <message>Request processed successfully</message>
+      </${operationName}Response>`;
+          
+          const soapSuccess = `<?xml version="1.0" encoding="UTF-8"?>
+  <soap:Envelope xmlns:soap="${soapVersion}">
+    <soap:Header/>
+    <soap:Body>
+      ${bodyContent}
+    </soap:Body>
+  </soap:Envelope>`;
+          
+          setResponseBody(prev => ({ ...prev, successSchema: soapSuccess }));
+          
+        } else if (protocolType === 'graphql') {
+          const operationName = graphqlConfig.operationName || 'operation';
+          const responseData = {};
+          outMappings.forEach(m => {
+            const type = m.apiType?.toUpperCase();
+            responseData[m.apiField] = type === 'INTEGER' ? 123 : type === 'BOOLEAN' ? true : 'sample';
+          });
+          setResponseBody(prev => ({ ...prev, successSchema: JSON.stringify({ data: { [operationName]: responseData } }, null, 2) }));
+          
+        } else {
+          const sampleData = {};
+          outMappings.forEach(m => {
+            const type = m.apiType?.toUpperCase();
+            if (type === 'INTEGER') sampleData[m.apiField] = 123;
+            else if (type === 'BOOLEAN') sampleData[m.apiField] = true;
+            else if (type === 'ARRAY') sampleData[m.apiField] = [];
+            else sampleData[m.apiField] = 'sample';
+          });
+          setResponseBody(prev => ({ ...prev, successSchema: JSON.stringify({ success: true, data: sampleData, message: 'Success' }, null, 2) }));
         }
-      });
-      
-      console.log('📊 Generated sample data with proper types:', sampleData);
-      
-      const restSuccess = JSON.stringify({
-        success: true,
-        data: sampleData,
-        message: 'Request processed successfully',
-        metadata: {
-          timestamp: '{{timestamp}}',
-          apiVersion: apiDetails.version,
-          requestId: '{{requestId}}'
-        }
-      }, null, 2);
-      
-      setResponseBody(prev => ({ ...prev, successSchema: restSuccess }));
-      setResponseSchemaVersion(prev => prev + 1);
-    }
-  }, 500); // Give time for the form to populate
-  
-  return () => clearTimeout(timer);
-}, [responseMappings.length, protocolType]); // Run when responseMappings are loaded
+        
+        setResponseSchemaVersion(prev => prev + 1);
+      }
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, [responseMappings.length, protocolType, soapConfig, graphqlConfig, activeTab]);
 
 
   // ==================== VALIDATION FUNCTIONS ====================
@@ -8587,44 +9664,48 @@ useEffect(() => {
     }
   }, [protocolType]);
 
-  // Sync operation when HTTP method changes
-  useEffect(() => {
-    // Skip for procedures/functions/packages
-    const objectType = selectedDbObject?.type?.toUpperCase() || selectedObject?.type?.toUpperCase();
-    
-    if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
-      // For procedures/functions, operation should always be EXECUTE
-      setSchemaConfig(prev => ({
-        ...prev,
-        operation: 'EXECUTE'
-      }));
-    } else {
-      // For tables/views, map HTTP method to operation
-      let operation = 'SELECT';
-      switch(apiDetails.httpMethod) {
-        case 'POST':
-          operation = 'INSERT';
-          break;
-        case 'PUT':
-        case 'PATCH':
-          operation = 'UPDATE';
-          break;
-        case 'DELETE':
-          operation = 'DELETE';
-          break;
-        case 'GET':
-        default:
-          operation = 'SELECT';
-          break;
-      }
-      
-      setSchemaConfig(prev => ({
-        ...prev,
-        operation: operation
-      }));
+  // Sync operation when HTTP method changes - MODIFIED to skip SOAP and GraphQL
+useEffect(() => {
+  // Skip for SOAP and GraphQL protocols - operation should not be tied to HTTP method
+  if (protocolType === 'soap' || protocolType === 'graphql') {
+    return;
+  }
+  
+  // Skip for procedures/functions/packages
+  const objectType = selectedDbObject?.type?.toUpperCase() || selectedObject?.type?.toUpperCase();
+  
+  if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
+    // For procedures/functions, operation should always be EXECUTE
+    setSchemaConfig(prev => ({
+      ...prev,
+      operation: 'EXECUTE'
+    }));
+  } else {
+    // For tables/views, map HTTP method to operation
+    let operation = 'SELECT';
+    switch(apiDetails.httpMethod) {
+      case 'POST':
+        operation = 'INSERT';
+        break;
+      case 'PUT':
+      case 'PATCH':
+        operation = 'UPDATE';
+        break;
+      case 'DELETE':
+        operation = 'DELETE';
+        break;
+      case 'GET':
+      default:
+        operation = 'SELECT';
+        break;
     }
-  }, [apiDetails.httpMethod, selectedDbObject, selectedObject]);
-
+    
+    setSchemaConfig(prev => ({
+      ...prev,
+      operation: operation
+    }));
+  }
+}, [apiDetails.httpMethod, selectedDbObject, selectedObject, protocolType]); // Added protocolType to dependencies
 
   // Add this effect to protect against invalid body type configurations
   useEffect(() => {
@@ -13174,7 +14255,7 @@ COMMIT;
                                 </td>
                                 <td className="px-3 py-2">
                                   <select
-                                    value={param.apiType}
+                                    value={param.apiType || 'string'}
                                     onChange={(e) => handleParameterChange(param.id, 'apiType', e.target.value)}
                                     className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                     style={{ 
@@ -13184,7 +14265,9 @@ COMMIT;
                                     }}
                                   >
                                     {API_DATA_TYPES.map(type => (
-                                      <option key={type} value={type}>{type}</option>
+                                      <option key={type} value={type.toLowerCase()}>
+                                        {type}
+                                      </option>
                                     ))}
                                   </select>
                                 </td>
@@ -14584,143 +15667,45 @@ COMMIT;
                               Sample {requestBody.bodyType.toUpperCase()}
                             </span>
                             {(requestBody.bodyType === 'graphql' || requestBody.bodyType === 'json' || requestBody.bodyType === 'xml') && (
-                              <button
+                            <button
                                 onClick={() => {
-                                  if (requestBody.bodyType === 'graphql') {
-                                    // Generate fresh GraphQL request
-                                    const inParams = getInParameters();
-                                    const outMappingsForQuery = getOutMappings();
-                                    const queryParams = inParams;
-                                    let variableDefinitions = '';
-                                    let variableUsages = '';
-                                    let variablesObject = {};
-                                    
-                                    if (queryParams.length > 0) {
-                                      variableDefinitions = '(' + queryParams.map(p => {
-                                        const graphqlType = getGraphQLType(p.oracleType, !p.required);
-                                        return `$${p.key}: ${graphqlType}`;
-                                      }).join(', ') + ')';
-                                      
-                                      variableUsages = '(' + queryParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
-                                      
-                                      queryParams.forEach(p => {
-                                        let val = p.example;
-                                        if (!val) {
-                                          if (p.apiType === 'integer') val = 123;
-                                          else if (p.apiType === 'boolean') val = true;
-                                          else val = 'sample';
+                                    if (requestBody.bodyType === 'json') {
+                                        const sample = {};
+                                        const isCustomQueryMode = sourceType === 'custom_query' || isCustomQuery || isEditingCustomQuery;
+                                        const paramsToUse = isCustomQueryMode ? getInParameters() : getInParameters().filter(p => p.parameterLocation === 'body');
+                                        
+                                        paramsToUse.forEach(p => {
+                                            sample[p.key] = parseValueByType(p.example, p.apiType);
+                                        });
+                                        
+                                        const updatedSample = JSON.stringify(sample, null, 2);
+                                        if (requestBody.sample !== updatedSample) {
+                                            console.log('✅ Generating request body with proper JSON types');
+                                            handleRequestBodyChange('sample', updatedSample);
+                                            setRequestSchemaVersion(prev => prev + 1);
                                         }
-                                        if (p.apiType === 'integer') val = parseInt(val) || 123;
-                                        if (p.apiType === 'boolean') val = val === 'true';
-                                        variablesObject[p.key] = val;
-                                      });
+                                    } else if (requestBody.bodyType === 'xml') {
+                                        // XML generation with proper types...
                                     }
-                                    
-                                    let queryString = `${graphqlConfig.operationType || 'query'} ${graphqlConfig.operationName || 'query'}${variableDefinitions} {\n  ${graphqlConfig.operationName || 'query'}${variableUsages} {\n`;
-                                    if (outMappingsForQuery.length > 0) {
-                                      queryString += outMappingsForQuery.map(m => `    ${m.apiField}`).join('\n');
-                                    } else {
-                                      queryString += `    id\n    createdAt\n    updatedAt`;
-                                    }
-                                    queryString += `\n  }\n}`;
-                                    
-                                    const graphqlRequest = JSON.stringify({
-                                      query: queryString,
-                                      variables: variablesObject
-                                    }, null, 2);
-                                    
-                                    handleRequestBodyChange('sample', graphqlRequest);
-                                  } else if (requestBody.bodyType === 'json') {
-                                    const sample = {};
-                                    const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
-                                    bodyParams.forEach(p => {
-                                      sample[p.key] = p.example || (p.apiType === 'integer' ? 123 : 'sample');
-                                    });
-                                    handleRequestBodyChange('sample', JSON.stringify(sample, null, 2));
-                                  } else if (requestBody.bodyType === 'xml') {
-                                    let xmlSample = `<?xml version="1.0" encoding="UTF-8"?>\n<request>\n`;
-                                    const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
-                                    bodyParams.forEach(p => {
-                                      xmlSample += `  <${p.key}>${p.example || `sample_${p.key}`}</${p.key}>\n`;
-                                    });
-                                    xmlSample += `</request>`;
-                                    handleRequestBodyChange('sample', xmlSample);
-                                  }
                                 }}
                                 className="px-3 py-1 text-xs rounded border transition-colors hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.info,
-                                  borderColor: themeColors.info,
-                                  color: themeColors.white
-                                }}
-                              >
+                                style={{ backgroundColor: themeColors.info, borderColor: themeColors.info, color: themeColors.white }}
+                            >
                                 <RefreshCw className="h-3 w-3 inline mr-1" />
-                                Generate from {requestBody.bodyType === 'graphql' ? 'Parameters & Mappings' : 'Parameters'}
-                              </button>
+                                Generate from Parameters
+                            </button>
                             )}
                           </div>
                           <textarea
-                            key={`${protocolType}-${requestBody.bodyType}-${parameters.length}-${responseMappings.length}`}
-                            value={
-                              requestBody.bodyType === 'graphql' 
-                                ? (() => {
-                                    // Force fresh generation on every render
-                                    const inParams = getInParameters();
-                                    const outMappingsForQuery = getOutMappings();
-                                    const queryParams = inParams;
-                                    let variableDefinitions = '';
-                                    let variableUsages = '';
-                                    let variablesObject = {};
-                                    
-                                    if (queryParams.length > 0) {
-                                      variableDefinitions = '(' + queryParams.map(p => {
-                                        const graphqlType = getGraphQLType(p.oracleType, !p.required);
-                                        return `$${p.key}: ${graphqlType}`;
-                                      }).join(', ') + ')';
-                                      
-                                      variableUsages = '(' + queryParams.map(p => `${p.key}: $${p.key}`).join(', ') + ')';
-                                      
-                                      queryParams.forEach(p => {
-                                        let val = p.example;
-                                        if (!val) {
-                                          if (p.apiType === 'integer') val = 123;
-                                          else if (p.apiType === 'boolean') val = true;
-                                          else val = 'sample';
-                                        }
-                                        if (p.apiType === 'integer') val = parseInt(val) || 123;
-                                        if (p.apiType === 'boolean') val = val === 'true';
-                                        variablesObject[p.key] = val;
-                                      });
-                                    }
-                                    
-                                    let queryString = `${graphqlConfig.operationType || 'query'} ${graphqlConfig.operationName || 'query'}${variableDefinitions} {\n  ${graphqlConfig.operationName || 'query'}${variableUsages} {\n`;
-                                    if (outMappingsForQuery.length > 0) {
-                                      queryString += outMappingsForQuery.slice(0, 20).map(m => `    ${m.apiField}`).join('\n');
-                                      if (outMappingsForQuery.length > 20) {
-                                        queryString += `\n    # ... ${outMappingsForQuery.length - 20} more fields`;
-                                      }
-                                    } else {
-                                      queryString += `    id\n    createdAt\n    updatedAt`;
-                                    }
-                                    queryString += `\n  }\n}`;
-                                    
-                                    return JSON.stringify({
-                                      query: queryString,
-                                      variables: variablesObject
-                                    }, null, 2);
-                                  })()
-                                : requestBody.sample || ''
-                            }
+                            key={`request-sample-${requestSchemaVersion}`}
+                            value={requestBody.sample || ''}
                             onChange={(e) => handleRequestBodyChange('sample', e.target.value)}
                             className="w-full h-96 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
                             style={{ 
                               backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
                               color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
                             }}
-                            placeholder={requestBody.bodyType === 'json' ? '{\n  "key": "value"\n}' : 
-                                      requestBody.bodyType === 'xml' ? '<request>\n  <key>value</key>\n</request>' :
-                                      requestBody.bodyType === 'graphql' ? '{\n  "query": "...",\n  "variables": {...}\n}' :
-                                      'Enter request body...'}
+                            placeholder={requestBody.bodyType === 'json' ? '{\n  "key": "value"\n}' : 'Enter request body...'}
                           />
                         </div>
                       </div>
@@ -16034,6 +17019,7 @@ WHERE ROWNUM <= 100;` : ''}`}
 
       {/* Add the preview modal */}
       <ApiPreviewModal
+        key={`preview-${responseSchemaVersion}-${responseMappings.length}`}
         isOpen={previewOpen}
         onClose={() => setPreviewOpen(false)}
         onConfirm={handlePreviewConfirm}

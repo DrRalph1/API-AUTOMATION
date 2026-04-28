@@ -804,19 +804,111 @@ public class OracleTableExecutorUtil {
         log.info("=== TABLE UPDATE DEBUG ===");
         log.info("Table: {}.{}", owner, tableName);
 
-        List<String> pkColumns = api.getResponseMappings().stream()
-                .filter(m -> Boolean.TRUE.equals(m.getIsPrimaryKey()))
-                .map(ApiResponseMappingEntity::getDbColumn)
-                .collect(Collectors.toList());
+        // ============ FIX: Check BOTH ResponseMappings AND Parameters for primary keys ============
+        List<String> pkColumns = new ArrayList<>();
+        Map<String, Boolean> pkColumnCaseInsensitive = new HashMap<>();
 
-        if (pkColumns.isEmpty()) {
-            throw new RuntimeException("No primary key defined for UPDATE operation");
+        // 1. First check ResponseMappings for primary keys
+        if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+            List<String> responseMappingPKs = api.getResponseMappings().stream()
+                    .filter(m -> Boolean.TRUE.equals(m.getIsPrimaryKey()))
+                    .map(m -> {
+                        String dbColumn = m.getDbColumn();
+                        if (dbColumn == null || dbColumn.isEmpty()) {
+                            dbColumn = m.getApiField();
+                        }
+                        return dbColumn != null ? dbColumn.toUpperCase() : null;
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+
+            if (!responseMappingPKs.isEmpty()) {
+                pkColumns.addAll(responseMappingPKs);
+                responseMappingPKs.forEach(col -> pkColumnCaseInsensitive.put(col.toUpperCase(), true));
+                log.info("Found {} primary key(s) from ResponseMappings: {}", responseMappingPKs.size(), responseMappingPKs);
+            }
         }
 
-        // Build parameter mapping
+        // 2. If no PK found in ResponseMappings, check Parameters
+        if (pkColumns.isEmpty() && api.getParameters() != null && !api.getParameters().isEmpty()) {
+            List<String> parameterPKs = api.getParameters().stream()
+                    .filter(p -> Boolean.TRUE.equals(p.getIsPrimaryKey()))
+                    .map(p -> {
+                        // Get the database column name - check multiple sources
+                        if (p.getDbColumn() != null && !p.getDbColumn().isEmpty()) {
+                            return p.getDbColumn().toUpperCase();
+                        }
+                        if (p.getDbParameter() != null && !p.getDbParameter().isEmpty()) {
+                            return p.getDbParameter().toUpperCase();
+                        }
+                        // If no explicit db mapping, use the key name (assuming it matches column name)
+                        return p.getKey().toUpperCase();
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+
+            if (!parameterPKs.isEmpty()) {
+                pkColumns.addAll(parameterPKs);
+                parameterPKs.forEach(col -> pkColumnCaseInsensitive.put(col.toUpperCase(), true));
+                log.info("Found {} primary key(s) from Parameters: {}", parameterPKs.size(), parameterPKs);
+            }
+        }
+
+        // 3. Also check SchemaConfig for primary key column
+        if (pkColumns.isEmpty() && api.getSchemaConfig() != null &&
+                api.getSchemaConfig().getPrimaryKeyColumn() != null &&
+                !api.getSchemaConfig().getPrimaryKeyColumn().isEmpty()) {
+            String schemaConfigPK = api.getSchemaConfig().getPrimaryKeyColumn().toUpperCase();
+            pkColumns.add(schemaConfigPK);
+            pkColumnCaseInsensitive.put(schemaConfigPK, true);
+            log.info("Using primary key from SchemaConfig: {}", schemaConfigPK);
+        }
+
+        // 4. If still no PK found, try to get from database metadata
+        if (pkColumns.isEmpty()) {
+            log.warn("No primary key found in ResponseMappings, Parameters, or SchemaConfig. Attempting to fetch from database metadata...");
+            try {
+                List<String> dbPKs = getPrimaryKeyColumnsFromDatabase(tableName, owner);
+                if (!dbPKs.isEmpty()) {
+                    pkColumns.addAll(dbPKs);
+                    dbPKs.forEach(col -> pkColumnCaseInsensitive.put(col.toUpperCase(), true));
+                    log.info("Found {} primary key(s) from database metadata: {}", dbPKs.size(), dbPKs);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to fetch primary key from database metadata: {}", e.getMessage());
+            }
+        }
+
+        if (pkColumns.isEmpty()) {
+            log.error("No primary key found for UPDATE operation on table {}.{}", owner, tableName);
+            log.debug("ResponseMappings count: {}", api.getResponseMappings() != null ? api.getResponseMappings().size() : 0);
+            log.debug("Parameters count: {}", api.getParameters() != null ? api.getParameters().size() : 0);
+            log.debug("SchemaConfig PK column: {}", api.getSchemaConfig() != null ? api.getSchemaConfig().getPrimaryKeyColumn() : "null");
+            throw new RuntimeException("No primary key defined for UPDATE operation on table " + tableName +
+                    ". Please ensure a primary key is configured in ResponseMappings or Parameters.");
+        }
+        // ============ END FIX ============
+
+        // Build parameter mapping from API parameters to database columns
         Map<String, String> apiToDbColumnMap = new HashMap<>();
         if (configuredParamDTOs != null) {
             for (ApiParameterDTO param : configuredParamDTOs) {
+                if (param.getKey() != null) {
+                    String dbColumnName = param.getDbColumn();
+                    if (dbColumnName == null || dbColumnName.isEmpty()) {
+                        dbColumnName = param.getDbParameter();
+                    }
+                    if (dbColumnName == null || dbColumnName.isEmpty()) {
+                        dbColumnName = param.getKey();
+                    }
+                    apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toUpperCase());
+                }
+            }
+        }
+
+        // Also add mappings from api.getParameters() if available
+        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+            for (ApiParameterEntity param : api.getParameters()) {
                 if (param.getKey() != null) {
                     String dbColumnName = param.getDbColumn();
                     if (dbColumnName == null || dbColumnName.isEmpty()) {
@@ -865,40 +957,39 @@ public class OracleTableExecutorUtil {
                 continue;
             }
 
-            // Skip byte arrays - they're file data
+            // Skip byte arrays - they're file data (handled separately for BLOB columns)
             if (entry.getValue() instanceof byte[]) {
-                log.debug("Skipping byte array parameter '{}' (file data)", key);
+                log.debug("Skipping byte array parameter '{}' (file data, will be handled as BLOB)", key);
                 continue;
             }
 
             // Map the key to database column name if mapping exists
-            String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
-            processedParams.put(dbColumnName, entry.getValue());
-        }
+            String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key.toUpperCase());
 
-        // Handle collection/array parameters - convert to single values for database - Skip byte arrays
-        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
+            // Handle the value
             Object value = entry.getValue();
-            // Skip byte arrays - they're file data
-            if (value instanceof byte[]) {
-                log.debug("Skipping byte array parameter '{}' (file data)", entry.getKey());
-                continue;
-            }
+
+            // Handle collection/array values - convert to single value
             if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);
                 if (!collection.isEmpty()) {
-                    // Take the first value
-                    processedParams.put(entry.getKey(), collection.iterator().next());
-                    log.info("Converted collection parameter '{}' to single value for UPDATE", entry.getKey());
+                    value = collection.iterator().next();
+                    log.debug("Converted collection parameter '{}' to single value for UPDATE", key);
                 } else {
-                    processedParams.put(entry.getKey(), null);
+                    value = null;
                 }
+            }
+
+            if (value != null) {
+                processedParams.put(dbColumnName, value);
+                log.debug("Mapped parameter: {} -> {} = {}", key, dbColumnName, value);
             }
         }
 
-        log.info("Processed params for UPDATE: {}", processedParams.keySet());
+        log.info("Processed params for UPDATE (before adding PKs): {}", processedParams.keySet());
 
+        // Build SET clause and WHERE clause
         StringBuilder setClause = new StringBuilder();
         StringBuilder whereClause = new StringBuilder();
         List<Object> setValues = new ArrayList<>();
@@ -906,9 +997,12 @@ public class OracleTableExecutorUtil {
 
         for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
             String key = entry.getKey();
-            boolean isPk = pkColumns.stream().anyMatch(pk -> pk.equalsIgnoreCase(key));
+            // Check if this column is a primary key (case-insensitive)
+            boolean isPk = pkColumnCaseInsensitive.containsKey(key.toUpperCase()) ||
+                    pkColumns.stream().anyMatch(pk -> pk.equalsIgnoreCase(key));
 
             if (isPk) {
+                // Add to WHERE clause
                 if (whereClause.length() > 0) {
                     whereClause.append(" AND ");
                 } else {
@@ -916,24 +1010,65 @@ public class OracleTableExecutorUtil {
                 }
                 whereClause.append(key).append(" = ?");
                 whereValues.add(entry.getValue());
+                log.info("Added WHERE condition: {} = {}", key, entry.getValue());
             } else {
+                // Add to SET clause
                 if (setClause.length() > 0) {
                     setClause.append(", ");
                 }
                 setClause.append(key).append(" = ?");
                 setValues.add(entry.getValue());
+                log.info("Added SET condition: {} = {}", key, entry.getValue());
             }
         }
 
+        // Validate that we have WHERE clause (primary key provided)
         if (whereValues.isEmpty()) {
-            throw new RuntimeException("No primary key values provided for UPDATE operation");
+            // Try to find primary key values from the original params if not in processedParams
+            log.warn("No primary key values found in processedParams. Checking original params...");
+
+            for (String pkCol : pkColumns) {
+                // Try to find PK value in original params
+                for (Map.Entry<String, Object> entry : params.entrySet()) {
+                    String key = entry.getKey();
+                    String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key.toUpperCase());
+                    if (dbColumnName.equalsIgnoreCase(pkCol) || key.equalsIgnoreCase(pkCol)) {
+                        Object pkValue = entry.getValue();
+                        if (pkValue != null) {
+                            if (whereClause.length() > 0) {
+                                whereClause.append(" AND ");
+                            } else {
+                                whereClause.append(" WHERE ");
+                            }
+                            whereClause.append(pkCol).append(" = ?");
+                            whereValues.add(pkValue);
+                            log.info("Found primary key value from original params: {} = {}", pkCol, pkValue);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // If still no WHERE clause, throw error
+            if (whereValues.isEmpty()) {
+                log.error("No primary key values provided for UPDATE operation. PK Columns: {}, Available params: {}",
+                        pkColumns, params.keySet());
+                throw new RuntimeException("No primary key values provided for UPDATE operation. Required primary key column(s): " +
+                        String.join(", ", pkColumns));
+            }
         }
 
+        // Build the final SQL
         String sql = "UPDATE " + (owner != null && !owner.isEmpty() ? owner + "." : "") + tableName +
                 " SET " + setClause + whereClause;
 
+        // Combine all parameters (SET values first, then WHERE values)
         List<Object> allParams = new ArrayList<>(setValues);
         allParams.addAll(whereValues);
+
+        log.info("Final UPDATE SQL: {}", sql);
+        log.info("UPDATE parameters - SET({}): {}, WHERE({}): {}",
+                setValues.size(), setValues, whereValues.size(), whereValues);
 
         try {
             int rowsAffected = oracleJdbcTemplate.update(sql, allParams.toArray());
@@ -942,10 +1077,16 @@ public class OracleTableExecutorUtil {
             result.put("rowsAffected", rowsAffected);
             result.put("message", rowsAffected > 0 ? "Update successful" : "No rows updated");
 
+            if (rowsAffected > 0) {
+                log.info("UPDATE successful: {} row(s) affected", rowsAffected);
+            } else {
+                log.warn("UPDATE completed but no rows were affected. Check if the primary key value exists.");
+            }
+
             return result;
 
         } catch (Exception e) {
-            log.error("Error executing UPDATE on {}: {}", tableName, e.getMessage(), e);
+            log.error("Error executing UPDATE on {}.{}: {}", owner, tableName, e.getMessage(), e);
 
             String detailedError = extractFullOracleError(e);
 
@@ -964,22 +1105,57 @@ public class OracleTableExecutorUtil {
                     throw new RuntimeException("Child record found - integrity constraint violation: " + detailedError, e);
                 }
                 if (e.getMessage().contains("ORA-12899")) {
-                    throw new RuntimeException(detailedError, e);
+                    throw new RuntimeException("Value too large for column: " + detailedError, e);
                 }
                 if (e.getMessage().contains("ORA-00001")) {
                     throw new RuntimeException("Unique constraint violation: " + detailedError, e);
                 }
                 if (e.getMessage().contains("ORA-01407")) {
-                    throw new RuntimeException("Cannot update to NULL: " + detailedError, e);
+                    throw new RuntimeException("Cannot update column to NULL: " + detailedError, e);
                 }
                 if (e.getMessage().contains("ORA-01722")) {
-                    throw new RuntimeException("Invalid number: " + detailedError, e);
+                    throw new RuntimeException("Invalid number format: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-00904")) {
+                    throw new RuntimeException("Invalid column name: " + detailedError, e);
                 }
             }
 
             throw new RuntimeException("Failed to execute UPDATE operation: " + detailedError, e);
         }
     }
+
+    /**
+     * Helper method to get primary key columns from database metadata
+     */
+    private List<String> getPrimaryKeyColumnsFromDatabase(String tableName, String owner) {
+        List<String> pkColumns = new ArrayList<>();
+        try {
+            String sql = "SELECT cols.column_name " +
+                    "FROM all_constraints cons, all_cons_columns cols " +
+                    "WHERE cons.constraint_type = 'P' " +
+                    "AND cons.constraint_name = cols.constraint_name " +
+                    "AND cons.owner = cols.owner " +
+                    "AND cons.owner = ? " +
+                    "AND cons.table_name = ? " +
+                    "ORDER BY cols.position";
+
+            List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(sql, owner, tableName);
+            for (Map<String, Object> row : results) {
+                String columnName = (String) row.get("COLUMN_NAME");
+                if (columnName != null) {
+                    pkColumns.add(columnName.toUpperCase());
+                }
+            }
+            log.info("Retrieved primary key columns from database for {}.{}: {}", owner, tableName, pkColumns);
+        } catch (Exception e) {
+            log.warn("Could not retrieve primary key from database metadata: {}", e.getMessage());
+        }
+        return pkColumns;
+    }
+
+
+
 
     public Object executeDelete(String tableName, String owner, Map<String, Object> params,
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {

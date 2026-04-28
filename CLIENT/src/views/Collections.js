@@ -2162,83 +2162,63 @@ const determineActiveTab = useCallback(() => {
     return activeTab;
   }
   
-  // CRITICAL: For SOAP and GraphQL, ALWAYS return 'body'
+  // CRITICAL: For SOAP and GraphQL, ALWAYS return 'body' - don't check content
   if (currentProtocol === 'soap' || currentProtocol === 'graphql') {
     console.log('🎯 [determineActiveTab] Protocol is', currentProtocol, '- returning body tab');
     return 'body';
   }
   
-  // For REST, check what content exists
+  // For REST, check actual content
   let hasPathParamsWithValues = false;
   let hasQueryParamsWithValues = false;
   let hasBodyContent = false;
   
-  // Check path params
+  // Only calculate if we have data
   if (memoizedRequestPathParams && memoizedRequestPathParams.length > 0) {
     hasPathParamsWithValues = memoizedRequestPathParams.some(p => 
       p.enabled && p.key && p.key.trim() !== '' && p.value && p.value.trim() !== ''
     );
   }
   
-  // Check query params
   if (memoizedRequestParams && memoizedRequestParams.length > 0) {
     hasQueryParamsWithValues = memoizedRequestParams.some(p => 
       p.enabled && p.key && p.key.trim() !== '' && p.value && p.value.trim() !== ''
     );
   }
   
-  // Check body content - MORE COMPREHENSIVE
-  if (requestBodyType !== 'none') {
-    // Check raw body content
-    if (requestBody && requestBody.trim() !== '' && 
-        requestBody !== '{}' && 
-        requestBody !== '{\n  \n}') {
-      hasBodyContent = true;
-    }
+  // For REST, check actual body content
+  if (requestBody && requestBodyType !== 'none' && requestBodyType !== 'xml' && requestBodyType !== 'graphql') {
+    hasBodyContent = requestBody.trim() !== '' && 
+      requestBody !== '{}' && 
+      requestBody !== '{\n  \n}';
     
-    // Check form-data fields
+    // Also check if there are form-data or urlencoded fields
     if (!hasBodyContent && requestBodyType === 'form-data' && formData.length > 0) {
-      hasBodyContent = formData.some(f => f.enabled && f.key && (f.value || f.file));
+      hasBodyContent = formData.some(f => f.enabled && f.key);
     }
-    
-    // Check urlencoded fields
     if (!hasBodyContent && requestBodyType === 'x-www-form-urlencoded' && urlEncodedData.length > 0) {
       hasBodyContent = urlEncodedData.some(u => u.enabled && u.key);
     }
   }
   
-  // GET, DELETE, HEAD, OPTIONS methods - prioritize path params, then query params
-  const readMethods = ['GET', 'DELETE', 'HEAD', 'OPTIONS'];
-  if (readMethods.includes(requestMethod)) {
-    if (hasPathParamsWithValues) {
-      console.log('🎯 [determineActiveTab] GET/DELETE with path params - showing path-params tab');
-      return 'path-params';
-    }
-    if (hasQueryParamsWithValues) {
-      console.log('🎯 [determineActiveTab] GET/DELETE with query params - showing query-params tab');
-      return 'query-params';
-    }
-    console.log('🎯 [determineActiveTab] GET/DELETE with no params - showing path-params tab');
-    return 'path-params';
+  // Priority based on actual content
+  let newTab = activeTab;
+  if (hasPathParamsWithValues) {
+    newTab = 'path-params';
+  } else if (hasQueryParamsWithValues) {
+    newTab = 'query-params';
+  } else if (hasBodyContent) {
+    newTab = 'body';
+  } else {
+    newTab = 'path-params';
   }
   
-  // POST, PUT, PATCH methods - prioritize body tab
-  const writeMethods = ['POST', 'PUT', 'PATCH'];
-  if (writeMethods.includes(requestMethod)) {
-    // Always show body tab for write operations if there's ANY body content OR body type is set
-    if (hasBodyContent || requestBodyType !== 'none') {
-      console.log('🎯 [determineActiveTab] Write operation - showing body tab');
-      return 'body';
-    }
-    // If no body content and body type is none, but it's a write operation, still show body tab
-    // because user might want to add body content
-    console.log('🎯 [determineActiveTab] Write operation (no body yet) - showing body tab');
-    return 'body';
+  // Only log if actually changing
+  if (newTab !== activeTab) {
+    console.log('🎯 Auto-switching tab from', activeTab, 'to', newTab);
   }
   
-  // Default to body for any other case
-  console.log('🎯 [determineActiveTab] Default case - showing body tab');
-  return 'body';
+  return newTab;
 }, [
   memoizedRequestPathParams,
   memoizedRequestParams,
@@ -2247,10 +2227,7 @@ const determineActiveTab = useCallback(() => {
   formData,
   urlEncodedData,
   currentProtocol,
-  activeTab,
-  requestMethod,
-  loading.request,
-  loading.initialLoad
+  activeTab
 ]);
 
 useEffect(() => {
