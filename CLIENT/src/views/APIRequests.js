@@ -119,7 +119,6 @@ import {
   buildFilterFromQuery
 } from "../controllers/APIRequestController.js";
 
-
 // ============ SYNTAX HIGHLIGHTER COMPONENT ============
 const SyntaxHighlighter = ({ language, code }) => {
   if (!code) return <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">// No code available</pre>;
@@ -287,54 +286,6 @@ const resolveUrlWithPathParams = (url, requestData) => {
   console.log('Resolved URL:', { original: url, resolved: resolvedUrl, pathParams: allPathParams });
   
   return resolvedUrl;
-};
-
-
-// Map business response codes to HTTP-equivalent status codes
-const mapBusinessCodeToHttpStatus = (request) => {
-  if (!request?.responseBody) return request?.responseStatusCode;
-  
-  try {
-    const responseBody = typeof request.responseBody === 'string' 
-      ? JSON.parse(request.responseBody) 
-      : request.responseBody;
-    
-    // FIRST: Check for data.response_code (transaction pattern) - most specific
-    if (responseBody?.data?.response_code) {
-      const businessCode = String(responseBody.data.response_code);
-      if (businessCode === '601') {
-        return 409; // Map 601 to HTTP 409 (Conflict/Duplicate)
-      }
-      if (businessCode === '000') {
-        return 200; // Map 000 to HTTP 200 (Success)
-      }
-    }
-    
-    // SECOND: Check for responseCode at root (activity logs pattern)
-    // Handle both string and number responseCode
-    const rootResponseCode = responseBody?.responseCode;
-    if (rootResponseCode !== undefined) {
-      const codeStr = String(rootResponseCode);
-      if (codeStr === '000') {
-        return 200; // Map 000 to HTTP 200 (Success)
-      }
-      if (codeStr === '207') {
-        return 207; // Keep as is (Multi-Status)
-      }
-      if (codeStr === '503') {
-        return 503; // Keep as is (Service Unavailable)
-      }
-      // If responseCode is a number like 200, return it as is
-      if (typeof rootResponseCode === 'number' && rootResponseCode >= 100 && rootResponseCode <= 599) {
-        return rootResponseCode;
-      }
-    }
-    
-  } catch (e) {
-    console.error('Error parsing response body:', e);
-  }
-  
-  return request?.responseStatusCode;
 };
 
 
@@ -612,33 +563,24 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
               <p className="text-sm mt-0.5" style={{ color: colors.textSecondary }}>{request.requestName || 'API Request'}</p>
             </div>
             <div className="flex items-center gap-2">
-              {(() => {
-                const mappedCode = mapBusinessCodeToHttpStatus(request);
-                const displayCode = mappedCode || request.responseStatusCode;
-                const displayColor = getStatusCodeColorHelper(displayCode);
-                return (
-                  <>
-                    <div 
-                      className="px-3 py-1 rounded-md text-sm font-mono font-medium"
-                      style={{ 
-                        backgroundColor: displayColor,
-                        color: '#fff'
-                      }}
-                    >
-                      {displayCode || '—'}
-                    </div>
-                    <div 
-                      className="px-3 py-1 rounded-md text-sm"
-                      style={{ 
-                        backgroundColor: `${displayColor}15`,
-                        color: displayColor
-                      }}
-                    >
-                      {getStatusText(displayCode)}
-                    </div>
-                  </>
-                );
-              })()}
+              <div 
+                className="px-3 py-1 rounded-md text-sm font-mono font-medium"
+                style={{ 
+                  backgroundColor: getStatusCodeColorHelper(request.responseStatusCode),
+                  color: '#fff'
+                }}
+              >
+                {request.responseStatusCode || '—'}
+              </div>
+              <div 
+                className="px-3 py-1 rounded-md text-sm"
+                style={{ 
+                  backgroundColor: `${getStatusCodeColorHelper(request.responseStatusCode)}15`,
+                  color: getStatusCodeColorHelper(request.responseStatusCode)
+                }}
+              >
+                {getStatusText(request.responseStatusCode)}
+              </div>
             </div>
           </div>
           
@@ -1668,7 +1610,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   }
 };
 
-
  // Enhanced getStatusText function with more status codes
 const getStatusText = (statusCode) => {
   if (!statusCode) return 'PENDING';
@@ -2607,19 +2548,8 @@ const loadRequests = useCallback(async (isRefresh = false) => {
           </thead>
           <tbody>
             {requests.map((request, index) => {
-              // DEBUG - PUT THIS INSIDE THE MAP FUNCTION
-              console.log('🔍 Request ID:', request.id);
-              console.log('  responseStatusCode:', request.responseStatusCode);
-              console.log('  responseBody type:', typeof request.responseBody);
-              console.log('  responseBody:', request.responseBody);
-              
-              const mappedStatusCode = mapBusinessCodeToHttpStatus(request);
-              console.log('  mappedStatusCode:', mappedStatusCode);
-              
               const sequentialNumber = (pagination.page * pagination.size) + index + 1;
-              const statusCode = mappedStatusCode || request.responseStatusCode;
-              console.log('  final statusCode:', statusCode);
-              
+              const statusCode = request.responseStatusCode;
               const statusColor = getStatusCodeColorHelper(statusCode);
               const statusText = getStatusText(statusCode);
               const resolvedUrl = resolveUrlWithPathParams(request.url, request);
@@ -2674,10 +2604,10 @@ const loadRequests = useCallback(async (isRefresh = false) => {
                     </div>
                    </td>
                   <td className="py-3 px-4">
-                    <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(statusCode) }}>
-                      {statusCode || '-'}
+                    <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(request.responseStatusCode) }}>
+                      {request.responseStatusCode || '-'}
                     </span>
-                  </td>
+                   </td>
                   <td className="py-3 px-4">
                     <span className="text-sm" style={{ color: colors.text }}>
                       {formatExecutionTimeHelper(request.executionDurationMs)}
