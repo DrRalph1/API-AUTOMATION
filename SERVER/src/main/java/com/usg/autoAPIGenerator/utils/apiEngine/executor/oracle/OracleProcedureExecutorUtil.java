@@ -535,11 +535,99 @@ public class OracleProcedureExecutorUtil {
                     actualOwner != null ? actualOwner : "<default>", actualProcedureName, allParameters.size());
 
             // Execute the procedure with the mapped database parameters
+            // Execute the procedure with the mapped database parameters
             Map<String, Object> result = jdbcCall.execute(dbParams);
 
             log.info("Procedure executed successfully, result contains {} keys: {}", result.size(), result.keySet());
 
-            // Map the results to response data
+// ============ CHECK FOR BUSINESS ERRORS IN OUT PARAMETERS ============
+// Check for response_code in the result (case insensitive)
+            String responseCode = null;
+            String errorMessage = null;
+
+// Look for response_code in result keys (case insensitive)
+            for (Map.Entry<String, Object> entry : result.entrySet()) {
+                String key = entry.getKey().toLowerCase();
+                if (key.equals("response_code") || key.equals("responsecode") || key.equals("code")) {
+                    responseCode = entry.getValue() != null ? entry.getValue().toString() : null;
+                    log.info("Found response_code: {} = {}", entry.getKey(), responseCode);
+                }
+                if (key.equals("mess") || key.equals("message") || key.equals("err_msg") || key.equals("error_msg")) {
+                    errorMessage = entry.getValue() != null ? entry.getValue().toString() : null;
+                    log.info("Found error message: {} = {}", entry.getKey(), errorMessage);
+                }
+            }
+
+// If response_code exists and is not success code (000, 0, or null), treat as business error
+            if (responseCode != null && !"000".equals(responseCode) && !"0".equals(responseCode)) {
+                String finalErrorMessage = errorMessage != null ? errorMessage : "Business rule violation (Code: " + responseCode + ")";
+
+                int httpStatusCode;
+
+                // Map your business response codes to HTTP status codes
+                switch (responseCode) {
+                    case "601":  // Document already exists
+                        httpStatusCode = 409;
+                        finalErrorMessage = errorMessage != null ? errorMessage : "Document already exists";
+                        log.info("Business error: Document already exists (Code: 601) -> Mapping to 409 Conflict");
+                        break;
+                    case "305":  // Wrong account
+                    case "307":
+                    case "309":
+                    case "300":
+                        httpStatusCode = 400;
+                        finalErrorMessage = errorMessage != null ? errorMessage : "Invalid account number";
+                        log.info("Business error: Invalid account (Code: {}) -> Mapping to 400 Bad Request", responseCode);
+                        break;
+                    case "400":  // Invalid amount
+                    case "500":
+                        httpStatusCode = 400;
+                        finalErrorMessage = errorMessage != null ? errorMessage : "Invalid transaction amount";
+                        log.info("Business error: Invalid amount (Code: {}) -> Mapping to 400 Bad Request", responseCode);
+                        break;
+                    case "600":  // Missing narration
+                    case "700":  // Missing user
+                    case "701":  // Missing document ref
+                    case "702":
+                        httpStatusCode = 400;
+                        finalErrorMessage = errorMessage != null ? errorMessage : "Missing required field";
+                        log.info("Business error: Missing required field (Code: {}) -> Mapping to 400 Bad Request", responseCode);
+                        break;
+                    case "100":  // EOD running
+                        httpStatusCode = 503;
+                        finalErrorMessage = "End of Day processing is currently running. Please try again later.";
+                        log.info("Business error: EOD running (Code: 100) -> Mapping to 503 Service Unavailable");
+                        break;
+                    case "189":  // Posting failed
+                        httpStatusCode = 400;
+                        log.info("Business error: Posting failed (Code: 189) -> Mapping to 400 Bad Request");
+                        break;
+                    case "666":  // Insufficient funds
+                    case "800":
+                        httpStatusCode = 400;
+                        finalErrorMessage = errorMessage != null ? errorMessage : "Insufficient funds";
+                        log.info("Business error: Insufficient funds (Code: {}) -> Mapping to 400 Bad Request", responseCode);
+                        break;
+                    case "888":  // Account status issue
+                    case "777":
+                    case "999":
+                        httpStatusCode = 400;
+                        finalErrorMessage = errorMessage != null ? errorMessage : "Account status error";
+                        log.info("Business error: Account status error (Code: {}) -> Mapping to 400 Bad Request", responseCode);
+                        break;
+                    default:
+                        httpStatusCode = 400;
+                        log.info("Business error: Unknown error (Code: {}) -> Mapping to 400 Bad Request", responseCode);
+                        break;
+                }
+
+                // Throw exception with formatted message for your service layer
+                String formattedException = httpStatusCode + "|" + finalErrorMessage;
+                log.warn("Throwing business error as exception: {}", formattedException);
+                throw new RuntimeException(formattedException);
+            }
+
+// Map the results to response data
             Map<String, Object> responseData = new HashMap<>();
 
             if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {

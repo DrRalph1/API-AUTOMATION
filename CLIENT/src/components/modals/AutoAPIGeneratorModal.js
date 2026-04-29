@@ -5061,6 +5061,12 @@ const parametersExtractedRef = useRef(false);
 
 // Auto-extract parameters when parameters tab is first activated and we have a database object
 useEffect(() => {
+  // ============ CRITICAL FIX: Skip if editing mode ============
+  if (isEditing) {
+    console.log('ℹ️ Edit mode detected - skipping auto-extract on Parameters tab');
+    return;
+  }
+  
   if (activeTab === 'parameters' && !parametersExtractedRef.current && selectedDbObject) {
     parametersExtractedRef.current = true;
     
@@ -5071,7 +5077,6 @@ useEffect(() => {
     
     if (parameters.length === 0 && expectedParamCount > 0) {
       console.log('📊 Parameters missing, extracting from object...');
-      // Force parameters extraction from the selected object
       populateFormFromObject(selectedDbObject, true);
     }
     
@@ -5081,7 +5086,7 @@ useEffect(() => {
       populateFormFromObject(selectedDbObject, true);
     }
   }
-}, [activeTab, selectedDbObject, parameters.length, responseMappings.length]);
+}, [activeTab, selectedDbObject, parameters.length, responseMappings.length, isEditing]); // Add isEditing to dependencies
 
 // Reset parameters extraction ref when modal closes or object changes
 useEffect(() => {
@@ -8792,11 +8797,21 @@ if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
 
 // Function to populate form from selected object - FIXED FOR SOAP/GRAPHQL
 const populateFormFromObject = useCallback((object, preserveExistingApiDetails = false) => {
+  // ============ CRITICAL FIX: Skip if editing API with existing parameters ============
+  if (isEditing && parameters.length > 0 && object.type === 'PROCEDURE') {
+    console.log('⚠️ Skipping populateFormFromObject - Already editing API with existing parameters');
+    console.log('📊 Existing parameters count:', parameters.length);
+    console.log('📊 Object being passed:', object.name);
+    return;
+  }
+  
+  // Also skip if we're preserving existing API details AND we already have parameters
+  if (preserveExistingApiDetails && parameters.length > 0) {
+    console.log('⚠️ Skipping populateFormFromObject - Preserving existing parameters');
+    return;
+  }
+  
   console.log('📝 populateFormFromObject called with object:', object);
-  console.log('📝 preserveExistingApiDetails:', preserveExistingApiDetails);
-  console.log('📝 Object database type:', object.databaseType);
-  console.log('📝 Object type:', object.type);
-  console.log('📝 Object name:', object.name);
   
   // Ensure source type is database_object
   setSourceType('database_object');
