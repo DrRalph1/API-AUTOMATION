@@ -1472,10 +1472,51 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     totalElements: 0,
     totalPages: 0
   });
-  const [dateRange, setDateRange] = useState({
-    fromDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
-    toDate: new Date().toISOString().slice(0, 16)
-  });
+  
+  // ============ FIX: Set date range to one week behind on page load ============
+  // One Calendar Month Ago
+//   const getDefaultDateRange = () => {
+//     const now = new Date();
+//     const oneMonthAgo = new Date(now);
+//     oneMonthAgo.setMonth(now.getMonth() - 1); // Subtract 1 month
+    
+//     const formatDateForInput = (date) => {
+//       const year = date.getFullYear();
+//       const month = String(date.getMonth() + 1).padStart(2, '0');
+//       const day = String(date.getDate()).padStart(2, '0');
+//       const hours = String(date.getHours()).padStart(2, '0');
+//       const minutes = String(date.getMinutes()).padStart(2, '0');
+//       return `${year}-${month}-${day}T${hours}:${minutes}`;
+//     };
+    
+//     return {
+//       fromDate: formatDateForInput(oneMonthAgo),
+//       toDate: formatDateForInput(now)
+//     };
+// };
+
+const getDefaultDateRange = () => {
+    const now = new Date();
+    const oneMonthAgo = new Date(now);
+    oneMonthAgo.setDate(now.getDate() - 7); // 7 days ago
+    
+    const formatDateForInput = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    };
+    
+    return {
+      fromDate: formatDateForInput(oneMonthAgo),
+      toDate: formatDateForInput(now)
+    };
+};
+  
+  const [dateRange, setDateRange] = useState(getDefaultDateRange());
+  
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedApiId, setSelectedApiId] = useState(null);
   const [selectedApiSummary, setSelectedApiSummary] = useState(null);
@@ -1484,6 +1525,15 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
 
   const searchTimer = useRef(null);
   const isInitialMount = useRef(true);
+
+
+  // Add this useEffect to log date range on mount (for debugging)
+  useEffect(() => {
+    console.log('Date range initialized to last 7 days:', {
+      fromDate: dateRange.fromDate,
+      toDate: dateRange.toDate
+    });
+  }, []);
   
   // ============ FIX: Add refs for pagination debouncing and request cancellation ============
   const abortControllerRef = useRef(null);
@@ -2051,33 +2101,36 @@ const loadRequests = useCallback(async (isRefresh = false) => {
   };
 
   // Load statistics
-  const loadStatistics = useCallback(async () => {
-    if (!authToken) return;
+const loadStatistics = useCallback(async () => {
+  if (!authToken) return;
 
-    setLoading(prev => ({ ...prev, statistics: true }));
+  setLoading(prev => ({ ...prev, statistics: true }));
 
-    try {
-      const systemResponse = await getSystemStatistics(
-        authToken,
-        dateRange.fromDate,
-        dateRange.toDate
-      );
-      
-      if (systemResponse?.responseCode === 200) {
-        setSystemStats(systemResponse.data);
-      }
-
-      const dashboardResponse = await getRequestDashboardStats(authToken);
-      
-      if (dashboardResponse?.responseCode === 200) {
-        setStatistics(dashboardResponse.data);
-      }
-    } catch (error) {
-      console.error('Error loading statistics:', error);
-    } finally {
-      setLoading(prev => ({ ...prev, statistics: false }));
+  try {
+    // Only use system statistics (this endpoint exists and works)
+    const systemResponse = await getSystemStatistics(
+      authToken,
+      dateRange.fromDate,
+      dateRange.toDate
+    );
+    
+    if (systemResponse?.responseCode === 200) {
+      setSystemStats(systemResponse.data);
+      // Use system stats for the statistics display
+      setStatistics({
+        totalRequests: systemResponse.data.totalRequests || 0,
+        successRate: systemResponse.data.successRate || 0,
+        averageResponseTime: systemResponse.data.averageResponseTime || 0,
+        failedRequests: systemResponse.data.failedRequests || 0,
+        activeApis: systemResponse.data.activeApis || 0
+      });
     }
-  }, [authToken, dateRange.fromDate, dateRange.toDate]);
+  } catch (error) {
+    console.error('Error loading system statistics:', error);
+  } finally {
+    setLoading(prev => ({ ...prev, statistics: false }));
+  }
+}, [authToken, dateRange.fromDate, dateRange.toDate]);
 
   // Load recent requests
   const loadRecentRequests = useCallback(async () => {

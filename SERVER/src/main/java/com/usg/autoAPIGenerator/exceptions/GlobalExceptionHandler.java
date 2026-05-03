@@ -3,6 +3,7 @@ package com.usg.autoAPIGenerator.exceptions;
 import com.usg.autoAPIGenerator.dtos.ApiResponseDTO;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -45,6 +46,45 @@ public class GlobalExceptionHandler {
         public ConflictException(String message) {
             super(message);
         }
+    }
+
+    /**
+     * ADDED: Handle ClientAbortException - Client disconnected (normal on page refresh)
+     * This prevents noisy error logs when users refresh the page
+     */
+    @ExceptionHandler(ClientAbortException.class)
+    @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.OK)
+    public void handleClientAbortException(ClientAbortException ex) {
+        // Client disconnected - this is expected behavior on page refresh
+        // Log at DEBUG level instead of ERROR to avoid noise
+        log.debug("Client aborted connection (normal on page refresh): {}", ex.getMessage());
+        // Don't send any response as the connection is already closed
+    }
+
+    /**
+     * ADDED: Handle IOException with "Broken pipe" - another indicator of client disconnect
+     */
+    @ExceptionHandler(java.io.IOException.class)
+    public ResponseEntity<ApiResponseDTO<Void>> handleIOException(java.io.IOException ex) {
+        // Check if this is a broken pipe (client disconnect)
+        if (ex.getMessage() != null &&
+                (ex.getMessage().contains("Broken pipe") ||
+                        ex.getMessage().contains("Connection reset by peer") ||
+                        ex.getMessage().contains("An established connection was aborted"))) {
+
+            // Log at DEBUG level for client disconnects
+            log.debug("Client disconnected during request: {}", ex.getMessage());
+
+            // Return empty response as client is already gone
+            return ResponseEntity.status(HttpStatus.OK).build();
+        }
+
+        // For other IO errors, log as error
+        log.error("IO Exception: {}", ex.getMessage());
+        log.debug("IO Exception details:", ex);
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponseDTO.internalError("An I/O error occurred"));
     }
 
     /**
@@ -308,6 +348,12 @@ public class GlobalExceptionHandler {
     // Handle all other exceptions - 500 Internal Server Error
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponseDTO<Void>> handleAllExceptions(Exception ex) {
+        // Skip logging ClientAbortException here as it's already handled above
+        if (ex instanceof ClientAbortException) {
+            log.debug("Client abort exception (already handled): {}", ex.getMessage());
+            return ResponseEntity.status(HttpStatus.OK).build();
+        }
+
         log.error("Unhandled exception - Type: {}, Message: {}",
                 ex.getClass().getSimpleName(), ex.getMessage());
 

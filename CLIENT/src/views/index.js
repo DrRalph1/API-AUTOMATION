@@ -552,7 +552,7 @@ import {
   Brain as BrainIcon2
 } from "lucide-react";
 
-// Import your empty components
+// Import your components
 import CodeBase from "./CodeBase.js";
 import Collections from "./Collections.js";
 import APISecurity from "./APISecurity.js";
@@ -572,16 +572,16 @@ import UserDetailsModal from "@/components/modals/UserDetailsModal";
 import NotificationDetailsModal from "@/components/modals/NotificationDetailsModal";
 import PerformanceMetricsModal from "@/components/modals/PerformanceMetricsModal";
 
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 export default function EntryPage({ userRole }) {
   const { theme, toggle, customTheme, setCustomTheme } = useTheme();
   const { logout, user, token, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("overview");
   const [showConnectionWizard, setShowConnectionWizard] = useState(false);
   const [showApiWizard, setShowApiWizard] = useState(false);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
@@ -622,12 +622,132 @@ export default function EntryPage({ userRole }) {
   // Determine if user is admin
   const isAdmin = user?.role === "system administrator" || userRole === "admin";
   
-  // Set default active tab based on role
-  useEffect(() => {
-    if (!isAdmin) {
-      setActiveTab("api-collections"); // Default for regular users
+  // ========================
+  // ACTIVE TAB STATE - MOVED HERE (BEFORE allNavItems)
+  // ========================
+
+
+  // Complete navigation items (all available)
+  const allNavItems = [
+    { id: "overview", label: "Dashboard", icon: LayoutDashboard, component: <Dashboard setActiveTab={(tab) => setActiveTab(tab)} authToken={token ? `Bearer ${token}` : null} />, roles: ["system administrator"] },
+    { id: "schema-browser", label: "Schema Browser", icon: DatabaseBackup, component: <SchemaBrowser authToken={token ? `Bearer ${token}` : null} />, roles: ["system administrator"] },
+    { id: "api-collections", label: "Collections", icon: FileCode, component: <Collections authToken={token ? `Bearer ${token}` : null} />, roles: ["system administrator", "user"] },
+    { id: "api-docs", label: "Documentation", icon: Activity, component: <Documentation authToken={token ? `Bearer ${token}` : null} />, roles: ["system administrator", "user"] },
+    { id: "code-base", label: "Code Base", icon: Code, component: <CodeBase authToken={token ? `Bearer ${token}` : null} />, roles: ["system administrator", "user"] },
+    { id: "user-mgt", label: "User Management", icon: UserCog, component: <UserMangement authToken={token ? `Bearer ${token}` : null} />, roles: ["system administrator"] },
+    { id: "api-requests", label: "API Requests", icon: FileCode, component: <APIRequests authToken={token ? `Bearer ${token}` : null} />, roles: ["system administrator", "user"] },
+    { id: "api-security", label: "API Security", icon: Shield, component: <APISecurity authToken={token ? `Bearer ${token}` : null} />, roles: ["system administrator"] },
+  ];
+
+  
+  // First filter navigation items based on user role
+  const roleFilteredNavItems = allNavItems.filter(item => 
+    item.roles.includes(user?.role || (isAdmin ? "system administrator" : "user"))
+  );
+
+  // Then apply additional filtering to hide specific items by ID
+  const visibleNavItems = roleFilteredNavItems.filter(item => 
+    item.id !== "user-mgt" && item.id !== "api-security-disabled"
+  );
+  
+  // Function to get initial tab from URL or storage
+  const getInitialTab = () => {
+    // Check if we just logged in (prevents tab restoration interference)
+    const justLoggedIn = sessionStorage.getItem('just_logged_in');
+    const lastLoginTime = sessionStorage.getItem('last_login_time');
+    const now = Date.now();
+    
+    // If logged in within the last 5 seconds, don't restore tab
+    if (justLoggedIn === 'true' || (lastLoginTime && (now - parseInt(lastLoginTime) < 5000))) {
+      console.log("🚫 Skipping tab restoration - recent login detected");
+      const defaultTab = isAdmin ? "overview" : "api-collections";
+      sessionStorage.removeItem('just_logged_in'); // Clear immediately
+      return defaultTab;
     }
-  }, [isAdmin]);
+    
+    // First check URL query parameter
+    const params = new URLSearchParams(location.search);
+    const tabFromUrl = params.get('tab');
+    if (tabFromUrl && visibleNavItems?.some(item => item.id === tabFromUrl)) {
+      // Don't restore if it's been less than 5 seconds since login
+      if (lastLoginTime && (now - parseInt(lastLoginTime) < 5000)) {
+        return isAdmin ? "overview" : "api-collections";
+      }
+      return tabFromUrl;
+    }
+    
+    // Then check sessionStorage
+    const savedTab = sessionStorage.getItem('last_active_tab');
+    if (savedTab && visibleNavItems?.some(item => item.id === savedTab)) {
+      // Don't restore if it's been less than 5 seconds since login
+      if (lastLoginTime && (now - parseInt(lastLoginTime) < 5000)) {
+        return isAdmin ? "overview" : "api-collections";
+      }
+      return savedTab;
+    }
+    
+    // Default based on role
+    return isAdmin ? "overview" : "api-collections";
+  };
+
+  // Active tab state with persistence
+  const [activeTab, setActiveTab] = useState(getInitialTab);
+  
+  // ========================
+  // NAVIGATION ITEMS - ROLE BASED WITH FILTERING
+  // ========================
+
+
+  // Save active tab to sessionStorage and URL when it changes
+  const handleTabChange = (tabId) => {
+    setActiveTab(tabId);
+    
+    // Only save to sessionStorage and URL if not just logged in
+    const justLoggedIn = sessionStorage.getItem('just_logged_in');
+    const lastLoginTime = sessionStorage.getItem('last_login_time');
+    const now = Date.now();
+    
+    const isRecentlyLoggedIn = justLoggedIn === 'true' || 
+      (lastLoginTime && (now - parseInt(lastLoginTime) < 5000));
+    
+    if (!isRecentlyLoggedIn) {
+      // Save to sessionStorage
+      sessionStorage.setItem('last_active_tab', tabId);
+      
+      // Update URL without reloading the page
+      const newUrl = `${window.location.pathname}?tab=${tabId}`;
+      window.history.pushState({ tab: tabId }, '', newUrl);
+    } else {
+      console.log("🚫 Skipping tab persistence - recent login detected");
+    }
+    
+    if (isMobile) {
+      setMobileMenuOpen(false);
+    }
+  };
+
+  // Listen for browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = (event) => {
+      const params = new URLSearchParams(window.location.search);
+      const tabFromUrl = params.get('tab');
+      if (tabFromUrl && visibleNavItems.some(item => item.id === tabFromUrl)) {
+        setActiveTab(tabFromUrl);
+        sessionStorage.setItem('last_active_tab', tabFromUrl);
+      }
+    };
+    
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [visibleNavItems]);
+
+  // Clear saved tab on logout (optional)
+  useEffect(() => {
+    return () => {
+      // Comment this out if you want to keep the tab after logout
+      // sessionStorage.removeItem('last_active_tab');
+    };
+  }, []);
 
   // Check screen size on mount and resize
   useEffect(() => {
@@ -857,32 +977,6 @@ export default function EntryPage({ userRole }) {
     poolUtilization: "78%"
   };
 
-  // ========================
-  // NAVIGATION ITEMS - ROLE BASED WITH FILTERING
-  // ========================
-  
-  // Complete navigation items (all available)
-  const allNavItems = [
-    { id: "overview", label: "Dashboard", icon: LayoutDashboard, component: <Dashboard setActiveTab={setActiveTab} authToken={`Bearer ${token}`} />, roles: ["system administrator"] },
-    { id: "schema-browser", label: "Schema Browser", icon: DatabaseBackup, component: <SchemaBrowser authToken={`Bearer ${token}`} />, roles: ["system administrator"] },
-    { id: "api-collections", label: "Collections", icon: FileCode, component: <Collections authToken={`Bearer ${token}`} />, roles: ["system administrator", "user"] },
-    { id: "api-docs", label: "Documentation", icon: Activity, component: <Documentation authToken={`Bearer ${token}`} />, roles: ["system administrator", "user"] },
-    { id: "code-base", label: "Code Base", icon: Code, component: <CodeBase authToken={`Bearer ${token}`} />, roles: ["system administrator", "user"] },
-    { id: "user-mgt", label: "User Management", icon: UserCog, component: <UserMangement authToken={`Bearer ${token}`} />, roles: ["system administrator"] },
-    { id: "api-requests", label: "API Requests", icon: FileCode, component: <APIRequests authToken={`Bearer ${token}`} />, roles: ["system administrator", "user"] },
-    { id: "api-security", label: "API Security", icon: Shield, component: <APISecurity authToken={`Bearer ${token}`} />, roles: ["system administrator"] },
-  ];
-
-  // First filter navigation items based on user role
-  const roleFilteredNavItems = allNavItems.filter(item => 
-    item.roles.includes(user?.role || (isAdmin ? "system administrator" : "user"))
-  );
-
-  // Then apply additional filtering to hide specific items by ID
-  const visibleNavItems = roleFilteredNavItems.filter(item => 
-    item.id !== "user-mgt" && item.id !== "api-security-disabled"
-  );
-
   // Quick actions based on role
   const getQuickActions = () => {
     const adminActions = [
@@ -893,9 +987,9 @@ export default function EntryPage({ userRole }) {
     ];
 
     const userActions = [
-      { id: "view-docs", label: "View Documentation", icon: BookOpen, color: "bg-blue-500", onClick: () => setActiveTab("api-docs") },
-      { id: "browse-collections", label: "Browse Collections", icon: FolderTree, color: "bg-green-500", onClick: () => setActiveTab("api-collections") },
-      { id: "view-codebase", label: "View Code Base", icon: Code, color: "bg-purple-500", onClick: () => setActiveTab("code-base") }
+      { id: "view-docs", label: "View Documentation", icon: BookOpen, color: "bg-blue-500", onClick: () => handleTabChange("api-docs") },
+      { id: "browse-collections", label: "Browse Collections", icon: FolderTree, color: "bg-green-500", onClick: () => handleTabChange("api-collections") },
+      { id: "view-codebase", label: "View Code Base", icon: Code, color: "bg-purple-500", onClick: () => handleTabChange("code-base") }
     ];
 
     return isAdmin ? adminActions : userActions;
@@ -1007,13 +1101,6 @@ export default function EntryPage({ userRole }) {
     setShowReportDetails(true);
   };
 
-  const handleTabChange = (tabId) => {
-    setActiveTab(tabId);
-    if (isMobile) {
-      setMobileMenuOpen(false);
-    }
-  };
-
   const handleManualLogout = () => {
     setUserMenuOpen(false);
     setShowLogoutConfirm(true);
@@ -1023,13 +1110,24 @@ export default function EntryPage({ userRole }) {
     setShowLogoutConfirm(false);
     setSessionExpired('manual');
     
+    // Clear all persisted state on logout
+    sessionStorage.removeItem('last_active_tab');
+    sessionStorage.removeItem('just_logged_in');
+    sessionStorage.removeItem('last_login_time');
+    sessionStorage.removeItem('auth_redirect_pending');
+    
+    // Clear URL parameters
+    if (window.location.search) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    
     setTimeout(() => {
       logout();
       navigate('/login', { replace: true });
     }, 1000);
   }, [logout, navigate]);
 
-  // Get current active component - use allNavItems to ensure we can find components even if filtered out
+  // Get current active component
   const getActiveComponent = () => {
     const activeNavItem = allNavItems.find(item => item.id === activeTab);
     
@@ -1044,7 +1142,7 @@ export default function EntryPage({ userRole }) {
     return null;
   };
 
-  // Mobile Navigation Menu - Using visibleNavItems
+  // Mobile Navigation Menu
   const MobileNavigationMenu = () => {
     if (!mobileMenuOpen) return null;
 
@@ -1075,7 +1173,6 @@ export default function EntryPage({ userRole }) {
               </button>
             </div>
 
-            {/* Mobile Navigation - Using visibleNavItems */}
             <nav className="space-y-1 mb-8">
               {visibleNavItems.map(item => {
                 const Icon = item.icon;
@@ -1101,7 +1198,6 @@ export default function EntryPage({ userRole }) {
               })}
             </nav>
 
-            {/* Quick Actions */}
             <div className="mb-8">
               <h3 className={`text-sm font-semibold ${isDark ? 'text-gray-400' : 'text-gray-500'} mb-3 px-4`}>
                 Quick Actions
@@ -1132,7 +1228,7 @@ export default function EntryPage({ userRole }) {
     );
   };
 
-  // Database Connection Wizard (only for admin)
+  // Database Connection Wizard
   const DatabaseConnectionWizard = () => {
     const [step, setStep] = useState(1);
     const [dbType, setDbType] = useState('oracle');
@@ -1269,7 +1365,7 @@ export default function EntryPage({ userRole }) {
     );
   };
 
-  // API Generation Wizard (only for admin)
+  // API Generation Wizard
   const AutoAPIGeneratorWizard = () => {
     const handleClose = () => {
       setShowApiWizard(false);
@@ -1529,7 +1625,7 @@ export default function EntryPage({ userRole }) {
       {/* Logout Confirmation Modal */}
       <LogoutConfirmationModal />
 
-      {/* Top Navigation - Modern Design */}
+      {/* Top Navigation */}
       <div className={`sticky top-0 z-40 ${isDark ? 'bg-gray-900/80 backdrop-blur-xl border-gray-800' : 'bg-white/80 backdrop-blur-xl border-gray-300'} border-b`}>
         <div className="px-4 sm:px-6 py-3">
           <div className="flex items-center justify-between">
@@ -1558,7 +1654,7 @@ export default function EntryPage({ userRole }) {
               </div>
             </div>
 
-            {/* Center Navigation - Desktop - Using visibleNavItems */}
+            {/* Center Navigation - Desktop */}
             <div className="hidden lg:flex items-center gap-1">
               {visibleNavItems.map(item => {
                 const Icon = item.icon;
@@ -1566,7 +1662,7 @@ export default function EntryPage({ userRole }) {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setActiveTab(item.id)}
+                    onClick={() => handleTabChange(item.id)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm transition-all ${
                       isActive
                         ? isDark
@@ -1586,7 +1682,6 @@ export default function EntryPage({ userRole }) {
 
             {/* Right */}
             <div className="flex items-center gap-2">
-              {/* Theme toggle */}
               <button
                 onClick={toggle}
                 className={`p-2 rounded-xl transition-colors ${
@@ -1623,7 +1718,6 @@ export default function EntryPage({ userRole }) {
                   <ChevronDown className={`h-4 w-4 transition-transform ${userMenuOpen ? 'rotate-180' : ''} ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
                 </button>
 
-                {/* User Dropdown Menu */}
                 {userMenuOpen && (
                   <>
                     <div 
@@ -1633,26 +1727,6 @@ export default function EntryPage({ userRole }) {
                     <div className={`absolute right-0 top-full mt-2 w-64 rounded-xl shadow-lg z-60 ${
                       isDark ? 'bg-gray-900 border border-gray-800' : 'bg-white border border-gray-200'
                     }`}>
-                      {/* Role Badge */}
-                      {/* <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className={`px-2 py-1 rounded-md text-xs font-medium ${
-                            isAdmin 
-                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                          }`}>
-                            {isAdmin ? 'Administrator' : 'User'}
-                          </div>
-                        </div>
-                        <h3 className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          {user?.name || (isAdmin ? "Admin User" : "Regular User")}
-                        </h3>
-                        <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                          {user?.email || (isAdmin ? "admin@example.com" : "user@example.com")}
-                        </p>
-                      </div> */}
-
-                      {/* Actions Section */}
                       <div className="p-2">
                         <button
                           onClick={() => {
@@ -1711,7 +1785,6 @@ export default function EntryPage({ userRole }) {
 
       {/* Main Content */}
       <div className="flex">
-        {/* Main Content Area */}
         <div className="flex-1">
           {getActiveComponent()}
         </div>
@@ -1720,11 +1793,10 @@ export default function EntryPage({ userRole }) {
       {/* Mobile Navigation Menu */}
       <MobileNavigationMenu />
 
-      {/* Modals - Only show for admin */}
+      {/* Modals */}
       <DatabaseConnectionWizard />
       <AutoAPIGeneratorWizard />
 
-      {/* Imported Modals */}
       <ConnectionDetailsModal
         showConnectionDetails={showConnectionDetails}
         setShowConnectionDetails={setShowConnectionDetails}
@@ -1740,7 +1812,7 @@ export default function EntryPage({ userRole }) {
         isMobile={isMobile}
       />
 
-      {/* Mobile Bottom Navigation - Using visibleNavItems */}
+      {/* Mobile Bottom Navigation */}
       {isMobile && (
         <div className={`fixed bottom-0 left-0 right-0 ${isDark ? 'bg-gray-900/95 backdrop-blur-xl' : 'bg-white/95 backdrop-blur-xl'} border-t ${isDark ? 'border-gray-800' : 'border-gray-300'} z-30`}>
           <div className="flex items-center justify-around py-2">
@@ -1750,7 +1822,7 @@ export default function EntryPage({ userRole }) {
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => handleTabChange(item.id)}
                   className={`flex flex-col items-center p-2 rounded-xl transition-all ${
                     isActive
                       ? isDark

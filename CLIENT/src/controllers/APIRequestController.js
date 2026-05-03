@@ -1,26 +1,41 @@
 // controllers/APIRequestController.js
 import { API_CONFIG } from "../config/APIConfig.js";
 import { apiCall } from "@/helpers/APIHelper.js";
-import { apiCallWithTokenRefresh, extractTokenFromHeader } from "./AuthController.js";
 
 // ============================================================
 // HELPER FUNCTIONS
 // ============================================================
 
 /**
- * Get authorization headers
- * @param {string} jwtToken - JWT token
+ * Get authorization headers - FIXED
+ * @param {string} authHeader - Authorization header (can be raw token or Bearer token)
  * @returns {Object} Headers object
  */
-const getAuthHeaders = (jwtToken) => ({
-  Authorization: `Bearer ${jwtToken}`,
-  "Content-Type": "application/json"
-});
+const getAuthHeaders = (authHeader) => {
+    const headers = {
+        "Content-Type": "application/json",
+        "x-api-key": API_CONFIG.HEADERS["x-api-key"],
+        "x-api-secret": API_CONFIG.HEADERS["x-api-secret"]
+    };
+    
+    if (!authHeader) {
+        console.warn('⚠️ No authorization header provided');
+        return headers;
+    }
+    
+    // Clean the token - remove 'Bearer ' if present
+    let cleanToken = authHeader;
+    if (authHeader.startsWith('Bearer ')) {
+        cleanToken = authHeader.substring(7);
+    }
+    
+    headers["Authorization"] = `Bearer ${cleanToken}`;
+    
+    return headers;
+};
 
 /**
  * Build query parameters
- * @param {Object} params - Parameters object
- * @returns {URLSearchParams} URL search params
  */
 const buildQueryParams = (params = {}) => {
     const queryParams = new URLSearchParams();
@@ -38,458 +53,230 @@ const buildQueryParams = (params = {}) => {
 
 /**
  * Generate request ID
- * @returns {string} Request ID
  */
 const generateRequestId = () => {
     return 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 };
 
 // ============================================================
-// API REQUEST CONTROLLER
+// CORE API FUNCTIONS
 // ============================================================
 
 /**
- * Capture an API request before execution
- * @param {string} authorizationHeader - Bearer token
- * @param {string} apiId - API ID
- * @param {Object} requestDTO - API request DTO
- * @param {string} requestDTO.requestName - Request name
- * @param {string} requestDTO.description - Request description
- * @param {string} requestDTO.httpMethod - HTTP method
- * @param {string} requestDTO.url - Full URL
- * @param {string} requestDTO.basePath - Base path
- * @param {string} requestDTO.endpointPath - Endpoint path
- * @param {number} requestDTO.requestTimeoutSeconds - Request timeout
- * @param {Object} requestDTO.pathParameters - Path parameters
- * @param {Object} requestDTO.queryParameters - Query parameters
- * @param {Object} requestDTO.headers - Request headers
- * @param {Object} requestDTO.requestBody - Request body
- * @param {Object} requestDTO.formData - Form data
- * @param {Object} requestDTO.multipartData - Multipart data
- * @param {string} requestDTO.authType - Authentication type
- * @param {string} requestDTO.authToken - Auth token
- * @param {string} requestDTO.apiKey - API key
- * @param {string} requestDTO.clientIpAddress - Client IP
- * @param {string} requestDTO.userAgent - User agent
- * @param {string} requestDTO.sourceApplication - Source application
- * @param {string} requestDTO.requestedBy - Requested by
- * @param {string} requestDTO.correlationId - Correlation ID
- * @param {boolean} requestDTO.isMockRequest - Is mock request
- * @param {Object} requestDTO.metadata - Metadata
- * @param {Array} requestDTO.tags - Tags
- * @returns {Promise} API response
- */
-export const captureRequest = async (authorizationHeader, apiId, requestDTO = {}) => {
-    const requestId = generateRequestId();
-    
-    if (!apiId) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "API ID is required",
-            requestId
-        });
-    }
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/capture/${encodeURIComponent(apiId)}`, {
-            method: 'POST',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            body: JSON.stringify(requestDTO),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformApiRequestResponse(response);
-    }).catch(error => {
-        console.error('Error capturing request:', error);
-        return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to capture request',
-            data: null,
-            requestId
-        };
-    });
-};
-
-/**
- * Capture a request from execution details
- * @param {string} authorizationHeader - Bearer token
- * @param {string} apiId - API ID
- * @param {Object} executeRequest - Execute request DTO
- * @param {string} executeRequest.requestId - Request ID
- * @param {string} executeRequest.httpMethod - HTTP method
- * @param {string} executeRequest.url - URL
- * @param {Object} executeRequest.pathParams - Path parameters
- * @param {Object} executeRequest.queryParams - Query parameters
- * @param {Object} executeRequest.headers - Headers
- * @param {Object} executeRequest.body - Request body
- * @param {number} executeRequest.timeoutSeconds - Timeout seconds
- * @param {Object} executeRequest.metadata - Metadata
- * @returns {Promise} API response
- */
-export const captureRequestFromExecution = async (authorizationHeader, apiId, executeRequest = {}) => {
-    const requestId = generateRequestId();
-    
-    if (!apiId) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "API ID is required",
-            requestId
-        });
-    }
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/capture/${encodeURIComponent(apiId)}/from-execution`, {
-            method: 'POST',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            body: JSON.stringify(executeRequest),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformApiRequestResponse(response);
-    }).catch(error => {
-        console.error('Error capturing request from execution:', error);
-        return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to capture request from execution',
-            data: null,
-            requestId
-        };
-    });
-};
-
-/**
- * Update a captured request with response details
- * @param {string} authorizationHeader - Bearer token
- * @param {string} capturedRequestId - Captured request ID
- * @param {Object} responseRequest - Update response request
- * @param {number} responseRequest.statusCode - Response status code
- * @param {string} responseRequest.message - Response message
- * @param {Object} responseRequest.data - Response data
- * @param {number} responseRequest.executionDurationMs - Execution duration
- * @returns {Promise} API response
- */
-export const updateRequestWithResponse = async (authorizationHeader, capturedRequestId, responseRequest = {}) => {
-    const requestId = generateRequestId();
-    
-    if (!capturedRequestId) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "Captured request ID is required",
-            requestId
-        });
-    }
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/${encodeURIComponent(capturedRequestId)}/response`, {
-            method: 'PUT',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            body: JSON.stringify(responseRequest),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformApiRequestResponse(response);
-    }).catch(error => {
-        console.error('Error updating request with response:', error);
-        return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to update request with response',
-            data: null,
-            requestId
-        };
-    });
-};
-
-/**
- * Update a captured request with error details
- * @param {string} authorizationHeader - Bearer token
- * @param {string} capturedRequestId - Captured request ID
- * @param {Object} errorRequest - Update error request
- * @param {number} errorRequest.statusCode - Error status code
- * @param {string} errorRequest.errorMessage - Error message
- * @param {number} errorRequest.executionDurationMs - Execution duration
- * @returns {Promise} API response
- */
-export const updateRequestWithError = async (authorizationHeader, capturedRequestId, errorRequest = {}) => {
-    const requestId = generateRequestId();
-    
-    if (!capturedRequestId) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "Captured request ID is required",
-            requestId
-        });
-    }
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/${encodeURIComponent(capturedRequestId)}/error`, {
-            method: 'PUT',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            body: JSON.stringify(errorRequest),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformApiRequestResponse(response);
-    }).catch(error => {
-        console.error('Error updating request with error:', error);
-        return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to update request with error',
-            data: null,
-            requestId
-        };
-    });
-};
-
-/**
- * Batch update multiple requests with responses
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} requestIdToResponseMap - Map of request IDs to responses
- * @returns {Promise} API response
- */
-export const batchUpdateResponses = async (authorizationHeader, requestIdToResponseMap = {}) => {
-    const requestId = generateRequestId();
-    
-    if (Object.keys(requestIdToResponseMap).length === 0) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "Request ID to response map is required",
-            requestId
-        });
-    }
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/batch/update-responses`, {
-            method: 'POST',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            body: JSON.stringify(requestIdToResponseMap),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformBatchUpdateResponse(response);
-    }).catch(error => {
-        console.error('Error batch updating responses:', error);
-        return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to batch update responses',
-            data: null,
-            requestId
-        };
-    });
-};
-
-/**
- * Get request by ID
- * @param {string} authorizationHeader - Bearer token
- * @param {string} capturedRequestId - Captured request ID
- * @returns {Promise} API response
- */
-export const getRequestById = async (authorizationHeader, capturedRequestId) => {
-    const requestId = generateRequestId();
-    
-    if (!capturedRequestId) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "Captured request ID is required",
-            requestId
-        });
-    }
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/${encodeURIComponent(capturedRequestId)}`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformApiRequestResponse(response);
-    }).catch(error => {
-        console.error('Error getting request by ID:', error);
-        return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to get request by ID',
-            data: null,
-            requestId
-        };
-    });
-};
-
-/**
- * Get request by correlation ID
- * @param {string} authorizationHeader - Bearer token
- * @param {string} correlationId - Correlation ID
- * @returns {Promise} API response
- */
-export const getRequestByCorrelationId = async (authorizationHeader, correlationId) => {
-    const requestId = generateRequestId();
-    
-    if (!correlationId) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "Correlation ID is required",
-            requestId
-        });
-    }
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/correlation/${encodeURIComponent(correlationId)}`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformApiRequestResponse(response);
-    }).catch(error => {
-        console.error('Error getting request by correlation ID:', error);
-        return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to get request by correlation ID',
-            data: null,
-            requestId
-        };
-    });
-};
-
-/**
- * Get requests by API ID
- * @param {string} authorizationHeader - Bearer token
- * @param {string} apiId - API ID
- * @param {number} limit - Maximum number of requests (default: 100)
- * @returns {Promise} API response
- */
-export const getRequestsByApiId = async (authorizationHeader, apiId, limit = 100) => {
-    const requestId = generateRequestId();
-    
-    if (!apiId) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "API ID is required",
-            requestId
-        });
-    }
-    
-    const queryParams = buildQueryParams({ limit });
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/api/${encodeURIComponent(apiId)}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformApiRequestsListResponse(response);
-    }).catch(error => {
-        console.error('Error getting requests by API ID:', error);
-        return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to get requests by API ID',
-            data: { requests: [], totalCount: 0 },
-            requestId
-        };
-    });
-};
-
-/**
  * Search requests with advanced filtering
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} filter - Search filter
- * @param {string} filter.apiId - API ID
- * @param {string} filter.apiCode - API code
- * @param {string} filter.requestName - Request name
- * @param {string} filter.httpMethod - HTTP method
- * @param {string} filter.requestStatus - Request status
- * @param {Array} filter.responseStatusCodes - Response status codes
- * @param {string} filter.correlationId - Correlation ID
- * @param {string} filter.fromDate - From date
- * @param {string} filter.toDate - To date
- * @param {number} filter.minDuration - Minimum duration
- * @param {number} filter.maxDuration - Maximum duration
- * @param {boolean} filter.hasError - Has error
- * @param {string} filter.clientIpAddress - Client IP
- * @param {string} filter.userAgent - User agent
- * @param {string} filter.sourceApplication - Source application
- * @param {string} filter.requestedBy - Requested by
- * @param {boolean} filter.isMockRequest - Is mock request
- * @param {string} filter.authType - Auth type
- * @param {Array} filter.tags - Tags
- * @param {number} filter.page - Page number
- * @param {number} filter.size - Page size
- * @param {string} filter.sortBy - Sort by field
- * @param {string} filter.sortDirection - Sort direction
- * @returns {Promise} API response
  */
 export const searchRequests = async (authorizationHeader, filter = {}) => {
     const requestId = generateRequestId();
     
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/search`, {
+    if (!authorizationHeader) {
+        console.error('No authorization header provided');
+        return {
+            responseCode: 401,
+            message: 'Authentication required',
+            data: {
+                content: [],
+                totalElements: 0,
+                totalPages: 0,
+                currentPage: 0,
+                pageSize: 10,
+                apiSummaries: []
+            },
+            requestId
+        };
+    }
+    
+    try {
+        const response = await apiCall(`/requests/search`, {
             method: 'POST',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            body: JSON.stringify(filter),
-            requestId: requestId
-        })
-    ).then(response => {
+            headers: getAuthHeaders(authorizationHeader),
+            body: JSON.stringify(filter)
+        });
+        
         return transformSearchRequestsResponse(response);
-    }).catch(error => {
+    } catch (error) {
         console.error('Error searching requests:', error);
         return {
-            responseCode: error.response?.status || 500,
+            responseCode: error.status || 500,
             message: error.message || 'Failed to search requests',
             data: {
                 content: [],
                 totalElements: 0,
                 totalPages: 0,
                 currentPage: 0,
-                pageSize: 10
+                pageSize: 10,
+                apiSummaries: []
             },
             requestId
         };
-    });
+    }
+};
+
+
+/**
+ * Get dashboard statistics - Uses the correct DashboardController endpoint
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getDashboardStats = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    if (!authorizationHeader) {
+        return {
+            responseCode: 401,
+            message: 'Authentication required',
+            data: {
+                totalApis: 0,
+                totalCollections: 0,
+                totalApiRequests: 0,
+                totalDocumentationEndpoints: 0,
+                activeApis: 0,
+                totalCodeImplementations: 0,
+                publishedDocumentation: 0,
+                activeUsers: 0,
+                totalIpWhitelistEntries: 0,
+                unreadSecurityAlerts: 0
+            },
+            requestId
+        };
+    }
+    
+    try {
+        const headers = getAuthHeaders(authorizationHeader);
+        
+        // Use the correct endpoint from DashboardController
+        const response = await apiCall(`/dashboard/stats`, {
+            method: 'GET',
+            headers: headers,
+            skipAuthRedirect: true
+        });
+        
+        return transformDashboardStatsResponse(response);
+    } catch (error) {
+        console.error('Error getting dashboard stats:', error);
+        return {
+            responseCode: error.status || 500,
+            message: error.message || 'Failed to get dashboard stats',
+            data: {
+                totalApis: 0,
+                totalCollections: 0,
+                totalApiRequests: 0,
+                totalDocumentationEndpoints: 0,
+                activeApis: 0,
+                totalCodeImplementations: 0,
+                publishedDocumentation: 0,
+                activeUsers: 0,
+                totalIpWhitelistEntries: 0,
+                unreadSecurityAlerts: 0
+            },
+            requestId
+        };
+    }
+};
+
+
+/**
+ * Get request by ID
+ */
+export const getRequestById = async (authorizationHeader, capturedRequestId) => {
+    const requestId = generateRequestId();
+    
+    if (!authorizationHeader) {
+        return {
+            responseCode: 401,
+            message: 'Authentication required',
+            data: null,
+            requestId
+        };
+    }
+    
+    if (!capturedRequestId) {
+        return {
+            responseCode: 400,
+            message: "Captured request ID is required",
+            data: null,
+            requestId
+        };
+    }
+    
+    try {
+        const response = await apiCall(`/requests/${encodeURIComponent(capturedRequestId)}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authorizationHeader)
+        });
+        
+        return transformApiRequestResponse(response);
+    } catch (error) {
+        console.error('Error getting request by ID:', error);
+        return {
+            responseCode: error.status || 500,
+            message: error.message || 'Failed to get request by ID',
+            data: null,
+            requestId
+        };
+    }
 };
 
 /**
- * Get request statistics for an API
- * @param {string} authorizationHeader - Bearer token
- * @param {string} apiId - API ID
- * @param {string} fromDate - From date (ISO format)
- * @param {string} toDate - To date (ISO format)
- * @returns {Promise} API response
+ * Get request dashboard statistics - FIXED (single definition)
  */
-export const getRequestStatistics = async (authorizationHeader, apiId, fromDate, toDate) => {
+export const getRequestDashboardStats = async (authorizationHeader) => {
     const requestId = generateRequestId();
     
-    if (!apiId) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "API ID is required",
+    console.log('📊 getRequestDashboardStats called, auth header present:', !!authorizationHeader);
+    
+    if (!authorizationHeader) {
+        console.error('No authorization header provided for dashboard stats');
+        return {
+            responseCode: 401,
+            message: 'Authentication required',
+            data: {
+                totalRequests: 0,
+                successRate: 0,
+                averageResponseTime: 0,
+                activeApis: 0
+            },
             requestId
-        });
+        };
     }
     
-    const queryParams = buildQueryParams({ fromDate, toDate });
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/statistics/api/${encodeURIComponent(apiId)}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`, {
+    try {
+        const headers = getAuthHeaders(authorizationHeader);
+        console.log('📊 Dashboard stats headers:', Object.keys(headers));
+        
+        const response = await apiCall(`/requests/dashboard/stats`, {
             method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformStatisticsResponse(response);
-    }).catch(error => {
-        console.error('Error getting request statistics:', error);
+            headers: headers
+        });
+        
+        console.log('📊 Dashboard stats response code:', response?.responseCode);
+        
+        return transformDashboardStatsResponse(response);
+    } catch (error) {
+        console.error('Error getting request dashboard stats:', error);
         return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to get request statistics',
+            responseCode: error.status || 500,
+            message: error.message || 'Failed to get request dashboard stats',
+            data: {
+                totalRequests: 0,
+                successRate: 0,
+                averageResponseTime: 0,
+                activeApis: 0
+            },
+            requestId
+        };
+    }
+};
+
+/**
+ * Get system-wide request statistics
+ */
+export const getSystemStatistics = async (authorizationHeader, fromDate, toDate) => {
+    const requestId = generateRequestId();
+    
+    if (!authorizationHeader) {
+        return {
+            responseCode: 401,
+            message: 'Authentication required',
             data: {
                 totalRequests: 0,
                 successfulRequests: 0,
@@ -498,34 +285,22 @@ export const getRequestStatistics = async (authorizationHeader, apiId, fromDate,
             },
             requestId
         };
-    });
-};
-
-/**
- * Get system-wide request statistics
- * @param {string} authorizationHeader - Bearer token
- * @param {string} fromDate - From date (ISO format)
- * @param {string} toDate - To date (ISO format)
- * @returns {Promise} API response
- */
-export const getSystemStatistics = async (authorizationHeader, fromDate, toDate) => {
-    const requestId = generateRequestId();
+    }
     
     const queryParams = buildQueryParams({ fromDate, toDate });
+    const queryString = queryParams.toString();
     
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/statistics/system${queryParams.toString() ? `?${queryParams.toString()}` : ''}`, {
+    try {
+        const response = await apiCall(`/requests/statistics/system${queryString ? `?${queryString}` : ''}`, {
             method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
+            headers: getAuthHeaders(authorizationHeader)
+        });
+        
         return transformStatisticsResponse(response);
-    }).catch(error => {
+    } catch (error) {
         console.error('Error getting system statistics:', error);
         return {
-            responseCode: error.response?.status || 500,
+            responseCode: error.status || 500,
             message: error.message || 'Failed to get system statistics',
             data: {
                 totalRequests: 0,
@@ -535,421 +310,140 @@ export const getSystemStatistics = async (authorizationHeader, fromDate, toDate)
             },
             requestId
         };
-    });
+    }
 };
 
 /**
- * Get daily breakdown of requests for an API
- * @param {string} authorizationHeader - Bearer token
- * @param {string} apiId - API ID
- * @param {string} fromDate - From date (ISO format)
- * @param {string} toDate - To date (ISO format)
- * @returns {Promise} API response
+ * Get recent requests
  */
-export const getDailyBreakdown = async (authorizationHeader, apiId, fromDate, toDate) => {
+export const getRecentRequests = async (authorizationHeader, limit = 10) => {
     const requestId = generateRequestId();
     
-    if (!apiId) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "API ID is required",
-            requestId
-        });
-    }
-    
-    if (!fromDate || !toDate) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "From date and to date are required",
-            requestId
-        });
-    }
-    
-    const queryParams = buildQueryParams({ fromDate, toDate });
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/statistics/api/${encodeURIComponent(apiId)}/daily-breakdown?${queryParams.toString()}`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformDailyBreakdownResponse(response);
-    }).catch(error => {
-        console.error('Error getting daily breakdown:', error);
+    if (!authorizationHeader) {
         return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to get daily breakdown',
-            data: {},
+            responseCode: 401,
+            message: 'Authentication required',
+            data: [],
             requestId
         };
-    });
+    }
+    
+    const queryParams = buildQueryParams({ limit });
+    
+    try {
+        const response = await apiCall(`/requests/recent?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authorizationHeader)
+        });
+        
+        return transformRecentRequestsResponse(response);
+    } catch (error) {
+        console.error('Error getting recent requests:', error);
+        return {
+            responseCode: error.status || 500,
+            message: error.message || 'Failed to get recent requests',
+            data: [],
+            requestId
+        };
+    }
+};
+
+/**
+ * Export requests
+ */
+export const exportRequests = async (authorizationHeader, apiId, fromDate, toDate, format = 'JSON', config = null) => {
+    const requestId = generateRequestId();
+    
+    if (!authorizationHeader) {
+        return {
+            responseCode: 401,
+            message: 'Authentication required',
+            data: null,
+            requestId
+        };
+    }
+    
+    if (!apiId) {
+        return {
+            responseCode: 400,
+            message: "API ID is required",
+            data: null,
+            requestId
+        };
+    }
+    
+    const queryParams = buildQueryParams({ fromDate, toDate, format });
+    
+    try {
+        const response = await apiCall(`/requests/export/api/${encodeURIComponent(apiId)}?${queryParams.toString()}`, {
+            method: 'POST',
+            headers: getAuthHeaders(authorizationHeader),
+            body: config ? JSON.stringify(config) : null
+        });
+        
+        return transformExportResponse(response);
+    } catch (error) {
+        console.error('Error exporting requests:', error);
+        return {
+            responseCode: error.status || 500,
+            message: error.message || 'Failed to export requests',
+            data: null,
+            requestId
+        };
+    }
 };
 
 /**
  * Delete a captured request
- * @param {string} authorizationHeader - Bearer token
- * @param {string} capturedRequestId - Captured request ID
- * @returns {Promise} API response
  */
 export const deleteRequest = async (authorizationHeader, capturedRequestId) => {
     const requestId = generateRequestId();
     
-    if (!capturedRequestId) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "Captured request ID is required",
+    if (!authorizationHeader) {
+        return {
+            responseCode: 401,
+            message: 'Authentication required',
+            data: null,
             requestId
-        });
+        };
     }
     
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/${encodeURIComponent(capturedRequestId)}`, {
+    if (!capturedRequestId) {
+        return {
+            responseCode: 400,
+            message: "Captured request ID is required",
+            data: null,
+            requestId
+        };
+    }
+    
+    try {
+        await apiCall(`/requests/${encodeURIComponent(capturedRequestId)}`, {
             method: 'DELETE',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
+            headers: getAuthHeaders(authorizationHeader)
+        });
+        
         return {
             responseCode: 200,
             message: "Request deleted successfully",
             data: { deletedRequestId: capturedRequestId },
             requestId
         };
-    }).catch(error => {
+    } catch (error) {
         console.error('Error deleting request:', error);
         return {
-            responseCode: error.response?.status || 500,
+            responseCode: error.status || 500,
             message: error.message || 'Failed to delete request',
             data: null,
             requestId
         };
-    });
-};
-
-/**
- * Clean up old requests
- * @param {string} authorizationHeader - Bearer token
- * @param {string} beforeDate - Delete requests older than this date
- * @returns {Promise} API response
- */
-export const cleanupOldRequests = async (authorizationHeader, beforeDate) => {
-    const requestId = generateRequestId();
-    
-    if (!beforeDate) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "Before date is required",
-            requestId
-        });
     }
-    
-    const queryParams = buildQueryParams({ beforeDate });
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/cleanup?${queryParams.toString()}`, {
-            method: 'DELETE',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformCleanupResponse(response);
-    }).catch(error => {
-        console.error('Error cleaning up old requests:', error);
-        return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to clean up old requests',
-            data: { deletedCount: 0 },
-            requestId
-        };
-    });
-};
-
-/**
- * Export requests for an API within a date range
- * @param {string} authorizationHeader - Bearer token
- * @param {string} apiId - API ID
- * @param {string} fromDate - From date (ISO format)
- * @param {string} toDate - To date (ISO format)
- * @param {string} format - Export format (JSON, CSV, XML, EXCEL)
- * @param {Object} config - Export configuration
- * @returns {Promise} API response
- */
-export const exportRequests = async (authorizationHeader, apiId, fromDate, toDate, format = 'JSON', config = null) => {
-    const requestId = generateRequestId();
-    
-    if (!apiId) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "API ID is required",
-            requestId
-        });
-    }
-    
-    if (!fromDate || !toDate) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "From date and to date are required",
-            requestId
-        });
-    }
-    
-    const queryParams = buildQueryParams({ fromDate, toDate, format });
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/export/api/${encodeURIComponent(apiId)}?${queryParams.toString()}`, {
-            method: 'POST',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            body: config ? JSON.stringify(config) : null,
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformExportResponse(response);
-    }).catch(error => {
-        console.error('Error exporting requests:', error);
-        return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to export requests',
-            data: null,
-            requestId
-        };
-    });
-};
-
-// ============================================================
-// DASHBOARD/ANALYTICS ENDPOINTS
-// ============================================================
-
-/**
- * Get request dashboard statistics
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getRequestDashboardStats = async (authorizationHeader) => {
-    const requestId = generateRequestId();
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/dashboard/stats`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformDashboardStatsResponse(response);
-    }).catch(error => {
-        console.error('Error getting request dashboard stats:', error);
-        return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to get request dashboard stats',
-            data: {
-                totalRequests: 0,
-                successRate: 0,
-                avgResponseTime: 0,
-                activeApis: 0
-            },
-            requestId
-        };
-    });
-};
-
-/**
- * Get recent requests
- * @param {string} authorizationHeader - Bearer token
- * @param {number} limit - Number of requests (default: 10)
- * @returns {Promise} API response
- */
-export const getRecentRequests = async (authorizationHeader, limit = 10) => {
-    const requestId = generateRequestId();
-    
-    const queryParams = buildQueryParams({ limit });
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/recent?${queryParams.toString()}`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformRecentRequestsResponse(response);
-    }).catch(error => {
-        console.error('Error getting recent requests:', error);
-        return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to get recent requests',
-            data: [],
-            requestId
-        };
-    });
-};
-
-/**
- * Get request health status for an API
- * @param {string} authorizationHeader - Bearer token
- * @param {string} apiId - API ID
- * @returns {Promise} API response
- */
-export const getRequestHealth = async (authorizationHeader, apiId) => {
-    const requestId = generateRequestId();
-    
-    if (!apiId) {
-        return Promise.reject({
-            responseCode: 400,
-            message: "API ID is required",
-            requestId
-        });
-    }
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/requests/health/${encodeURIComponent(apiId)}`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformHealthResponse(response);
-    }).catch(error => {
-        console.error('Error getting request health:', error);
-        return {
-            responseCode: error.response?.status || 500,
-            message: error.message || 'Failed to get request health',
-            data: { overallHealth: 'UNKNOWN' },
-            requestId
-        };
-    });
 };
 
 // ============================================================
 // TRANSFORM FUNCTIONS
 // ============================================================
 
-/**
- * Transform API request response
- */
-const transformApiRequestResponse = (response) => {
-    const data = response.data || {};
-    
-    const transformedData = {
-        id: data.id,
-        apiId: data.apiId,
-        apiName: data.apiName,
-        apiCode: data.apiCode,
-        requestName: data.requestName,
-        correlationId: data.correlationId,
-        
-        // Request details
-        httpMethod: data.httpMethod,
-        url: data.url,
-        basePath: data.basePath,
-        endpointPath: data.endpointPath,
-        requestTimeoutSeconds: data.requestTimeoutSeconds,
-        
-        // Request components
-        pathParameters: data.pathParameters || {},
-        queryParameters: data.queryParameters || {},
-        headers: data.headers || {},
-        requestBody: data.requestBody,
-        formData: data.formData,
-        multipartData: data.multipartData,
-        
-        // ============ ADD RAW FIELDS ============
-        rawRequestBody: data.rawRequestBody,     // Exact raw request body
-        rawResponseBody: data.rawResponseBody,   // Exact raw response body
-        
-        // Response details
-        responseStatusCode: data.responseStatusCode,
-        responseStatusMessage: data.responseStatusMessage,
-        responseBody: data.responseBody,
-        responseHeaders: data.responseHeaders || {},
-        responseSizeBytes: data.responseSizeBytes,
-        
-        // Timing
-        requestTimestamp: data.requestTimestamp,
-        responseTimestamp: data.responseTimestamp,
-        executionDurationMs: data.executionDurationMs,
-        formattedDuration: data.formattedDuration,
-        
-        // Status
-        requestStatus: data.requestStatus,
-        errorMessage: data.errorMessage,
-        retryCount: data.retryCount || 0,
-        
-        // Authentication
-        authType: data.authType,
-        isAuthenticated: data.isAuthenticated || false,
-        
-        // Client info
-        clientIpAddress: data.clientIpAddress,
-        userAgent: data.userAgent,
-        sourceApplication: data.sourceApplication,
-        requestedBy: data.requestedBy,
-        
-        // Additional
-        isMockRequest: data.isMockRequest || false,
-        curlCommand: data.curlCommand,
-        metadata: data.metadata || {},
-        
-        // Audit
-        createdAt: data.createdAt,
-        createdBy: data.createdBy,
-        
-        // Summary
-        summary: data.summary || {
-            totalRequestsForApi: 0,
-            successfulRequests: 0,
-            failedRequests: 0,
-            averageResponseTime: 0
-        }
-    };
-
-    return {
-        ...response,
-        data: transformedData
-    };
-};
-
-/**
- * Transform API requests list response
- */
-const transformApiRequestsListResponse = (response) => {
-    const data = response.data || {};
-    
-    const transformedData = {
-        apiId: data.apiId,
-        requests: (data.requests || []).map(req => ({
-            id: req.id,
-            requestName: req.requestName,
-            correlationId: req.correlationId,
-            httpMethod: req.httpMethod,
-            url: req.url,
-            responseStatusCode: req.responseStatusCode,
-            executionDurationMs: req.executionDurationMs,
-            formattedDuration: req.formattedDuration,
-            requestStatus: req.requestStatus,
-            requestTimestamp: req.requestTimestamp,
-            responseTimestamp: req.responseTimestamp,
-            errorMessage: req.errorMessage,
-            requestedBy: req.requestedBy,
-            isMockRequest: req.isMockRequest || false
-        })),
-        totalCount: data.totalCount || 0
-    };
-
-    return {
-        ...response,
-        data: transformedData
-    };
-};
-
-/**
- * Transform search requests response
- */
 const transformSearchRequestsResponse = (response) => {
     const data = response.data || {};
     
@@ -973,9 +467,13 @@ const transformSearchRequestsResponse = (response) => {
             requestedBy: req.requestedBy,
             clientIpAddress: req.clientIpAddress,
             sourceApplication: req.sourceApplication,
-            isMockRequest: req.isMockRequest || false
+            isMockRequest: req.isMockRequest || false,
+            pathParameters: req.pathParameters || {},
+            queryParameters: req.queryParameters || {},
+            headers: req.headers || {},
+            requestBody: req.requestBody,
+            responseBody: req.responseBody
         })),
-        // ADD THIS LINE - preserve apiSummaries from the response
         apiSummaries: data.apiSummaries || [],
         totalElements: data.totalElements || 0,
         totalPages: data.totalPages || 0,
@@ -983,48 +481,62 @@ const transformSearchRequestsResponse = (response) => {
         pageSize: data.pageSize || 20
     };
 
-    return {
-        ...response,
-        data: transformedData
-    };
+    return { ...response, data: transformedData };
 };
 
-/**
- * Transform batch update response
- */
-const transformBatchUpdateResponse = (response) => {
+const transformApiRequestResponse = (response) => {
     const data = response.data || {};
     
     const transformedData = {
-        updatedCount: data.updatedCount || 0,
-        requests: (data.requests || []).map(req => ({
-            id: req.id,
-            requestName: req.requestName,
-            correlationId: req.correlationId,
-            requestStatus: req.requestStatus,
-            responseStatusCode: req.responseStatusCode,
-            executionDurationMs: req.executionDurationMs
-        }))
+        id: data.id,
+        apiId: data.apiId,
+        apiName: data.apiName,
+        apiCode: data.apiCode,
+        requestName: data.requestName,
+        correlationId: data.correlationId,
+        httpMethod: data.httpMethod,
+        url: data.url,
+        basePath: data.basePath,
+        endpointPath: data.endpointPath,
+        requestTimeoutSeconds: data.requestTimeoutSeconds,
+        pathParameters: data.pathParameters || {},
+        queryParameters: data.queryParameters || {},
+        headers: data.headers || {},
+        requestBody: data.requestBody,
+        rawRequestBody: data.rawRequestBody,
+        rawResponseBody: data.rawResponseBody,
+        responseStatusCode: data.responseStatusCode,
+        responseStatusMessage: data.responseStatusMessage,
+        responseBody: data.responseBody,
+        responseHeaders: data.responseHeaders || {},
+        responseSizeBytes: data.responseSizeBytes,
+        requestTimestamp: data.requestTimestamp,
+        responseTimestamp: data.responseTimestamp,
+        executionDurationMs: data.executionDurationMs,
+        formattedDuration: data.formattedDuration,
+        requestStatus: data.requestStatus,
+        errorMessage: data.errorMessage,
+        retryCount: data.retryCount || 0,
+        authType: data.authType,
+        isAuthenticated: data.isAuthenticated || false,
+        clientIpAddress: data.clientIpAddress,
+        userAgent: data.userAgent,
+        sourceApplication: data.sourceApplication,
+        requestedBy: data.requestedBy,
+        isMockRequest: data.isMockRequest || false,
+        curlCommand: data.curlCommand,
+        metadata: data.metadata || {},
+        createdAt: data.createdAt,
+        createdBy: data.createdBy
     };
 
-    return {
-        ...response,
-        data: transformedData
-    };
+    return { ...response, data: transformedData };
 };
 
-/**
- * Transform statistics response
- */
 const transformStatisticsResponse = (response) => {
     const data = response.data || {};
     
     const transformedData = {
-        fromDate: data.fromDate,
-        toDate: data.toDate,
-        period: data.period || 'CUSTOM',
-        
-        // Overall stats
         totalRequests: data.totalRequests || 0,
         successfulRequests: data.successfulRequests || 0,
         failedRequests: data.failedRequests || 0,
@@ -1032,21 +544,13 @@ const transformStatisticsResponse = (response) => {
         timeoutRequests: data.timeoutRequests || 0,
         successRate: data.successRate || 0,
         failureRate: data.failureRate || 0,
-        
-        // Performance
         averageResponseTime: data.averageResponseTime || 0,
         minResponseTime: data.minResponseTime || 0,
         maxResponseTime: data.maxResponseTime || 0,
         medianResponseTime: data.medianResponseTime || 0,
-        p95ResponseTime: data.p95ResponseTime || 0,
-        p99ResponseTime: data.p99ResponseTime || 0,
-        
-        // Distributions
         statusCodeDistribution: data.statusCodeDistribution || {},
         methodDistribution: data.methodDistribution || {},
         statusDistribution: data.statusDistribution || {},
-        
-        // Time series
         timeSeriesData: (data.timeSeriesData || []).map(point => ({
             timestamp: point.timestamp,
             requestCount: point.requestCount || 0,
@@ -1056,105 +560,37 @@ const transformStatisticsResponse = (response) => {
         }))
     };
 
-    return {
-        ...response,
-        data: transformedData
-    };
+    return { ...response, data: transformedData };
 };
 
-/**
- * Transform daily breakdown response
- */
-const transformDailyBreakdownResponse = (response) => {
-    const data = response.data || {};
-    
-    const transformedData = {};
-    Object.keys(data).forEach(date => {
-        transformedData[date] = data[date];
-    });
-
-    return {
-        ...response,
-        data: transformedData
-    };
-};
-
-/**
- * Transform cleanup response
- */
-const transformCleanupResponse = (response) => {
-    const data = response.data || {};
-    
-    const transformedData = {
-        deletedCount: data.deletedCount || 0,
-        beforeDate: data.beforeDate,
-        message: data.message || `Deleted ${data.deletedCount || 0} old requests`
-    };
-
-    return {
-        ...response,
-        data: transformedData
-    };
-};
-
-/**
- * Transform export response
- */
-const transformExportResponse = (response) => {
-    const data = response.data || {};
-    
-    const transformedData = {
-        exportId: data.exportId,
-        exportTimestamp: data.exportTimestamp,
-        exportedBy: data.exportedBy,
-        format: data.format || 'JSON',
-        config: data.config || {},
-        recordCount: data.recordCount || 0,
-        fileSize: data.fileSize,
-        fileExtension: data.fileExtension,
-        contentType: data.contentType,
-        downloadUrl: data.downloadUrl
-    };
-
-    return {
-        ...response,
-        data: transformedData
-    };
-};
-
-/**
- * Transform dashboard stats response
- */
 const transformDashboardStatsResponse = (response) => {
     const data = response.data || {};
     
     const transformedData = {
-        totalRequests: data.totalRequests || 0,
-        successfulRequests: data.successfulRequests || 0,
-        failedRequests: data.failedRequests || 0,
+        // Stats card data
+        totalApis: data.totalApis || 0,
+        totalCollections: data.totalCollections || 0,
+        totalApiRequests: data.totalApiRequests || 0,
+        totalDocumentationEndpoints: data.totalDocumentationEndpoints || 0,
+        
+        // Additional stats for dashboard
+        activeApis: data.activeApis || 0,
+        totalCodeImplementations: data.totalCodeImplementations || 0,
+        publishedDocumentation: data.publishedDocumentation || 0,
+        activeUsers: data.activeUsers || 0,
+        totalIpWhitelistEntries: data.totalIpWhitelistEntries || 0,
+        unreadSecurityAlerts: data.unreadSecurityAlerts || 0,
+        
+        // For backwards compatibility with existing code
+        totalRequests: data.totalApiRequests || 0,
         successRate: data.successRate || 0,
         averageResponseTime: data.averageResponseTime || 0,
-        activeApis: data.activeApis || 0,
-        uniqueClients: data.uniqueClients || 0,
-        requestsByStatus: data.requestsByStatus || {},
-        requestsByMethod: data.requestsByMethod || {},
-        topApis: (data.topApis || []).map(api => ({
-            apiId: api.apiId,
-            apiName: api.apiName,
-            apiCode: api.apiCode,
-            requestCount: api.requestCount || 0
-        }))
+        failedRequests: data.failedRequests || 0
     };
 
-    return {
-        ...response,
-        data: transformedData
-    };
+    return { ...response, data: transformedData };
 };
 
-/**
- * Transform recent requests response
- */
 const transformRecentRequestsResponse = (response) => {
     const data = response.data || [];
     
@@ -1174,103 +610,43 @@ const transformRecentRequestsResponse = (response) => {
         requestedBy: req.requestedBy
     }));
 
-    return {
-        ...response,
-        data: transformedData
-    };
+    return { ...response, data: transformedData };
 };
 
-/**
- * Transform health response
- */
-const transformHealthResponse = (response) => {
+const transformExportResponse = (response) => {
     const data = response.data || {};
     
     const transformedData = {
-        apiId: data.apiId,
-        apiName: data.apiName,
-        checkTime: data.checkTime,
-        overallHealth: data.overallHealth || 'UNKNOWN',
-        metrics: data.metrics || {
-            successRate: 0,
-            averageResponseTime: 0,
-            errorRate: 0,
-            totalRequestsLastHour: 0
-        },
-        checks: (data.checks || []).map(check => ({
-            checkName: check.checkName,
-            status: check.status || 'UNKNOWN',
-            message: check.message,
-            value: check.value,
-            threshold: check.threshold
-        })),
-        activeAlerts: (data.activeAlerts || []).map(alert => ({
-            alertId: alert.alertId,
-            severity: alert.severity,
-            message: alert.message,
-            triggeredAt: alert.triggeredAt
-        }))
+        exportId: data.exportId,
+        exportTimestamp: data.exportTimestamp,
+        exportedBy: data.exportedBy,
+        format: data.format || 'JSON',
+        config: data.config || {},
+        recordCount: data.recordCount || 0,
+        fileSize: data.fileSize,
+        fileExtension: data.fileExtension,
+        contentType: data.contentType,
+        downloadUrl: data.downloadUrl
     };
 
-    return {
-        ...response,
-        data: transformedData
-    };
+    return { ...response, data: transformedData };
 };
 
 // ============================================================
 // EXTRACT FUNCTIONS
 // ============================================================
 
-/**
- * Extract request data from response
- */
-export const extractRequestData = (response) => {
-    return response?.data || {};
-};
-
-/**
- * Extract requests list from response
- */
-export const extractRequestsList = (response) => {
-    return response?.data?.requests || [];
-};
-
-/**
- * Extract search results from response
- */
-export const extractSearchResults = (response) => {
-    return response?.data?.content || [];
-};
-
-/**
- * Extract statistics from response
- */
-export const extractStatistics = (response) => {
-    return response?.data || {};
-};
-
-/**
- * Extract daily breakdown from response
- */
-export const extractDailyBreakdown = (response) => {
-    return response?.data || {};
-};
-
-/**
- * Extract export data from response
- */
-export const extractExportData = (response) => {
-    return response?.data || {};
-};
+export const extractRequestData = (response) => response?.data || {};
+export const extractRequestsList = (response) => response?.data?.requests || [];
+export const extractSearchResults = (response) => response?.data?.content || [];
+export const extractStatistics = (response) => response?.data || {};
+export const extractDailyBreakdown = (response) => response?.data || {};
+export const extractExportData = (response) => response?.data || {};
 
 // ============================================================
 // UTILITY FUNCTIONS
 // ============================================================
 
-/**
- * Get request status color
- */
 export const getRequestStatusColor = (status) => {
     switch (status?.toUpperCase()) {
         case 'SUCCESS': return 'green';
@@ -1281,9 +657,6 @@ export const getRequestStatusColor = (status) => {
     }
 };
 
-/**
- * Get status code color
- */
 export const getStatusCodeColor = (code) => {
     if (!code) return 'gray';
     if (code >= 200 && code < 300) return 'green';
@@ -1293,9 +666,6 @@ export const getStatusCodeColor = (code) => {
     return 'gray';
 };
 
-/**
- * Format execution time
- */
 export const formatExecutionTime = (ms) => {
     if (!ms) return '0ms';
     if (ms < 1000) return `${ms}ms`;
@@ -1305,49 +675,30 @@ export const formatExecutionTime = (ms) => {
     return `${minutes}m ${seconds}s`;
 };
 
-/**
- * Format timestamp
- */
 export const formatRequestTimestamp = (timestamp) => {
     if (!timestamp) return '';
     const date = new Date(timestamp);
     return date.toLocaleString();
 };
 
-/**
- * Get request summary text
- */
 export const getRequestSummary = (request) => {
     if (!request) return '';
     return `${request.httpMethod} ${request.url} - ${request.responseStatusCode || 'Pending'}`;
 };
 
-/**
- * Check if request was successful
- */
 export const isRequestSuccessful = (request) => {
     return request?.responseStatusCode >= 200 && request?.responseStatusCode < 300;
 };
 
-/**
- * Check if request failed
- */
 export const isRequestFailed = (request) => {
     return request?.responseStatusCode >= 400 || request?.requestStatus === 'FAILED';
 };
 
-/**
- * Download exported requests
- */
 export const downloadExportedRequests = (exportData) => {
     if (!exportData || !exportData.downloadUrl) return;
-    
     window.open(exportData.downloadUrl, '_blank');
 };
 
-/**
- * Build filter from query parameters
- */
 export const buildFilterFromQuery = (queryParams = {}) => {
     return {
         apiId: queryParams.apiId,
