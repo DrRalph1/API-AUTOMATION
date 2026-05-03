@@ -216,7 +216,7 @@ function SessionExpiredOverlay({ show, isManual }) {
 }
 
 // ============================================
-// Global Session Monitor - WITH WORKING LOGOUT AND CLEANUP
+// Global Session Monitor - UPDATED: Show timeout modal after 5 minutes of inactivity
 // ============================================
 function GlobalSessionMonitor() {
   const { isAuthenticated, logout } = useAuth();
@@ -237,8 +237,8 @@ function GlobalSessionMonitor() {
   const isLoggingOutRef = useRef(false);
 
   // Configuration constants
-  const INACTIVITY_LIMIT = 5 * 60 * 1000; // 5 minutes total
-  const WARNING_TIME = 60 * 1000; // Show warning after 60 seconds
+  const INACTIVITY_LIMIT = 6 * 60 * 1000; // 6 minutes total (will logout after 6 minutes)
+  const WARNING_TIME = 5 * 60 * 1000; // Show warning AFTER 5 minutes of inactivity
 
   // Clear all storage on logout
   const clearAllStorage = useCallback(() => {
@@ -376,15 +376,17 @@ function GlobalSessionMonitor() {
     setTimeoutCountdown(60);
     
     // Start fresh timers
+    // Warning timer: Show modal AFTER 5 minutes of inactivity
     warningTimerRef.current = setTimeout(() => {
       if (!isModalShowingRef.current && !sessionExpired && !isLoggingOutRef.current) {
-        console.log('⚠️ Showing timeout warning');
+        console.log('⚠️ 5 minutes of inactivity reached - showing timeout warning');
         isModalShowingRef.current = true;
         setShowTimeoutWarning(true);
         startCountdown();
       }
     }, WARNING_TIME);
     
+    // Inactivity timer: Logout after 6 minutes total (5 min warning + 60 second countdown)
     inactivityTimerRef.current = setTimeout(() => {
       if (!isModalShowingRef.current && !sessionExpired && !isLoggingOutRef.current) {
         console.log('⏰ Inactivity limit reached - logging out');
@@ -411,15 +413,17 @@ function GlobalSessionMonitor() {
     setTimeoutCountdown(60);
     
     // Start fresh inactivity timers
+    // Warning timer: Show modal AFTER 5 minutes of inactivity
     warningTimerRef.current = setTimeout(() => {
       if (!isModalShowingRef.current && !sessionExpired && !isLoggingOutRef.current) {
-        console.log('⚠️ Showing timeout warning after extension');
+        console.log('⚠️ 5 minutes of inactivity reached - showing timeout warning after extension');
         isModalShowingRef.current = true;
         setShowTimeoutWarning(true);
         startCountdown();
       }
     }, WARNING_TIME);
     
+    // Inactivity timer: Logout after 6 minutes total
     inactivityTimerRef.current = setTimeout(() => {
       if (!isModalShowingRef.current && !sessionExpired && !isLoggingOutRef.current) {
         console.log('⏰ Inactivity limit reached - logging out');
