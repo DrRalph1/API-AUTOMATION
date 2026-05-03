@@ -1,13 +1,14 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { RecoilRoot } from "recoil";
+import { AlertTriangle, X, Shield } from "lucide-react";
 
 import Login from "./src/views/auth/Login.js";
 
-import { ThemeProvider } from "@/context/ThemeContext.js";
+import { ThemeProvider, useTheme } from "@/context/ThemeContext.js";
 import { AuthProvider, useAuth } from "@/context/AuthContext.js";
 import { LogProvider, useLog } from "@/context/LogContext.js";
 
@@ -18,7 +19,485 @@ import { setNavigateFunction } from "./src/helpers/APIHelper.js";
 const queryClient = new QueryClient();
 
 // ============================================
-// Navigation Initializer - Sets navigate for API config
+// Timeout Modal Component - Integrated here
+// ============================================
+function TimeoutWarningModal({ show, countdown, onExtend, onLogout }) {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+  const isProcessingRef = useRef(false);
+  
+  if (!show) return null;
+  
+  // Calculate percentage based on countdown (max 30 seconds)
+  const maxTime = 30;
+  const percentage = (countdown / maxTime) * 100;
+  const circumference = 2 * Math.PI * 45;
+  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+  
+  const handleExtend = () => {
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+    console.log('User clicked Stay Logged In');
+    onExtend();
+    setTimeout(() => {
+      isProcessingRef.current = false;
+    }, 1000);
+  };
+  
+  const handleLogout = () => {
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+    console.log('User clicked Logout Now');
+    onLogout();
+    setTimeout(() => {
+      isProcessingRef.current = false;
+    }, 1000);
+  };
+  
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100]" onClick={(e) => e.stopPropagation()} />
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div 
+          className={`w-full max-w-md rounded-2xl shadow-2xl transform transition-all duration-300 ${
+            isDark ? 'bg-gray-900/95 backdrop-blur-lg border-gray-800' : 'bg-white/95 backdrop-blur-lg border-gray-200'
+          } border ${isDark ? 'text-white' : 'text-gray-900'} animate-in fade-in zoom-in duration-300`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="relative p-6">
+            {/* Timer Circle */}
+            <div className="flex justify-center mb-6">
+              <div className="relative">
+                <svg className="w-32 h-32 transform -rotate-90">
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="45"
+                    fill="none"
+                    stroke={isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"}
+                    strokeWidth="8"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="45"
+                    fill="none"
+                    stroke={isDark ? "#f97316" : "#ea580c"}
+                    strokeWidth="8"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={strokeDashoffset}
+                    strokeLinecap="round"
+                    className="transition-all duration-1000 ease-linear"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <div className="text-4xl font-bold">{countdown}</div>
+                  <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>seconds</div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Warning Icon and Title */}
+            <div className="text-center space-y-3">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-500/20 mx-auto">
+                <AlertTriangle className="h-8 w-8 text-amber-500" />
+              </div>
+              
+              <h2 className="text-xl font-bold">Session About to Expire</h2>
+              
+              <p className={isDark ? "text-gray-400" : "text-gray-600"}>
+                Your session will expire in <span className="font-bold text-amber-500">{countdown} seconds</span> due to inactivity.
+              </p>
+
+              <div className={`rounded-lg p-3 mt-2 ${
+                isDark ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-50 border-amber-200"
+              } border`}>
+                <p className={`text-sm ${isDark ? "text-amber-400" : "text-amber-600"}`}>
+                  <span className="font-semibold">⚠️ Security Notice:</span> Please click "Stay Logged In" to continue your session.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-6">
+                <button
+                  onClick={handleLogout}
+                  className={`flex-1 py-3 px-4 rounded-lg border ${
+                    isDark 
+                      ? "border-gray-700 hover:bg-gray-800" 
+                      : "border-gray-300 hover:bg-gray-100"
+                  } transition-colors font-medium`}
+                >
+                  Logout Now
+                </button>
+                <button
+                  onClick={handleExtend}
+                  className={`flex-1 py-3 px-4 rounded-lg ${
+                    isDark ? "bg-orange-600 hover:bg-orange-700" : "bg-orange-500 hover:bg-orange-600"
+                  } text-white font-medium transition-colors`}
+                >
+                  Stay Logged In
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ============================================
+// Session Expired Overlay - FIXED
+// ============================================
+function SessionExpiredOverlay({ show, isManual }) {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+  const [isVisible, setIsVisible] = useState(false);
+  
+  useEffect(() => {
+    if (show) {
+      setIsVisible(true);
+    } else {
+      // Small delay to allow fade out animation
+      const timer = setTimeout(() => {
+        setIsVisible(false);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [show]);
+  
+  if (!show && !isVisible) return null;
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100]" />
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className={`w-full max-w-md rounded-2xl shadow-2xl ${
+          isDark ? 'bg-gray-900/95 backdrop-blur-lg border-gray-800' : 'bg-white/95 backdrop-blur-lg border-gray-200'
+        } border ${isDark ? 'text-white' : 'text-gray-900'}`}>
+          <div className="relative p-6">
+            <div className="text-center space-y-4">
+              <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-2 ${
+                isManual
+                  ? isDark ? 'bg-red-500/20' : 'bg-red-500/20'
+                  : isDark ? 'bg-blue-500/20' : 'bg-blue-500/20'
+              }`}>
+                <AlertTriangle
+                  size={32}
+                  className={
+                    isManual
+                      ? isDark ? "text-red-400" : "text-red-500"
+                      : isDark ? "text-blue-400" : "text-blue-500"
+                  }
+                />
+              </div>
+              
+              <h2 className="text-xl font-bold">
+                {isManual ? 'Logging Out' : 'Session Expired'}
+              </h2>
+              
+              <p className={isDark ? "text-gray-400" : "text-gray-600"}>
+                {isManual
+                  ? "You are being logged out..."
+                  : "Your session has expired due to inactivity. Redirecting to login..."}
+              </p>
+
+              {isManual && (
+                <div className={`rounded-lg p-3 ${
+                  isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-50 border-red-200"
+                } border`}>
+                  <p className={`text-sm ${isDark ? "text-red-400" : "text-red-600"}`}>
+                    <span className="font-semibold">Security Note:</span> This will end your current session and clear all temporary data.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-center pt-4">
+                <div className={`w-8 h-8 border-2 rounded-full animate-spin ${
+                  isManual
+                    ? isDark ? 'border-red-400 border-t-transparent' : 'border-red-500 border-t-transparent'
+                    : isDark ? 'border-blue-400 border-t-transparent' : 'border-blue-500 border-t-transparent'
+                }`}></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ============================================
+// Global Session Monitor with Timeout Modal - COUNTDOWN WORKING
+// ============================================
+function GlobalSessionMonitor() {
+  const { isAuthenticated, logout } = useAuth();
+  const navigate = useNavigate();
+  
+  const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
+  const [timeoutCountdown, setTimeoutCountdown] = useState(30);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [isManualLogout, setIsManualLogout] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+  
+  const timeoutIntervalRef = useRef(null);
+  const inactivityTimerRef = useRef(null);
+  const warningTimerRef = useRef(null);
+  const isCleaningUpRef = useRef(false);
+  const isExtendingRef = useRef(false);
+  const logoutTimeoutRef = useRef(null);
+  const countdownValueRef = useRef(30); // Keep track of countdown value
+
+  // Configuration constants - 1 minute total session timeout
+  const INACTIVITY_LIMIT = 60 * 1000; // 1 minute total session
+  const WARNING_TIME = 30 * 1000; // Show warning after 30 seconds
+
+  // Clear all storage on logout
+  const clearAllStorage = useCallback(() => {
+    console.log('🗑️ Clearing all storage on logout');
+    
+    sessionStorage.clear();
+    
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+    localStorage.removeItem('auth_token_expiry');
+    localStorage.removeItem('auth_persistence_type');
+    localStorage.removeItem('auth_remember_me');
+    localStorage.removeItem('last_active_tab');
+    localStorage.removeItem('just_logged_in');
+    localStorage.removeItem('last_login_time');
+    localStorage.removeItem('auth_redirect_pending');
+    
+    if (window.location.search) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  const clearAllTimeouts = useCallback(() => {
+    if (isCleaningUpRef.current) return;
+    isCleaningUpRef.current = true;
+    
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
+    if (warningTimerRef.current) {
+      clearTimeout(warningTimerRef.current);
+      warningTimerRef.current = null;
+    }
+    if (timeoutIntervalRef.current) {
+      clearInterval(timeoutIntervalRef.current);
+      timeoutIntervalRef.current = null;
+    }
+    if (logoutTimeoutRef.current) {
+      clearTimeout(logoutTimeoutRef.current);
+      logoutTimeoutRef.current = null;
+    }
+    
+    setTimeout(() => {
+      isCleaningUpRef.current = false;
+    }, 100);
+  }, []);
+
+  const performLogout = useCallback(() => {
+    if (sessionExpired) return;
+    
+    console.log('🚪 Performing logout...');
+    
+    clearAllTimeouts();
+    setShowTimeoutWarning(false);
+    setSessionExpired(true);
+    clearAllStorage();
+    
+    if (logoutTimeoutRef.current) {
+      clearTimeout(logoutTimeoutRef.current);
+    }
+    
+    logoutTimeoutRef.current = setTimeout(() => {
+      console.log('🏁 Executing final logout and navigation');
+      setShowTimeoutWarning(false);
+      setSessionExpired(false);
+      setIsManualLogout(false);
+      setIsInitialized(false);
+      clearAllTimeouts();
+      logout();
+      navigate('/login', { replace: true });
+    }, 2000);
+  }, [logout, navigate, clearAllTimeouts, clearAllStorage, sessionExpired]);
+
+  const handleTimeoutLogout = useCallback(() => {
+    if (sessionExpired) return;
+    console.log('⏰ Timeout triggered - logging out due to inactivity');
+    setIsManualLogout(false);
+    performLogout();
+  }, [performLogout, sessionExpired]);
+
+  const handleManualLogout = useCallback(() => {
+    if (sessionExpired) return;
+    console.log('👤 Manual logout triggered');
+    setIsManualLogout(true);
+    performLogout();
+  }, [performLogout, sessionExpired]);
+
+  // Function to start the countdown when modal appears
+  const startCountdown = useCallback(() => {
+    // Clear any existing interval
+    if (timeoutIntervalRef.current) {
+      clearInterval(timeoutIntervalRef.current);
+      timeoutIntervalRef.current = null;
+    }
+    
+    // Reset countdown to 30
+    countdownValueRef.current = 30;
+    setTimeoutCountdown(30);
+    
+    console.log('⏰ Starting countdown from 30');
+    
+    timeoutIntervalRef.current = setInterval(() => {
+      if (countdownValueRef.current > 0) {
+        countdownValueRef.current -= 1;
+        console.log('⏰ Countdown:', countdownValueRef.current);
+        setTimeoutCountdown(countdownValueRef.current);
+        
+        if (countdownValueRef.current === 0) {
+          console.log('💀 Countdown finished - logging out');
+          if (timeoutIntervalRef.current) {
+            clearInterval(timeoutIntervalRef.current);
+            timeoutIntervalRef.current = null;
+          }
+          handleTimeoutLogout();
+        }
+      }
+    }, 1000);
+  }, [handleTimeoutLogout]);
+
+  // Stop the countdown
+  const stopCountdown = useCallback(() => {
+    if (timeoutIntervalRef.current) {
+      console.log('⏰ Stopping countdown');
+      clearInterval(timeoutIntervalRef.current);
+      timeoutIntervalRef.current = null;
+    }
+  }, []);
+
+  // This function extends the session and closes modal (called ONLY by Stay Logged In button)
+  const extendSession = useCallback(() => {
+    if (isExtendingRef.current) return;
+    isExtendingRef.current = true;
+    
+    console.log('🔄 Extending session via Stay Logged In button...');
+    
+    // Stop countdown
+    stopCountdown();
+    
+    // Clear all existing timers
+    clearAllTimeouts();
+    
+    // Hide the warning modal
+    setShowTimeoutWarning(false);
+    
+    // Reset countdown for next time
+    countdownValueRef.current = 30;
+    setTimeoutCountdown(30);
+    
+    // Reset timer only if authenticated and not expired
+    if (isAuthenticated && !sessionExpired && isInitialized) {
+      warningTimerRef.current = setTimeout(() => {
+        if (isAuthenticated && !sessionExpired) {
+          console.log('⚠️ Showing timeout warning');
+          setShowTimeoutWarning(true);
+          startCountdown();
+        }
+      }, INACTIVITY_LIMIT - WARNING_TIME);
+      
+      inactivityTimerRef.current = setTimeout(() => {
+        if (isAuthenticated && !sessionExpired) {
+          console.log('⏰ Inactivity limit reached - logging out');
+          handleTimeoutLogout();
+        }
+      }, INACTIVITY_LIMIT);
+    }
+    
+    setTimeout(() => {
+      isExtendingRef.current = false;
+    }, 500);
+  }, [isAuthenticated, sessionExpired, handleTimeoutLogout, clearAllTimeouts, isInitialized, INACTIVITY_LIMIT, WARNING_TIME, startCountdown, stopCountdown]);
+
+  const startTimers = useCallback(() => {
+    if (sessionExpired || !isAuthenticated || !isInitialized) return;
+    
+    clearAllTimeouts();
+    countdownValueRef.current = 30;
+    setTimeoutCountdown(30);
+    
+    warningTimerRef.current = setTimeout(() => {
+      if (isAuthenticated && !sessionExpired) {
+        console.log('⚠️ Showing timeout warning');
+        setShowTimeoutWarning(true);
+        startCountdown();
+      }
+    }, INACTIVITY_LIMIT - WARNING_TIME);
+    
+    inactivityTimerRef.current = setTimeout(() => {
+      if (isAuthenticated && !sessionExpired) {
+        console.log('⏰ Inactivity limit reached - logging out');
+        handleTimeoutLogout();
+      }
+    }, INACTIVITY_LIMIT);
+  }, [isAuthenticated, clearAllTimeouts, sessionExpired, handleTimeoutLogout, isInitialized, INACTIVITY_LIMIT, WARNING_TIME, startCountdown]);
+
+  // Start timers after initialization
+  useEffect(() => {
+    if (!isAuthenticated || sessionExpired || !isInitialized) return;
+    
+    startTimers();
+    
+    return () => {
+      clearAllTimeouts();
+      stopCountdown();
+    };
+  }, [isAuthenticated, sessionExpired, isInitialized, startTimers, clearAllTimeouts, stopCountdown]);
+
+  // Set initialized to true after a short delay on mount and when auth becomes true
+  useEffect(() => {
+    if (isAuthenticated && !isInitialized) {
+      const timer = setTimeout(() => {
+        setIsInitialized(true);
+      }, 1000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthenticated, isInitialized]);
+
+  // Clean up on unmount or when auth changes
+  useEffect(() => {
+    return () => {
+      if (logoutTimeoutRef.current) {
+        clearTimeout(logoutTimeoutRef.current);
+      }
+      setShowTimeoutWarning(false);
+      setSessionExpired(false);
+    };
+  }, []);
+
+  return (
+    <>
+      <TimeoutWarningModal 
+        show={showTimeoutWarning}
+        countdown={timeoutCountdown}
+        onExtend={extendSession}
+        onLogout={handleManualLogout}
+      />
+      <SessionExpiredOverlay 
+        show={sessionExpired}
+        isManual={isManualLogout}
+      />
+    </>
+  );
+}
+
+// ============================================
+// Navigation Initializer
 // ============================================
 function NavigationInitializer() {
   const navigate = useNavigate();
@@ -32,7 +511,7 @@ function NavigationInitializer() {
 }
 
 // ============================================
-// Session Monitor Component
+// Session Monitor Component (Token expiry only)
 // ============================================
 function SessionMonitor() {
   const { isAuthenticated, logout, getPersistenceInfo } = useAuth();
@@ -44,7 +523,6 @@ function SessionMonitor() {
 
     const persistenceInfo = getPersistenceInfo();
     
-    // Only check expiry if enabled in config
     if (!persistenceInfo.enabled || !persistenceInfo.tokenExpiryEnabled) {
       console.log('Session monitor: Token expiry check disabled, skipping');
       return;
@@ -60,7 +538,6 @@ function SessionMonitor() {
           console.log('Session expired, logging out...');
           isLoggingOut.current = true;
           
-          // Small delay to allow any in-flight requests to complete
           setTimeout(() => {
             logout();
             navigate('/login', { replace: true });
@@ -69,10 +546,7 @@ function SessionMonitor() {
       }
     };
 
-    // Check immediately
     checkSession();
-    
-    // Check every 30 seconds
     const interval = setInterval(checkSession, 30000);
 
     return () => {
@@ -89,26 +563,20 @@ function SessionMonitor() {
 // ============================================
 function Protected({ children, roles = [] }) {
   const { user, isInitialized, isAuthenticated, token } = useAuth();
-  const location = useLocation();
   const navigate = useNavigate();
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
-    // Don't redirect if we're already redirecting
     if (isRedirecting) return;
-    
-    // Wait for initialization
     if (!isInitialized) return;
     
-    // Check authentication
     if (!isAuthenticated || !token) {
-      console.log('🔒 Protected - Not authenticated or no token, redirecting to login');
+      console.log('🔒 Protected - Not authenticated, redirecting to login');
       setIsRedirecting(true);
       navigate('/login', { replace: true });
     }
   }, [isInitialized, isAuthenticated, token, navigate, isRedirecting]);
 
-  // Show loading spinner while initializing
   if (!isInitialized) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
@@ -120,14 +588,12 @@ function Protected({ children, roles = [] }) {
     );
   }
 
-  // Check if user exists and is authenticated
   if (!user || !isAuthenticated || !token) {
-    return null; // Don't render anything while redirecting
+    return null;
   }
 
-  // Check role requirements
   if (roles.length > 0 && !roles.includes(user.role)) {
-    console.log('🔒 Protected - Role not authorized, redirecting to home');
+    console.log('🔒 Protected - Role not authorized');
     return <Navigate to="/" replace />;
   }
 
@@ -167,7 +633,7 @@ function PublicRoute({ children }) {
   }
 
   if (user && isAuthenticated && token) {
-    return null; // Don't render while redirecting
+    return null;
   }
 
   return children;
@@ -231,16 +697,15 @@ function RouteRedirect() {
     );
   }
 
-  return null; // Don't render anything while redirecting
+  return null;
 }
 
 // ============================================
-// Auth Check Wrapper - Ensures token is available
+// Auth Check Wrapper
 // ============================================
 function AuthCheckWrapper({ children }) {
   const { token, isAuthenticated, user } = useAuth();
   
-  // Debug log for auth state
   useEffect(() => {
     console.log('🔐 AuthCheckWrapper - Auth State:', {
       hasToken: !!token,
@@ -259,6 +724,7 @@ function AuthCheckWrapper({ children }) {
 function RoutesTree() {
   return (
     <AuthCheckWrapper>
+      <GlobalSessionMonitor />
       <Routes>
         <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/admin" element={
