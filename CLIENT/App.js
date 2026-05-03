@@ -28,8 +28,8 @@ function TimeoutWarningModal({ show, countdown, onExtend, onLogout }) {
   
   if (!show) return null;
   
-  // Calculate percentage based on countdown (max 30 seconds)
-  const maxTime = 30;
+  // Calculate percentage based on countdown (max 60 seconds)
+  const maxTime = 60;
   const percentage = (countdown / maxTime) * 100;
   const circumference = 2 * Math.PI * 45;
   const strokeDashoffset = circumference - (percentage / 100) * circumference;
@@ -223,7 +223,7 @@ function GlobalSessionMonitor() {
   const navigate = useNavigate();
   
   const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
-  const [timeoutCountdown, setTimeoutCountdown] = useState(30);
+  const [timeoutCountdown, setTimeoutCountdown] = useState(60);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [isManualLogout, setIsManualLogout] = useState(false);
   
@@ -336,10 +336,10 @@ function GlobalSessionMonitor() {
       timeoutIntervalRef.current = null;
     }
     
-    let countdownValue = 30;
+    let countdownValue = 60;
     setTimeoutCountdown(countdownValue);
     
-    console.log('⏰ Starting countdown from 30 seconds');
+    console.log('⏰ Starting countdown from 60 seconds');
     
     timeoutIntervalRef.current = setInterval(() => {
       if (countdownValue > 0 && !isLoggingOutRef.current) {
@@ -373,7 +373,7 @@ function GlobalSessionMonitor() {
     clearAllTimeouts();
     
     // Reset countdown value for next time
-    setTimeoutCountdown(30);
+    setTimeoutCountdown(60);
     
     // Start fresh timers
     warningTimerRef.current = setTimeout(() => {
@@ -408,7 +408,7 @@ function GlobalSessionMonitor() {
     isModalShowingRef.current = false;
     
     // Reset countdown value
-    setTimeoutCountdown(30);
+    setTimeoutCountdown(60);
     
     // Start fresh inactivity timers
     warningTimerRef.current = setTimeout(() => {
@@ -561,7 +561,7 @@ function SessionMonitor() {
     };
 
     checkSession();
-    const interval = setInterval(checkSession, 30000);
+    const interval = setInterval(checkSession, 60000);
 
     return () => {
       clearInterval(interval);
