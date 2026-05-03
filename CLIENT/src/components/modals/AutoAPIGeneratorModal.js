@@ -9077,253 +9077,367 @@ if (protocolType === 'soap') {
 
     // Process parameters if we have any
     if (parameters.length > 0) {
-      console.log('📦 Processing parameters (count: ' + parameters.length + ')');
-      
-      parameters.forEach((param, index) => {
-        // Extract parameter data with fallbacks for different naming conventions
-        // PRIORITIZE: key, then ARGUMENT_NAME, then argument_name, then name, then NAME
-        const paramName = param.key || 
-                          param.ARGUMENT_NAME || 
-                          param.argument_name || 
-                          param.name || 
-                          param.NAME || 
-                          `param_${index + 1}`;
-        
-        const paramType = param.oracleType || 
+  console.log('📦 Processing parameters (count: ' + parameters.length + ')');
+  
+  parameters.forEach((param, index) => {
+    // Extract parameter data with fallbacks
+    const paramName = param.key || 
+                      param.ARGUMENT_NAME || 
+                      param.argument_name || 
+                      param.name || 
+                      param.NAME || 
+                      `param_${index + 1}`;
+    
+    const paramDataType = param.oracleType || 
                           param.DATA_TYPE || 
                           param.data_type || 
                           param.type || 
                           param.TYPE || 
+                          param.udt_name ||  // PostgreSQL specific
                           'VARCHAR2';
+    
+    const paramMode = param.paramMode || 
+                      param.IN_OUT || 
+                      param.in_out || 
+                      param.mode || 
+                      param.MODE || 
+                      'IN';
+    
+    // Normalize the mode
+    let normalizedMode = paramMode?.toString().toUpperCase().replace(/\s+/g, '_') || 'IN';
+    if (normalizedMode === 'INOUT' || normalizedMode === 'IN_OUT') {
+      normalizedMode = 'IN/OUT';
+    }
+    
+    // ============ IMPROVED TYPE MAPPING ============
+    const isOutParam = normalizedMode === 'OUT' || normalizedMode === 'IN/OUT' || normalizedMode === 'IN_OUT';
+    const dbType = object.databaseType?.toLowerCase() || 'oracle';
+    const typeLower = paramDataType.toLowerCase();
+    const typeUpper = paramDataType.toUpperCase();
+    
+    let oracleType = 'VARCHAR2';
+    let apiType = 'string';
+    let format = '';
+    
+    // PostgreSQL Type Mapping
+    if (dbType === 'postgresql') {
+      // Numeric types
+      if (typeLower.match(/^int|integer|bigint|smallint|serial|bigserial|smallserial$/)) {
+        oracleType = 'NUMBER';
+        apiType = 'integer';
+      }
+      else if (typeLower.match(/^decimal|numeric|real|double|float|money$/)) {
+        oracleType = 'NUMBER';
+        apiType = 'number';
+      }
+      // Character types
+      else if (typeLower.match(/^varchar|char|text|citext|bpchar|character/)) {
+        oracleType = 'VARCHAR2';
+        apiType = 'string';
+      }
+      // Date/Time types
+      else if (typeLower.match(/^date|time|timetz|timestamp|timestamptz|interval$/)) {
+        oracleType = 'TIMESTAMP';
+        apiType = 'string';
+        format = 'date-time';
+      }
+      // Boolean
+      else if (typeLower === 'boolean' || typeLower === 'bool') {
+        oracleType = 'BOOLEAN';
+        apiType = 'boolean';
+      }
+      // ============ FIX: JSON types - use 'array' for API type ============
+      else if (typeLower === 'json' || typeLower === 'jsonb') {
+        oracleType = 'JSONB';
         
-        const paramMode = param.paramMode || 
-                          param.IN_OUT || 
-                          param.in_out || 
-                          param.mode || 
-                          param.MODE || 
-                          'IN';
+        // ============ COMPREHENSIVE JSONB TYPE DETECTION ============
+        const paramNameLower = paramName.toLowerCase();
         
-        // Normalize the mode
-        let normalizedMode = paramMode?.toString().toUpperCase().replace(/\s+/g, '_') || 'IN';
-        if (normalizedMode === 'INOUT' || normalizedMode === 'IN_OUT') {
-          normalizedMode = 'IN/OUT';
-        }
+        // Patterns that suggest ARRAY type
+        const arrayPatterns = [
+          /_list$/, /_array$/, /_items$/, /_collection$/, /_set$/,
+          /_questions$/, /_answers$/, /_responses$/, /_entries$/,
+          /_records$/, /_details$/, /_lines$/, /_rows$/,
+          /batch/, /multiple/, /all_/, /many_/, /group_/, /collection/, /array/,
+        ];
         
-        console.log(`🔍 Processing param ${index}:`, { 
-          paramName, 
-          paramType, 
-          paramMode: normalizedMode,
-          original: paramMode,
-          originalKey: param.key,
-          originalDbColumn: param.dbColumn
-        });
+        // Patterns that suggest OBJECT type
+        const objectPatterns = [
+          /_config$/, /_settings$/, /_profile$/, /_metadata$/, /_info$/,
+          /_detail$/, /_data$/, /_payload$/, /_body$/, /_attributes$/,
+          /_properties$/, /_params$/, /_context$/, /_state$/, /_result$/, /_response$/,
+        ];
         
-        // Generate a clean key name - preserve the original if it exists
-        let cleanKey = paramName;
-        if (typeof paramName === 'string') {
-          // Only clean if it's a generated name, not if it's from the original data
-          if (param.key) {
-            cleanKey = param.key;
-          } else if (param.dbColumn) {
-            cleanKey = param.dbColumn;
-          } else {
-            cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
+        // Check for explicit array patterns first
+        let isArray = false;
+        for (const pattern of arrayPatterns) {
+          if (pattern.test(paramNameLower)) {
+            isArray = true;
+            console.log(`📊 JSONB parameter "${paramName}" matched ARRAY pattern: ${pattern}`);
+            break;
           }
-        } else {
-          cleanKey = `param_${index + 1}`;
         }
         
-        // Determine parameter location - PRIORITIZE existing location
-        let parameterLocation = param.parameterLocation;
-        
-        // If not set, try to determine from paramMode or other hints
-        if (!parameterLocation) {
-            const isInParam = normalizedMode === 'IN';
-            
-            // Check if this is marked as a body parameter
-            if (param.inBody === true || param.inBody === 'true' || param.paramType === 'body') {
-                parameterLocation = 'body';
+        // If not array, check for object patterns
+        let isObject = false;
+        if (!isArray) {
+          for (const pattern of objectPatterns) {
+            if (pattern.test(paramNameLower)) {
+              isObject = true;
+              console.log(`📊 JSONB parameter "${paramName}" matched OBJECT pattern: ${pattern}`);
+              break;
             }
-            // Check if it's a path parameter
-            else if (param.isPathParam === true || param._isPathParam === true) {
-                parameterLocation = 'path';
-            }
-            // Default based on HTTP method
-            else if (isInParam && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
-                parameterLocation = 'body';
-            } else if (isInParam && httpMethod === 'GET') {
-                parameterLocation = 'query';
-            } else {
-                parameterLocation = 'query';
-            }
-        }
-        
-        const isInParam = normalizedMode === 'IN';
-        const isOutParam = normalizedMode === 'OUT' || normalizedMode === 'IN/OUT' || normalizedMode === 'IN_OUT';
-        
-        // If parameter location is not set, determine from HTTP method
-        if (!param.parameterLocation) {
-          if (isInParam && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
-            parameterLocation = 'body';
-          } else if (isInParam && httpMethod === 'GET') {
-            parameterLocation = 'query';
           }
         }
-
-        // Determine database type for type mapping
-        const dbType = object.databaseType?.toLowerCase() || 'oracle';
         
-        // Determine type based on database type
-        let oracleType = 'VARCHAR2';
-        let apiType = 'string';
-        
-        if (dbType === 'postgresql') {
-          if (paramType.includes('VARCHAR') || paramType.includes('CHAR') || paramType.includes('TEXT')) {
-            oracleType = 'VARCHAR2';
-            apiType = 'string';
-          } else if (paramType.includes('INT') || paramType.includes('BIGINT') || paramType.includes('SMALLINT') || 
-                     paramType.includes('DECIMAL') || paramType.includes('NUMERIC') || paramType.includes('FLOAT') ||
-                     paramType.includes('DOUBLE') || paramType.includes('REAL')) {
-            oracleType = 'NUMBER';
-            apiType = 'integer';
-          } else if (paramType.includes('DATE') || paramType.includes('TIME') || paramType.includes('TIMESTAMP')) {
-            oracleType = 'DATE';
-            apiType = 'string';
-          } else if (paramType.includes('BOOLEAN')) {
-            oracleType = 'VARCHAR2';
-            apiType = 'boolean';
-          } else {
-            oracleType = 'VARCHAR2';
-            apiType = 'string';
-          }
+        // ============ CRITICAL FIX: Update the OUTER apiType variable ============
+        // DO NOT declare a new variable - update the existing one
+        if (isArray) {
+          apiType = 'array';
+        } else if (isObject) {
+          apiType = 'object';
         } else {
-          if (paramType.includes('VARCHAR') || paramType.includes('CHAR')) {
-            oracleType = 'VARCHAR2';
-            apiType = 'string';
-          } else if (paramType.includes('NUMBER') || paramType.includes('INT') || paramType.includes('FLOAT')) {
-            oracleType = 'NUMBER';
-            apiType = 'integer';
-          } else if (paramType.includes('DATE')) {
-            oracleType = 'DATE';
-            apiType = 'string';
-          } else if (paramType.includes('TIMESTAMP')) {
-            oracleType = 'TIMESTAMP';
-            apiType = 'string';
-          } else if (paramType.includes('CLOB')) {
-            oracleType = 'CLOB';
-            apiType = 'string';
-          } else {
-            oracleType = 'VARCHAR2';
-            apiType = 'string';
-          }
+          // Fallback: check if plural
+          const isPlural = paramNameLower.endsWith('s') && 
+                          !paramNameLower.endsWith('ss') &&
+                          !paramNameLower.endsWith('us') &&
+                          !paramNameLower.match(/(ics|is)$/);
+          apiType = isPlural ? 'array' : 'object';
+          console.log(`📊 JSONB parameter "${paramName}" fell back to ${apiType} (plural: ${isPlural})`);
         }
-
-        // Preserve existing values if available
-        const required = param.required !== undefined ? param.required : isInParam;
-        const description = param.description || `${paramName} (${normalizedMode})`;
-        const example = param.example || (oracleType === 'NUMBER' ? '1000' : 
-                                          oracleType === 'DATE' ? '2024-01-01' : 
-                                          oracleType === 'CLOB' ? '{...}' : 'sample');
-        const defaultValue = param.defaultValue || param.DATA_DEFAULT || '';
-        const inBody = param.inBody !== undefined ? param.inBody : (parameterLocation === 'body');
-
-        // Only add to parameters array for IN and IN/OUT parameters
-        if (isInParam) {
-          // Check if the parameter type is AUTOGENERATE
-          const isAutoGenerate = oracleType === 'AUTOGENERATE';
-          
-          // Determine if this should be a path parameter
-          let isPathParam = parameterLocation === 'path';
-          
-          newParameters.push({
-            id: param.id || `proc-param-${Date.now()}-${index}`,
-            key: cleanKey,
-            dbColumn: param.dbColumn || paramName,
-            oracleType: oracleType,
-            apiType: apiType,
-            parameterLocation: parameterLocation,
-            required: isPathParam ? true : (isAutoGenerate ? false : required), // Path params always required
-            description: description,
-            example: isAutoGenerate ? 'Auto-generated timestamp' : example,
-            validationPattern: param.validationPattern || '',
-            defaultValue: isAutoGenerate ? getCurrentTimestamp() : defaultValue,
-            inBody: inBody,
-            isPrimaryKey: param.isPrimaryKey || false,
-            paramMode: normalizedMode,
-            _isPathParam: isPathParam // Add flag
-          });
-          console.log(`✅ Added to PARAMETERS tab: ${cleanKey} (${normalizedMode})`);
-        }
-
-        // Only add to response mappings for OUT and IN/OUT parameters
-        if (isOutParam) {
-          const isAutoGenerate = oracleType === 'AUTOGENERATE';
-          
-          newMappings.push({
-            id: param.id || `mapping-out-${Date.now()}-${index}`,
-            apiField: cleanKey,
-            dbColumn: param.dbColumn || paramName,
-            oracleType: oracleType,
-            apiType: apiType,
-            format: param.format || (oracleType === 'DATE' ? 'date-time' : ''),
-            nullable: isAutoGenerate ? false : (param.nullable !== undefined ? param.nullable : true),
-            isPrimaryKey: param.isPrimaryKey || false,
-            includeInResponse: param.includeInResponse !== undefined ? param.includeInResponse : true,
-            inResponse: param.inResponse !== undefined ? param.inResponse : true,
-            paramMode: normalizedMode
-          });
-        }
-      });
-
-      // For functions, handle return type
-      const returnType = object.RETURN_TYPE || object.return_type || object.returnType || object.details?.returnType;
-      if (returnType && objectType === 'FUNCTION') {
-        const dbType = object.databaseType?.toLowerCase() || 'oracle';
-        let oracleType = 'VARCHAR2';
         
-        if (dbType === 'postgresql') {
-          if (returnType.includes('INT') || returnType.includes('BIGINT') || returnType.includes('NUMERIC')) {
-            oracleType = 'NUMBER';
-          } else if (returnType.includes('DATE') || returnType.includes('TIMESTAMP')) {
-            oracleType = 'DATE';
-          } else if (returnType.includes('BOOLEAN')) {
-            oracleType = 'VARCHAR2';
-          } else {
-            oracleType = 'VARCHAR2';
-          }
-        } else {
-          if (returnType.includes('NUMBER') || returnType.includes('INT') || returnType.includes('FLOAT')) {
-            oracleType = 'NUMBER';
-          } else if (returnType.includes('DATE')) {
-            oracleType = 'DATE';
-          } else if (returnType.includes('VARCHAR') || returnType.includes('CHAR')) {
-            oracleType = 'VARCHAR2';
-          } else {
-            oracleType = 'VARCHAR2';
-          }
-        }
-
-        let apiType = 'string';
-        if (oracleType === 'NUMBER') {
-          apiType = 'integer';
-        }
-
-        newMappings.push({
-          id: `mapping-return-${Date.now()}`,
-          apiField: 'result',
-          dbColumn: 'RETURN_VALUE',
-          oracleType: oracleType,
-          apiType: apiType,
-          format: oracleType === 'DATE' ? 'date-time' : '',
-          nullable: false,
-          isPrimaryKey: false,
-          includeInResponse: true,
-          inResponse: true,
-          paramMode: 'OUT'
-        });
-        console.log('✅ Added function return mapping');
+        console.log(`📊 JSONB parameter ${paramName} detected as ${apiType}`);
+      }
+      // Array types - CHECK FOR [] SUFFIX OR ARRAY PREFIX
+      else if (typeLower.endsWith('[]') || typeLower.startsWith('_') || typeLower.includes('array')) {
+        oracleType = 'JSONB';
+        apiType = 'array';
+        const baseType = typeLower.replace(/\[\]$/, '').replace(/^_/, '');
+        console.log(`📦 Array parameter detected: ${paramName} with base type: ${baseType}`);
+      }
+      // Binary types
+      else if (typeLower.match(/^bytea|blob|binary|oid$/)) {
+        oracleType = 'BLOB';
+        apiType = 'file';
+      }
+      // UUID
+      else if (typeLower === 'uuid') {
+        oracleType = 'VARCHAR2';
+        apiType = 'string';
+      }
+      // Geometric types
+      else if (typeLower.match(/^point|line|lseg|box|path|polygon|circle$/)) {
+        oracleType = 'JSONB';
+        apiType = 'array';
+      }
+      // Network types
+      else if (typeLower.match(/^cidr|inet|macaddr$/)) {
+        oracleType = 'VARCHAR2';
+        apiType = 'string';
+      }
+      // Range types
+      else if (typeLower.match(/^int4range|int8range|numrange|tsrange|tstzrange|daterange$/)) {
+        oracleType = 'JSONB';
+        apiType = 'array';
+      }
+      // XML
+      else if (typeLower === 'xml') {
+        oracleType = 'CLOB';
+        apiType = 'string';
+      }
+      // Default
+      else {
+        oracleType = 'VARCHAR2';
+        apiType = 'string';
+      }
+    } 
+    // Oracle Type Mapping
+    else {
+      // Numeric types
+      if (typeUpper.match(/^NUMBER|INTEGER|INT|SMALLINT|FLOAT|DECIMAL|NUMERIC|BINARY_FLOAT|BINARY_DOUBLE$/)) {
+        oracleType = 'NUMBER';
+        apiType = isOutParam ? 'number' : 'integer';
+      }
+      // Character types
+      else if (typeUpper.match(/^VARCHAR2|VARCHAR|CHAR|NCHAR|NVARCHAR2|CLOB|NCLOB|LONG$/)) {
+        oracleType = typeUpper.match(/^CLOB|NCLOB|LONG/) ? 'CLOB' : 'VARCHAR2';
+        apiType = 'string';
+      }
+      // Date/Time types
+      else if (typeUpper.match(/^DATE|TIMESTAMP|TIMESTAMP WITH TIME ZONE|TIMESTAMP WITH LOCAL TIME ZONE|INTERVAL/)) {
+        oracleType = 'TIMESTAMP';
+        apiType = 'string';
+        format = 'date-time';
+      }
+      // Boolean
+      else if (typeUpper === 'BOOLEAN') {
+        oracleType = 'BOOLEAN';
+        apiType = 'boolean';
+      }
+      // ============ FIX: JSON types - use 'array' for API type ============
+      else if (typeUpper.match(/^JSON|JSONB$/)) {
+        oracleType = 'JSONB';
+        apiType = 'array';  // Changed from 'object' to 'array'
+      }
+      // Binary types
+      else if (typeUpper.match(/^BLOB|RAW|LONG RAW|BFILE$/)) {
+        oracleType = 'BLOB';
+        apiType = 'file';
+      }
+      // XML Type
+      else if (typeUpper === 'XMLTYPE') {
+        oracleType = 'CLOB';
+        apiType = 'string';
+      }
+      // Cursor type (for OUT parameters)
+      else if (typeUpper === 'SYS_REFCURSOR') {
+        oracleType = 'SYS_REFCURSOR';
+        apiType = 'array';
+      }
+      // Rowid types
+      else if (typeUpper.match(/^ROWID|UROWID$/)) {
+        oracleType = 'VARCHAR2';
+        apiType = 'string';
+      }
+      // Auto-generate (special case)
+      else if (typeUpper === 'AUTOGENERATE') {
+        oracleType = 'AUTOGENERATE';
+        apiType = 'string';
+      }
+      // Default
+      else {
+        oracleType = 'VARCHAR2';
+        apiType = 'string';
       }
     }
+    
+    // Special handling for array types - ensure they get proper API type
+    if (typeLower.includes('array') || typeLower.endsWith('[]') || typeLower.startsWith('_')) {
+      oracleType = 'JSONB';
+      apiType = 'array';
+      console.log(`📊 Parameter ${paramName} detected as ARRAY type!`);
+    }
+    
+    console.log(`🔍 Processing param ${index}:`, { 
+      paramName, 
+      originalType: paramDataType,
+      mappedOracleType: oracleType,
+      mappedApiType: apiType,
+      format: format,
+      normalizedMode
+    });
+    
+    // Generate a clean key name
+    let cleanKey = paramName;
+    if (typeof paramName === 'string') {
+      if (param.key) {
+        cleanKey = param.key;
+      } else if (param.dbColumn) {
+        cleanKey = param.dbColumn;
+      } else {
+        cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
+      }
+    } else {
+      cleanKey = `param_${index + 1}`;
+    }
+    
+    // Determine parameter location
+    let parameterLocation = param.parameterLocation;
+    
+    if (!parameterLocation) {
+      const isInParam = normalizedMode === 'IN';
+      
+      if (param.inBody === true || param.inBody === 'true' || param.paramType === 'body') {
+        parameterLocation = 'body';
+      }
+      else if (param.isPathParam === true || param._isPathParam === true) {
+        parameterLocation = 'path';
+      }
+      else if (isInParam && (apiDetails.httpMethod === 'POST' || apiDetails.httpMethod === 'PUT' || apiDetails.httpMethod === 'PATCH')) {
+        parameterLocation = 'body';
+      }
+      else if (isInParam && apiDetails.httpMethod === 'GET') {
+        parameterLocation = 'query';
+      }
+      else {
+        parameterLocation = 'query';
+      }
+    }
+    
+    const isInParam = normalizedMode === 'IN';
+    const isPathParam = parameterLocation === 'path';
+    
+    // Generate example based on API type
+    let example = param.example || '';
+    if (!example || example === '') {
+      switch(apiType) {
+        case 'integer':
+          example = '123';
+          break;
+        case 'number':
+          example = '123.45';
+          break;
+        case 'boolean':
+          example = 'true';
+          break;
+        case 'array':
+          example = '[]';
+          break;
+        case 'object':
+          example = '{}';
+          break;
+        case 'file':
+          example = 'Select a file...';
+          break;
+        default:
+          example = 'sample';
+      }
+    }
+    
+    // Only add to parameters array for IN and IN/OUT parameters
+    if (isInParam || normalizedMode === 'IN/OUT') {
+      newParameters.push({
+        id: param.id || `proc-param-${Date.now()}-${index}`,
+        key: cleanKey,
+        dbColumn: param.dbColumn || paramName,
+        oracleType: oracleType,
+        apiType: apiType,
+        format: format,
+        parameterLocation: parameterLocation,
+        required: isPathParam ? true : (param.required !== undefined ? param.required : true),
+        description: param.description || `${paramName} (${normalizedMode})`,
+        example: example,
+        validationPattern: param.validationPattern || '',
+        defaultValue: param.defaultValue || param.DATA_DEFAULT || '',
+        inBody: parameterLocation === 'body',
+        isPrimaryKey: param.isPrimaryKey || false,
+        paramMode: normalizedMode,
+        _isPathParam: isPathParam,
+        _originalDataType: paramDataType
+      });
+      console.log(`✅ Added to PARAMETERS tab: ${cleanKey} (${normalizedMode}) with type: ${oracleType}/${apiType}`);
+    }
+    
+    // Only add to response mappings for OUT and IN/OUT parameters
+    if (isOutParam || normalizedMode === 'IN/OUT') {
+      newMappings.push({
+        id: param.id || `mapping-out-${Date.now()}-${index}`,
+        apiField: cleanKey,
+        dbColumn: param.dbColumn || paramName,
+        oracleType: oracleType,
+        apiType: apiType,
+        format: format,
+        nullable: param.nullable !== undefined ? param.nullable : true,
+        isPrimaryKey: param.isPrimaryKey || false,
+        includeInResponse: param.includeInResponse !== undefined ? param.includeInResponse : true,
+        inResponse: param.inResponse !== undefined ? param.inResponse : true,
+        paramMode: normalizedMode,
+        example: example,
+        _originalDataType: paramDataType
+      });
+    }
+  });
+}
 
     // Process columns for tables/views
     if (columns.length > 0 && parameters.length === 0) {
