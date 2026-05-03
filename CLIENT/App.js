@@ -4,7 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { RecoilRoot } from "recoil";
-import { AlertTriangle, X, Shield } from "lucide-react";
+import { AlertTriangle, X, Shield, LogOut } from "lucide-react";
 
 import Login from "./src/views/auth/Login.js";
 
@@ -147,7 +147,7 @@ function TimeoutWarningModal({ show, countdown, onExtend, onLogout }) {
 }
 
 // ============================================
-// Session Expired Overlay - FIXED
+// Session Expired Overlay - FIXED with auto-cleanup
 // ============================================
 function SessionExpiredOverlay({ show, isManual }) {
   const { theme } = useTheme();
@@ -157,16 +157,17 @@ function SessionExpiredOverlay({ show, isManual }) {
   useEffect(() => {
     if (show) {
       setIsVisible(true);
-    } else {
-      // Small delay to allow fade out animation
+      // Auto-hide after 2 seconds
       const timer = setTimeout(() => {
         setIsVisible(false);
-      }, 300);
+      }, 2000);
       return () => clearTimeout(timer);
+    } else {
+      setIsVisible(false);
     }
   }, [show]);
   
-  if (!show && !isVisible) return null;
+  if (!isVisible && !show) return null;
 
   return (
     <>
@@ -182,14 +183,11 @@ function SessionExpiredOverlay({ show, isManual }) {
                   ? isDark ? 'bg-red-500/20' : 'bg-red-500/20'
                   : isDark ? 'bg-blue-500/20' : 'bg-blue-500/20'
               }`}>
-                <AlertTriangle
-                  size={32}
-                  className={
-                    isManual
-                      ? isDark ? "text-red-400" : "text-red-500"
-                      : isDark ? "text-blue-400" : "text-blue-500"
-                  }
-                />
+                {isManual ? (
+                  <LogOut size={32} className={isDark ? "text-red-400" : "text-red-500"} />
+                ) : (
+                  <AlertTriangle size={32} className={isDark ? "text-blue-400" : "text-blue-500"} />
+                )}
               </div>
               
               <h2 className="text-xl font-bold">
@@ -201,16 +199,6 @@ function SessionExpiredOverlay({ show, isManual }) {
                   ? "You are being logged out..."
                   : "Your session has expired due to inactivity. Redirecting to login..."}
               </p>
-
-              {isManual && (
-                <div className={`rounded-lg p-3 ${
-                  isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-50 border-red-200"
-                } border`}>
-                  <p className={`text-sm ${isDark ? "text-red-400" : "text-red-600"}`}>
-                    <span className="font-semibold">Security Note:</span> This will end your current session and clear all temporary data.
-                  </p>
-                </div>
-              )}
 
               <div className="flex justify-center pt-4">
                 <div className={`w-8 h-8 border-2 rounded-full animate-spin ${
@@ -228,7 +216,7 @@ function SessionExpiredOverlay({ show, isManual }) {
 }
 
 // ============================================
-// Global Session Monitor with Timeout Modal - COUNTDOWN WORKING
+// Global Session Monitor - WITH WORKING LOGOUT AND CLEANUP
 // ============================================
 function GlobalSessionMonitor() {
   const { isAuthenticated, logout } = useAuth();
@@ -238,18 +226,18 @@ function GlobalSessionMonitor() {
   const [timeoutCountdown, setTimeoutCountdown] = useState(30);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [isManualLogout, setIsManualLogout] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
   
   const timeoutIntervalRef = useRef(null);
   const inactivityTimerRef = useRef(null);
   const warningTimerRef = useRef(null);
-  const isCleaningUpRef = useRef(false);
   const isExtendingRef = useRef(false);
   const logoutTimeoutRef = useRef(null);
-  const countdownValueRef = useRef(30); // Keep track of countdown value
+  const lastActivityRef = useRef(Date.now());
+  const isModalShowingRef = useRef(false);
+  const isLoggingOutRef = useRef(false);
 
-  // Configuration constants - 1 minute total session timeout
-  const INACTIVITY_LIMIT = 60 * 1000; // 1 minute total session
+  // Configuration constants
+  const INACTIVITY_LIMIT = 60 * 1000; // 60 seconds total
   const WARNING_TIME = 30 * 1000; // Show warning after 30 seconds
 
   // Clear all storage on logout
@@ -274,9 +262,6 @@ function GlobalSessionMonitor() {
   }, []);
 
   const clearAllTimeouts = useCallback(() => {
-    if (isCleaningUpRef.current) return;
-    isCleaningUpRef.current = true;
-    
     if (inactivityTimerRef.current) {
       clearTimeout(inactivityTimerRef.current);
       inactivityTimerRef.current = null;
@@ -293,73 +278,76 @@ function GlobalSessionMonitor() {
       clearTimeout(logoutTimeoutRef.current);
       logoutTimeoutRef.current = null;
     }
-    
-    setTimeout(() => {
-      isCleaningUpRef.current = false;
-    }, 100);
   }, []);
 
   const performLogout = useCallback(() => {
-    if (sessionExpired) return;
+    // Prevent multiple logout calls
+    if (isLoggingOutRef.current || sessionExpired) return;
+    isLoggingOutRef.current = true;
     
     console.log('🚪 Performing logout...');
     
+    // Clear all timeouts
     clearAllTimeouts();
+    
+    // Hide modal
     setShowTimeoutWarning(false);
-    setSessionExpired(true);
+    isModalShowingRef.current = false;
+    
+    // Clear all storage
     clearAllStorage();
     
-    if (logoutTimeoutRef.current) {
-      clearTimeout(logoutTimeoutRef.current);
-    }
+    // Show expired overlay briefly, then clean up and navigate
+    setSessionExpired(true);
     
-    logoutTimeoutRef.current = setTimeout(() => {
-      console.log('🏁 Executing final logout and navigation');
-      setShowTimeoutWarning(false);
+    setTimeout(() => {
+      console.log('🏁 Resetting states and navigating to login');
+      
+      // Reset all expired states BEFORE navigation
       setSessionExpired(false);
       setIsManualLogout(false);
-      setIsInitialized(false);
-      clearAllTimeouts();
+      isLoggingOutRef.current = false;
+      
+      // Call logout from AuthContext
       logout();
+      
+      // Navigate to login page
       navigate('/login', { replace: true });
-    }, 2000);
+    }, 500);
   }, [logout, navigate, clearAllTimeouts, clearAllStorage, sessionExpired]);
 
   const handleTimeoutLogout = useCallback(() => {
-    if (sessionExpired) return;
+    if (sessionExpired || isLoggingOutRef.current) return;
     console.log('⏰ Timeout triggered - logging out due to inactivity');
-    setIsManualLogout(false);
     performLogout();
   }, [performLogout, sessionExpired]);
 
   const handleManualLogout = useCallback(() => {
-    if (sessionExpired) return;
+    if (sessionExpired || isLoggingOutRef.current) return;
     console.log('👤 Manual logout triggered');
     setIsManualLogout(true);
     performLogout();
   }, [performLogout, sessionExpired]);
 
-  // Function to start the countdown when modal appears
+  // Start the countdown when modal appears
   const startCountdown = useCallback(() => {
-    // Clear any existing interval
     if (timeoutIntervalRef.current) {
       clearInterval(timeoutIntervalRef.current);
       timeoutIntervalRef.current = null;
     }
     
-    // Reset countdown to 30
-    countdownValueRef.current = 30;
-    setTimeoutCountdown(30);
+    let countdownValue = 30;
+    setTimeoutCountdown(countdownValue);
     
-    console.log('⏰ Starting countdown from 30');
+    console.log('⏰ Starting countdown from 30 seconds');
     
     timeoutIntervalRef.current = setInterval(() => {
-      if (countdownValueRef.current > 0) {
-        countdownValueRef.current -= 1;
-        console.log('⏰ Countdown:', countdownValueRef.current);
-        setTimeoutCountdown(countdownValueRef.current);
+      if (countdownValue > 0 && !isLoggingOutRef.current) {
+        countdownValue--;
+        console.log('⏰ Countdown:', countdownValue);
+        setTimeoutCountdown(countdownValue);
         
-        if (countdownValueRef.current === 0) {
+        if (countdownValue === 0) {
           console.log('💀 Countdown finished - logging out');
           if (timeoutIntervalRef.current) {
             clearInterval(timeoutIntervalRef.current);
@@ -371,114 +359,140 @@ function GlobalSessionMonitor() {
     }, 1000);
   }, [handleTimeoutLogout]);
 
-  // Stop the countdown
-  const stopCountdown = useCallback(() => {
-    if (timeoutIntervalRef.current) {
-      console.log('⏰ Stopping countdown');
-      clearInterval(timeoutIntervalRef.current);
-      timeoutIntervalRef.current = null;
+  // Reset timers when user is active (but only if modal is NOT showing)
+  const resetTimersOnActivity = useCallback(() => {
+    // If modal is already showing, DO NOT reset timers
+    if (isModalShowingRef.current || isLoggingOutRef.current) {
+      console.log('🚫 Modal is showing or logging out - ignoring activity reset');
+      return;
     }
-  }, []);
-
-  // This function extends the session and closes modal (called ONLY by Stay Logged In button)
-  const extendSession = useCallback(() => {
-    if (isExtendingRef.current) return;
-    isExtendingRef.current = true;
     
-    console.log('🔄 Extending session via Stay Logged In button...');
-    
-    // Stop countdown
-    stopCountdown();
+    console.log('🖱️ User activity detected - resetting timers');
     
     // Clear all existing timers
     clearAllTimeouts();
     
-    // Hide the warning modal
-    setShowTimeoutWarning(false);
-    
-    // Reset countdown for next time
-    countdownValueRef.current = 30;
+    // Reset countdown value for next time
     setTimeoutCountdown(30);
     
-    // Reset timer only if authenticated and not expired
-    if (isAuthenticated && !sessionExpired && isInitialized) {
-      warningTimerRef.current = setTimeout(() => {
-        if (isAuthenticated && !sessionExpired) {
-          console.log('⚠️ Showing timeout warning');
-          setShowTimeoutWarning(true);
-          startCountdown();
-        }
-      }, INACTIVITY_LIMIT - WARNING_TIME);
-      
-      inactivityTimerRef.current = setTimeout(() => {
-        if (isAuthenticated && !sessionExpired) {
-          console.log('⏰ Inactivity limit reached - logging out');
-          handleTimeoutLogout();
-        }
-      }, INACTIVITY_LIMIT);
-    }
-    
-    setTimeout(() => {
-      isExtendingRef.current = false;
-    }, 500);
-  }, [isAuthenticated, sessionExpired, handleTimeoutLogout, clearAllTimeouts, isInitialized, INACTIVITY_LIMIT, WARNING_TIME, startCountdown, stopCountdown]);
-
-  const startTimers = useCallback(() => {
-    if (sessionExpired || !isAuthenticated || !isInitialized) return;
-    
-    clearAllTimeouts();
-    countdownValueRef.current = 30;
-    setTimeoutCountdown(30);
-    
+    // Start fresh timers
     warningTimerRef.current = setTimeout(() => {
-      if (isAuthenticated && !sessionExpired) {
+      if (!isModalShowingRef.current && !sessionExpired && !isLoggingOutRef.current) {
         console.log('⚠️ Showing timeout warning');
+        isModalShowingRef.current = true;
         setShowTimeoutWarning(true);
         startCountdown();
       }
-    }, INACTIVITY_LIMIT - WARNING_TIME);
+    }, WARNING_TIME);
     
     inactivityTimerRef.current = setTimeout(() => {
-      if (isAuthenticated && !sessionExpired) {
+      if (!isModalShowingRef.current && !sessionExpired && !isLoggingOutRef.current) {
         console.log('⏰ Inactivity limit reached - logging out');
         handleTimeoutLogout();
       }
     }, INACTIVITY_LIMIT);
-  }, [isAuthenticated, clearAllTimeouts, sessionExpired, handleTimeoutLogout, isInitialized, INACTIVITY_LIMIT, WARNING_TIME, startCountdown]);
+  }, [clearAllTimeouts, WARNING_TIME, INACTIVITY_LIMIT, startCountdown, handleTimeoutLogout, sessionExpired]);
 
-  // Start timers after initialization
+  // Extend session (ONLY called by Stay Logged In button)
+  const extendSession = useCallback(() => {
+    if (isExtendingRef.current || sessionExpired || isLoggingOutRef.current) return;
+    isExtendingRef.current = true;
+    
+    console.log('🔄 Extending session via Stay Logged In button...');
+    
+    // Clear all existing timeouts and countdown
+    clearAllTimeouts();
+    
+    // Hide modal
+    setShowTimeoutWarning(false);
+    isModalShowingRef.current = false;
+    
+    // Reset countdown value
+    setTimeoutCountdown(30);
+    
+    // Start fresh inactivity timers
+    warningTimerRef.current = setTimeout(() => {
+      if (!isModalShowingRef.current && !sessionExpired && !isLoggingOutRef.current) {
+        console.log('⚠️ Showing timeout warning after extension');
+        isModalShowingRef.current = true;
+        setShowTimeoutWarning(true);
+        startCountdown();
+      }
+    }, WARNING_TIME);
+    
+    inactivityTimerRef.current = setTimeout(() => {
+      if (!isModalShowingRef.current && !sessionExpired && !isLoggingOutRef.current) {
+        console.log('⏰ Inactivity limit reached - logging out');
+        handleTimeoutLogout();
+      }
+    }, INACTIVITY_LIMIT);
+    
+    setTimeout(() => {
+      isExtendingRef.current = false;
+    }, 500);
+  }, [sessionExpired, clearAllTimeouts, WARNING_TIME, INACTIVITY_LIMIT, startCountdown, handleTimeoutLogout]);
+
+  // Handle user activity with throttling
+  const handleUserActivity = useCallback(() => {
+    const now = Date.now();
+    // Throttle to once per second
+    if (now - lastActivityRef.current < 1000) return;
+    lastActivityRef.current = now;
+    
+    if (!sessionExpired && !isLoggingOutRef.current) {
+      resetTimersOnActivity();
+    }
+  }, [sessionExpired, resetTimersOnActivity]);
+
+  // Set up event listeners for user activity
   useEffect(() => {
-    if (!isAuthenticated || sessionExpired || !isInitialized) return;
+    if (!isAuthenticated || sessionExpired || isLoggingOutRef.current) return;
     
-    startTimers();
+    let activityTimeout;
+    const throttledActivityHandler = () => {
+      if (activityTimeout) clearTimeout(activityTimeout);
+      activityTimeout = setTimeout(() => {
+        handleUserActivity();
+      }, 100);
+    };
     
+    const events = [
+      'mousedown', 'mousemove', 'mouseup', 'click', 'dblclick',
+      'keydown', 'keyup', 'keypress', 'scroll', 'touchstart',
+      'touchmove', 'touchend', 'wheel', 'focus', 'input'
+    ];
+    
+    events.forEach(event => {
+      document.addEventListener(event, throttledActivityHandler);
+    });
+    
+    // Start initial timers
+    const initialTimer = setTimeout(() => {
+      if (!isLoggingOutRef.current) {
+        resetTimersOnActivity();
+      }
+    }, 1000);
+    
+    return () => {
+      events.forEach(event => {
+        document.removeEventListener(event, throttledActivityHandler);
+      });
+      if (activityTimeout) clearTimeout(activityTimeout);
+      clearTimeout(initialTimer);
+      clearAllTimeouts();
+    };
+  }, [isAuthenticated, sessionExpired, handleUserActivity, resetTimersOnActivity, clearAllTimeouts]);
+
+  // Clean up on unmount
+  useEffect(() => {
     return () => {
       clearAllTimeouts();
-      stopCountdown();
-    };
-  }, [isAuthenticated, sessionExpired, isInitialized, startTimers, clearAllTimeouts, stopCountdown]);
-
-  // Set initialized to true after a short delay on mount and when auth becomes true
-  useEffect(() => {
-    if (isAuthenticated && !isInitialized) {
-      const timer = setTimeout(() => {
-        setIsInitialized(true);
-      }, 1000);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [isAuthenticated, isInitialized]);
-
-  // Clean up on unmount or when auth changes
-  useEffect(() => {
-    return () => {
-      if (logoutTimeoutRef.current) {
-        clearTimeout(logoutTimeoutRef.current);
-      }
       setShowTimeoutWarning(false);
       setSessionExpired(false);
+      isModalShowingRef.current = false;
+      isLoggingOutRef.current = false;
     };
-  }, []);
+  }, [clearAllTimeouts]);
 
   return (
     <>
