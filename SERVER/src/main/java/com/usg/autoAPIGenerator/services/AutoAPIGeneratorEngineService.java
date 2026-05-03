@@ -2083,21 +2083,47 @@ public class AutoAPIGeneratorEngineService {
                     log.info("GraphQL API - captured raw JSON response ({} chars)", rawResponseBody.length());
 
                 } else {
-                    // REST API - build raw JSON response exactly as user will see
-                    rawResponseBody = buildRawRestResponse(result, api, 200, "Success");
+                // REST API - build raw JSON response exactly as user will see
 
-                    Object formattedData = responseHelper.formatResponse(api, result);
-                    finalResponse = ExecuteApiResponseDTO.builder()
-                            .responseCode(200)
-                            .success(true)
-                            .message("Success")
-                            .data(formattedData)
-                            .contentType("application/json")
-                            .protocolType(protocolType)
-                            .build();
+                // ============ FIX: Extract custom message from result ============
+                String responseMessage = "Success";
+                Object responseData = result;
 
-                    log.info("REST API - captured raw JSON response ({} chars)", rawResponseBody.length());
+                // Check if result is a Map and contains a message
+                if (result instanceof Map) {
+                    Map<String, Object> resultMap = (Map<String, Object>) result;
+
+                    // Check for message field
+                    if (resultMap.containsKey("message")) {
+                        responseMessage = String.valueOf(resultMap.get("message"));
+                        log.info("✅ Using custom message from procedure: {}", responseMessage);
+                    }
+
+                    // Check for data field
+                    if (resultMap.containsKey("data")) {
+                        responseData = resultMap.get("data");
+                    } else if (resultMap.containsKey("result")) {
+                        responseData = resultMap.get("result");
+                    }
+
+                    // Preserve other fields like remainingAttempts, maxAttempts, etc.
+                    // They will be included in the formattedData
                 }
+
+                rawResponseBody = buildRawRestResponse(result, api, 200, responseMessage);
+
+                Object formattedData = responseHelper.formatResponse(api, responseData);
+                finalResponse = ExecuteApiResponseDTO.builder()
+                        .responseCode(200)
+                        .success(true)
+                        .message(responseMessage)  // Use the extracted message
+                        .data(formattedData)
+                        .contentType("application/json")
+                        .protocolType(protocolType)
+                        .build();
+
+                log.info("REST API - captured raw JSON response ({} chars)", rawResponseBody.length());
+            }
 
                 // Update captured request with EXACT raw request and response bodies
                 if (capturedRequestId != null) {

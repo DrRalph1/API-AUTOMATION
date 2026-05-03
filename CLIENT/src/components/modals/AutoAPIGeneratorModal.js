@@ -364,7 +364,7 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken, dat
           name: objectName,
           owner: owner || 'PUBLIC',
           type: objectType,
-          databaseType: 'Oracle',
+          databaseType: 'Oracle',  // Fixed: should be 'Oracle', not 'PostgreSQL'
           isSynonym: objectType === 'SYNONYM',
           targetType: item.targetType || item.TARGET_TYPE,
           targetName: item.targetName || item.TARGET_NAME,
@@ -4774,6 +4774,26 @@ useEffect(() => {
   }
 }, [activeTab, parameters, requestBody.bodyType, protocolType, graphqlConfig.operationName, graphqlConfig.operationType]);
 
+
+
+useEffect(() => {
+  // CRITICAL: Skip database type syncing when editing an existing API
+  // This prevents overwriting the API's stored database type
+  if (isEditing) {
+    console.log('ℹ️ Edit mode - skipping database type sync from selected object');
+    return;
+  }
+  
+  if (selectedDbObject?.databaseType) {
+    const dbType = selectedDbObject.databaseType === 'postgresql' ? 'postgresql' : 'oracle';
+    if (currentDatabaseType !== dbType) {
+      console.log('🔄 Syncing database type from selected object:', dbType);
+      setCurrentDatabaseType(dbType);
+    }
+  }
+}, [selectedDbObject, isEditing]);
+
+
 // Reset the request tab ref when the modal closes
 useEffect(() => {
   if (!isOpen) {
@@ -5901,57 +5921,57 @@ const getDefaultSoapActionForProtocol = useCallback(() => {
     setValidationErrors(prev => ({ ...prev, folder: null }));
   };
 
+
+  useEffect(() => {
+  // Only check code availability for new APIs when the form loads
+  // AND only if we're not in editing mode
+  const checkInitialCode = async () => {
+    if (isOpen && !isEditing && apiDetails.apiCode && apiDetails.apiCode.length >= 3) {
+      try {
+        console.log('🔍 Checking initial API code availability:', apiDetails.apiCode);
+        await checkCodeAvailability(apiDetails.apiCode);
+      } catch (error) {
+        console.error('Error checking code availability on load:', error);
+      }
+    }
+  };
+  
+  checkInitialCode();
+}, [isOpen, isEditing]); // Remove apiDetails.apiCode from dependencies to prevent loops
+
   // Update the handleApiDetailChange function (around line 1535)
 const handleApiDetailChange = (field, value) => {
   let processedValue = value;
     
-    if (field === 'apiName') {
-      // Convert to uppercase only
-      processedValue = value.toUpperCase();
-    } else if (field === 'apiCode') {
-      // Convert to uppercase AND replace spaces with underscores
-      processedValue = value.toUpperCase().replace(/\s+/g, '_');
-    }
+  if (field === 'apiName') {
+    processedValue = value.toUpperCase();
+  } else if (field === 'apiCode') {
+    // Convert to uppercase AND replace spaces with underscores
+    processedValue = value.toUpperCase().replace(/\s+/g, '_');
     
-    setApiDetails(prev => ({ ...prev, [field]: processedValue }));
-  
-  // Clear validation error for this field
-  setValidationErrors(prev => ({ ...prev, [field]: null }));
-  
-  // If changing HTTP method, validate body type compatibility (but skip for SOAP/GraphQL)
-  if (field === 'httpMethod' && protocolType !== 'soap' && protocolType !== 'graphql') {
-    const methodsWithoutBody = ['GET', 'DELETE', 'HEAD', 'OPTIONS'];
-    if (methodsWithoutBody.includes(value)) {
-      // Force body type to 'none' for methods that shouldn't have a body
-      setRequestBody(prev => ({
-        ...prev,
-        bodyType: 'none'
-      }));
-    }
-  }
-  
-  // Check code availability when API code changes (only for new APIs)
-  if (field === 'apiCode' && value.length >= 3 && !isEditing) {
     // Clear previous timeout
     if (codeCheckTimeout) {
       clearTimeout(codeCheckTimeout);
     }
     
-    // Set new timeout for debouncing
-    const timerId = setTimeout(async () => {
-      console.log('🔍 Checking API code availability after change:', value);
-      const available = await checkCodeAvailability(value);
-      console.log('📊 Code availability result:', available);
-      
-      if (!available) {
-        setValidationErrors(prev => ({ 
-          ...prev, 
-          apiCode: `API code "${value}" is not available` 
-        }));
-      }
-    }, 500);
-    
-    setCodeCheckTimeout(timerId);
+    // Check code availability with debouncing
+    if (processedValue.length >= 3 && !isEditing) {
+      const timerId = setTimeout(async () => {
+        console.log('🔍 Checking API code availability after change:', processedValue);
+        await checkCodeAvailability(processedValue);
+      }, 500);
+      setCodeCheckTimeout(timerId);
+    } else if (processedValue.length < 3) {
+      setApiCodeExists(false);
+      setValidationErrors(prev => ({ ...prev, apiCode: null }));
+    }
+  }
+  
+  setApiDetails(prev => ({ ...prev, [field]: processedValue }));
+  
+  // Clear validation error for this field
+  if (field !== 'apiCode') {
+    setValidationErrors(prev => ({ ...prev, [field]: null }));
   }
 };
 
@@ -8085,144 +8105,120 @@ useEffect(() => {
   // ==================== OBJECT SELECTOR FUNCTIONS ====================
 
   // Update loadSelectedObjectDetails to close modal first and handle both database types
-  const loadSelectedObjectDetails = useCallback(async (object) => {
-    if (!authToken || !object) return;
+const loadSelectedObjectDetails = useCallback(async (object) => {
+  if (!authToken || !object) return;
 
-    console.log('🔍 Selected object details:', {
-      name: object.name,
-      type: object.type,
-      databaseType: object.databaseType,
-      owner: object.owner
-    });
+  console.log('🔍 Selected object details:', {
+    name: object.name,
+    type: object.type,
+    databaseType: object.databaseType,
+    owner: object.owner
+  });
 
-    // Close the selector modal immediately
-    setShowObjectSelector(false);
+  // Close the selector modal immediately
+  setShowObjectSelector(false);
+  
+  // Show loading in main modal
+  setLoading(true);
+  setObjectSelectorError(null);
+
+  try {
+    let response;
     
-    // Show loading in main modal
-    setLoading(true);
-    setObjectSelectorError(null);
-
-    try {
-      let response;
-      
-      // Determine if this is PostgreSQL (case-insensitive comparison)
-      const isPostgreSQL = object.databaseType?.toLowerCase() === 'postgresql';
-      
-      console.log(`📡 Using ${isPostgreSQL ? 'PostgreSQL' : 'Oracle'} controller for:`, object.name);
-      
-      // Choose the correct controller based on the object's database type
-      if (isPostgreSQL) {
-        // Use PostgreSQL controller
-        const { getObjectDetails } = await import('../../controllers/PostgreSQLSchemaController.js');
-        response = await getObjectDetails(authToken, {
-          objectType: object.type,
-          objectName: object.name,
-          owner: object.owner,
-          schema: object.owner // PostgreSQL uses schema instead of owner
-        });
-      } else {
-        // Default to Oracle controller
-        const { getObjectDetails } = await import('../../controllers/OracleSchemaController.js');
-        response = await getObjectDetails(authToken, {
-          objectType: object.type,
-          objectName: object.name,
-          owner: object.owner
-        });
-      }
-
-      console.log('📦 getObjectDetails response:', response);
-
-      const responseData = response?.data || {};
-      let parameters = [];
-      let columns = [];
-
-      // Extract parameters for procedures/functions
-      if (object.type === 'PROCEDURE' || object.type === 'FUNCTION') {
-        if (responseData.parameters && Array.isArray(responseData.parameters)) {
-          parameters = responseData.parameters;
-          console.log('📦 Found parameters in responseData.parameters:', parameters.length);
-        } else if (responseData.arguments && Array.isArray(responseData.arguments)) {
-          parameters = responseData.arguments;
-          console.log('📦 Found parameters in responseData.arguments:', parameters.length);
-        } else if (responseData.details?.parameters && Array.isArray(responseData.details.parameters)) {
-          parameters = responseData.details.parameters;
-          console.log('📦 Found parameters in responseData.details.parameters:', parameters.length);
-        }
-      }
-
-      // Extract columns for tables/views
-      if (object.type === 'TABLE' || object.type === 'VIEW') {
-        if (responseData.columns && Array.isArray(responseData.columns)) {
-          columns = responseData.columns;
-          console.log('📦 Found columns in responseData.columns:', columns.length);
-        } else if (responseData.targetObjectDetails?.columns) {
-          columns = responseData.targetObjectDetails.columns;
-          console.log('📦 Found columns in responseData.targetObjectDetails.columns:', columns.length);
-        } else if (responseData.details?.columns && Array.isArray(responseData.details.columns)) {
-          columns = responseData.details.columns;
-          console.log('📦 Found columns in responseData.details.columns:', columns.length);
-        }
-      }
-
-      // Log what we found
-      console.log('📊 Extracted data:', {
-        parametersCount: parameters.length,
-        columnsCount: columns.length,
-        objectName: object.name,
+    // Determine if this is PostgreSQL (case-insensitive comparison)
+    const isPostgreSQL = object.databaseType?.toLowerCase() === 'postgresql';
+    
+    console.log(`📡 Using ${isPostgreSQL ? 'PostgreSQL' : 'Oracle'} controller for:`, object.name);
+    
+    // Choose the correct controller based on the object's database type
+    if (isPostgreSQL) {
+      // Use PostgreSQL controller
+      const { getObjectDetails } = await import('../../controllers/PostgreSQLSchemaController.js');
+      response = await getObjectDetails(authToken, {
         objectType: object.type,
-        databaseType: object.databaseType
+        objectName: object.name,
+        owner: object.owner,
+        schema: object.owner
       });
-
-      // Determine the normalized database type for the radio buttons
-      const normalizedDbType = object.databaseType?.toLowerCase() === 'postgresql' ? 'postgresql' : 'oracle';
-      
-      // Set current database type for the radio buttons
-      setCurrentDatabaseType(normalizedDbType);
-      console.log('🎯 Set currentDatabaseType to:', normalizedDbType);
-
-      // Create a selected object with all details
-      const detailedObject = {
-        ...object,
-        ...responseData,
-        parameters: parameters,
-        columns: columns,
-        comment: responseData.comment || responseData.COMMENTS,
-        databaseType: object.databaseType, // Preserve the database type from the selected object
-        details: {
-          ...responseData.details,
-          parameters: parameters,
-          columns: columns
-        }
-      };
-
-      console.log('📦 Detailed object created:', {
-        name: detailedObject.name,
-        type: detailedObject.type,
-        databaseType: detailedObject.databaseType,
-        normalizedDbType: normalizedDbType,
-        parametersCount: detailedObject.parameters?.length,
-        columnsCount: detailedObject.columns?.length
+    } else {
+      // Default to Oracle controller
+      const { getObjectDetails } = await import('../../controllers/OracleSchemaController.js');
+      response = await getObjectDetails(authToken, {
+        objectType: object.type,
+        objectName: object.name,
+        owner: object.owner
       });
-
-      // Set the selected object and populate form
-      setSelectedDbObject(detailedObject);
-      
-      // Set source type to database_object (since we selected a database object)
-      setSourceType('database_object');
-      setIsEditingCustomQuery(false);
-      
-      // Populate the form with the detailed object
-      await populateFormFromObject(detailedObject, true);
-      
-      console.log('✅ Object details loaded and form populated successfully');
-      
-    } catch (error) {
-      console.error('❌ Error loading object details:', error);
-      setObjectSelectorError('Failed to load object details: ' + error.message);
-    } finally {
-      setLoading(false);
     }
-  }, [authToken, populateFormFromObject]);
+
+    console.log('📦 getObjectDetails response:', response);
+
+    const responseData = response?.data || {};
+    let parameters = [];
+    let columns = [];
+
+    // Extract parameters for procedures/functions
+    if (object.type === 'PROCEDURE' || object.type === 'FUNCTION') {
+      if (responseData.parameters && Array.isArray(responseData.parameters)) {
+        parameters = responseData.parameters;
+      } else if (responseData.arguments && Array.isArray(responseData.arguments)) {
+        parameters = responseData.arguments;
+      } else if (responseData.details?.parameters && Array.isArray(responseData.details.parameters)) {
+        parameters = responseData.details.parameters;
+      }
+    }
+
+    // Extract columns for tables/views
+    if (object.type === 'TABLE' || object.type === 'VIEW') {
+      if (responseData.columns && Array.isArray(responseData.columns)) {
+        columns = responseData.columns;
+      } else if (responseData.targetObjectDetails?.columns) {
+        columns = responseData.targetObjectDetails.columns;
+      } else if (responseData.details?.columns && Array.isArray(responseData.details.columns)) {
+        columns = responseData.details.columns;
+      }
+    }
+
+    // Determine the normalized database type for the radio buttons
+    const normalizedDbType = object.databaseType?.toLowerCase() === 'postgresql' ? 'postgresql' : 'oracle';
+    
+    // CRITICAL FIX: Set current database type BEFORE creating the detailed object
+    setCurrentDatabaseType(normalizedDbType);
+    console.log('🎯 Set currentDatabaseType to:', normalizedDbType);
+
+    // Create a selected object with all details
+    const detailedObject = {
+      ...object,
+      ...responseData,
+      parameters: parameters,
+      columns: columns,
+      comment: responseData.comment || responseData.COMMENTS,
+      databaseType: normalizedDbType,
+      details: {
+        ...responseData.details,
+        parameters: parameters,
+        columns: columns
+      }
+    };
+
+    // Set the selected object and populate form
+    setSelectedDbObject(detailedObject);
+    
+    // Set source type to database_object
+    setSourceType('database_object');
+    setIsEditingCustomQuery(false);
+    
+    // ============ CRITICAL FIX: Pass forceRefresh = true to force reload ============
+    await populateFormFromObject(detailedObject, true, true);  // true for preserveExistingApiDetails, true for forceRefresh
+    
+    console.log('✅ Object details loaded and form populated successfully');
+    
+  } catch (error) {
+    console.error('❌ Error loading object details:', error);
+    setObjectSelectorError('Failed to load object details: ' + error.message);
+  } finally {
+    setLoading(false);
+  }
+}, [authToken, populateFormFromObject]);
 
 
 // ============ COMPLETE FIXED populateFormFromApiData ============
@@ -8231,6 +8227,87 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     
     // Extract from nested data if present
     const sourceData = apiData.data || apiData;
+    
+    // ============ CRITICAL FIX: Extract and preserve database type FIRST ============
+    let extractedDatabaseType = null;
+    
+    // Priority order for database type extraction
+    if (sourceData.databaseType) {
+        extractedDatabaseType = sourceData.databaseType;
+        console.log('📦 Found databaseType at sourceData.databaseType:', extractedDatabaseType);
+    } else if (sourceData.sourceObject?.databaseType) {
+        extractedDatabaseType = sourceData.sourceObject.databaseType;
+        console.log('📦 Found databaseType at sourceObject.databaseType:', extractedDatabaseType);
+    } else if (sourceData.schemaConfig?.databaseType) {
+        extractedDatabaseType = sourceData.schemaConfig.databaseType;
+        console.log('📦 Found databaseType at schemaConfig.databaseType:', extractedDatabaseType);
+    } else if (apiData.databaseType) {
+        extractedDatabaseType = apiData.databaseType;
+        console.log('📦 Found databaseType at apiData.databaseType:', extractedDatabaseType);
+    } else if (apiData.sourceObject?.databaseType) {
+        extractedDatabaseType = apiData.sourceObject.databaseType;
+        console.log('📦 Found databaseType at apiData.sourceObject.databaseType:', extractedDatabaseType);
+    }
+    
+    // ============ FIX FOR REST APIS: Check the selectedObject prop ============
+    if (!extractedDatabaseType && isEditing && selectedObject) {
+        console.log('🔍 Checking selectedObject prop for database type (REST API fix)');
+        
+        // Check all possible locations in selectedObject
+        if (selectedObject.databaseType) {
+            extractedDatabaseType = selectedObject.databaseType;
+            console.log('📦 Found databaseType in selectedObject.databaseType:', extractedDatabaseType);
+        } else if (selectedObject.data?.databaseType) {
+            extractedDatabaseType = selectedObject.data.databaseType;
+            console.log('📦 Found databaseType in selectedObject.data.databaseType:', extractedDatabaseType);
+        } else if (selectedObject.sourceObject?.databaseType) {
+            extractedDatabaseType = selectedObject.sourceObject.databaseType;
+            console.log('📦 Found databaseType in selectedObject.sourceObject.databaseType:', extractedDatabaseType);
+        } else if (selectedObject.schemaConfig?.databaseType) {
+            extractedDatabaseType = selectedObject.schemaConfig.databaseType;
+            console.log('📦 Found databaseType in selectedObject.schemaConfig.databaseType:', extractedDatabaseType);
+        } else if (selectedObject.apiDetails?.databaseType) {
+            extractedDatabaseType = selectedObject.apiDetails.databaseType;
+            console.log('📦 Found databaseType in selectedObject.apiDetails.databaseType:', extractedDatabaseType);
+        }
+        
+        // Also check if the API name or code indicates PostgreSQL
+        if (!extractedDatabaseType) {
+            const apiName = (selectedObject.name || selectedObject.apiName || '').toLowerCase();
+            const apiCode = (selectedObject.apiCode || '').toLowerCase();
+            
+            if (apiName.includes('postgres') || apiCode.includes('pg_') || apiCode.includes('postgres')) {
+                extractedDatabaseType = 'postgresql';
+                console.log('🔍 Inferred PostgreSQL from API name/code:', apiName || apiCode);
+            } else if (apiName.includes('oracle') || apiCode.includes('ora_')) {
+                extractedDatabaseType = 'oracle';
+                console.log('🔍 Inferred Oracle from API name/code:', apiName || apiCode);
+            }
+        }
+    }
+    
+    // ============ Also check the databaseType prop passed to the modal ============
+    if (!extractedDatabaseType && databaseType) {
+        extractedDatabaseType = databaseType;
+        console.log('📦 Using databaseType from modal prop:', extractedDatabaseType);
+    }
+    
+    // Normalize the database type
+    let normalizedDbType = 'oracle';
+    if (extractedDatabaseType) {
+        const dbTypeLower = extractedDatabaseType.toString().toLowerCase();
+        if (dbTypeLower === 'postgresql' || dbTypeLower === 'postgres') {
+            normalizedDbType = 'postgresql';
+            console.log('🎯 Normalized database type to: postgresql');
+        } else if (dbTypeLower === 'oracle') {
+            normalizedDbType = 'oracle';
+            console.log('🎯 Normalized database type to: oracle');
+        }
+    }
+    
+    // CRITICAL: Set currentDatabaseType BEFORE anything else
+    setCurrentDatabaseType(normalizedDbType);
+    console.log('✅ Set currentDatabaseType to:', normalizedDbType);
     
     // ============ CHECK FOR CUSTOM QUERY FIRST ============
     const isCustomQueryApi = 
@@ -8252,7 +8329,8 @@ const populateFormFromApiData = useCallback(async (apiData) => {
         hasCustomSelectStatement: !!sourceData?.customSelectStatement,
         hasSourceObjectQuery: !!sourceData?.sourceObject?.query,
         hasCustomQueryText: !!sourceData?.customQueryText,
-        sourceObjectType: sourceData?.sourceObject?.type
+        sourceObjectType: sourceData?.sourceObject?.type,
+        databaseType: normalizedDbType
     });
     
     if (isCustomQueryApi) {
@@ -8287,14 +8365,7 @@ const populateFormFromApiData = useCallback(async (apiData) => {
             console.warn('⚠️ Custom query API detected but no query text found');
         }
         
-        const customQueryDbType = 
-            sourceData?.databaseType || 
-            sourceData?.sourceObject?.databaseType ||
-            sourceData?.schemaConfig?.databaseType ||
-            databaseType || 
-            'oracle';
-        const normalizedDbType = customQueryDbType.toLowerCase() === 'postgresql' ? 'postgresql' : 'oracle';
-        setCurrentDatabaseType(normalizedDbType);
+        // Use the already extracted database type for custom query
         console.log('📦 Database type for custom query:', normalizedDbType);
         
     } else {
@@ -8304,13 +8375,7 @@ const populateFormFromApiData = useCallback(async (apiData) => {
         setOriginalCustomQuery('');
         setIsCustomQuery(false);
         
-        const dbType = sourceData?.databaseType || 
-                       sourceData?.sourceObject?.databaseType ||
-                       sourceData?.schemaConfig?.databaseType ||
-                       databaseType || 
-                       'oracle';
-        const normalizedDbType = dbType.toLowerCase() === 'postgresql' ? 'postgresql' : 'oracle';
-        setCurrentDatabaseType(normalizedDbType);
+        // Use the already extracted database type for database object
         console.log('📦 Database type for database object:', normalizedDbType);
     }
     
@@ -8415,7 +8480,7 @@ const populateFormFromApiData = useCallback(async (apiData) => {
         category: sourceData.category || 'general',
         owner: sourceData.owner || 'HR',
     });
-
+    
     // ============ SET COLLECTION INFO ============
     if (sourceData.collectionInfo) {
         const collection = collections.find(c => c.id === sourceData.collectionInfo.collectionId);
@@ -8429,8 +8494,9 @@ const populateFormFromApiData = useCallback(async (apiData) => {
             }
         }
     }
-
+    
     // ============ SET SCHEMA CONFIG ============
+    // IMPORTANT: Also preserve database type in schemaConfig
     if (sourceData.schemaConfig && !isCustomQueryApi) {
         setSchemaConfig({
             schemaName: sourceData.schemaConfig.schemaName || '',
@@ -8460,7 +8526,7 @@ const populateFormFromApiData = useCallback(async (apiData) => {
             defaultSortDirection: sourceData.defaultSortDirection || 'ASC'
         });
     }
-
+    
     // ============ SET SOURCE OBJECT INFO ============
     if (sourceData.sourceObject) {
         setSourceObjectInfo({
@@ -8470,20 +8536,15 @@ const populateFormFromApiData = useCallback(async (apiData) => {
             targetOwner: sourceData.sourceObject.targetOwner || null
         });
     }
-
+    
     // ============ SET SELECTED DB OBJECT ============
+    // CRITICAL: Use the extracted database type for the selected db object
     if (!isCustomQueryApi && sourceData.sourceObject && sourceData.sourceObject.type !== 'CUSTOM_QUERY') {
-        const objDbType = sourceData.databaseType || 
-                          sourceData.sourceObject.databaseType || 
-                          sourceData.schemaConfig?.databaseType ||
-                          databaseType || 
-                          'oracle';
-        
         setSelectedDbObject({
             name: sourceData.sourceObject.name || sourceData.schemaConfig?.objectName,
             owner: sourceData.sourceObject.owner || sourceData.schemaConfig?.schemaName,
             type: sourceData.sourceObject.type || sourceData.schemaConfig?.objectType,
-            databaseType: objDbType,
+            databaseType: normalizedDbType,  // Use the normalized database type
             isSynonym: sourceData.sourceObject.isSynonym || false,
             targetType: sourceData.sourceObject.targetType,
             targetName: sourceData.sourceObject.targetName,
@@ -8491,151 +8552,138 @@ const populateFormFromApiData = useCallback(async (apiData) => {
             columns: sourceData.sourceObject.columns || sourceData.columns,
             parameters: sourceData.sourceObject.parameters || sourceData.parameters
         });
+        console.log('📦 Set selectedDbObject with databaseType:', normalizedDbType);
     }
-
-    // ============ SET PARAMETERS - WITH IMMEDIATE TYPE NORMALIZATION ============
-if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
-    const paramsWithIds = sourceData.parameters.map((p, idx) => {
-        const isPathParam = p.parameterLocation === 'path';
-        const isFileParam = p.oracleType === 'FILE' || p.oracleType === 'BLOB' || p.oracleType === 'BYTEA' || p.oracleType === 'MULTIPART_FILE';
-        
-        let location = p.parameterLocation;
-        
-        if (!location) {
-            if (p.inBody === true || p.inBody === 'true') {
-                location = 'body';
-            } else if (p.paramMode === 'OUT' || p.paramMode === 'IN/OUT') {
-                location = 'body';
-            } else {
-                location = 'query';
-            }
-        }
-        
-        // ============ CRITICAL FIX: Normalize API Type on Load ============
-        // Convert the stored type to a proper lowercase type
-        let normalizedApiType = (p.apiType || 'string').toLowerCase();
-        
-        // Map common type names from database to our standard types
-        const typeMap = {
-            'str': 'string',
-            'text': 'string', 
-            'varchar': 'string',
-            'varchar2': 'string',
-            'int': 'integer',
-            'integer': 'integer',
-            'number': 'integer',
-            'numeric': 'integer', 
-            'decimal': 'integer',
-            'float': 'number',
-            'double': 'number',
-            'bool': 'boolean',
-            'boolean': 'boolean',
-            'arr': 'array',
-            'array': 'array',
-            'obj': 'object',
-            'object': 'object',
-            'file': 'file',
-            'binary': 'file'
-        };
-        
-        // Apply the mapping - this fixes "BOOLEAN" -> "boolean", "INTEGER" -> "integer", etc.
-        if (typeMap[normalizedApiType]) {
-            normalizedApiType = typeMap[normalizedApiType];
-            console.log(`🔄 Normalized parameter "${p.key}" type from "${p.apiType}" to "${normalizedApiType}"`);
-        }
-        
-        // ============ FIX EXAMPLE BASED ON CORRECTED TYPE ============
-        let normalizedExample = p.example;
-        
-        // If example doesn't match the type, generate a correct one
-        if (normalizedApiType === 'integer') {
-            const parsed = parseInt(normalizedExample, 10);
-            if (isNaN(parsed)) {
-                normalizedExample = '123';
-                console.log(`🔄 Fixed example for "${p.key}" from "${p.example}" to "${normalizedExample}" (integer)`);
-            }
-        } else if (normalizedApiType === 'number') {
-            const parsed = parseFloat(normalizedExample);
-            if (isNaN(parsed)) {
-                normalizedExample = '123.45';
-                console.log(`🔄 Fixed example for "${p.key}" from "${p.example}" to "${normalizedExample}" (number)`);
-            }
-        } else if (normalizedApiType === 'boolean') {
-            // Check if example is a valid boolean representation
-            const isValidBoolean = normalizedExample === 'true' || normalizedExample === 'false' || 
-                                   normalizedExample === '1' || normalizedExample === '0' ||
-                                   normalizedExample === 'yes' || normalizedExample === 'no';
-            if (!isValidBoolean) {
-                normalizedExample = 'true';
-                console.log(`🔄 Fixed example for "${p.key}" from "${p.example}" to "${normalizedExample}" (boolean)`);
-            } else {
-                // Normalize to 'true' or 'false'
-                normalizedExample = (normalizedExample === 'true' || normalizedExample === '1' || normalizedExample === 'yes') ? 'true' : 'false';
-            }
-        } else if (normalizedApiType === 'array') {
-            if (!normalizedExample || normalizedExample === '' || normalizedExample === 'null') {
-                normalizedExample = '[]';
-                console.log(`🔄 Fixed example for "${p.key}" to "[]" (array)`);
-            }
-        } else if (normalizedApiType === 'object') {
-            if (!normalizedExample || normalizedExample === '' || normalizedExample === 'null') {
-                normalizedExample = '{}';
-                console.log(`🔄 Fixed example for "${p.key}" to "{}" (object)`);
-            }
-        } else if (normalizedApiType === 'string') {
-            // For strings, ensure we have a valid string example
-            if (!normalizedExample || normalizedExample === '' || normalizedExample === 'null') {
-                normalizedExample = 'sample';
-                console.log(`🔄 Fixed example for "${p.key}" to "sample" (string)`);
-            }
-        }
-        
-        // For GraphQL queries, all parameters MUST be in 'query' location
-        if (isGraphQLQuery && location === 'body') {
-            location = 'query';
-            console.log(`🔄 GraphQL Query: Converting parameter "${p.key || p.parameterName}" from 'body' to 'query' location`);
-        }
-        
-        let inBodyValue = p.inBody;
-        if (inBodyValue === undefined) {
-            inBodyValue = location === 'body';
-        }
-        
-        // Force inBody to false for GraphQL queries
-        if (isGraphQLQuery) {
-            inBodyValue = false;
-        }
-        
-        return {
-            ...p,
-            id: p.id || `param-${Date.now()}-${idx}`,
-            key: p.key || p.parameterName,
-            dbColumn: p.dbColumn || p.key,
-            oracleType: p.oracleType || p.dataType || 'VARCHAR2',
-            apiType: normalizedApiType,  // Use the normalized type
-            parameterLocation: location,
-            required: isPathParam ? true : (p.required !== undefined ? p.required : true),
-            description: p.description || `Parameter: ${p.key || p.parameterName}`,
-            example: normalizedExample,  // Use the normalized example
-            validationPattern: p.validationPattern || '',
-            defaultValue: p.defaultValue || '',
-            inBody: inBodyValue,
-            isPrimaryKey: p.isPrimaryKey || false,
-            paramMode: p.paramMode || (isCustomQueryApi ? 'IN' : 'IN'),
-            _isPathParam: isPathParam
-        };
-    });
     
-    setParameters(paramsWithIds);
-    console.log('📦 Loaded parameters from API data:', paramsWithIds.length);
-    console.log('🔍 Parameter details AFTER normalization:', paramsWithIds.map(p => ({ 
-        key: p.key, 
-        originalApiType: p.apiType, 
-        normalizedApiType: p.apiType,
-        example: p.example 
-    })));
-}
-
+    // ============ SET PARAMETERS - WITH IMMEDIATE TYPE NORMALIZATION ============
+    if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
+        const paramsWithIds = sourceData.parameters.map((p, idx) => {
+            const isPathParam = p.parameterLocation === 'path';
+            
+            let location = p.parameterLocation;
+            
+            if (!location) {
+                if (p.inBody === true || p.inBody === 'true') {
+                    location = 'body';
+                } else if (p.paramMode === 'OUT' || p.paramMode === 'IN/OUT') {
+                    location = 'body';
+                } else {
+                    location = 'query';
+                }
+            }
+            
+            // ============ CRITICAL FIX: Normalize API Type on Load ============
+            let normalizedApiType = (p.apiType || 'string').toLowerCase();
+            
+            // Map common type names from database to our standard types
+            const typeMap = {
+                'str': 'string',
+                'text': 'string', 
+                'varchar': 'string',
+                'varchar2': 'string',
+                'int': 'integer',
+                'integer': 'integer',
+                'number': 'integer',
+                'numeric': 'integer', 
+                'decimal': 'integer',
+                'float': 'number',
+                'double': 'number',
+                'bool': 'boolean',
+                'boolean': 'boolean',
+                'arr': 'array',
+                'array': 'array',
+                'obj': 'object',
+                'object': 'object',
+                'file': 'file',
+                'binary': 'file'
+            };
+            
+            if (typeMap[normalizedApiType]) {
+                normalizedApiType = typeMap[normalizedApiType];
+                console.log(`🔄 Normalized parameter "${p.key}" type from "${p.apiType}" to "${normalizedApiType}"`);
+            }
+            
+            // ============ FIX EXAMPLE BASED ON CORRECTED TYPE ============
+            let normalizedExample = p.example;
+            
+            if (normalizedApiType === 'integer') {
+                const parsed = parseInt(normalizedExample, 10);
+                if (isNaN(parsed)) {
+                    normalizedExample = '123';
+                    console.log(`🔄 Fixed example for "${p.key}" from "${p.example}" to "${normalizedExample}" (integer)`);
+                }
+            } else if (normalizedApiType === 'number') {
+                const parsed = parseFloat(normalizedExample);
+                if (isNaN(parsed)) {
+                    normalizedExample = '123.45';
+                    console.log(`🔄 Fixed example for "${p.key}" from "${p.example}" to "${normalizedExample}" (number)`);
+                }
+            } else if (normalizedApiType === 'boolean') {
+                const isValidBoolean = normalizedExample === 'true' || normalizedExample === 'false' || 
+                                       normalizedExample === '1' || normalizedExample === '0' ||
+                                       normalizedExample === 'yes' || normalizedExample === 'no';
+                if (!isValidBoolean) {
+                    normalizedExample = 'true';
+                    console.log(`🔄 Fixed example for "${p.key}" from "${p.example}" to "${normalizedExample}" (boolean)`);
+                } else {
+                    normalizedExample = (normalizedExample === 'true' || normalizedExample === '1' || normalizedExample === 'yes') ? 'true' : 'false';
+                }
+            } else if (normalizedApiType === 'array') {
+                if (!normalizedExample || normalizedExample === '' || normalizedExample === 'null') {
+                    normalizedExample = '[]';
+                    console.log(`🔄 Fixed example for "${p.key}" to "[]" (array)`);
+                }
+            } else if (normalizedApiType === 'object') {
+                if (!normalizedExample || normalizedExample === '' || normalizedExample === 'null') {
+                    normalizedExample = '{}';
+                    console.log(`🔄 Fixed example for "${p.key}" to "{}" (object)`);
+                }
+            } else if (normalizedApiType === 'string') {
+                if (!normalizedExample || normalizedExample === '' || normalizedExample === 'null') {
+                    normalizedExample = 'sample';
+                    console.log(`🔄 Fixed example for "${p.key}" to "sample" (string)`);
+                }
+            }
+            
+            // For GraphQL queries, all parameters MUST be in 'query' location
+            if (isGraphQLQuery && location === 'body') {
+                location = 'query';
+                console.log(`🔄 GraphQL Query: Converting parameter "${p.key || p.parameterName}" from 'body' to 'query' location`);
+            }
+            
+            let inBodyValue = p.inBody;
+            if (inBodyValue === undefined) {
+                inBodyValue = location === 'body';
+            }
+            
+            if (isGraphQLQuery) {
+                inBodyValue = false;
+            }
+            
+            return {
+                ...p,
+                id: p.id || `param-${Date.now()}-${idx}`,
+                key: p.key || p.parameterName,
+                dbColumn: p.dbColumn || p.key,
+                oracleType: p.oracleType || p.dataType || 'VARCHAR2',
+                apiType: normalizedApiType,
+                parameterLocation: location,
+                required: isPathParam ? true : (p.required !== undefined ? p.required : true),
+                description: p.description || `Parameter: ${p.key || p.parameterName}`,
+                example: normalizedExample,
+                validationPattern: p.validationPattern || '',
+                defaultValue: p.defaultValue || '',
+                inBody: inBodyValue,
+                isPrimaryKey: p.isPrimaryKey || false,
+                paramMode: p.paramMode || (isCustomQueryApi ? 'IN' : 'IN'),
+                _isPathParam: isPathParam
+            };
+        });
+        
+        setParameters(paramsWithIds);
+        console.log('📦 Loaded parameters from API data:', paramsWithIds.length);
+    }
+    
     // ============ SET RESPONSE MAPPINGS ============
     if (sourceData.responseMappings && Array.isArray(sourceData.responseMappings)) {
         const mappingsWithIds = sourceData.responseMappings.map((m, idx) => ({
@@ -8657,12 +8705,11 @@ if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
     } else if (isCustomQueryApi) {
         setResponseMappings([]);
     }
-
+    
     // ============ SET REQUEST BODY ============
     if (sourceData.requestBody) {
         let bodyType = sourceData.requestBody.bodyType || (isCustomQueryApi ? 'none' : 'json');
         
-        // For GraphQL, force body type to 'graphql'
         if (protocol === 'graphql') {
             bodyType = 'graphql';
         }
@@ -8685,7 +8732,7 @@ if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
             allowedMediaTypes: ['application/json']
         });
     }
-
+    
     // ============ SET RESPONSE BODY ============
     if (sourceData.responseBody) {
         setResponseBody({
@@ -8697,7 +8744,7 @@ if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
             compression: sourceData.responseBody.compression || 'gzip'
         });
     }
-
+    
     // ============ SET AUTH CONFIG ============
     if (sourceData.authConfig) {
         setAuthConfig({
@@ -8718,7 +8765,7 @@ if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
             auditLevel: sourceData.authConfig.auditLevel || 'standard'
         });
     }
-
+    
     // ============ SET HEADERS ============
     if (sourceData.headers && Array.isArray(sourceData.headers)) {
         const headersWithIds = sourceData.headers.map((h, idx) => ({
@@ -8731,7 +8778,7 @@ if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
         }));
         setHeaders(headersWithIds);
     }
-
+    
     // ============ SET SETTINGS ============
     if (sourceData.settings) {
         setSettings({
@@ -8751,7 +8798,7 @@ if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
             corsEnabled: sourceData.settings.corsEnabled !== undefined ? sourceData.settings.corsEnabled : true
         });
     }
-
+    
     // ============ SET TESTS ============
     if (sourceData.tests) {
         setTests({
@@ -8776,7 +8823,7 @@ if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
             testQueries: sourceData.tests.testQueries || []
         });
     }
-
+    
     // ============ LOG COMPLETION ============
     console.log('✅ Form populated from API data', {
         isCustomQuery: isCustomQueryApi,
@@ -8787,28 +8834,44 @@ if (sourceData.parameters && Array.isArray(sourceData.parameters)) {
         apiCode: sourceData.apiCode,
         parametersCount: sourceData.parameters?.length || 0,
         responseMappingsCount: sourceData.responseMappings?.length || 0,
-        databaseType: currentDatabaseType,
+        databaseType: normalizedDbType,
         hasSoapConfig: !!soapConfigData,
         hasGraphqlConfig: !!graphqlConfigData
     });
     
-}, [collections, databaseType, currentDatabaseType]);
+}, [collections, databaseType]);  // Remove currentDatabaseType from dependencies
+
 
 
 // Function to populate form from selected object - FIXED FOR SOAP/GRAPHQL
-const populateFormFromObject = useCallback((object, preserveExistingApiDetails = false) => {
-  // ============ CRITICAL FIX: Skip if editing API with existing parameters ============
-  if (isEditing && parameters.length > 0 && object.type === 'PROCEDURE') {
-    console.log('⚠️ Skipping populateFormFromObject - Already editing API with existing parameters');
-    console.log('📊 Existing parameters count:', parameters.length);
-    console.log('📊 Object being passed:', object.name);
-    return;
-  }
-  
-  // Also skip if we're preserving existing API details AND we already have parameters
-  if (preserveExistingApiDetails && parameters.length > 0) {
-    console.log('⚠️ Skipping populateFormFromObject - Preserving existing parameters');
-    return;
+const populateFormFromObject = useCallback((object, preserveExistingApiDetails = false, forceRefresh = false) => {
+  // ============ CRITICAL FIX: Force refresh when manually selecting a new object ============
+  // If forceRefresh is true, we should populate regardless of existing parameters
+  if (!forceRefresh) {
+    // Skip if editing API with existing parameters
+    if (isEditing && parameters.length > 0 && object.type === 'PROCEDURE') {
+      console.log('⚠️ Skipping populateFormFromObject - Already editing API with existing parameters');
+      console.log('📊 Existing parameters count:', parameters.length);
+      console.log('📊 Object being passed:', object.name);
+      return;
+    }
+    
+    // Also skip if we're preserving existing API details AND we already have parameters
+    if (preserveExistingApiDetails && parameters?.length > 0) {
+      console.log('⚠️ Skipping populateFormFromObject - Preserving existing parameters');
+      return;
+    }
+  } else {
+    console.log('🔄 Force refresh mode - clearing existing data and reloading from new object:', object.name);
+    // Clear existing data when force refreshing
+    setParameters([]);
+    setResponseMappings([]);
+    setSourceObjectInfo({
+      isSynonym: false,
+      targetType: null,
+      targetName: null,
+      targetOwner: null
+    });
   }
   
   console.log('📝 populateFormFromObject called with object:', object);
@@ -9617,57 +9680,73 @@ if (protocolType === 'soap') {
     }
   };
 
-  // Check if API code is available - FIXED: Only check for new APIs, not when editing
-  const checkCodeAvailability = async (code) => {
-    // Skip check when editing - we're editing an existing API, so the code should be allowed
-    if (isEditing) {
-      console.log('ℹ️ Skipping code availability check for editing mode');
-      setApiCodeExists(false);
-      return true;
-    }
+ // Check if API code is available - FIXED: Only check for new APIs, not when editing
+const checkCodeAvailability = async (code) => {
+  // Skip check when editing - we're editing an existing API, so the code should be allowed
+  if (isEditing) {
+    console.log('ℹ️ Skipping code availability check for editing mode');
+    setApiCodeExists(false);
+    return true;
+  }
 
-    if (!authToken) {
-      console.log('⚠️ Cannot check code availability: authToken is missing');
-      setApiCodeExists(false);
-      return true;
+  if (!authToken) {
+    console.log('⚠️ Cannot check code availability: authToken is missing');
+    setApiCodeExists(false);
+    return true;
+  }
+  
+  if (!code || code.length < 3) {
+    setApiCodeExists(false);
+    // Clear validation error when code is too short
+    setValidationErrors(prev => ({ ...prev, apiCode: null }));
+    return true;
+  }
+
+  try {
+    console.log(`🔍 Checking availability for API code: ${code}`);
+    const response = await checkApiCodeAvailability(authToken, code);
+    
+    console.log('📦 Code availability response:', response);
+    
+    let available = true;
+    
+    // Handle different response formats
+    if (response) {
+      if (typeof response.data === 'boolean') {
+        available = response.data;
+      } else if (response.data && response.data.available !== undefined) {
+        available = response.data.available;
+      } else if (typeof response === 'boolean') {
+        available = response;
+      } else if (response.available !== undefined) {
+        available = response.available;
+      }
     }
     
-    if (!code || code.length < 3) {
-      setApiCodeExists(false);
-      return true;
+    // Set the apiCodeExists state (opposite of available)
+    const exists = !available;
+    setApiCodeExists(exists);
+    
+    // Update validation error
+    if (exists) {
+      setValidationErrors(prev => ({ 
+        ...prev, 
+        apiCode: `API code "${code}" already exists. Please choose a different code.` 
+      }));
+    } else {
+      // CRITICAL FIX: Clear validation error when code becomes available
+      setValidationErrors(prev => ({ ...prev, apiCode: null }));
     }
-
-    try {
-      console.log(`🔍 Checking availability for API code: ${code}`);
-      const response = await checkApiCodeAvailability(authToken, code);
-      
-      console.log('📦 Code availability response:', response);
-      
-      let available = true;
-      
-      // Handle different response formats
-      if (response) {
-        if (typeof response.data === 'boolean') {
-          available = response.data;
-        } else if (response.data && response.data.available !== undefined) {
-          available = response.data.available;
-        } else if (typeof response === 'boolean') {
-          available = response;
-        } else if (response.available !== undefined) {
-          available = response.available;
-        }
-      }
-      
-      // Set the apiCodeExists state (opposite of available)
-      setApiCodeExists(!available);
-      
-      return available;
-    } catch (error) {
-      console.error('Error checking code availability:', error);
-      setApiCodeExists(false);
-      return true;
-    }
-  };
+    
+    return available;
+  } catch (error) {
+    console.error('Error checking code availability:', error);
+    setApiCodeExists(false);
+    // On error, don't block the user, just log
+    setValidationErrors(prev => ({ ...prev, apiCode: null }));
+    return true;
+  }
+};
 
 
   // Auto-switch to Definition tab when protocol type changes
@@ -9807,7 +9886,7 @@ useEffect(() => {
       // If we're on dashboard and have selectedDbObject AND we're NOT editing an existing API
       if (fromDashboard && selectedDbObject && !isEditing) {
         console.log('📝 Using dashboard-selected object for NEW API:', selectedDbObject);
-        await populateFormFromObject(selectedDbObject, false);
+        await populateFormFromObject(selectedDbObject, false, false);  // forceRefresh = false
         return;
       }
 
@@ -12111,12 +12190,12 @@ COMMIT;
                       <CheckCircle className="h-3 w-3 inline mr-1" />
                       Selected: {selectedDbObject.owner}.{selectedDbObject.name} ({selectedDbObject.type})
                     </p>
-                    {/* Database Type Badge */}
+                    {/* Database Type Badge - FIXED to show currentDatabaseType */}
                     <span className="text-xs px-2 py-0.5 rounded-full" style={{ 
-                      backgroundColor: selectedDbObject.databaseType === 'postgresql' ? '#3b82f620' : '#ef444420',
-                      color: selectedDbObject.databaseType === 'postgresql' ? '#3b82f6' : '#ef4444'
+                      backgroundColor: currentDatabaseType === 'postgresql' ? '#3b82f620' : '#ef444420',
+                      color: currentDatabaseType === 'postgresql' ? '#3b82f6' : '#ef4444'
                     }}>
-                      {selectedDbObject.databaseType === 'postgresql' ? 'PostgreSQL' : 'Oracle'}
+                      {currentDatabaseType === 'postgresql' ? 'PostgreSQL' : 'Oracle'}
                     </span>
                     <button
                       onClick={() => setShowObjectSelector(true)}
@@ -12413,6 +12492,25 @@ COMMIT;
                 'GET_USERS',
                 'text',
                 isEditing
+              )}
+
+              {/* Add this right after the API Code input field */}
+              {!isEditing && apiCodeExists && (
+                <div className="mt-2 p-2 rounded-lg border flex items-center gap-2" style={{ 
+                  backgroundColor: themeColors.error + '20',
+                  borderColor: themeColors.error,
+                }}>
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" style={{ color: themeColors.error }} />
+                  <div className="flex-1">
+                    <p className="text-xs font-medium" style={{ color: themeColors.error }}>
+                      ⚠️ API Code Already Exists
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: themeColors.textSecondary }}>
+                      An API with code "{apiDetails.apiCode}" already exists. 
+                      You must choose a different API code to continue.
+                    </p>
+                  </div>
+                </div>
               )}
 
               {/* Only show HTTP Method for REST protocol */}
@@ -13016,9 +13114,8 @@ COMMIT;
                                 console.log('📦 Loading parameters from database object:', selectedDbObject.name);
                                 setLoading(true);
                                 try {
-                                  // This will populate parameters with the correct locations
-                                  // based on the object type, HTTP method, etc.
-                                  await populateFormFromObject(selectedDbObject, true);
+                                  // ============ CRITICAL FIX: Pass forceRefresh = true ============
+                                  await populateFormFromObject(selectedDbObject, true, true);
                                 } catch (error) {
                                   console.error('❌ Error loading database object:', error);
                                 } finally {
@@ -13912,7 +14009,13 @@ COMMIT;
                                     type="radio"
                                     value="oracle"
                                     checked={currentDatabaseType === 'oracle'}
-                                    onChange={(e) => setCurrentDatabaseType(e.target.value)}
+                                    onChange={(e) => {
+                                      setCurrentDatabaseType(e.target.value);
+                                      // Also update the selectedDbObject's database type if it exists
+                                      if (selectedDbObject) {
+                                        setSelectedDbObject(prev => ({ ...prev, databaseType: e.target.value }));
+                                      }
+                                    }}
                                     className="h-4 w-4"
                                     style={{ accentColor: '#ef4444' }}
                                   />
@@ -13923,7 +14026,13 @@ COMMIT;
                                     type="radio"
                                     value="postgresql"
                                     checked={currentDatabaseType === 'postgresql'}
-                                    onChange={(e) => setCurrentDatabaseType(e.target.value)}
+                                    onChange={(e) => {
+                                      setCurrentDatabaseType(e.target.value);
+                                      // Also update the selectedDbObject's database type if it exists
+                                      if (selectedDbObject) {
+                                        setSelectedDbObject(prev => ({ ...prev, databaseType: e.target.value }));
+                                      }
+                                    }}
                                     className="h-4 w-4"
                                     style={{ accentColor: '#3b82f6' }}
                                   />
@@ -16986,8 +17095,12 @@ WHERE ROWNUM <= 100;` : ''}`}
                 onClick={handleSave}
                 className="px-4 py-2 rounded-lg flex items-center gap-2 transition-colors hover-lift"
                 style={{ 
-                  backgroundColor: (loading || validating || selectedObject?.loading || (!isEditing && apiCodeExists)) ? themeColors.textSecondary : themeColors.success, 
-                  color: themeColors.white 
+                  backgroundColor: (loading || validating || selectedObject?.loading || (!isEditing && apiCodeExists)) 
+                    ? themeColors.textSecondary 
+                    : themeColors.success, 
+                  color: themeColors.white,
+                  opacity: (!isEditing && apiCodeExists) ? 0.6 : 1,
+                  cursor: (!isEditing && apiCodeExists) ? 'not-allowed' : 'pointer'
                 }}
                 disabled={loading || validating || selectedObject?.loading || (!isEditing && apiCodeExists)}
               >

@@ -262,7 +262,7 @@ public class PostgreSQLProcedureExecutorUtil {
         for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
             Object value = entry.getValue();
             if (value instanceof byte[]) {
-                continue; // Skip byte arrays - they're file data
+                continue;
             }
             if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
@@ -320,6 +320,7 @@ public class PostgreSQLProcedureExecutorUtil {
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute("SET statement_timeout = '" + STATEMENT_TIMEOUT_SECONDS + "s'");
                     stmt.execute("SET lock_timeout = '" + STATEMENT_TIMEOUT_SECONDS + "s'");
+                    stmt.execute("SET client_min_messages = 'notice'");
                 }
 
                 String callSql = buildCallStatement(pgSchema, pgProcedureName, api.getParameters(), dbParams);
@@ -334,9 +335,11 @@ public class PostgreSQLProcedureExecutorUtil {
                     setParameters(cs, api.getParameters(), dbParams);
                     int outParamIndex = registerOutParameters(cs, api.getResponseMappings(), api.getParameters(), dbParams);
                     log.info("Executing procedure {}.{}", pgSchema, pgProcedureName);
+
                     boolean hasResultSet = cs.execute();
                     log.info("Procedure executed successfully");
 
+                    // Collect warnings/notices
                     SQLWarning warning = cs.getWarnings();
                     while (warning != null) {
                         if (warning.getMessage() != null) {
@@ -346,6 +349,8 @@ public class PostgreSQLProcedureExecutorUtil {
                         warning = warning.getNextWarning();
                     }
 
+                    // CRITICAL: Check for JSON result in notices FIRST
+                    Map<String, Object> noticeResult = null;
                     if (!capturedNotices.isEmpty()) {
                         log.info("Captured {} NOTICE messages from procedure", capturedNotices.size());
 
@@ -356,23 +361,30 @@ public class PostgreSQLProcedureExecutorUtil {
                                     try {
                                         Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
                                                 new TypeReference<Map<String, Object>>() {});
-                                        finalResult.putAll(jsonResult);
+                                        noticeResult = jsonResult;
                                         log.info("✅ Parsed JSON result from NOTICE: {}", jsonResult);
+                                        break;
                                     } catch (Exception e) {
                                         log.warn("Failed to parse JSON from notice: {}", e.getMessage());
-                                        finalResult.put("notice", notice);
                                     }
-                                } else {
-                                    finalResult.put("notice", notice);
                                 }
-                            } else if (notice != null) {
-                                finalResult.put("notice", notice);
-                                log.info("Captured notice: {}", notice);
                             }
                         }
                     }
 
+                    // Process OUT parameters and result sets
                     Map<String, Object> responseData = processResults(cs, api, dbParams, hasResultSet);
+
+                    // CRITICAL: NOTICE results should OVERRIDE the default response
+                    if (noticeResult != null) {
+                        // Merge notice result into response data (prioritize notice values)
+                        for (Map.Entry<String, Object> entry : noticeResult.entrySet()) {
+                            responseData.put(entry.getKey(), entry.getValue());
+                        }
+                        log.info("✅ Using JSON from NOTICE as primary response. Message: {}",
+                                responseData.get("message"));
+                        return responseData;
+                    }
 
                     if (!finalResult.isEmpty()) {
                         responseData.putAll(finalResult);
@@ -391,57 +403,40 @@ public class PostgreSQLProcedureExecutorUtil {
             log.error("Error executing procedure {}.{}: {}", pgSchema, pgProcedureName, e.getMessage(), e);
             String errorMessage = e.getMessage();
 
-            // FIRST: Check for custom format from PostgreSQL RAISE with detail
+            // Check for custom format from PostgreSQL RAISE with detail
             if (errorMessage != null) {
-                // Look for pattern: "Detail: 409" or "Detail: 400" etc.
                 Pattern detailPattern = Pattern.compile("Detail:\\s*(\\d{3})", Pattern.MULTILINE);
                 Matcher detailMatcher = detailPattern.matcher(errorMessage);
                 if (detailMatcher.find()) {
                     String statusCode = detailMatcher.group(1);
-                    // Extract the actual error message (remove PostgreSQL formatting)
                     String cleanMessage = errorMessage;
 
-                    // Remove the PostgreSQL prefix and detail line
                     if (cleanMessage.contains("ERROR:")) {
                         cleanMessage = cleanMessage.substring(cleanMessage.indexOf("ERROR:") + 6).trim();
-                        // Remove the Detail line
                         int detailIndex = cleanMessage.indexOf("\n  Detail:");
                         if (detailIndex > 0) {
                             cleanMessage = cleanMessage.substring(0, detailIndex).trim();
                         }
-                        // Remove the Where line if present
                         int whereIndex = cleanMessage.indexOf("\n  Where:");
                         if (whereIndex > 0) {
                             cleanMessage = cleanMessage.substring(0, whereIndex).trim();
                         }
                     }
 
-                    // Create formatted exception with status code
                     String formattedMessage = statusCode + "|" + cleanMessage;
                     log.info("✅ Extracted custom error: status={}, message={}", statusCode, cleanMessage);
                     throw new RuntimeException(formattedMessage, e);
                 }
 
-                // Check for SQLSTATE unique violation (23505)
-                if (errorMessage.contains("SQLSTATE=23505") || errorMessage.contains("duplicate key")) {
-                    String cleanMessage = "Duplicate record already exists";
-                    if (errorMessage.contains("Key")) {
-                        Pattern keyPattern = Pattern.compile("Key \\((.*?)\\)=(.*?)\\)");
-                        Matcher keyMatcher = keyPattern.matcher(errorMessage);
-                        if (keyMatcher.find()) {
-                            cleanMessage = "Record with " + keyMatcher.group(1) + " already exists";
-                        }
-                    }
-                    log.info("✅ PostgreSQL unique violation (23505) mapped to 409: {}", cleanMessage);
-                    throw new RuntimeException("409|" + cleanMessage, e);
-                }
-
-                // Check for Result: JSON pattern (existing logic)
+                // Check for Result: JSON pattern
                 if (errorMessage.contains("Result: ")) {
                     String jsonPart = extractJsonFromNotice(errorMessage);
                     if (jsonPart != null) {
                         try {
-                            return objectMapper.readValue(jsonPart, new TypeReference<Map<String, Object>>() {});
+                            Map<String, Object> jsonResult = objectMapper.readValue(jsonPart,
+                                    new TypeReference<Map<String, Object>>() {});
+                            log.info("✅ Returning JSON from error message: {}", jsonResult);
+                            return jsonResult;
                         } catch (Exception parseEx) {
                             log.warn("Failed to parse JSON from exception: {}", jsonPart);
                         }
@@ -449,7 +444,6 @@ public class PostgreSQLProcedureExecutorUtil {
                 }
             }
 
-            // Fallback: wrap in generic error
             throw new RuntimeException("500|" + extractPostgreSQLError(errorMessage), e);
         }
     }
@@ -638,7 +632,7 @@ public class PostgreSQLProcedureExecutorUtil {
                         }
                         resultSetData.add(row);
                     }
-                    if (!resultSetData.isEmpty()) {
+                    if (!resultSetData.isEmpty() && !responseData.containsKey("data")) {
                         responseData.put("data", resultSetData);
                         log.info("Retrieved {} rows from result set", resultSetData.size());
                     }
@@ -646,13 +640,17 @@ public class PostgreSQLProcedureExecutorUtil {
             }
         }
 
+        // Only add default if response is completely empty
         if (responseData.isEmpty()) {
             responseData.put("success", true);
             responseData.put("message", "Procedure executed successfully");
+            responseData.put("responseCode", 200);
         }
 
         return responseData;
     }
+
+
 
     private void addParameters(ExecuteApiRequestDTO request, GeneratedApiEntity api,
                                Map<String, String> apiToDbParamMap, Map<String, Object> dbParams) {
