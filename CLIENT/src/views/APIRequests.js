@@ -1474,31 +1474,10 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   });
   
   // ============ FIX: Set date range to one week behind on page load ============
-  // One Calendar Month Ago
-//   const getDefaultDateRange = () => {
-//     const now = new Date();
-//     const oneMonthAgo = new Date(now);
-//     oneMonthAgo.setMonth(now.getMonth() - 1); // Subtract 1 month
-    
-//     const formatDateForInput = (date) => {
-//       const year = date.getFullYear();
-//       const month = String(date.getMonth() + 1).padStart(2, '0');
-//       const day = String(date.getDate()).padStart(2, '0');
-//       const hours = String(date.getHours()).padStart(2, '0');
-//       const minutes = String(date.getMinutes()).padStart(2, '0');
-//       return `${year}-${month}-${day}T${hours}:${minutes}`;
-//     };
-    
-//     return {
-//       fromDate: formatDateForInput(oneMonthAgo),
-//       toDate: formatDateForInput(now)
-//     };
-// };
-
-const getDefaultDateRange = () => {
+  const getDefaultDateRange = () => {
     const now = new Date();
     const oneMonthAgo = new Date(now);
-    oneMonthAgo.setDate(now.getDate() - 7); // 7 days ago
+    oneMonthAgo.setMonth(now.getMonth() - 1); // Subtract 1 month
     
     const formatDateForInput = (date) => {
       const year = date.getFullYear();
