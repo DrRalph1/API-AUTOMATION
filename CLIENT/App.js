@@ -237,8 +237,8 @@ function GlobalSessionMonitor() {
   const isLoggingOutRef = useRef(false);
 
   // Configuration constants
-  const INACTIVITY_LIMIT = 60 * 1000; // 60 seconds total
-  const WARNING_TIME = 30 * 1000; // Show warning after 30 seconds
+  const INACTIVITY_LIMIT = 5 * 60 * 1000; // 5 minutes total
+  const WARNING_TIME = 60 * 1000; // Show warning after 60 seconds
 
   // Clear all storage on logout
   const clearAllStorage = useCallback(() => {
