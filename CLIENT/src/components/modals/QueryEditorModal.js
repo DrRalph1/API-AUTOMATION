@@ -32,7 +32,7 @@ const DATABASE_CONFIGS = {
     displayName: 'Oracle',
     driver: 'oracle.jdbc.OracleDriver',
     defaultPort: 1521,
-    defaultSchema: 'HR',
+    defaultSchema: 'CBXDMX',
     quoteIdentifier: (name) => `"${name.toUpperCase()}"`,
     executeSQL: async (authToken, params) => {
       const { executeSQL } = await import('../../controllers/OracleSchemaController.js');

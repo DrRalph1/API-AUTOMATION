@@ -4062,7 +4062,7 @@ const transformTablesResponse = (response) => {
     const transformedData = (Array.isArray(data) ? data : (data.tables || [])).map((table, index) => ({
         id: `table-${index + 1}`,
         name: table.table_name || table.name,
-        owner: table.owner || 'HR',
+        owner: table.owner || 'CBXDMX',
         type: 'TABLE',
         status: table.status || 'VALID',
         numRows: table.num_rows || 0,
@@ -4086,7 +4086,7 @@ const transformTableDetailsResponse = (response, tableName) => {
     const transformedData = {
         id: `table-${Date.now()}`,
         name: data.table_name || tableName,
-        owner: data.owner || 'HR',
+        owner: data.owner || 'CBXDMX',
         type: 'TABLE',
         status: data.status || 'VALID',
         columns: (data.columns || []).map((col, idx) => ({
@@ -4231,7 +4231,7 @@ const transformViewsResponse = (response) => {
     const transformedData = (Array.isArray(data) ? data : (data.views || [])).map((view, index) => ({
         id: `view-${index + 1}`,
         name: view.view_name || view.name,
-        owner: view.owner || 'HR',
+        owner: view.owner || 'CBXDMX',
         type: 'VIEW',
         status: view.status || 'VALID',
         textLength: view.text_length || 0,
@@ -4255,7 +4255,7 @@ const transformViewDetailsResponse = (response, viewName) => {
     const transformedData = {
         id: `view-${Date.now()}`,
         name: data.view_name || viewName,
-        owner: data.owner || 'HR',
+        owner: data.owner || 'CBXDMX',
         type: 'VIEW',
         status: data.status || data.object_status || 'VALID',
         text: data.text || data.viewDefinition || '',
@@ -4290,7 +4290,7 @@ const transformProceduresResponse = (response) => {
     const transformedData = (Array.isArray(data) ? data : (data.procedures || [])).map((proc, index) => ({
         id: `procedure-${index + 1}`,
         name: proc.procedure_name || proc.name,
-        owner: proc.owner || 'HR',
+        owner: proc.owner || 'CBXDMX',
         type: 'PROCEDURE',
         status: proc.status || 'VALID',
         created: proc.created,
@@ -4313,7 +4313,7 @@ const transformProcedureDetailsResponse = (response, procedureName) => {
     const transformedData = {
         id: `procedure-${Date.now()}`,
         name: data.procedure_name || procedureName,
-        owner: data.owner || 'HR',
+        owner: data.owner || 'CBXDMX',
         type: 'PROCEDURE',
         status: data.status || data.object_status || 'VALID',
         parameters: (data.parameters || []).map((param, idx) => ({
@@ -4399,7 +4399,7 @@ const transformFunctionsResponse = (response) => {
     const transformedData = (Array.isArray(data) ? data : (data.functions || [])).map((func, index) => ({
         id: `function-${index + 1}`,
         name: func.function_name || func.name,
-        owner: func.owner || 'HR',
+        owner: func.owner || 'CBXDMX',
         type: 'FUNCTION',
         status: func.status || 'VALID',
         created: func.created,
@@ -4422,7 +4422,7 @@ const transformFunctionDetailsResponse = (response, functionName) => {
     const transformedData = {
         id: `function-${Date.now()}`,
         name: data.function_name || functionName,
-        owner: data.owner || 'HR',
+        owner: data.owner || 'CBXDMX',
         type: 'FUNCTION',
         status: data.status || data.object_status || 'VALID',
         returnType: data.return_type || data.returnType || '',
@@ -4457,7 +4457,7 @@ const transformPackagesResponse = (response) => {
     const transformedData = (Array.isArray(data) ? data : (data.packages || [])).map((pkg, index) => ({
         id: `package-${index + 1}`,
         name: pkg.package_name || pkg.name,
-        owner: pkg.owner || 'HR',
+        owner: pkg.owner || 'CBXDMX',
         type: 'PACKAGE',
         status: pkg.status || 'VALID',
         created: pkg.created,
@@ -4480,7 +4480,7 @@ const transformPackageDetailsResponse = (response, packageName) => {
     const transformedData = {
         id: `package-${Date.now()}`,
         name: data.package_name || packageName,
-        owner: data.owner || 'HR',
+        owner: data.owner || 'CBXDMX',
         type: 'PACKAGE',
         status: data.status || data.object_status || 'VALID',
         spec: data.spec || data.packageSpec || '',
@@ -4517,7 +4517,7 @@ const transformSequencesResponse = (response) => {
     const transformedData = (Array.isArray(data) ? data : (data.sequences || [])).map((seq, index) => ({
         id: `sequence-${index + 1}`,
         name: seq.sequence_name || seq.name,
-        owner: seq.sequence_owner || seq.owner || 'HR',
+        owner: seq.sequence_owner || seq.owner || 'CBXDMX',
         type: 'SEQUENCE',
         minValue: seq.min_value || 0,
         maxValue: seq.max_value || 0,
@@ -4543,7 +4543,7 @@ const transformSequenceDetailsResponse = (response, sequenceName) => {
     const transformedData = {
         id: `sequence-${Date.now()}`,
         name: data.sequence_name || sequenceName,
-        owner: data.owner || 'HR',
+        owner: data.owner || 'CBXDMX',
         type: 'SEQUENCE',
         minValue: data.min_value || 0,
         maxValue: data.max_value || 0,
@@ -4596,7 +4596,7 @@ const transformSynonymDetailsResponse = (response, synonymName) => {
     const transformedData = {
         id: `synonym-${Date.now()}`,
         name: data.synonym_name || synonymName,
-        owner: data.owner || 'HR',
+        owner: data.owner || 'CBXDMX',
         type: 'SYNONYM',
         tableOwner: data.table_owner || '',
         tableName: data.table_name || '',
@@ -4687,7 +4687,7 @@ const transformTypesResponse = (response) => {
     const transformedData = (Array.isArray(data) ? data : (data.types || [])).map((type, index) => ({
         id: `type-${index + 1}`,
         name: type.type_name || type.name,
-        owner: type.owner || 'HR',
+        owner: type.owner || 'CBXDMX',
         type: 'TYPE',
         status: type.status || 'VALID',
         typecode: type.typecode || '',
@@ -4711,7 +4711,7 @@ const transformTypeDetailsResponse = (response, typeName) => {
     const transformedData = {
         id: `type-${Date.now()}`,
         name: data.type_name || typeName,
-        owner: data.owner || 'HR',
+        owner: data.owner || 'CBXDMX',
         type: 'TYPE',
         status: data.status || data.object_status || 'VALID',
         typecode: data.typecode || '',
@@ -4750,7 +4750,7 @@ const transformTriggersResponse = (response) => {
     const transformedData = (Array.isArray(data) ? data : (data.triggers || [])).map((trg, index) => ({
         id: `trigger-${index + 1}`,
         name: trg.trigger_name || trg.name,
-        owner: trg.owner || 'HR',
+        owner: trg.owner || 'CBXDMX',
         type: 'TRIGGER',
         status: trg.trigger_status || trg.status || 'ENABLED',
         objectStatus: trg.object_status || 'VALID',
@@ -4775,7 +4775,7 @@ const transformTriggerDetailsResponse = (response, triggerName) => {
     const transformedData = {
         id: `trigger-${Date.now()}`,
         name: data.trigger_name || triggerName,
-        owner: data.owner || 'HR',
+        owner: data.owner || 'CBXDMX',
         type: 'TRIGGER',
         status: data.trigger_status || data.status || 'ENABLED',
         objectStatus: data.object_status || 'VALID',
@@ -4830,7 +4830,7 @@ const transformObjectsResponse = (response) => {
     const transformedData = (Array.isArray(data) ? data : (data.objects || [])).map((obj, index) => ({
         id: `object-${index + 1}`,
         name: obj.object_name || obj.name,
-        owner: obj.owner || 'HR',
+        owner: obj.owner || 'CBXDMX',
         type: obj.object_type || obj.type,
         status: obj.status || 'VALID',
         created: obj.created,
@@ -4987,7 +4987,7 @@ const transformSearchResponse = (response) => {
         results: (Array.isArray(data) ? data : (data.results || [])).map((result, index) => ({
             id: `result-${index + 1}`,
             name: result.object_name || result.name,
-            owner: result.owner || 'HR',
+            owner: result.owner || 'CBXDMX',
             type: result.object_type || result.type,
             status: result.status || 'VALID',
             created: result.created,
@@ -5110,7 +5110,7 @@ const transformTablesWithRowCountResponse = (response) => {
         tables: (data.tables || []).map((table, index) => ({
             id: `table-${index + 1}`,
             name: table.table_name || table.name,
-            owner: table.owner || 'HR',
+            owner: table.owner || 'CBXDMX',
             rowCount: table.row_count || table.num_rows || 0,
             estimatedRows: table.estimated_rows || 0,
             lastAnalyzed: table.last_analyzed,

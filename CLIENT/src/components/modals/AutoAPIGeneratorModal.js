@@ -2409,7 +2409,7 @@ function ApiConfirmationModal({
                           borderColor: themeColors.border,
                           color: themeColors.textSecondary
                         }}>
-                          {transformedData.schemaConfig?.schemaName || 'HR'}_{apiData.apiCode}_PKG.sql
+                          {transformedData.schemaConfig?.schemaName || 'CBXDMX'}_{apiData.apiCode}_PKG.sql
                         </div>
                       </div>
                     )}
@@ -4205,7 +4205,7 @@ const handlePreviewConfirm = async () => {
     endpointPath: '',
     tags: ['default'],
     category: 'general',
-    owner: 'HR',
+    owner: 'CBXDMX',
   });
 
   // For React 18+, you can also use a ref to ensure body exists
@@ -8478,7 +8478,7 @@ const populateFormFromApiData = useCallback(async (apiData) => {
         endpointPath: sourceData.endpointPath || '',
         tags: sourceData.tags || ['default'],
         category: sourceData.category || 'general',
-        owner: sourceData.owner || 'HR',
+        owner: sourceData.owner || 'CBXDMX',
     });
     
     // ============ SET COLLECTION INFO ============
@@ -8978,7 +8978,7 @@ const populateFormFromObject = useCallback((object, preserveExistingApiDetails =
       apiCode: objectType ? `${objectType.slice(0, 3)}_${object.name || object.objectName || 'API'}` : 'API',
       description: object.comment || (object.name || object.objectName ? `API for ${object.name || object.objectName}` : ''),
       endpointPath: endpointPath,
-      owner: object.owner || 'HR',
+      owner: object.owner || 'CBXDMX',
       httpMethod: httpMethod
     }));
   } else {
@@ -8986,7 +8986,7 @@ const populateFormFromObject = useCallback((object, preserveExistingApiDetails =
     setApiDetails(prev => ({
       ...prev,
       endpointPath: prev.endpointPath || endpointPath,
-      owner: prev.owner || object.owner || 'HR',
+      owner: prev.owner || object.owner || 'CBXDMX',
       httpMethod: prev.httpMethod || httpMethod
     }));
   }
@@ -8994,7 +8994,7 @@ const populateFormFromObject = useCallback((object, preserveExistingApiDetails =
   // Set schema config with proper operation (not derived from HTTP method for SOAP/GraphQL)
   setSchemaConfig(prev => ({
     ...prev,
-    schemaName: object.owner || 'HR',
+    schemaName: object.owner || 'CBXDMX',
     objectType: objectType || 'TABLE',
     objectName: object.name || object.objectName || '',
     operation: operation,
@@ -12832,7 +12832,7 @@ COMMIT;
                     borderColor: themeColors.border,
                     color: themeColors.text
                   }}
-                  placeholder="HR"
+                  placeholder="CBXDMX"
                   disabled
                 />
               </div>
@@ -13793,7 +13793,7 @@ COMMIT;
                                       borderColor: validationErrors.schemaName ? themeColors.error : themeColors.border,
                                       color: themeColors.text
                                     }}
-                                    placeholder="HR"
+                                    placeholder="CBXDMX"
                                     readOnly
                                   />
                                 </div>
