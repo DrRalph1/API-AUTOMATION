@@ -12495,7 +12495,7 @@ COMMIT;
               )}
 
               {/* Add this right after the API Code input field */}
-              {!isEditing && apiCodeExists && (
+              {/* {!isEditing && apiCodeExists && (
                 <div className="mt-2 p-2 rounded-lg border flex items-center gap-2" style={{ 
                   backgroundColor: themeColors.error + '20',
                   borderColor: themeColors.error,
@@ -12511,7 +12511,7 @@ COMMIT;
                     </p>
                   </div>
                 </div>
-              )}
+              )} */}
 
               {/* Only show HTTP Method for REST protocol */}
               {protocolType === 'rest' && (
