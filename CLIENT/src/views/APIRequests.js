@@ -246,20 +246,15 @@ const SyntaxHighlighter = ({ language, code }) => {
   );
 };
 
-
 // ============ UPDATED resolveUrlWithPathParams ============
 const resolveUrlWithPathParams = (url, requestData) => {
   if (!url) return url;
   
   let resolvedUrl = url;
   
-  // Get path parameters from the request data
   const pathParams = requestData?.pathParameters || {};
-  
-  // Also check if there are path parameters in a different format
   const alternativePathParams = requestData?.parameters?.filter(p => p.parameterLocation === 'path') || [];
   
-  // Combine both sources
   const allPathParams = { ...pathParams };
   
   alternativePathParams.forEach(param => {
@@ -268,7 +263,6 @@ const resolveUrlWithPathParams = (url, requestData) => {
     }
   });
   
-  // Replace all placeholders with actual values
   Object.entries(allPathParams).forEach(([key, value]) => {
     if (key && value) {
       const placeholder = `{${key}}`;
@@ -288,7 +282,6 @@ const resolveUrlWithPathParams = (url, requestData) => {
   return resolvedUrl;
 };
 
-
 const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getStatusText, getStatusCodeColorHelper }) => {
   if (!isOpen || !request) return null;
 
@@ -301,7 +294,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Helper to detect content type
   const getContentType = (content) => {
     if (!content) return 'json';
     const str = typeof content === 'string' ? content : JSON.stringify(content);
@@ -438,30 +430,22 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
     return `${(time / 60000).toFixed(2)}m`;
   };
 
-  // Helper function to parse and format JSON body properly
   const getCleanBodyContent = (body) => {
     if (!body) return null;
-    
-    // If it's already an object, return it as formatted JSON
     if (typeof body === 'object') {
       return JSON.stringify(body, null, 2);
     }
-    
-    // If it's a string, try to parse it as JSON
     if (typeof body === 'string') {
       try {
         const parsed = JSON.parse(body);
         return JSON.stringify(parsed, null, 2);
       } catch (e) {
-        // If it's not valid JSON, return as is
         return body;
       }
     }
-    
     return String(body);
   };
 
-  // Universal copy function
   const copyToClipboard = async (text, successMessage) => {
     if (!text) {
       showToast('No content to copy', 'warning');
@@ -472,7 +456,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
       await navigator.clipboard.writeText(text);
       showToast(successMessage || 'Copied to clipboard!', 'success');
     } catch (err) {
-      // Fallback method
       const textarea = document.createElement('textarea');
       textarea.value = text;
       textarea.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
@@ -488,7 +471,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
     }
   };
 
-  // Get color based on HTTP method for request button
   const getMethodButtonColor = () => {
     const method = request.httpMethod;
     const methodColors = {
@@ -503,7 +485,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
     return methodColors[method] || colors.primary;
   };
 
-  // Get color based on status code for response button
   const getStatusButtonColor = () => {
     const statusCode = request.responseStatusCode;
     if (!statusCode) return colors.textSecondary;
@@ -532,20 +513,17 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
     { id: 'timeline', label: 'Timeline' }
   ];
 
-  // Helper to check if request/response body exists
   const hasRequestBody = rawRequestBody && (request.httpMethod === 'POST' || request.httpMethod === 'PUT' || request.httpMethod === 'PATCH');
   const hasResponseBody = rawResponseBody;
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50" style={{ padding: '2rem' }}>
-      {/* Backdrop */}
       <div 
         className="absolute inset-0 backdrop-blur-md" 
         style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
         onClick={onClose} 
       />
       
-      {/* Modal */}
       <div 
         className="relative w-full max-w-5xl rounded-lg shadow-xl overflow-hidden"
         style={{ 
@@ -555,7 +533,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
           flexDirection: 'column'
         }}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0" style={{ borderColor: colors.border }}>
           <div className="flex items-center gap-4">
             <div>
@@ -584,7 +561,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
             </div>
           </div>
           
-          {/* Close button in header */}
           <button
             onClick={onClose}
             className="w-8 h-8 rounded-md flex items-center justify-center transition-colors hover:bg-opacity-80"
@@ -594,7 +570,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
           </button>
         </div>
 
-        {/* Tab Bar */}
         <div className="flex items-center gap-1 px-6 border-b flex-shrink-0" style={{ borderColor: colors.border }}>
           {tabs.map(tab => (
             <button
@@ -611,13 +586,9 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
           ))}
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-auto p-6">
-          
-          {/* OVERVIEW TAB */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
-              {/* Key Metrics Grid */}
               <div className="grid grid-cols-4 gap-4">
                 <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
                   <div className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: colors.textSecondary }}>Method</div>
@@ -637,7 +608,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 </div>
               </div>
 
-              {/* URL Section */}
               <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
                 <div className="text-xs font-medium uppercase tracking-wide mb-3" style={{ color: colors.textSecondary }}>Endpoint</div>
                 <code className="text-sm font-mono break-all" style={{ color: colors.text }}>
@@ -645,7 +615,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 </code>
               </div>
 
-              {/* Parameters Summary */}
               <div className={`grid gap-4 ${(request.pathParameters && Object.keys(request.pathParameters).length > 0) && (request.queryParameters && Object.keys(request.queryParameters).length > 0) ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 {request.pathParameters && Object.keys(request.pathParameters).length > 0 && (
                   <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
@@ -682,7 +651,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 )}
               </div>
 
-              {/* Request/Response Preview - Conditional layout */}
               <div className={`grid gap-4 ${rawRequestBody && rawResponseBody ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 {rawRequestBody && (
                   <div className="rounded-md overflow-hidden border" style={{ borderColor: colors.border }}>
@@ -715,10 +683,8 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
             </div>
           )}
 
-          {/* REQUEST TAB */}
           {activeTab === 'request' && (
             <div className="space-y-6">
-              {/* Path Parameters */}
               {request.pathParameters && Object.keys(request.pathParameters).length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
@@ -751,7 +717,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 </div>
               )}
 
-              {/* Query Parameters */}
               {request.queryParameters && Object.keys(request.queryParameters).length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
@@ -784,7 +749,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 </div>
               )}
 
-              {/* Request Body */}
               {hasRequestBody && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
@@ -809,10 +773,8 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
             </div>
           )}
 
-          {/* RESPONSE TAB */}
           {activeTab === 'response' && (
             <div className="space-y-6">
-              {/* Response Metadata */}
               <div className="grid grid-cols-3 gap-4">
                 <div className="p-4 rounded-md" style={{ backgroundColor: colors.hover }}>
                   <div className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: colors.textSecondary }}>Status Code</div>
@@ -828,7 +790,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
                 </div>
               </div>
 
-              {/* Response Body */}
               {hasResponseBody && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
@@ -853,7 +814,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
             </div>
           )}
 
-          {/* HEADERS TAB */}
           {activeTab === 'headers' && request.headers && (
             <div>
               <div className="flex justify-end mb-4">
@@ -887,7 +847,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
             </div>
           )}
 
-          {/* TIMELINE TAB */}
           {activeTab === 'timeline' && (
             <div className="space-y-6">
               <div className="relative">
@@ -938,9 +897,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
           )}
         </div>
 
-        {/* Footer with Copy and Close buttons */}
         <div className="flex items-center justify-end gap-3 px-6 py-3 border-t flex-shrink-0" style={{ borderColor: colors.border, backgroundColor: `${colors.hover}20` }}>
-          {/* Overview Tab Footer Copy Button */}
           {activeTab === 'overview' && (
             <button
               onClick={() => copyToClipboard(JSON.stringify(request, null, 2), 'Full request JSON copied!')}
@@ -952,7 +909,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
             </button>
           )}
           
-          {/* Request Tab Footer Copy Button */}
           {activeTab === 'request' && hasRequestBody && (
             <button
               onClick={() => {
@@ -967,7 +923,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
             </button>
           )}
           
-          {/* Response Tab Footer Copy Button */}
           {activeTab === 'response' && hasResponseBody && (
             <button
               onClick={() => {
@@ -982,7 +937,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
             </button>
           )}
           
-          {/* Close Button */}
           <button
             onClick={onClose}
             className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
@@ -993,7 +947,6 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh, getS
         </div>
       </div>
 
-      {/* Toast */}
       {toast && (
         <div 
           className="fixed bottom-6 right-6 px-4 py-2 rounded-md shadow-lg z-50 animate-fade-in-up"
@@ -1124,7 +1077,6 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply, onExpandDateRa
             </label>
           </div>
 
-          {/* Quick Date Range Buttons */}
           <div>
             <label className="text-xs mb-2 block" style={{ color: colors.textSecondary }}>Quick Date Ranges</label>
             <div className="flex gap-2">
@@ -1153,57 +1105,55 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply, onExpandDateRa
           </div>
         </div>
 
-
-<div className="flex items-center justify-between gap-2 px-4 py-3 border-t" style={{ borderColor: colors.border }}>
-  <button
-    onClick={() => {
-      setLocalFilters({});
-      onApply({});
-    }}
-    className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
-    style={{ backgroundColor: colors.hover, color: colors.text }}
-  >
-    Clear All
-  </button>
-  <div className="flex items-center gap-2">
-    <button
-      onClick={onClose}
-      className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
-      style={{ backgroundColor: colors.hover, color: colors.text }}
-    >
-      Cancel
-    </button>
-    <button
-      onClick={() => {
-        // Clean up filters before applying
-        const cleanFilters = {};
-        
-        if (localFilters.requestStatus && localFilters.requestStatus !== '') {
-          cleanFilters.requestStatus = localFilters.requestStatus;
-        }
-        if (localFilters.httpMethod && localFilters.httpMethod !== '') {
-          cleanFilters.httpMethod = localFilters.httpMethod;
-        }
-        if (localFilters.responseStatusCode) {
-          cleanFilters.responseStatusCode = localFilters.responseStatusCode;
-        }
-        if (localFilters.apiId && localFilters.apiId !== '') {
-          cleanFilters.apiId = localFilters.apiId;
-        }
-        if (localFilters.hasError) {
-          cleanFilters.hasError = true;
-        }
-        
-        onApply(cleanFilters);
-        onClose();
-      }}
-      className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
-      style={{ backgroundColor: colors.primaryDark, color: 'white' }}
-    >
-      Apply Filters
-    </button>
-  </div>
-</div>
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-t" style={{ borderColor: colors.border }}>
+          <button
+            onClick={() => {
+              setLocalFilters({});
+              onApply({});
+            }}
+            className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
+            style={{ backgroundColor: colors.hover, color: colors.text }}
+          >
+            Clear All
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
+              style={{ backgroundColor: colors.hover, color: colors.text }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                const cleanFilters = {};
+                
+                if (localFilters.requestStatus && localFilters.requestStatus !== '') {
+                  cleanFilters.requestStatus = localFilters.requestStatus;
+                }
+                if (localFilters.httpMethod && localFilters.httpMethod !== '') {
+                  cleanFilters.httpMethod = localFilters.httpMethod;
+                }
+                if (localFilters.responseStatusCode) {
+                  cleanFilters.responseStatusCode = localFilters.responseStatusCode;
+                }
+                if (localFilters.apiId && localFilters.apiId !== '') {
+                  cleanFilters.apiId = localFilters.apiId;
+                }
+                if (localFilters.hasError) {
+                  cleanFilters.hasError = true;
+                }
+                
+                onApply(cleanFilters);
+                onClose();
+              }}
+              className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
+              style={{ backgroundColor: colors.primaryDark, color: 'white' }}
+            >
+              Apply Filters
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1473,11 +1423,11 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     totalPages: 0
   });
   
-  // ============ FIX: Set date range to one week behind on page load ============
+  // ============ FIX: Set date range to one month behind on page load ============
   const getDefaultDateRange = () => {
     const now = new Date();
     const oneMonthAgo = new Date(now);
-    oneMonthAgo.setMonth(now.getMonth() - 1); // Subtract 1 month
+    oneMonthAgo.setMonth(now.getMonth() - 1);
     
     const formatDateForInput = (date) => {
       const year = date.getFullYear();
@@ -1492,7 +1442,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
       fromDate: formatDateForInput(oneMonthAgo),
       toDate: formatDateForInput(now)
     };
-};
+  };
   
   const [dateRange, setDateRange] = useState(getDefaultDateRange());
   
@@ -1504,21 +1454,15 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
 
   const searchTimer = useRef(null);
   const isInitialMount = useRef(true);
-
-
-  // Add this useEffect to log date range on mount (for debugging)
-  useEffect(() => {
-    console.log('Date range initialized to last 7 days:', {
-      fromDate: dateRange.fromDate,
-      toDate: dateRange.toDate
-    });
-  }, []);
   
-  // ============ FIX: Add refs for pagination debouncing and request cancellation ============
+  // ============ FIX: Add refs to prevent duplicate calls ============
   const abortControllerRef = useRef(null);
   const paginationDebounceRef = useRef(null);
   const isPaginationLoadingRef = useRef(false);
   const lastPaginationRequestRef = useRef(null);
+  const initialLoadComplete = useRef(false);
+  const isFetchingRef = useRef(false);
+  const filterChangeTimerRef = useRef(null);
 
   const colors = isDark ? {
     bg: 'rgb(1 14 35)',
@@ -1601,137 +1545,73 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     setTimeout(() => setToast(null), 3000);
   };
 
-   const copyToClipboard = (text) => {
-  if (!text) return;
-  
-  // Modern clipboard API
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text)
-      .then(() => {
-        // Optional: show success feedback
-        console.log('Copied to clipboard!');
-      })
-      .catch((err) => {
-        console.error('Clipboard write failed:', err);
-        fallbackCopy(text);
-      });
-  } else {
-    fallbackCopy(text);
-  }
-  
-  function fallbackCopy(text) {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.top = '-9999px';
-    textarea.style.left = '-9999px';
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
+  const copyToClipboard = (text) => {
+    if (!text) return;
     
-    try {
-      document.execCommand('copy');
-    } catch (err) {
-      console.error('Fallback copy failed:', err);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .catch((err) => {
+          console.error('Clipboard write failed:', err);
+          fallbackCopy(text);
+        });
+    } else {
+      fallbackCopy(text);
     }
     
-    document.body.removeChild(textarea);
-  }
-};
-
- // Enhanced getStatusText function with more status codes
-const getStatusText = (statusCode) => {
-  if (!statusCode) return 'PENDING';
-  
-  const statusMessages = {
-    // 1xx Informational
-    100: 'Continue',
-    101: 'Switching Protocols',
-    102: 'Processing',
-    103: 'Early Hints',
-    
-    // 2xx Success
-    200: 'OK',
-    201: 'Created',
-    202: 'Accepted',
-    203: 'Non-Authoritative Information',
-    204: 'No Content',
-    205: 'Reset Content',
-    206: 'Partial Content',
-    207: 'Multi-Status',
-    208: 'Already Reported',
-    226: 'IM Used',
-    
-    // 3xx Redirection
-    300: 'Multiple Choices',
-    301: 'Moved Permanently',
-    302: 'Found',
-    303: 'See Other',
-    304: 'Not Modified',
-    305: 'Use Proxy',
-    307: 'Temporary Redirect',
-    308: 'Permanent Redirect',
-    
-    // 4xx Client Errors
-    400: 'Bad Request',
-    401: 'Unauthorized',
-    402: 'Payment Required',
-    403: 'Forbidden',
-    404: 'Not Found',
-    405: 'Method Not Allowed',
-    406: 'Not Acceptable',
-    407: 'Proxy Authentication Required',
-    408: 'Request Timeout',
-    409: 'Conflict',
-    410: 'Gone',
-    411: 'Length Required',
-    412: 'Precondition Failed',
-    413: 'Payload Too Large',
-    414: 'URI Too Long',
-    415: 'Unsupported Media Type',
-    416: 'Range Not Satisfiable',
-    417: 'Expectation Failed',
-    418: "I'm a teapot",
-    421: 'Misdirected Request',
-    422: 'Unprocessable Entity',
-    423: 'Locked',
-    424: 'Failed Dependency',
-    425: 'Too Early',
-    426: 'Upgrade Required',
-    428: 'Precondition Required',
-    429: 'Too Many Requests',
-    431: 'Request Header Fields Too Large',
-    451: 'Unavailable For Legal Reasons',
-    
-    // 5xx Server Errors
-    500: 'Internal Server Error',
-    501: 'Not Implemented',
-    502: 'Bad Gateway',
-    503: 'Service Unavailable',
-    504: 'Gateway Timeout',
-    505: 'HTTP Version Not Supported',
-    506: 'Variant Also Negotiates',
-    507: 'Insufficient Storage',
-    508: 'Loop Detected',
-    510: 'Not Extended',
-    511: 'Network Authentication Required'
+    function fallbackCopy(text) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-9999px';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      
+      try {
+        document.execCommand('copy');
+      } catch (err) {
+        console.error('Fallback copy failed:', err);
+      }
+      
+      document.body.removeChild(textarea);
+    }
   };
-  
-  if (statusMessages[statusCode]) {
-    return statusMessages[statusCode];
-  }
-  
-  if (statusCode >= 200 && statusCode < 300) return 'Success';
-  if (statusCode >= 300 && statusCode < 400) return 'Redirect';
-  if (statusCode >= 400 && statusCode < 500) return 'Client Error';
-  if (statusCode >= 500) return 'Server Error';
-  
-  return 'Unknown';
-};
 
- const getMethodColor = useCallback((method) => {
-  return colors.method[method] || colors.textSecondary;
-}, [colors.method, colors.textSecondary]);
+  const getStatusText = (statusCode) => {
+    if (!statusCode) return 'PENDING';
+    
+    const statusMessages = {
+      200: 'OK',
+      201: 'Created',
+      202: 'Accepted',
+      204: 'No Content',
+      400: 'Bad Request',
+      401: 'Unauthorized',
+      403: 'Forbidden',
+      404: 'Not Found',
+      408: 'Request Timeout',
+      500: 'Internal Server Error',
+      502: 'Bad Gateway',
+      503: 'Service Unavailable',
+      504: 'Gateway Timeout'
+    };
+    
+    if (statusMessages[statusCode]) {
+      return statusMessages[statusCode];
+    }
+    
+    if (statusCode >= 200 && statusCode < 300) return 'Success';
+    if (statusCode >= 300 && statusCode < 400) return 'Redirect';
+    if (statusCode >= 400 && statusCode < 500) return 'Client Error';
+    if (statusCode >= 500) return 'Server Error';
+    
+    return 'Unknown';
+  };
+
+  const getMethodColor = useCallback((method) => {
+    return colors.method[method] || colors.textSecondary;
+  }, [colors.method, colors.textSecondary]);
 
   const formatTimestamp = (timestamp) => {
     if (!timestamp) return '';
@@ -1744,73 +1624,290 @@ const getStatusText = (statusCode) => {
   };
   
   const formatExecutionTimeHelper = (ms) => {
-  if (ms === null || ms === undefined) return 'N/A';
+    if (ms === null || ms === undefined) return 'N/A';
+    const time = Number(ms);
+    if (isNaN(time)) return 'N/A';
+    if (time < 1000) return `${time.toFixed(2)}ms`;
+    if (time < 60000) return `${(time / 1000).toFixed(2)}s`;
+    return `${(time / 60000).toFixed(2)}m`;
+  };
 
-  const time = Number(ms); // 🔥 force conversion
+  const getStatusCodeColorHelper = useCallback((code) => {
+    if (!code) return colors.textSecondary;
+    if (code >= 200 && code < 300) return colors.success;
+    if (code >= 300 && code < 400) return colors.info;
+    if (code >= 400 && code < 500) return colors.warning;
+    if (code >= 500) return colors.error;
+    return colors.textSecondary;
+  }, [colors.success, colors.info, colors.warning, colors.error, colors.textSecondary]);
 
-  if (isNaN(time)) return 'N/A';
-
-  if (time < 1000) return `${time.toFixed(2)}ms`;
-  if (time < 60000) return `${(time / 1000).toFixed(2)}s`;
-  return `${(time / 60000).toFixed(2)}m`;
-};
-
- const getStatusCodeColorHelper = useCallback((code) => {
-  if (!code) return colors.textSecondary;
-  if (code >= 200 && code < 300) return colors.success;
-  if (code >= 300 && code < 400) return colors.info;
-  if (code >= 400 && code < 500) return colors.warning;
-  if (code >= 500) return colors.error;
-  return colors.textSecondary;
-}, [colors.success, colors.info, colors.warning, colors.error, colors.textSecondary]);
-
-
-
-  // ============ FIX: Add function to cancel ongoing requests ============
-  const cancelOngoingRequest = useCallback(() => {
+  // ============ FIX: Single unified function - ONLY 2 API CALLS ============
+  const fetchAllData = useCallback(async (isInitial = false, isRefresh = false) => {
+    // Prevent multiple simultaneous calls
+    if (isFetchingRef.current) return;
+    if (isInitial && initialLoadComplete.current) return;
+    
+    isFetchingRef.current = true;
+    
+    // Cancel any ongoing request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-  }, []);
-
-  // ============ FIX: Debounced pagination handler ============
-  const handlePaginationChange = useCallback((newPage) => {
-    // Clear any pending pagination request
-    if (paginationDebounceRef.current) {
-      clearTimeout(paginationDebounceRef.current);
     }
     
-    // Don't allow rapid consecutive pagination requests
-    const now = Date.now();
-    if (lastPaginationRequestRef.current && (now - lastPaginationRequestRef.current) < 500) {
-      // Too fast, debounce
-      paginationDebounceRef.current = setTimeout(() => {
-        if (!isPaginationLoadingRef.current) {
-          setPagination(prev => ({ ...prev, page: newPage }));
-          lastPaginationRequestRef.current = Date.now();
+    abortControllerRef.current = new AbortController();
+    
+    try {
+      if (isInitial || isRefresh) {
+        setLoading(prev => ({ 
+          ...prev, 
+          initialLoad: isInitial || false, 
+          refresh: isRefresh || false 
+        }));
+      }
+      
+      // Prepare common filter object - ONLY ONE search filter
+      const filter = {
+        page: pagination.page,
+        size: pagination.size,
+        ...(selectedApiId && { apiId: selectedApiId }),
+        ...(filters.requestStatus && { requestStatus: filters.requestStatus }),
+        ...(filters.httpMethod && { httpMethod: filters.httpMethod }),
+        ...(filters.responseStatusCode && { responseStatusCode: filters.responseStatusCode }),
+        ...(filters.hasError && { hasError: filters.hasError }),
+        sortBy: 'createdAt',
+        sortDirection: 'DESC'
+      };
+
+      // Add date range if available
+      if (dateRange.fromDate) {
+        try {
+          const fromDateObj = new Date(dateRange.fromDate);
+          if (!isNaN(fromDateObj.getTime())) {
+            filter.fromDate = fromDateObj.toISOString();
+          }
+        } catch (e) {
+          console.error('Invalid fromDate:', dateRange.fromDate);
         }
-        paginationDebounceRef.current = null;
-      }, 300);
-      return;
+      }
+      
+      if (dateRange.toDate) {
+        try {
+          const toDateObj = new Date(dateRange.toDate);
+          if (!isNaN(toDateObj.getTime())) {
+            toDateObj.setHours(23, 59, 59, 999);
+            filter.toDate = toDateObj.toISOString();
+          }
+        } catch (e) {
+          console.error('Invalid toDate:', dateRange.toDate);
+        }
+      }
+
+      if (searchQuery && searchQuery.trim()) {
+        filter.search = searchQuery.trim();
+      }
+
+      // Remove undefined values
+      Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
+
+      console.log('Fetching data with filter:', filter);
+
+      // ============ ONLY 2 API CALLS: search + statistics ============
+      const promises = [searchRequests(authToken, filter)];
+      
+      // Only fetch statistics if we're on the all tab or initial load
+      if (isInitial || activeTab === 'all' || activeTab === 'statistics') {
+        promises.push(getSystemStatistics(authToken, dateRange.fromDate, dateRange.toDate));
+      }
+      
+      const results = await Promise.all(promises);
+      
+      // Check if request was aborted
+      if (abortControllerRef.current?.signal.aborted) {
+        console.log('Request was aborted');
+        return;
+      }
+      
+      const searchResponse = results[0];
+      const statsResponse = results[1];
+      
+      // Process search results - THIS INCLUDES API SUMMARIES
+      if (searchResponse?.responseCode === 200) {
+        const responseData = searchResponse.data;
+        
+        let requestsArray = [];
+        let totalElements = 0;
+        let currentPage = 0;
+        let totalPages = 0;
+        let apiSummariesArray = [];
+        
+        if (responseData.content && Array.isArray(responseData.content)) {
+          requestsArray = responseData.content;
+          totalElements = responseData.totalElements || 0;
+          currentPage = responseData.currentPage || 0;
+          totalPages = responseData.totalPages || 0;
+          apiSummariesArray = responseData.apiSummaries || [];
+        } else if (responseData.requests && Array.isArray(responseData.requests)) {
+          requestsArray = responseData.requests;
+          totalElements = responseData.total || 0;
+          currentPage = responseData.page || 0;
+          totalPages = responseData.pages || 0;
+          apiSummariesArray = responseData.apiSummaries || [];
+        } else if (Array.isArray(responseData)) {
+          requestsArray = responseData;
+          totalElements = requestsArray.length;
+          currentPage = 0;
+          totalPages = 1;
+        }
+        
+        // Fetch details for requests with path parameters
+        const requestsWithDetails = await Promise.all(
+          requestsArray.map(async (req) => {
+            try {
+              const hasPlaceholders = req.url && (req.url.includes('{') || req.url.includes(':'));
+              if (!req.pathParameters && hasPlaceholders && req.id) {
+                const detailsResponse = await getRequestById(authToken, req.id);
+                if (detailsResponse?.responseCode === 200 && detailsResponse.data) {
+                  return { ...req, ...detailsResponse.data };
+                }
+              }
+              return req;
+            } catch (err) {
+              console.error(`Failed to fetch details for request ${req.id}:`, err);
+              return req;
+            }
+          })
+        );
+        
+        const sortedRequests = [...requestsWithDetails].sort((a, b) => {
+          const timeA = new Date(a.requestTimestamp || a.createdAt || 0).getTime();
+          const timeB = new Date(b.requestTimestamp || b.createdAt || 0).getTime();
+          return timeB - timeA;
+        });
+        
+        setRequests(sortedRequests);
+        
+        // ============ KEY FIX: Use API summaries from search response ============
+        if (apiSummariesArray.length > 0) {
+          const sortedApiSummaries = [...apiSummariesArray].sort((a, b) => {
+            const timeA = a.lastRequestTime ? new Date(a.lastRequestTime).getTime() : 0;
+            const timeB = b.lastRequestTime ? new Date(b.lastRequestTime).getTime() : 0;
+            return timeB - timeA;
+          });
+          
+          // Set filtered API summaries
+          setFilteredApiSummaries(sortedApiSummaries);
+          
+          // Set main API summaries only if no filters are active
+          if (!searchQuery && !selectedApiId && Object.keys(filters).length === 0) {
+            setApiSummaries(sortedApiSummaries);
+            setSidebarTotalItems(sortedApiSummaries.length);
+            setFullApiListLoaded(true);
+            console.log('API summaries loaded from search response:', sortedApiSummaries.length, 'APIs');
+          }
+        }
+        
+        setPagination(prev => ({
+          ...prev,
+          page: currentPage,
+          totalElements: totalElements,
+          totalPages: totalPages
+        }));
+      }
+      
+      // Process statistics
+      if (statsResponse?.responseCode === 200) {
+        setSystemStats(statsResponse.data);
+        setStatistics({
+          totalRequests: statsResponse.data.totalRequests || 0,
+          successRate: statsResponse.data.successRate || 0,
+          averageResponseTime: statsResponse.data.averageResponseTime || 0,
+          failedRequests: statsResponse.data.failedRequests || 0,
+          activeApis: statsResponse.data.activeApis || 0
+        });
+      }
+      
+      if (isInitial) {
+        initialLoadComplete.current = true;
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('Request was aborted');
+        return;
+      }
+      console.error('Error fetching data:', error);
+      showToast(error.message || 'Failed to load data', 'error');
+    } finally {
+      isFetchingRef.current = false;
+      setLoading(prev => ({ 
+        ...prev, 
+        initialLoad: false, 
+        refresh: false 
+      }));
+    }
+  }, [authToken, pagination.page, pagination.size, selectedApiId, filters, dateRange.fromDate, dateRange.toDate, searchQuery, activeTab]);
+
+  // ============ FIX: Single useEffect for initial load ============
+  useEffect(() => {
+    if (authToken && !initialLoadComplete.current && isInitialMount.current) {
+      isInitialMount.current = false;
+      console.log('Initial load - fetching all data');
+      fetchAllData(true, false);
     }
     
-    // Update immediately if not loading
-    if (!isPaginationLoadingRef.current) {
-      setPagination(prev => ({ ...prev, page: newPage }));
-      lastPaginationRequestRef.current = now;
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      if (searchTimer.current) {
+        clearTimeout(searchTimer.current);
+      }
+      if (filterChangeTimerRef.current) {
+        clearTimeout(filterChangeTimerRef.current);
+      }
+      if (paginationDebounceRef.current) {
+        clearTimeout(paginationDebounceRef.current);
+      }
+    };
+  }, [authToken, fetchAllData]);
+
+  // ============ FIX: Debounced filter change handler ============
+  const handleFilterChange = useCallback(() => {
+    if (filterChangeTimerRef.current) {
+      clearTimeout(filterChangeTimerRef.current);
     }
-  }, []);
+    
+    filterChangeTimerRef.current = setTimeout(() => {
+      if (!isFetchingRef.current && initialLoadComplete.current) {
+        fetchAllData(false, true);
+      }
+    }, 500);
+  }, [fetchAllData]);
 
-  // Add this useEffect to debug date range changes
+  // ============ FIX: useEffect for filter changes with debounce ============
   useEffect(() => {
-    console.log('Date range changed:', {
-      fromDate: dateRange.fromDate,
-      toDate: dateRange.toDate
-    });
-  }, [dateRange.fromDate, dateRange.toDate]);
+    if (!initialLoadComplete.current) return;
+    handleFilterChange();
+  }, [searchQuery, filters, selectedApiId, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, handleFilterChange]);
 
-  // Expand date range function
+  // Handle tab changes
+  useEffect(() => {
+    if (!authToken || !initialLoadComplete.current) return;
+    
+    console.log('Tab changed to:', activeTab);
+    
+    if (activeTab === 'statistics') {
+      // Just refresh stats
+      getSystemStatistics(authToken, dateRange.fromDate, dateRange.toDate)
+        .then(response => {
+          if (response?.responseCode === 200) {
+            setSystemStats(response.data);
+          }
+        });
+    } else if (activeTab === 'all') {
+      fetchAllData(false, true);
+    }
+  }, [activeTab, authToken, dateRange.fromDate, dateRange.toDate, fetchAllData]);
+
   const expandDateRange = (days) => {
     const now = new Date();
     const fromDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -1824,308 +1921,19 @@ const getStatusText = (statusCode) => {
       return `${year}-${month}-${day}T${hours}:${minutes}`;
     };
     
-    const formattedFromDate = formatDateForInput(fromDate);
-    const formattedToDate = formatDateForInput(now);
-    
-    console.log('Expanding date range to', days, 'days:', formattedFromDate, 'to', formattedToDate);
-    
     setDateRange({
-      fromDate: formattedFromDate,
-      toDate: formattedToDate
+      fromDate: formatDateForInput(fromDate),
+      toDate: formatDateForInput(now)
     });
     
     setPagination(prev => ({ ...prev, page: 0 }));
-    
-    setTimeout(() => {
-      loadRequests(true);
-    }, 100);
   };
-
-  // Load full API list from the server
-  const loadFullApiList = useCallback(async () => {
-    if (!authToken) return;
-
-    try {
-      const filter = {
-        page: 0,
-        size: 100,
-        fromDate: dateRange.fromDate,
-        toDate: dateRange.toDate
-      };
-
-      const response = await searchRequests(authToken, filter);
-      
-      if (response?.responseCode === 200) {
-        let apiList = response.data?.apiSummaries || [];
-        
-        apiList = apiList.sort((a, b) => {
-          const timeA = a.lastRequestTime ? new Date(a.lastRequestTime).getTime() : 0;
-          const timeB = b.lastRequestTime ? new Date(b.lastRequestTime).getTime() : 0;
-          return timeB - timeA;
-        });
-        
-        setApiSummaries(apiList);
-        setSidebarTotalItems(apiList.length);
-        setFullApiListLoaded(true);
-        console.log('Full API list loaded and sorted by last request time:', apiList.length, 'APIs');
-      }
-    } catch (error) {
-      console.error('Error loading full API list:', error);
-    }
-  }, [authToken, dateRange.fromDate, dateRange.toDate]);
-
- // ============ UPDATED loadRequests with path parameters fetching ============
-const loadRequests = useCallback(async (isRefresh = false) => {
-  if (!authToken) {
-    showToast('Authentication required', 'error');
-    return;
-  }
-
-  // Cancel any ongoing request
-  cancelOngoingRequest();
-  
-  // Set loading flag to prevent multiple simultaneous requests
-  isPaginationLoadingRef.current = true;
-  
-  // Create new abort controller
-  abortControllerRef.current = new AbortController();
-
-  if (isRefresh) {
-    setLoading(prev => ({ ...prev, refresh: true }));
-  }
-
-  try {
-    const filter = {
-      page: pagination.page,
-      size: pagination.size,
-      ...(selectedApiId && { apiId: selectedApiId }),
-      ...(filters.requestStatus && { requestStatus: filters.requestStatus }),
-      ...(filters.httpMethod && { httpMethod: filters.httpMethod }),
-      ...(filters.responseStatusCode && { responseStatusCode: filters.responseStatusCode }),
-      ...(filters.hasError && { hasError: filters.hasError }),
-      sort: 'createdAt,desc',
-      sortBy: 'createdAt',
-      sortDirection: 'DESC'
-    };
-
-    if (dateRange.fromDate) {
-      try {
-        const fromDateObj = new Date(dateRange.fromDate);
-        if (!isNaN(fromDateObj.getTime())) {
-          filter.fromDate = fromDateObj.toISOString();
-        }
-      } catch (e) {
-        console.error('Invalid fromDate:', dateRange.fromDate);
-      }
-    }
-    
-    if (dateRange.toDate) {
-      try {
-        const toDateObj = new Date(dateRange.toDate);
-        if (!isNaN(toDateObj.getTime())) {
-          toDateObj.setHours(23, 59, 59, 999);
-          filter.toDate = toDateObj.toISOString();
-        }
-      } catch (e) {
-        console.error('Invalid toDate:', dateRange.toDate);
-      }
-    }
-
-    if (searchQuery && searchQuery.trim()) {
-      filter.search = searchQuery.trim();
-    }
-
-    Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
-
-    console.log('Loading requests with params:', filter);
-
-    const response = await searchRequests(authToken, filter);
-    
-    if (abortControllerRef.current?.signal.aborted) {
-      console.log('Request was aborted, ignoring response');
-      return;
-    }
-    
-    if (response?.responseCode === 200) {
-      const responseData = response.data;
-      
-      let requestsArray = [];
-      let totalElements = 0;
-      let currentPage = 0;
-      let totalPages = 0;
-      let apiSummariesArray = [];
-      
-      if (responseData.content && Array.isArray(responseData.content)) {
-        requestsArray = responseData.content;
-        totalElements = responseData.totalElements || 0;
-        currentPage = responseData.currentPage || 0;
-        totalPages = responseData.totalPages || 0;
-        apiSummariesArray = responseData.apiSummaries || [];
-      } else if (responseData.requests && Array.isArray(responseData.requests)) {
-        requestsArray = responseData.requests;
-        totalElements = responseData.total || 0;
-        currentPage = responseData.page || 0;
-        totalPages = responseData.pages || 0;
-        apiSummariesArray = responseData.apiSummaries || [];
-      } else if (Array.isArray(responseData)) {
-        requestsArray = responseData;
-        totalElements = requestsArray.length;
-        currentPage = 0;
-        totalPages = 1;
-      } else if (responseData.data && Array.isArray(responseData.data)) {
-        requestsArray = responseData.data;
-        totalElements = responseData.total || requestsArray.length;
-        currentPage = responseData.page || 0;
-        totalPages = responseData.pages || 1;
-      } else {
-        console.error('Unknown response structure:', Object.keys(responseData));
-      }
-      
-      // ============ FIX: Fetch details for each request to get path parameters ============
-      const requestsWithDetails = await Promise.all(
-        requestsArray.map(async (req) => {
-          try {
-            // Only fetch details if we don't have path parameters and the URL contains placeholders
-            const hasPlaceholders = req.url && (req.url.includes('{') || req.url.includes(':'));
-            if (!req.pathParameters && hasPlaceholders && req.id) {
-              const detailsResponse = await getRequestById(authToken, req.id);
-              if (detailsResponse?.responseCode === 200 && detailsResponse.data) {
-                return { ...req, ...detailsResponse.data };
-              }
-            }
-            return req;
-          } catch (err) {
-            console.error(`Failed to fetch details for request ${req.id}:`, err);
-            return req;
-          }
-        })
-      );
-      
-      const sortedRequests = [...requestsWithDetails].sort((a, b) => {
-        const timeA = new Date(a.requestTimestamp || a.createdAt || 0).getTime();
-        const timeB = new Date(b.requestTimestamp || b.createdAt || 0).getTime();
-        return timeB - timeA;
-      });
-      
-      console.log('Extracted requests with path params:', sortedRequests.length, 'requests');
-      
-      setRequests(sortedRequests);
-      
-      if (apiSummariesArray.length > 0) {
-        const sortedApiSummaries = [...apiSummariesArray].sort((a, b) => {
-          const timeA = a.lastRequestTime ? new Date(a.lastRequestTime).getTime() : 0;
-          const timeB = b.lastRequestTime ? new Date(b.lastRequestTime).getTime() : 0;
-          return timeB - timeA;
-        });
-        setFilteredApiSummaries(sortedApiSummaries);
-        if (!searchQuery && !selectedApiId && Object.keys(filters).length === 0) {
-          setApiSummaries(sortedApiSummaries);
-          setSidebarTotalItems(sortedApiSummaries.length);
-        }
-      }
-      
-      setPagination(prev => ({
-        ...prev,
-        page: currentPage,
-        totalElements: totalElements,
-        totalPages: totalPages
-      }));
-
-      if (sortedRequests.length === 0) {
-        if (searchQuery && searchQuery.trim()) {
-          showToast(`No requests found matching "${searchQuery}"`, 'info');
-        } else if (selectedApiId) {
-          const selectedApi = apiSummaries.find(api => api.apiId === selectedApiId);
-          if (selectedApi && selectedApi.totalRequests > 0) {
-            showToast(`No requests found for ${selectedApi.apiName} in the selected date range. Try expanding the date range.`, 'info');
-          }
-        } else if (Object.keys(filters).length > 0) {
-          showToast('No requests match the selected filters', 'info');
-        } else {
-          showToast(`No requests found in the selected date range`, 'info');
-        }
-      } else {
-        if (searchQuery && searchQuery.trim()) {
-          showToast(`Found ${sortedRequests.length} requests matching "${searchQuery}"`, 'success');
-        }
-      }
-    } else {
-      console.error('Failed to load requests:', response?.message);
-      showToast(response?.message || 'Failed to load requests', 'error');
-    }
-  } catch (error) {
-    if (error.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
-      console.log('Request was aborted');
-      return;
-    }
-    console.error('Error loading requests:', error);
-    showToast(error.message || 'Failed to load requests', 'error');
-  } finally {
-    isPaginationLoadingRef.current = false;
-    if (isRefresh) {
-      setLoading(prev => ({ ...prev, refresh: false }));
-    }
-    if (abortControllerRef.current?.signal.aborted === false) {
-      abortControllerRef.current = null;
-    }
-  }
-}, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, apiSummaries, cancelOngoingRequest]);
 
   const handleFilterApply = (newFilters) => {
     setFilters(newFilters);
     setPagination(prev => ({ ...prev, page: 0 }));
-    setTimeout(() => {
-      loadRequests(true);
-    }, 100);
   };
 
-  // Load statistics
-const loadStatistics = useCallback(async () => {
-  if (!authToken) return;
-
-  setLoading(prev => ({ ...prev, statistics: true }));
-
-  try {
-    // Only use system statistics (this endpoint exists and works)
-    const systemResponse = await getSystemStatistics(
-      authToken,
-      dateRange.fromDate,
-      dateRange.toDate
-    );
-    
-    if (systemResponse?.responseCode === 200) {
-      setSystemStats(systemResponse.data);
-      // Use system stats for the statistics display
-      setStatistics({
-        totalRequests: systemResponse.data.totalRequests || 0,
-        successRate: systemResponse.data.successRate || 0,
-        averageResponseTime: systemResponse.data.averageResponseTime || 0,
-        failedRequests: systemResponse.data.failedRequests || 0,
-        activeApis: systemResponse.data.activeApis || 0
-      });
-    }
-  } catch (error) {
-    console.error('Error loading system statistics:', error);
-  } finally {
-    setLoading(prev => ({ ...prev, statistics: false }));
-  }
-}, [authToken, dateRange.fromDate, dateRange.toDate]);
-
-  // Load recent requests
-  const loadRecentRequests = useCallback(async () => {
-    if (!authToken) return;
-
-    try {
-      const response = await getRecentRequests(authToken, 10);
-      if (response?.responseCode === 200) {
-        setRequests(response.data || []);
-      }
-    } catch (error) {
-      console.error('Error loading recent requests:', error);
-    }
-  }, [authToken]);
-
-  // Handle export
   const handleExport = async (config) => {
     if (!authToken) {
       showToast('Authentication required', 'error');
@@ -2165,7 +1973,6 @@ const loadStatistics = useCallback(async () => {
     }
   };
 
-  // Handle delete request
   const handleDeleteRequest = async (requestId) => {
     if (!authToken || !requestId) return;
 
@@ -2180,7 +1987,7 @@ const loadStatistics = useCallback(async () => {
       
       if (response?.responseCode === 200) {
         showToast('Request deleted successfully', 'success');
-        loadRequests(true);
+        fetchAllData(false, true);
       } else {
         showToast(response?.message || 'Failed to delete request', 'error');
       }
@@ -2192,39 +1999,34 @@ const loadStatistics = useCallback(async () => {
     }
   };
 
-  // Handle view request details
   const handleViewDetails = async (request) => {
-  if (!authToken || !request?.id) return;
+    if (!authToken || !request?.id) return;
 
-  try {
-    const response = await getRequestById(authToken, request.id);
-    
-    if (response?.responseCode === 200) {
-      // Ensure raw bodies are properly set from the response
-      const requestData = response.data;
+    try {
+      const response = await getRequestById(authToken, request.id);
       
-      // If rawRequestBody is not set but requestBody is, set it
-      if (!requestData.rawRequestBody && requestData.requestBody) {
-        requestData.rawRequestBody = requestData.requestBody;
+      if (response?.responseCode === 200) {
+        const requestData = response.data;
+        
+        if (!requestData.rawRequestBody && requestData.requestBody) {
+          requestData.rawRequestBody = requestData.requestBody;
+        }
+        
+        if (!requestData.rawResponseBody && requestData.responseBody) {
+          requestData.rawResponseBody = requestData.responseBody;
+        }
+        
+        setSelectedRequest(requestData);
+        setShowDetailsModal(true);
+      } else {
+        showToast(response?.message || 'Failed to load request details', 'error');
       }
-      
-      // If rawResponseBody is not set but responseBody is, set it
-      if (!requestData.rawResponseBody && requestData.responseBody) {
-        requestData.rawResponseBody = requestData.responseBody;
-      }
-      
-      setSelectedRequest(requestData);
-      setShowDetailsModal(true);
-    } else {
-      showToast(response?.message || 'Failed to load request details', 'error');
+    } catch (error) {
+      console.error('Error loading request details:', error);
+      showToast(error.message || 'Failed to load request details', 'error');
     }
-  } catch (error) {
-    console.error('Error loading request details:', error);
-    showToast(error.message || 'Failed to load request details', 'error');
-  }
-};
+  };
 
-  // Handle API selection from sidebar
   const handleApiSelect = (apiId) => {
     console.log('Selecting API:', apiId);
     
@@ -2234,26 +2036,8 @@ const loadStatistics = useCallback(async () => {
     
     setSelectedApiId(apiId);
     setPagination(prev => ({ ...prev, page: 0 }));
-    
-    if (apiId && apiSummaries.length > 0) {
-      const summary = apiSummaries.find(api => api.apiId === apiId || api.apiCode === apiId);
-      setSelectedApiSummary(summary || null);
-      setSelectedApiData(summary || null);
-      console.log('Found summary for selected API:', summary);
-      
-      if (summary && summary.totalRequests === 0) {
-        showToast(`No requests found for ${summary.apiName} at all.`, 'warning');
-      } else if (summary && summary.totalRequests > 0) {
-        showToast(`Loading ${summary.totalRequests} requests for ${summary.apiName}...`, 'info');
-      }
-    } else if (!apiId) {
-      setSelectedApiSummary(null);
-      setSelectedApiData(null);
-      showToast('Loading all requests...', 'info');
-    }
   };
 
-  // Handle sidebar pagination navigation
   const handleSidebarPrevPage = () => {
     if (sidebarPage > 0) {
       setSidebarPage(sidebarPage - 1);
@@ -2267,14 +2051,12 @@ const loadStatistics = useCallback(async () => {
     }
   };
 
-  // Get paginated API summaries for sidebar
   const getPaginatedApiSummaries = () => {
     const startIndex = sidebarPage * sidebarItemsPerPage;
     const endIndex = startIndex + sidebarItemsPerPage;
     return apiSummaries.slice(startIndex, endIndex);
   };
 
-  // Handle search with debounce
   const handleSearchChange = (e) => {
     const query = e.target.value;
     setSearchQuery(query);
@@ -2283,115 +2065,34 @@ const loadStatistics = useCallback(async () => {
     if (searchTimer.current) {
       clearTimeout(searchTimer.current);
     }
+  };
+
+  const handleRefresh = useCallback(() => {
+    fetchAllData(false, true);
+  }, [fetchAllData]);
+
+  const handlePaginationChange = useCallback((newPage) => {
+    if (paginationDebounceRef.current) {
+      clearTimeout(paginationDebounceRef.current);
+    }
     
-    if (!query || query.trim() === '') {
-      console.log('Search cleared, loading all requests');
-      loadRequests(true);
+    const now = Date.now();
+    if (lastPaginationRequestRef.current && (now - lastPaginationRequestRef.current) < 500) {
+      paginationDebounceRef.current = setTimeout(() => {
+        if (!isPaginationLoadingRef.current) {
+          setPagination(prev => ({ ...prev, page: newPage }));
+          lastPaginationRequestRef.current = Date.now();
+        }
+        paginationDebounceRef.current = null;
+      }, 300);
       return;
     }
     
-    searchTimer.current = setTimeout(() => {
-      if (activeTab === 'all') {
-        console.log('Executing search with query:', query);
-        loadRequests(true);
-      }
-    }, 500);
-  };
-
-  // Handle refresh button click
-  const handleRefresh = useCallback(() => {
-    if (activeTab === 'statistics') {
-      loadStatistics();
-    } else if (activeTab === 'all') {
-      loadRequests(true);
-    } else if (activeTab === 'recent') {
-      loadRecentRequests();
+    if (!isPaginationLoadingRef.current) {
+      setPagination(prev => ({ ...prev, page: newPage }));
+      lastPaginationRequestRef.current = now;
     }
-  }, [activeTab, loadStatistics, loadRequests, loadRecentRequests]);
-
-  // ============ FIX: Clean up on unmount ============
-  useEffect(() => {
-    return () => {
-      // Cancel any ongoing request
-      cancelOngoingRequest();
-      // Clear any pending timers
-      if (searchTimer.current) {
-        clearTimeout(searchTimer.current);
-      }
-      if (paginationDebounceRef.current) {
-        clearTimeout(paginationDebounceRef.current);
-      }
-    };
-  }, [cancelOngoingRequest]);
-
-  // Initial load
-  useEffect(() => {
-    if (authToken && isInitialMount.current) {
-      isInitialMount.current = false;
-      console.log('Initial load');
-      loadStatistics();
-      loadFullApiList();
-      
-      if (activeTab === 'all') {
-        loadRequests().finally(() => {
-          setLoading(prev => ({ ...prev, initialLoad: false }));
-        });
-      } else if (activeTab === 'recent') {
-        loadRecentRequests().finally(() => {
-          setLoading(prev => ({ ...prev, initialLoad: false }));
-        });
-      } else {
-        setLoading(prev => ({ ...prev, initialLoad: false }));
-      }
-    }
-
-    return () => {
-      if (searchTimer.current) {
-        clearTimeout(searchTimer.current);
-      }
-    };
   }, []);
-
-  // Handle tab changes
-  useEffect(() => {
-    if (!authToken || isInitialMount.current) return;
-
-    console.log('Tab changed to:', activeTab);
-    
-    if (activeTab === 'statistics') {
-      loadStatistics();
-    } else if (activeTab === 'all') {
-      loadRequests();
-    } else if (activeTab === 'recent') {
-      loadRecentRequests();
-    }
-  }, [activeTab]);
-
-  // Handle filter changes
-  useEffect(() => {
-    if (!authToken || isInitialMount.current || activeTab !== 'all') return;
-    
-    console.log('Filters changed, reloading...', { 
-      selectedApiId, 
-      paginationPage: pagination.page,
-      dateRange,
-      searchQuery
-    });
-    
-    loadRequests();
-  }, [filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
-
-  // Update selected API summary when apiSummaries change
-  useEffect(() => {
-    if (selectedApiId && apiSummaries.length > 0) {
-      const summary = apiSummaries.find(api => api.apiId === selectedApiId || api.apiCode === selectedApiId);
-      if (summary && (!selectedApiData || selectedApiData.apiId !== summary.apiId)) {
-        console.log('Updating selected API data from apiSummaries:', summary);
-        setSelectedApiSummary(summary);
-        setSelectedApiData(summary);
-      }
-    }
-  }, [selectedApiId, apiSummaries]);
 
   // Render sidebar
   const renderSidebar = () => {
@@ -2416,7 +2117,6 @@ const loadStatistics = useCallback(async () => {
             <span className="text-sm font-semibold uppercase" style={{ color: colors.textSecondary }}>API Request Monitor</span>
           )}
           <button
-            // onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             onClick={() => {}}
             className="p-1 rounded hover:bg-opacity-50 transition-colors ml-auto"
             style={{ backgroundColor: colors.hover }}
@@ -2550,226 +2250,216 @@ const loadStatistics = useCallback(async () => {
     );
   };
 
-  // Add this useEffect right after your state declarations
-  useEffect(() => {
-    console.log('🔄 Requests state updated:', requests.length, 'requests');
-    console.log('First request:', requests[0]);
-  }, [requests]);
-
   const renderRequestsTable = () => {
-  console.log('Rendering table with requests:', requests.length, 'requests');
-  console.log('Loading states:', loading);
-  
-  return (
-    <div className="flex-1 flex flex-col overflow-hidden pl-2 pr-2">
-      <div className="flex-1 overflow-auto p-4">
-        <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-          <thead className="sticky top-0" style={{ backgroundColor: colors.card, zIndex: 10 }}>
-            <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
-              <th className="text-left py-3 px-4 text-xs font-medium w-12" style={{ color: colors.textSecondary }}>#</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Method</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Request Name</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>API / URL</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status Code</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Duration</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
-             </tr>
-          </thead>
-          <tbody>
-            {requests.map((request, index) => {
-              const sequentialNumber = (pagination.page * pagination.size) + index + 1;
-              const statusCode = request.responseStatusCode;
-              const statusColor = getStatusCodeColorHelper(statusCode);
-              const statusText = getStatusText(statusCode);
-              const resolvedUrl = resolveUrlWithPathParams(request.url, request);
+    console.log('Rendering table with requests:', requests.length, 'requests');
+    
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden pl-2 pr-2">
+        <div className="flex-1 overflow-auto p-4">
+          <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+            <thead className="sticky top-0" style={{ backgroundColor: colors.card, zIndex: 10 }}>
+              <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
+                <th className="text-left py-3 px-4 text-xs font-medium w-12" style={{ color: colors.textSecondary }}>#</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Method</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Request Name</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>API / URL</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status Code</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Duration</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requests.map((request, index) => {
+                const sequentialNumber = (pagination.page * pagination.size) + index + 1;
+                const statusCode = request.responseStatusCode;
+                const statusColor = getStatusCodeColorHelper(statusCode);
+                const statusText = getStatusText(statusCode);
+                const resolvedUrl = resolveUrlWithPathParams(request.url, request);
+                
+                return (
+                  <tr 
+                    key={`${request.id || request.requestId || index}`}
+                    className="hover:bg-opacity-50 transition-colors cursor-pointer"
+                    style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
+                    onClick={() => handleViewDetails(request)}
+                  >
+                    <td className="py-3 px-4">
+                      <span className="text-sm font-mono" style={{ color: colors.textSecondary }}>
+                        {sequentialNumber}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
+                        <span className={`status-badge ${
+                          !statusCode ? 'status-badge-default' :
+                          statusCode >= 200 && statusCode < 300 ? 'status-badge-success' :
+                          statusCode >= 300 && statusCode < 400 ? 'status-badge-info' :
+                          statusCode >= 400 && statusCode < 500 ? 'status-badge-warning' :
+                          statusCode >= 500 ? 'status-badge-error' : 'status-badge-default'
+                        }`}>
+                          {statusText}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
+                        backgroundColor: getMethodColor(request.httpMethod),
+                        color: 'white'
+                      }}>
+                        {request.httpMethod}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-sm" style={{ color: colors.text }}>
+                        {request.requestName 
+                          ? request.requestName.replace('Execution: ', '') 
+                          : 'N/A'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium" style={{ color: colors.textSecondary }}>{request.apiCode || request.apiName || 'N/A'}</span>
+                        <span className="text-xs font-mono mt-1 truncate max-w-xs" style={{ color: colors.textTertiary }} title={resolvedUrl}>
+                          {resolvedUrl}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(request.responseStatusCode) }}>
+                        {request.responseStatusCode || '-'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-sm" style={{ color: colors.text }}>
+                        {formatExecutionTimeHelper(request.executionDurationMs)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs" style={{ color: colors.textSecondary }}>
+                        {formatTimestamp(request.requestTimestamp || request.createdAt)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs font-mono" style={{ color: colors.textSecondary }}>
+                        {request.correlationId?.substring(0, 8) || 'N/A'}...
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewDetails(request);
+                          }}
+                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.hover }}
+                        >
+                          <Eye size={12} style={{ color: colors.textSecondary }} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const jsonData = JSON.stringify(request, null, 2);
+                            copyToClipboard(jsonData);
+                            showToast('Request data copied to clipboard!', 'success');
+                          }}
+                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.hover }}
+                        >
+                          <Copy size={12} style={{ color: colors.textSecondary }} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm('Are you sure you want to delete this request?')) {
+                              handleDeleteRequest(request.id);
+                            }
+                          }}
+                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.hover }}
+                        >
+                          <Trash2 size={12} style={{ color: colors.error }} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               
-              return (
-                <tr 
-                  key={`${request.id || request.requestId || index}`}
-                  className="hover:bg-opacity-50 transition-colors cursor-pointer"
-                  style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
-                  onClick={() => handleViewDetails(request)}
-                >
-                  <td className="py-3 px-4">
-                    <span className="text-sm font-mono" style={{ color: colors.textSecondary }}>
-                      {sequentialNumber}
-                    </span>
-                   </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
-                      <span className={`status-badge ${
-                        !statusCode ? 'status-badge-default' :
-                        statusCode >= 200 && statusCode < 300 ? 'status-badge-success' :
-                        statusCode >= 300 && statusCode < 400 ? 'status-badge-info' :
-                        statusCode >= 400 && statusCode < 500 ? 'status-badge-warning' :
-                        statusCode >= 500 ? 'status-badge-error' : 'status-badge-default'
-                      }`}>
-                        {statusText}
-                      </span>
-                    </div>
-                   </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
-                      backgroundColor: getMethodColor(request.httpMethod),
-                      color: 'white'
-                    }}>
-                      {request.httpMethod}
-                    </span>
-                   </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm" style={{ color: colors.text }}>
-                      {request.requestName 
-                        ? request.requestName.replace('Execution: ', '') 
-                        : 'N/A'}
-                    </span>
-                   </td>
-                  <td className="py-3 px-4">
-                    <div className="flex flex-col">
-                      <span className="text-xs font-medium" style={{ color: colors.textSecondary }}>{request.apiCode || request.apiName || 'N/A'}</span>
-                      <span className="text-xs font-mono mt-1 truncate max-w-xs" style={{ color: colors.textTertiary }} title={resolvedUrl}>
-                        {resolvedUrl}
-                      </span>
-                    </div>
-                   </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(request.responseStatusCode) }}>
-                      {request.responseStatusCode || '-'}
-                    </span>
-                   </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm" style={{ color: colors.text }}>
-                      {formatExecutionTimeHelper(request.executionDurationMs)}
-                    </span>
-                   </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs" style={{ color: colors.textSecondary }}>
-                      {formatTimestamp(request.requestTimestamp || request.createdAt)}
-                    </span>
-                   </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs font-mono" style={{ color: colors.textSecondary }}>
-                      {request.correlationId?.substring(0, 8) || 'N/A'}...
-                    </span>
-                   </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleViewDetails(request);
-                        }}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Eye size={12} style={{ color: colors.textSecondary }} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const jsonData = JSON.stringify(request, null, 2);
-                          copyToClipboard(jsonData);
-                          showToast('Request data copied to clipboard!', 'success');
-                        }}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Copy size={12} style={{ color: colors.textSecondary }} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (window.confirm('Are you sure you want to delete this request?')) {
-                            handleDeleteRequest(request.id);
-                          }
-                        }}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Trash2 size={12} style={{ color: colors.error }} />
-                      </button>
-                    </div>
-                   </td>
-                 </tr>
-              );
-            })}
-            
-            {/* Empty state */}
-            {requests.length === 0 && !loading.initialLoad && !loading.refresh && !loading.export && (
-              <tr>
-                <td colSpan="10" className="text-center py-12">
-                  <FileText size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
-                  <p className="text-lg mb-2" style={{ color: colors.text }}>No Requests Found</p>
-                  <p className="text-sm" style={{ color: colors.textSecondary }}>
-                    {searchQuery ? `No requests matching "${searchQuery}"` : 'Try adjusting your filters or date range'}
-                  </p>
-                 </td>
-              </tr>
-            )}
+              {requests.length === 0 && !loading.initialLoad && !loading.refresh && !loading.export && (
+                <tr>
+                  <td colSpan="10" className="text-center py-12">
+                    <FileText size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
+                    <p className="text-lg mb-2" style={{ color: colors.text }}>No Requests Found</p>
+                    <p className="text-sm" style={{ color: colors.textSecondary }}>
+                      {searchQuery ? `No requests matching "${searchQuery}"` : 'Try adjusting your filters or date range'}
+                    </p>
+                  </td>
+                </tr>
+              )}
 
-            {/* Loading state */}
-            {(loading.refresh || loading.initialLoad) && requests.length === 0 && (
-              <tr>
-                <td colSpan="10" className="text-center py-12">
-                  <RefreshCw size={32} className="animate-spin mx-auto mb-4" style={{ color: colors.textSecondary }} />
-                  <p className="text-sm" style={{ color: colors.textSecondary }}>Loading requests...</p>
-                 </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              {(loading.refresh || loading.initialLoad) && requests.length === 0 && (
+                <tr>
+                  <td colSpan="10" className="text-center py-12">
+                    <RefreshCw size={32} className="animate-spin mx-auto mb-4" style={{ color: colors.textSecondary }} />
+                    <p className="text-sm" style={{ color: colors.textSecondary }}>Loading requests...</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
 
-        {/* Pagination */}
-        {pagination.totalPages > 0 && (
-          <div className="flex items-center justify-between mt-4 py-3 px-4" style={{ backgroundColor: colors.card, borderTop: `1px solid ${colors.border}` }}>
-            <div className="text-sm" style={{ color: colors.textSecondary }}>
-              Showing {requests.length > 0 ? pagination.page * pagination.size + 1 : 0} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  if (pagination.page > 0) {
-                    handlePaginationChange(pagination.page - 1);
-                  }
-                }}
-                disabled={pagination.page === 0 || isPaginationLoadingRef.current}
-                className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
-                style={{ backgroundColor: colors.hover, color: colors.text }}
-              >
-                <ChevronLeft size={14} />
-                Previous
-              </button>
-              <div className="flex items-center gap-1 px-2">
-                <span className="text-sm font-medium" style={{ color: colors.text }}>
-                  {pagination.page + 1}
-                </span>
-                <span className="text-sm" style={{ color: colors.textSecondary }}>
-                  of {pagination.totalPages}
-                </span>
+          {pagination.totalPages > 0 && (
+            <div className="flex items-center justify-between mt-4 py-3 px-4" style={{ backgroundColor: colors.card, borderTop: `1px solid ${colors.border}` }}>
+              <div className="text-sm" style={{ color: colors.textSecondary }}>
+                Showing {requests.length > 0 ? pagination.page * pagination.size + 1 : 0} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
               </div>
-              <button
-                onClick={() => {
-                  if (pagination.page < pagination.totalPages - 1) {
-                    handlePaginationChange(pagination.page + 1);
-                  }
-                }}
-                disabled={pagination.page >= pagination.totalPages - 1 || isPaginationLoadingRef.current}
-                className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
-                style={{ backgroundColor: colors.hover, color: colors.text }}
-              >
-                Next
-                <ChevronRight size={14} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (pagination.page > 0) {
+                      handlePaginationChange(pagination.page - 1);
+                    }
+                  }}
+                  disabled={pagination.page === 0 || isPaginationLoadingRef.current}
+                  className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
+                  style={{ backgroundColor: colors.hover, color: colors.text }}
+                >
+                  <ChevronLeft size={14} />
+                  Previous
+                </button>
+                <div className="flex items-center gap-1 px-2">
+                  <span className="text-sm font-medium" style={{ color: colors.text }}>
+                    {pagination.page + 1}
+                  </span>
+                  <span className="text-sm" style={{ color: colors.textSecondary }}>
+                    of {pagination.totalPages}
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    if (pagination.page < pagination.totalPages - 1) {
+                      handlePaginationChange(pagination.page + 1);
+                    }
+                  }}
+                  disabled={pagination.page >= pagination.totalPages - 1 || isPaginationLoadingRef.current}
+                  className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
+                  style={{ backgroundColor: colors.hover, color: colors.text }}
+                >
+                  Next
+                  <ChevronRight size={14} />
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   const showFullOverlay = loading.initialLoad || loading.export || loading.delete;
   const loadingType = loading.initialLoad ? 'initialLoad' : 
@@ -2899,7 +2589,7 @@ const loadStatistics = useCallback(async () => {
                     if (searchTimer.current) {
                       clearTimeout(searchTimer.current);
                     }
-                    loadRequests(true);
+                    fetchAllData(false, true);
                   }
                 }}
                 className="pl-8 pr-3 py-1.5 rounded text-sm w-64"
@@ -2941,7 +2631,7 @@ const loadStatistics = useCallback(async () => {
             statistics={statistics}
             systemStats={systemStats}
             colors={colors}
-            onRefresh={loadStatistics}
+            onRefresh={handleRefresh}
             formatExecutionTimeHelper={formatExecutionTimeHelper}
           />
         </div>
@@ -2982,7 +2672,7 @@ const loadStatistics = useCallback(async () => {
               console.log('Apply button clicked - current date range:', dateRange);
               setPagination(prev => ({ ...prev, page: 0 }));
               setTimeout(() => {
-                loadRequests(true);
+                fetchAllData(false, true);
               }, 100);
             }}
             className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
@@ -3002,8 +2692,8 @@ const loadStatistics = useCallback(async () => {
         colors={colors}
         isOpen={showDetailsModal}
         onClose={() => setShowDetailsModal(false)}
-        onRefresh={loadRequests}
-        getStatusText={getStatusText}  // Add this line
+        onRefresh={() => fetchAllData(false, true)}
+        getStatusText={getStatusText}
         getStatusCodeColorHelper={getStatusCodeColorHelper}
       />
 
