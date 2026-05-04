@@ -468,7 +468,7 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
                             <span className="text-xs" style={{ color: colors.textSecondary }}>Security Rules</span>
                           </div>
                           <span className="text-xs" style={{ color: colors.text }}>
-                              <span style={{ color: colors.success }}>{stats.totalIpWhitelistEntries || 0}</span> IP Whitelisted
+                              <span style={{ color: colors.success }}>{stats.totalIpWhitelistEntries || 0}</span> IPs Whitelisted
                             </span>
                         </div>
 
